@@ -37,6 +37,11 @@ function finiteNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+function cornerRadiusLimit(width: number | null, height: number | null) {
+  if (width === null || height === null || width < 0 || height < 0) return null;
+  return Math.min(width, height) / 2;
+}
+
 function availableProperties(entries: Array<{ label: string; value: unknown }>) {
   return entries.flatMap(({ label, value }) => {
     if (value === null || value === undefined || value === "") return [];
@@ -103,6 +108,18 @@ function cssForNode(node: SnapshotNode) {
   if ([node.padding.top.value, node.padding.right.value, node.padding.bottom.value, node.padding.left.value].every((value) => value !== null)) {
     declarations.push("padding: " + [node.padding.top, node.padding.right, node.padding.bottom, node.padding.left].map((item) => formatPixelValue(item.value!) + item.unit).join(" ") + ";");
   }
+  const uniformRadius = finiteNumber(node.sourcePayload.cornerRadius);
+  const radiusValues = [
+    finiteNumber(node.sourcePayload.topLeftRadius) ?? uniformRadius,
+    finiteNumber(node.sourcePayload.topRightRadius) ?? uniformRadius,
+    finiteNumber(node.sourcePayload.bottomRightRadius) ?? uniformRadius,
+    finiteNumber(node.sourcePayload.bottomLeftRadius) ?? uniformRadius,
+  ];
+  if (radiusValues.every((value) => value !== null)) {
+    const limit = cornerRadiusLimit(node.bounds.width.value, node.bounds.height.value);
+    const effectiveValues = radiusValues.map((value) => formatPixelValue(limit === null ? value! : Math.min(value!, limit)) + "px");
+    declarations.push("border-radius: " + effectiveValues.join(" ") + ";");
+  }
   const gap = node.spacing.itemGap.value ?? node.spacing.rowGap.value ?? node.spacing.columnGap.value;
   addMeasurement("gap", gap, "px");
   const fill = node.fills.find((paint) => paint.color)?.color;
@@ -113,12 +130,12 @@ function cssForNode(node: SnapshotNode) {
   return declarations.join("\n");
 }
 
-function CopyValue({ label, value }: { label: string; value: string }) {
+function CopyValue({ label, value, displayValue = value, className }: { label: string; value: string; displayValue?: string; className?: string }) {
   const [copied, setCopied] = useState(false);
   return (
     <button
       aria-label={"Copy " + label}
-      className="block min-w-0 max-w-full whitespace-normal break-all text-left font-mono text-[11px] text-[#e1e1e1] [overflow-wrap:anywhere] hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+      className={className ?? "block min-w-0 max-w-full whitespace-normal break-all text-left font-mono text-[11px] text-[#e1e1e1] [overflow-wrap:anywhere] hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value);
@@ -131,7 +148,7 @@ function CopyValue({ label, value }: { label: string; value: string }) {
       title={copied ? "Copied" : "Click to copy"}
       type="button"
     >
-      {copied ? "Copied" : value}
+      {copied ? "Copied" : displayValue}
     </button>
   );
 }
@@ -318,7 +335,17 @@ export function ElementInspector({
     ["Bottom right", finiteNumber(selectedNode?.sourcePayload.bottomRightRadius)],
     ["Bottom left", finiteNumber(selectedNode?.sourcePayload.bottomLeftRadius)],
   ] as const;
-  const hasCornerRadius = uniformRadius !== null || radiusFields.some(([, value]) => value !== null);
+  const resolvedRadiusFields = radiusFields.flatMap(([label, value]) => {
+    const resolvedValue = value ?? uniformRadius;
+    return resolvedValue === null ? [] : [{ label, value: resolvedValue }];
+  });
+  const radiiAreUniform = resolvedRadiusFields.length === 4
+    && resolvedRadiusFields.every(({ value }) => value === resolvedRadiusFields[0].value);
+  const radiusDisplayFields = radiiAreUniform
+    ? [{ label: "Corner radius", value: resolvedRadiusFields[0].value }]
+    : resolvedRadiusFields;
+  const radiusLimit = cornerRadiusLimit(selectedWidth, selectedHeight);
+  const hasCornerRadius = radiusDisplayFields.length > 0;
 
   async function copyCss() {
     if (!selectedNode) return;
@@ -393,10 +420,28 @@ export function ElementInspector({
               <div className="flex justify-between gap-3"><dt className="text-[#999]">Aspect ratio</dt><dd className="font-mono text-right text-[#ddd]">{aspectRatio ?? "Unavailable"}</dd></div>
               {hasCornerRadius ? (
                 <>
-                  {uniformRadius !== null ? <div className="flex justify-between gap-3"><dt className="text-[#999]">Corner radius</dt><dd className="font-mono text-right text-[#ddd]">{formatPixelValue(uniformRadius)}px</dd></div> : null}
-                  {radiusFields.filter(([, value]) => value !== null).map(([label, value]) => (
-                    <div className="flex justify-between gap-3" key={label}><dt className="text-[#999]">{label}</dt><dd className="font-mono text-right text-[#ddd]">{formatPixelValue(value!)}px</dd></div>
-                  ))}
+                  {radiusDisplayFields.map(({ label, value }) => {
+                    const effectiveValue = radiusLimit === null ? value : Math.min(value, radiusLimit);
+                    const isClamped = effectiveValue < value;
+                    return (
+                      <div className="grid grid-cols-[1fr_auto] items-start gap-x-3" key={label}>
+                        <dt className="text-[#999]">{label}</dt>
+                        <dd className="text-right"><CopyValue label={`${label.toLowerCase()} radius`} value={`${formatPixelValue(effectiveValue)}px`} /></dd>
+                        {isClamped ? (
+                          <dd className="col-span-2 mt-1 text-right text-[10px] text-[#888]">
+                            Figma source: {" "}
+                            <CopyValue
+                              className="inline-block max-w-full break-all font-mono text-[10px] text-[#aaa] hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+                              displayValue={`${value.toLocaleString("en-US", { maximumSignificantDigits: 21 })}px`}
+                              label={`${label.toLowerCase()} radius source value`}
+                              value={`${String(value)}px`}
+                            />
+                            {" · clamped to fit"}
+                          </dd>
+                        ) : null}
+                      </div>
+                    );
+                  })}
                 </>
               ) : <div className="flex justify-between gap-3"><dt className="text-[#999]">Corner radius</dt><dd className="text-right text-[#999]">Unavailable</dd></div>}
               {finiteNumber(selectedNode.sourcePayload.rotation) !== null ? <div className="flex justify-between gap-3"><dt className="text-[#999]">Rotation</dt><dd className="font-mono text-right text-[#ddd]">{formatPixelValue(finiteNumber(selectedNode.sourcePayload.rotation)!)}°</dd></div> : null}

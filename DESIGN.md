@@ -139,5 +139,6 @@ Meet WCAG 2.2 AA. Preserve visible keyboard focus, keyboard operation, screen-re
 
 - Identify measurement provenance as source, measured, or unavailable.
 - Display pixel measurements rounded to the nearest whole or half pixel, and use the same value in copy actions.
+- Display Figma corner radii after Figma's edge-length clamp. Keep the raw source radius visible and copyable when the clamp changes it. Export the effective radius in copied CSS.
 - Do not label a measured edge distance as an authored CSS margin.
 - Do not infer a token binding from a matching raw value.
