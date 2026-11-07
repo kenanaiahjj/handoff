@@ -11,7 +11,7 @@ type VersionInput = {
   snapshot: StoredSnapshot;
 };
 
-type DraftEvidence = EvidenceRef & { content: string };
+export type DraftEvidence = EvidenceRef & { content: string };
 
 function clipped(value: unknown, maxLength = 600) {
   const serialized = typeof value === "string" ? value : JSON.stringify(value);
@@ -23,10 +23,9 @@ function frameName(snapshot: StoredSnapshot, frameId: string) {
   return snapshot.frames.find((frame) => frame.sourceFrameId === frameId)?.name ?? frameId;
 }
 
-export async function createEvidenceLinkedDraft(input: {
+export function collectChangelogEvidence(input: {
   workspaceId: string;
   handoffId: string;
-  handoffName: string;
   from: VersionInput;
   to: VersionInput;
   rules: Parameters<typeof evaluateLayoutRules>[1];
@@ -105,7 +104,18 @@ export async function createEvidenceLinkedDraft(input: {
     });
   }
 
-  const usableEvidence = evidence.slice(0, 200);
+  return evidence.slice(0, 200);
+}
+
+export async function createEvidenceLinkedDraft(input: {
+  workspaceId: string;
+  handoffId: string;
+  handoffName: string;
+  from: VersionInput;
+  to: VersionInput;
+  rules: Parameters<typeof evaluateLayoutRules>[1];
+}) {
+  const usableEvidence = collectChangelogEvidence(input);
   const generated = await generateChangelog({
     handoffName: input.handoffName,
     fromVersionLabel: input.from.versionLabel,

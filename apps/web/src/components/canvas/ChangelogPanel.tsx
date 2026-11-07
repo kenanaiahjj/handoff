@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { evidenceCanvasHref } from "./evidence-link";
 
 type Audience = "product" | "developer" | "qa";
@@ -59,24 +59,62 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
     [drafts],
   );
 
+  const loadDrafts = useCallback(async (signal?: AbortSignal) => {
+    try {
+      const response = await fetch(endpoint, { cache: "no-store", signal });
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || "Could not load changelog drafts.");
+      if (signal?.aborted) return;
+      setError(null);
+      setConfigured(Boolean(payload.configured));
+      setDrafts(Array.isArray(payload.drafts) ? payload.drafts : []);
+    } catch (loadError: unknown) {
+      if (signal?.aborted) return;
+      setError(loadError instanceof Error ? loadError.message : "Could not load changelog drafts.");
+    } finally {
+      if (!signal?.aborted) setLoading(false);
+    }
+  }, [endpoint]);
+
+  const refreshDrafts = useCallback(async () => {
+    setLoading(true);
+    setError(null);
+    await loadDrafts();
+  }, [loadDrafts]);
+
   useEffect(() => {
+    const controller = new AbortController();
     let active = true;
-    fetch(endpoint, { cache: "no-store" })
+    fetch(endpoint, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
         const payload = await response.json();
         if (!response.ok) throw new Error(payload.error || "Could not load changelog drafts.");
         if (!active) return;
+        setError(null);
         setConfigured(Boolean(payload.configured));
         setDrafts(Array.isArray(payload.drafts) ? payload.drafts : []);
       })
       .catch((loadError: unknown) => {
-        if (active) setError(loadError instanceof Error ? loadError.message : "Could not load changelog drafts.");
+        if (active && !(loadError instanceof DOMException && loadError.name === "AbortError")) {
+          setError(loadError instanceof Error ? loadError.message : "Could not load changelog drafts.");
+        }
       })
       .finally(() => {
         if (active) setLoading(false);
       });
-    return () => { active = false; };
+    return () => {
+      active = false;
+      controller.abort();
+    };
   }, [endpoint]);
+
+  useEffect(() => {
+    function refreshWhenVisible() {
+      if (document.visibilityState === "visible") void refreshDrafts();
+    }
+    document.addEventListener("visibilitychange", refreshWhenVisible);
+    return () => document.removeEventListener("visibilitychange", refreshWhenVisible);
+  }, [refreshDrafts]);
 
   async function generateDraft() {
     setGenerating(true);
@@ -136,12 +174,17 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-primary">AI-assisted · evidence linked</p>
           <h2 className="mt-1 text-base font-semibold text-foreground" id="changelog-title">Changelog</h2>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-foreground-muted">
-            Drafts use recorded screen changes, layout findings, and team comments. Review every statement before approval.
+            Drafts cite screen changes, layout findings, and team comments. Generate one here or save a draft from your connected AI through MCP; review every statement before approval.
           </p>
         </div>
-        <span className="rounded-pill bg-surface-raised px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-foreground-subtle">
-          {drafts.length.toString().padStart(2, "0")} drafts
-        </span>
+        <div className="flex items-center gap-2">
+          <button type="button" className="min-h-8 rounded-control px-2.5 text-xs font-medium text-foreground-muted hover:bg-surface-raised hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50" disabled={loading} onClick={() => void refreshDrafts()}>
+            {loading ? "Refreshing…" : "Refresh"}
+          </button>
+          <span className="rounded-pill bg-surface-raised px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-foreground-subtle">
+            {drafts.length.toString().padStart(2, "0")} drafts
+          </span>
+        </div>
       </div>
 
       {versions.length >= 2 ? (
@@ -173,7 +216,7 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
 
       {configured === false ? (
         <p className="mt-3 rounded-control border border-border bg-surface-raised px-3 py-3 text-xs leading-5 text-foreground-muted">
-          AI drafting is not configured. Set <code className="font-mono text-foreground">OPENAI_API_KEY</code> on the app server to enable it.
+          One-click drafting uses <code className="font-mono text-foreground">OPENAI_API_KEY</code> on the server. You can draft with your connected AI instead: give its MCP token <code className="font-mono text-foreground">handoffs:read</code> and <code className="font-mono text-foreground">changelog:write</code>, then have it call <code className="font-mono text-foreground">get_changelog_evidence</code> and <code className="font-mono text-foreground">save_changelog_draft</code>. Return here and select Refresh to review the saved draft.
         </p>
       ) : null}
       {loading ? <p className="mt-3 text-xs text-foreground-subtle" role="status">Loading changelogs…</p> : null}

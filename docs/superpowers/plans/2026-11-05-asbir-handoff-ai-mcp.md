@@ -87,11 +87,12 @@ export interface HandoffMcpContext {
 - [x] Use `@modelcontextprotocol/server` v2 and `createMcpHandler` from the official SDK to serve `POST /api/mcp` with Node runtime.
 - [x] Construct a fresh MCP server per request from authenticated request context; never share a mutable server instance across workspaces.
 - [x] Add read tools `list_projects`, `list_handoffs`, `list_versions`, `list_frames`, `get_snapshot`, `get_canvas_overview`, `get_frame`, `get_version_diff`, `get_measurements`, `get_token_bindings`, `list_comments`, `list_linked_tasks`, and `list_findings`. `list_frames` provides a compact inventory so agents can select screens without fetching the full payload.
-- [x] Add write tools `create_comment`, `draft_changelog`, and `link_task` only when the token includes the matching scope. `link_task` records an external task; it never calls the external tracker.
+- [x] Add write tools `create_comment`, `draft_changelog`, `save_changelog_draft`, and `link_task` only when the token includes the matching scope. `draft_changelog` uses the optional server provider; `save_changelog_draft` accepts the connected AI client's authored content and validates evidence IDs without a server AI key. `link_task` records an external task; it never calls the external tracker.
+- [x] Add `get_changelog_evidence` so connected AI clients can retrieve the exact version-pair evidence IDs before drafting.
 - [x] Validate every tool input with Zod and return a clear error for missing IDs, inaccessible workspaces, unavailable measurement data, or missing evidence.
 - [x] Add a connection guide with the workspace-specific remote MCP URL and per-agent setup snippets that use a token supplied by the workspace member.
 - [x] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`.
-- [x] Exercise the remote MCP JSON-RPC endpoint with a temporary read-only token: initialize a client, enumerate all 13 tools, retrieve an authorized snapshot and exact measurement fields, and confirm a mismatched workspace URL returns HTTP 403. Verified 2026-11-07; the temporary token was removed afterward.
+- [x] Exercise the remote MCP JSON-RPC endpoint with a temporary read-only token: initialize a client, enumerate the then-current 13 read tools, retrieve an authorized snapshot and exact measurement fields, and confirm a mismatched workspace URL returns HTTP 403. Baseline verified 2026-11-07; the temporary token was removed afterward.
 - [x] Compare all four adjacent version pairs in the local fixture through `get_version_diff`. The route returned changed and removed frame records plus visual/structural changes. Verified 2026-11-07.
 - [ ] Verify denial for a handoff or version that belongs to a different workspace, and connect a full AI client alongside its own task, repository, and QA MCP tools. Create a task externally, link it through Handoff, and retrieve the link with `list_linked_tasks`.
 
