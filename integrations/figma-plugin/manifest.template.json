@@ -1,0 +1,11 @@
+{
+  "name": "Asbir Handoff Capture",
+  "api": "1.0.0",
+  "documentAccess": "dynamic-page",
+  "editorType": ["figma"],
+  "main": "dist/code.js",
+  "ui": "dist/ui.html",
+  "networkAccess": {
+    "allowedDomains": ["http://localhost:3000"]
+  }
+}

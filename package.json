@@ -1,0 +1,16 @@
+{
+  "name": "asbir-handoff",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "integrations/*"
+  ],
+  "scripts": {
+    "setup:env": "node scripts/setup-env.mjs",
+    "dev": "npm run dev --workspace @asbir/web",
+    "build": "npm run build --workspace @asbir/web",
+    "lint": "npm run lint --workspace @asbir/web"
+  }
+}

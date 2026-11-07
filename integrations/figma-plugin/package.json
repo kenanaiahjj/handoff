@@ -1,0 +1,19 @@
+{
+  "name": "@asbir/figma-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "lint": "tsc --noEmit -p tsconfig.json",
+    "test": "node --experimental-transform-types --test test/*.test.mjs"
+  },
+  "dependencies": {
+    "@asbir/snapshot-contract": "0.1.0"
+  },
+  "devDependencies": {
+    "@figma/plugin-typings": "^1.132.0",
+    "esbuild": "^0.28.1",
+    "typescript": "^5.0.0"
+  }
+}

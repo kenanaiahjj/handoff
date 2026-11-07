@@ -104,8 +104,8 @@ export interface SnapshotDiff {
 - [ ] Render comments from saved frame-relative points and convert them through the same canvas transform used by pins.
 - [ ] Add a project rules JSON shape for allowed spacing values, required token binding categories, and optional frame bounds.
 - [ ] Implement deterministic checks that return `ruleId`, `frameId`, `sourceNodeId`, actual value, expected values, and a human-readable explanation.
-- [ ] Keep rule findings distinct from AI-generated notes. Allow assignee, open/resolved status, comment, and export.
-- [ ] Export source frame images as PNG and JPEG at their stored dimensions. Offer the overview render and individual frame renders separately.
+- [x] Keep rule findings distinct from AI-generated notes. Allow assignee, open/resolved status, comment, and export.
+- [x] Export source frame images as PNG and JPEG at their stored dimensions. Offer the overview render and individual frame renders separately.
 - [ ] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`; manually verify comments remain pinned after zooming and saved findings remain tied to the same version.
 
 ## Completion check

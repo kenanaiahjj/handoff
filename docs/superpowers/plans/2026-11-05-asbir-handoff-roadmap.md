@@ -10,7 +10,7 @@ The design has several independently deliverable subsystems, so implementation i
 | 2 | [Review and layout QA](2026-11-05-asbir-handoff-review.md) | Canvas, comments, version diffs, exact inspection, rules, exports | Platform and snapshot core |
 | 3 | [Figma capture](2026-11-05-asbir-handoff-figma.md) | Source-side Figma plugin that creates structured handoffs | Platform and snapshot core |
 | 4 | [Paper capture](2026-11-05-asbir-handoff-paper.md) | Paper Desktop MCP bridge that creates structured handoffs | Platform and snapshot core |
-| 5 | [AI, MCP, and task workflows](2026-11-05-asbir-handoff-ai-mcp.md) | Evidence-linked drafts, remote Handoff MCP, task MCP connections, agent handoff | Platform and review core |
+| 5 | [AI, MCP, and task workflows](2026-11-05-asbir-handoff-ai-mcp.md) | Evidence-linked drafts, remote Handoff MCP, links to externally created tasks, agent handoff | Platform and review core |
 
 ## Execution order
 
@@ -38,4 +38,4 @@ Do not mark the product complete after the first plan. The final acceptance crit
 | Canvas, comments, exports, version comparison, exact measurements, configurable checks | Review and layout QA |
 | Figma full-canvas/frame capture, node tree, padding, gaps, bound tokens | Figma capture |
 | Paper Desktop/MCP capture with the same normalized geometry and token data | Paper capture |
-| AI changelog, developer notes, QA scenarios, MCP tools, task creation, agent workflow | AI, MCP, and task workflows |
+| AI changelog, developer notes, QA scenarios, MCP tools, external task links, agent workflow | AI, MCP, and task workflows |

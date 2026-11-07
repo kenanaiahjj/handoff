@@ -1,0 +1,16 @@
+node_modules/
+.next/
+**/.next*/
+data/
+.env*
+!.env.example
+*.tsbuildinfo
+.vercel/
+.goalcheck*/
+.impeccable/
+**/.impeccable/
+.DS_Store
+.codebase-memory/
+integrations/figma-plugin/dist/
+# The plugin build generates a host-specific manifest; see docs/figma-plugin.md.
+integrations/figma-plugin/manifest.json

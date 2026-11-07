@@ -1,12 +1,12 @@
-# Asbir Handoff AI, MCP, and task workflows implementation plan
+# Asbir Handoff AI, MCP, and external task workflows implementation plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+**Execution note:** Keep implementation inline. Use checkbox (`- [ ]`) steps to track remaining work.
 
-**Goal:** Generate evidence-linked changelogs and QA notes, expose handoff data and actions through MCP, connect task MCP servers, and make the snapshot available to coding agents.
+**Goal:** Generate evidence-linked changelogs and QA notes, expose handoff data and actions through MCP, link tasks created by the team's AI client, and make frozen snapshots available to coding agents.
 
-**Architecture:** AI receives deterministic Handoff diffs and layout findings and returns editable drafts with evidence references. Handoff exposes a workspace-scoped remote MCP server; workspace admins can connect a task MCP server, and external coding agents can use Handoff plus repository tools from their MCP host.
+**Architecture:** AI receives deterministic Handoff diffs and layout findings and returns editable drafts with evidence references. Handoff exposes a workspace-scoped remote MCP server. The AI client's host connects to Handoff alongside its own task-tracker, repository, and QA MCP tools. The client creates external tasks or code changes; Handoff stores task references and exact design evidence. Handoff does not connect to external MCP servers, store their credentials, or execute code.
 
-**Tech Stack:** TypeScript, Next.js Route Handlers, OpenAI JavaScript SDK with Responses API, MCP TypeScript SDK v2 server and client packages, Zod 4.
+**Tech Stack:** TypeScript, Next.js Route Handlers, OpenAI JavaScript SDK with Responses API, MCP TypeScript SDK v2 server, and Zod 4.
 
 ## Global Constraints
 
@@ -14,21 +14,21 @@
 - AI may not infer exact measurements, token bindings, or node matches.
 - OpenAI credentials remain server-side in environment configuration; the application shows setup status when no key is available.
 - Handoff MCP access is scoped to authenticated workspace membership and an explicit MCP token.
-- Outbound task MCP connections are configured by a workspace owner and store secrets encrypted at rest.
+- Task-tracker, repository, and QA MCP connections belong to the user's AI client. Handoff stores no credentials for those tools.
+- The `tasks:write` MCP scope records a task created elsewhere; it does not create tasks in an external system.
 - Agents use their own repository MCP permissions for code changes; Handoff does not execute arbitrary code.
 - Use `npm run lint` and `npm run build` for implementation checks. Do not add or run automated tests unless the user asks.
 
 ## File map
 
-- `apps/web/src/server/ai/provider.ts` — AI request and response types.
+- `apps/web/src/server/ai/schema.ts` — AI request and response schemas.
 - `apps/web/src/server/ai/openai-provider.ts` — OpenAI Responses API adapter.
 - `apps/web/src/server/ai/draft-changelog.ts` — evidence payload and draft persistence.
-- `apps/web/src/server/mcp/handoff-server.ts` — authorized Handoff tools.
-- `apps/web/src/app/api/mcp/route.ts` — remote Streamable HTTP MCP endpoint.
-- `apps/web/src/server/mcp/connections.ts` — outbound task MCP connection registry.
-- `apps/web/src/server/mcp/task-tools.ts` — discover and invoke configured task tools.
-- `apps/web/src/app/(workspace)/settings/integrations/` — AI and MCP connection screens.
-- `apps/web/src/app/(workspace)/projects/[projectId]/handoffs/[handoffId]/` — changelog and task review UI.
+- `apps/web/app/api/mcp/route.ts` — workspace-scoped remote MCP endpoint.
+- `apps/web/src/server/services/task-context.ts` and `link-external-task.ts` — validate task references and attach exact snapshot evidence.
+- `apps/web/src/server/repositories/linked-external-tasks.ts` — store task links and returned agent or pull request URLs.
+- `apps/web/app/api/workspaces/[workspaceId]/projects/[projectId]/handoffs/[handoffId]/tasks/route.ts` — list and link external tasks.
+- `apps/web/src/components/canvas/AgentHandoffPanel.tsx` and `LinkedTasksPanel.tsx` — review and agent task-link UI.
 
 ## Task 1: Add evidence-linked AI drafts
 
@@ -59,17 +59,19 @@ export interface ChangelogDraft {
 }
 ```
 
-- [ ] Add `openai` to `@asbir/web`; read `OPENAI_API_KEY` and `OPENAI_MODEL` on the server only.
-- [ ] Implement `AiProvider.generateChangelog(input)` with an OpenAI Responses API adapter. Return a setup error if either environment variable is absent.
-- [ ] Build the model input from structured diffs, layout findings, token changes, and comments. Include evidence IDs and source values; omit image-only measurements.
-- [ ] Require structured JSON output validated by `changelogDraftSchema`. Reject any evidence reference not found in the supplied input.
-- [ ] Save drafts with author, source version IDs, created time, status `draft`, and model identifier.
-- [ ] Add editable product, developer, and QA sections. Every statement displays links to its supporting frames/nodes/findings.
-- [ ] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`; manually generate and edit a draft from a two-version fixture with known changes.
+- [x] Add `openai` to `@asbir/web`; read `OPENAI_API_KEY` and optional `OPENAI_MODEL` on the server only.
+- [x] Implement `AiProvider.generateChangelog(input)` with an OpenAI Responses API adapter. Return a setup error if the API key is absent and use the configured model or server default.
+- [x] Build the model input from structured diffs, layout findings, token changes, and comments. Include evidence IDs and source values; omit image-only measurements.
+- [x] Require structured JSON output validated by `changelogDraftSchema`. Reject any evidence reference not found in the supplied input.
+- [x] Save drafts with author, source version IDs, created time, status `draft`, and model identifier.
+- [x] Add editable product, developer, and QA sections. Every statement links to its supporting frame or element.
+- [x] Show approved notes in the published canvas and link each citation to its source version, screen, or element. Keep unapproved drafts out of non-designer responses.
+- [x] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`.
+- [ ] Manually generate and edit a draft from a two-version fixture with known changes.
 
 ## Task 2: Expose scoped Handoff MCP tools
 
-**Files:** Create `src/server/mcp/handoff-server.ts`, `src/server/mcp/token-auth.ts`, and `src/app/api/mcp/route.ts`.
+**Files:** `apps/web/app/api/mcp/route.ts`, workspace MCP token APIs and UI, and `docs/agents/mcp-setup.md`.
 
 **Interfaces:**
 
@@ -77,43 +79,44 @@ export interface ChangelogDraft {
 export interface HandoffMcpContext {
   workspaceId: string;
   userId: string;
-  scopes: Array<"handoffs:read" | "comments:write" | "tasks:write">;
+  scopes: Array<"handoffs:read" | "comments:write" | "changelog:write" | "tasks:write">;
 }
 ```
 
-- [ ] Add an owner-only page to create and revoke MCP tokens. Store a hash, workspace ID, member ID, scope list, and expiration; show the secret only once.
-- [ ] Use `@modelcontextprotocol/server` v2 and `createMcpHandler` from the official SDK to serve `POST /api/mcp` with Node runtime.
-- [ ] Construct a fresh MCP server per request from authenticated request context; never share a mutable server instance across workspaces.
-- [ ] Add read tools `list_projects`, `list_handoffs`, `get_snapshot`, `get_frame`, `get_version_diff`, `get_measurements`, `get_token_bindings`, `list_comments`, and `list_findings`.
-- [ ] Add write tools `create_comment`, `draft_changelog`, and `create_task` only when the token includes the matching scope.
-- [ ] Validate every tool input with Zod and return a clear error for missing IDs, inaccessible workspaces, unavailable measurement data, or missing evidence.
-- [ ] Add a connection guide with the remote MCP URL and per-agent setup snippets that use a token supplied by the workspace member.
-- [ ] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`; manually connect a local MCP client and retrieve one authorized version and one denied version from a different workspace.
+- [x] Add a workspace integrations page to create and revoke scoped MCP tokens. Store a hash, workspace ID, member ID, scope list, and expiration; show the secret only once.
+- [x] Use `@modelcontextprotocol/server` v2 and `createMcpHandler` from the official SDK to serve `POST /api/mcp` with Node runtime.
+- [x] Construct a fresh MCP server per request from authenticated request context; never share a mutable server instance across workspaces.
+- [x] Add read tools `list_projects`, `list_handoffs`, `list_versions`, `list_frames`, `get_snapshot`, `get_canvas_overview`, `get_frame`, `get_version_diff`, `get_measurements`, `get_token_bindings`, `list_comments`, `list_linked_tasks`, and `list_findings`. `list_frames` provides a compact inventory so agents can select screens without fetching the full payload.
+- [x] Add write tools `create_comment`, `draft_changelog`, and `link_task` only when the token includes the matching scope. `link_task` records an external task; it never calls the external tracker.
+- [x] Validate every tool input with Zod and return a clear error for missing IDs, inaccessible workspaces, unavailable measurement data, or missing evidence.
+- [x] Add a connection guide with the workspace-specific remote MCP URL and per-agent setup snippets that use a token supplied by the workspace member.
+- [x] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`.
+- [ ] Manually connect a local MCP client and retrieve one authorized version and one denied version from a different workspace.
 
-## Task 3: Connect task MCP servers
+## Task 3: Link tasks created through the AI client's own tools
 
-**Files:** Create `src/server/mcp/connections.ts`, `task-tools.ts`, MCP connection tables, and integration settings pages.
+**Files:** `task-context.ts`, `link-external-task.ts`, `linked-external-tasks.ts`, the handoff tasks API route, the Handoff MCP route, the agent panel, and `0008_external_task_links.sql`.
 
-- [ ] Add an owner-only form for an HTTPS remote MCP endpoint, display name, auth type, bearer/OAuth secret, and permitted actions. Reject credentials embedded in URLs.
-- [ ] Encrypt connection secrets with AES-256-GCM using `ASBIR_ENCRYPTION_KEY`; keep the key outside SQLite and require 32 bytes.
-- [ ] Use `@modelcontextprotocol/client` v2 over Streamable HTTP to discover available tools. Store server metadata and tool names/schema, not returned user data.
-- [ ] Allow an owner to select a task creation tool and map Handoff fields to that tool's declared schema.
-- [ ] Before invoking the tool, show the exact task title, description, evidence links, destination, and mapped fields. Create only after the user chooses `Create task` or an authorized MCP caller invokes `create_task`.
-- [ ] Persist the external task ID and URL with the originating handoff, version, and evidence refs. Handle timeouts and remote errors without storing a false success state.
-- [ ] Require HTTPS in production. Reject loopback, link-local, and private-network destinations unless the owner explicitly configures a trusted internal endpoint in a self-hosted deployment.
-- [ ] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`; manually connect a development MCP task server, map its create tool, and create a task linked to a Handoff frame.
+- [x] Validate an external task ID or URL and preserve its source system, title, and notes.
+- [x] Validate optional screen and element IDs against the selected immutable snapshot version.
+- [x] Expose `link_task` under `tasks:write` and `list_linked_tasks` under `handoffs:read`.
+- [x] Store the version label, source revision, content hash, screen or element properties, and a deep link to the exact canvas location.
+- [x] Link a task from the review UI and attach returned agent-run or pull-request URLs.
+- [x] Migrate existing task links into the external-link table while preserving legacy tables for compatibility.
+- [ ] Connect an AI client to Handoff and its own task, repository, and QA MCP tools. Confirm that the client can create a task externally, call `link_task`, and retrieve that link with `list_linked_tasks`.
 
 ## Task 4: Support coding-agent handoff
 
 **Files:** Add agent handoff panel, MCP onboarding, and docs under `docs/agents/`.
 
-- [ ] Add a `Start with agent` panel that selects a handoff version, related task, and allowed Handoff MCP scopes.
-- [ ] Generate agent context containing the accepted snapshot URL, version diff, exact measurements, token bindings, comments, approved changelog, and task acceptance criteria.
-- [ ] Provide Codex and generic MCP configuration snippets with the workspace-specific remote MCP URL and scoped token placeholder; never include a live secret in a copied project link.
-- [ ] Explain that repository edits are performed by the connected agent under its repository permissions and that the Handoff version remains immutable.
-- [ ] Store agent run links or repository pull request URLs on the task/handoff record when users return them.
-- [ ] Run web `npm run lint` and `npm run build`, then manually connect an MCP client alongside a repository MCP and verify the agent can fetch the source evidence needed for one task.
+- [x] Add a `Start with agent` panel that selects a handoff version, related task, and allowed Handoff MCP scopes.
+- [x] Generate agent context containing the accepted snapshot URL, version diff, exact measurements, token bindings, comments, approved changelog, and task acceptance criteria.
+- [x] Provide Codex and generic MCP configuration snippets with the workspace-specific remote MCP URL and scoped token placeholder; never include a live secret in a copied project link.
+- [x] Explain that repository edits are performed by the connected agent under its repository permissions and that the Handoff version remains immutable.
+- [x] Store agent run links or repository pull request URLs on the task/handoff record when users return them.
+- [x] Run web `npm run lint` and `npm run build`.
+- [ ] Manually connect an MCP client alongside a repository MCP and verify the agent can fetch the source evidence needed for one task.
 
 ## Completion check
 
-This plan is complete when an AI draft is editable and evidence-linked, a workspace-scoped MCP client can inspect a handoff, a configured task MCP can create a linked task, and an external coding agent can retrieve the handoff context with its repository tools.
+This plan is complete when an AI draft is editable and evidence-linked, a workspace-scoped MCP client can inspect a handoff, an externally created task can be linked to exact snapshot evidence, and an AI client can use its own task, repository, and QA tools alongside Handoff. Handoff must not store credentials for those tools or execute code.

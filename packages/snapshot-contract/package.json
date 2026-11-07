@@ -1,0 +1,19 @@
+{
+  "name": "@asbir/snapshot-contract",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "dependencies": {
+    "@noble/hashes": "^2.4.0",
+    "zod": "^4.0.0"
+  }
+}
