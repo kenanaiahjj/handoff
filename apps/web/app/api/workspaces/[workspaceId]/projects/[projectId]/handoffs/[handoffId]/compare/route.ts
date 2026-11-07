@@ -32,17 +32,21 @@ function framePreview(
   if (!frame) return null;
   const asset = version.assets.find((candidate) => candidate.assetKey === frame.renderAssetKey);
   if (!asset) return null;
+  const structuredFrame = isStructuredSnapshot(version.snapshot)
+    ? version.snapshot.frames.find((candidate) => candidate.sourceFrameId === frameId) ?? null
+    : null;
+  const sourceWidth = structuredFrame?.bounds.width.value ?? null;
+  const sourceHeight = structuredFrame?.bounds.height.value ?? null;
+  const hasSourceDimensions = sourceWidth !== null && sourceHeight !== null;
+
   return {
     name: frame.name,
     imageUrl: `/api/assets/${asset.objectKey}`,
     width: asset.width,
     height: asset.height,
-    sourceWidth: isStructuredSnapshot(version.snapshot)
-      ? version.snapshot.frames.find((candidate) => candidate.sourceFrameId === frameId)?.bounds.width.value ?? asset.width ?? 1280
-      : asset.width ?? 1280,
-    sourceHeight: isStructuredSnapshot(version.snapshot)
-      ? version.snapshot.frames.find((candidate) => candidate.sourceFrameId === frameId)?.bounds.height.value ?? asset.height ?? 900
-      : asset.height ?? 900,
+    sourceWidth: sourceWidth ?? asset.width ?? 1280,
+    sourceHeight: sourceHeight ?? asset.height ?? 900,
+    dimensionsSource: hasSourceDimensions ? "design" as const : "image" as const,
   };
 }
 

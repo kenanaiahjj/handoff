@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { SnapshotDiff } from "@/src/server/services/diff";
+import { formatPixelValue } from "./format-captured-measurement";
 import { PixelDiffView } from "./PixelDiffView";
 import {
   compareResultForPair,
@@ -26,6 +27,7 @@ type Preview = {
   height: number | null;
   sourceWidth: number;
   sourceHeight: number;
+  dimensionsSource: "design" | "image";
 } | null;
 
 export type CompareFrame = SnapshotDiff["frames"][number] & {
@@ -536,11 +538,23 @@ function VersionSelect({
 }
 
 function PreviewPanel({ label, preview }: { label: string; preview: Preview }) {
+  const rasterSizeDiffers = preview !== null
+    && preview.width !== null
+    && preview.height !== null
+    && (preview.width !== preview.sourceWidth || preview.height !== preview.sourceHeight);
+
   return (
     <section aria-label={label + " screen"} className="min-w-0">
       <div className="mb-2 flex items-center justify-between gap-2 text-[12px] text-[#aaa]">
         <span>{label}</span>
-        {preview ? <span className="font-mono text-[#888]">{preview.width ?? "?"} × {preview.height ?? "?"} px</span> : null}
+        {preview ? (
+          <span className="flex flex-col items-end font-mono text-[10px] leading-4 text-[#888]">
+            <span>{formatPixelValue(preview.sourceWidth)} × {formatPixelValue(preview.sourceHeight)} {preview.dimensionsSource === "design" ? "design px" : "image px"}</span>
+            {preview.dimensionsSource === "design" && rasterSizeDiffers ? (
+              <span>Raster export {preview.width} × {preview.height} px</span>
+            ) : null}
+          </span>
+        ) : null}
       </div>
       <div className="grid min-h-[340px] place-items-center overflow-hidden rounded-[8px] border border-[#393939] bg-[#171717] p-3 sm:min-h-[min(68vh,760px)]">
         {preview ? <PreviewImage alt={label + ": " + preview.name} preview={preview} className="max-h-[min(68vh,760px)] w-full object-contain" /> : <p className="text-[12px] text-[#929292]">No screen in this version</p>}
