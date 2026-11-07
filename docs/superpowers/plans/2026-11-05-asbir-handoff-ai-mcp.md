@@ -91,7 +91,9 @@ export interface HandoffMcpContext {
 - [x] Validate every tool input with Zod and return a clear error for missing IDs, inaccessible workspaces, unavailable measurement data, or missing evidence.
 - [x] Add a connection guide with the workspace-specific remote MCP URL and per-agent setup snippets that use a token supplied by the workspace member.
 - [x] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`.
-- [ ] Manually connect a local MCP client and retrieve one authorized version and one denied version from a different workspace.
+- [x] Exercise the remote MCP JSON-RPC endpoint with a temporary read-only token: initialize a client, enumerate all 13 tools, retrieve an authorized snapshot and exact measurement fields, and confirm a mismatched workspace URL returns HTTP 403. Verified 2026-11-07; the temporary token was removed afterward.
+- [x] Compare all four adjacent version pairs in the local fixture through `get_version_diff`. The route returned changed and removed frame records plus visual/structural changes. Verified 2026-11-07.
+- [ ] Verify denial for a handoff or version that belongs to a different workspace, and connect a full AI client alongside its own task, repository, and QA MCP tools. Create a task externally, link it through Handoff, and retrieve the link with `list_linked_tasks`.
 
 ## Task 3: Link tasks created through the AI client's own tools
 
