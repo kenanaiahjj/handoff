@@ -156,10 +156,12 @@ export function HandoffCanvas({
   const [localSelectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [showResolvedPins, setShowResolvedPins] = useState(false);
   const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "agent" | "local" | "mcp">("inspect");
-  const [canvasMode, setCanvasMode] = useState<"view" | "inspect">("view");
+  const [canvasModeOverride, setCanvasModeOverride] = useState<"view" | "inspect" | null>(null);
   const [statesOpen, setStatesOpen] = useState(false);
-  const [mobilePanelOpen, setMobilePanelOpen] = useState(false);
+  const [mobilePanelOpenOverride, setMobilePanelOpenOverride] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
+  const canvasMode = canvasModeOverride ?? (linkedNode ? "inspect" : "view");
+  const mobilePanelOpen = mobilePanelOpenOverride ?? (isMobile && Boolean(linkedNode));
   const [commentMode, setCommentMode] = useState(false);
   const [annotationMode, setAnnotationMode] = useState(false);
   const [pendingPoint, setPendingPoint] = useState<PendingCommentPoint | null>(null);
@@ -206,7 +208,7 @@ export function HandoffCanvas({
     const updateLayout = () => {
       setIsMobile(media.matches);
       setStatesOpen(!media.matches);
-      setMobilePanelOpen(false);
+      setMobilePanelOpenOverride(null);
     };
     updateLayout();
     media.addEventListener("change", updateLayout);
@@ -227,6 +229,7 @@ export function HandoffCanvas({
     if (!selectedNodeId) return null;
     return screens.flatMap((frame) => frame.nodes).find((node) => node.sourceNodeId === selectedNodeId) ?? null;
   }, [screens, selectedNodeId]);
+
   const commentCount = comments.filter((comment) => comment.parentCommentId === null).length;
   const openCommentCount = comments.filter((comment) => comment.parentCommentId === null && !comment.resolvedAt).length;
 
@@ -321,7 +324,7 @@ export function HandoffCanvas({
     setSelectedNodeId(result.node.sourceNodeId);
     setSelectedCommentId(null);
     setPanelMode("inspect");
-    setCanvasMode("inspect");
+    setCanvasModeOverride("inspect");
     setHighlightedNodeIds([]);
     updateLinkState(result.frame.id, result.node.sourceNodeId);
   }, [updateLinkState]);
@@ -331,7 +334,7 @@ export function HandoffCanvas({
     setSearchOpen(false);
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpen(true);
+      setMobilePanelOpenOverride(true);
     }
   }, [isMobile, previewSearchResult]);
 
@@ -356,7 +359,7 @@ export function HandoffCanvas({
         event.preventDefault();
         setSearchOpen(true);
         setStatesOpen(true);
-        setMobilePanelOpen(false);
+        setMobilePanelOpenOverride(false);
         searchInputRef.current?.focus();
         return;
       }
@@ -389,7 +392,7 @@ export function HandoffCanvas({
       }
       if (editing) return;
       if (event.key.toLowerCase() === "o") {
-        setCanvasMode("inspect");
+        setCanvasModeOverride("inspect");
         setPanelMode("inspect");
         setOutlinesVisible((current) => !current);
       }
@@ -412,6 +415,7 @@ export function HandoffCanvas({
   function selectFrame(frameId: string) {
     setSelectedFrameId(frameId);
     setSelectedNodeId(null);
+    setCanvasModeOverride(canvasMode);
     setSelectedCommentId(null);
     setPendingPoint(null);
     setCommentMode(false);
@@ -421,7 +425,7 @@ export function HandoffCanvas({
     setPanelMode("inspect");
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpen(true);
+      setMobilePanelOpenOverride(true);
     }
     updateLinkState(frameId, null);
   }
@@ -432,10 +436,10 @@ export function HandoffCanvas({
     setSelectedNodeId(sourceNodeId);
     setSelectedCommentId(null);
     setPanelMode("inspect");
-    setCanvasMode("inspect");
+    setCanvasModeOverride("inspect");
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpen(true);
+      setMobilePanelOpenOverride(true);
     }
     updateLinkState(node?.sourceFrameId ?? selectedFrameId, sourceNodeId);
   }
@@ -448,9 +452,10 @@ export function HandoffCanvas({
     setPanelMode("comments");
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpen(true);
+      setMobilePanelOpenOverride(true);
     }
     setCommentError(null);
+    setCanvasModeOverride(canvasMode);
     updateLinkState(point.frameId, point.sourceNodeId);
   }
 
@@ -499,8 +504,9 @@ export function HandoffCanvas({
     setAnnotationError(null);
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpen(true);
+      setMobilePanelOpenOverride(true);
     }
+    setCanvasModeOverride(canvasMode);
     updateLinkState(point.frameId, point.sourceNodeId);
   }
 
@@ -515,8 +521,9 @@ export function HandoffCanvas({
     setAnnotationMode(false);
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpen(true);
+      setMobilePanelOpenOverride(true);
     }
+    setCanvasModeOverride(canvasMode);
     updateLinkState(annotation.frameId, annotation.sourceNodeId);
   }
 
@@ -562,8 +569,9 @@ export function HandoffCanvas({
     setPanelMode("comments");
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpen(true);
+      setMobilePanelOpenOverride(true);
     }
+    setCanvasModeOverride(canvasMode);
     updateLinkState(comment.frameId, comment.sourceNodeId, comment.id);
   }
 
@@ -596,8 +604,9 @@ export function HandoffCanvas({
     setCommentMode(false);
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpen(true);
+      setMobilePanelOpenOverride(true);
     }
+    setCanvasModeOverride(canvasMode);
     updateLinkState(selectedFrame.id, selectedNode.sourceNodeId);
   }
 
@@ -611,8 +620,9 @@ export function HandoffCanvas({
     setCommentMode(false);
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpen(true);
+      setMobilePanelOpenOverride(true);
     }
+    setCanvasModeOverride(canvasMode);
     updateLinkState(frame.id, null);
   }
 
@@ -653,7 +663,7 @@ export function HandoffCanvas({
             onClick={() => {
               setSearchOpen(false);
               setStatesOpen((current) => !current);
-              setMobilePanelOpen(false);
+              setMobilePanelOpenOverride(false);
             }}
             title={statesOpen ? "Hide screens" : "Show screens"}
             type="button"
@@ -667,7 +677,7 @@ export function HandoffCanvas({
                 className={"h-7 rounded-[5px] px-2 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] " + (canvasMode === mode ? "bg-[#444] text-white" : "text-[#a9a9a9] hover:bg-[#363636] hover:text-white")}
                 key={mode}
                 onClick={() => {
-                  setCanvasMode(mode);
+                  setCanvasModeOverride(mode);
                   if (mode === "inspect") setPanelMode("inspect");
                 }}
                 type="button"
@@ -685,7 +695,7 @@ export function HandoffCanvas({
               if (isMobile) {
                 setStatesOpen(false);
                 setSearchOpen(false);
-                setMobilePanelOpen(true);
+                setMobilePanelOpenOverride(true);
               }
             }}
             title="Every open comment on every screen"
@@ -703,7 +713,7 @@ export function HandoffCanvas({
               setSearchOpen(false);
               if (isMobile) {
                 setStatesOpen(false);
-                setMobilePanelOpen(true);
+                setMobilePanelOpenOverride(true);
               }
             }}
             title="Canvas notes and annotations"
@@ -720,7 +730,7 @@ export function HandoffCanvas({
               setAnnotationMode(false);
               setStatesOpen(false);
               setSearchOpen(false);
-              setMobilePanelOpen(true);
+              setMobilePanelOpenOverride(true);
             }}
             title="MCP connection instructions"
             type="button"
@@ -731,7 +741,7 @@ export function HandoffCanvas({
             aria-pressed={outlinesVisible}
             className={"hidden h-9 rounded-[7px] px-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] sm:inline-flex sm:items-center " + (outlinesVisible ? "bg-[#3b3b3b] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
             onClick={() => {
-              setCanvasMode("inspect");
+              setCanvasModeOverride("inspect");
               setPanelMode("inspect");
               setOutlinesVisible((current) => !current);
             }}
@@ -805,7 +815,7 @@ export function HandoffCanvas({
             onClick={() => {
               setStatesOpen(false);
               setSearchOpen(false);
-              setMobilePanelOpen(false);
+              setMobilePanelOpenOverride(false);
             }}
             type="button"
           />
@@ -913,7 +923,7 @@ export function HandoffCanvas({
                   setActiveSearchIndex(-1);
                   setSearchOpen(true);
                   setStatesOpen(true);
-                  setMobilePanelOpen(false);
+                  setMobilePanelOpenOverride(false);
                 }}
                 frameStatuses={frameStatuses}
                 comparisonSummary={comparisonSummary}
@@ -972,8 +982,8 @@ export function HandoffCanvas({
                   setPanelMode(mode);
                   setCommentMode(false);
                   setAnnotationMode(false);
-                  if (mode === "inspect") setCanvasMode("inspect");
-                  if (isMobile) setMobilePanelOpen(true);
+                  if (mode === "inspect") setCanvasModeOverride("inspect");
+                  if (isMobile) setMobilePanelOpenOverride(true);
                 }}
                 type="button"
               >
