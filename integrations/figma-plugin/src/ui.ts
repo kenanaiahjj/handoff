@@ -13,6 +13,8 @@ import type {
   CaptureProgressMessage,
   CaptureReadyMessage,
 } from "./types";
+import { isRejectedSvgAssetResponse, makeRasterOnlyFallback } from "./raster-fallback";
+import { frameRenderCrop } from "./render-crop";
 
 declare const __ASBIR_HANDOFF_ORIGIN__: string;
 
@@ -181,12 +183,18 @@ async function createOverviewPng(capture: CaptureReadyMessage) {
         throw new Error(`The Figma pixel render for ${render.fileName} has an unsupported format.`);
       }
       const image = await loadImage(render.bytes, render.contentType);
+      const renderBounds = render.renderBounds ?? {
+        x: render.sourceX,
+        y: render.sourceY,
+        width: render.sourceWidth,
+        height: render.sourceHeight,
+      };
       context.drawImage(
         image,
-        (render.sourceX - x) * scale,
-        (render.sourceY - y) * scale,
-        render.sourceWidth * scale,
-        render.sourceHeight * scale,
+        (renderBounds.x - x) * scale,
+        (renderBounds.y - y) * scale,
+        renderBounds.width * scale,
+        renderBounds.height * scale,
       );
     }
 
@@ -198,6 +206,26 @@ async function createOverviewPng(capture: CaptureReadyMessage) {
     if (attempt < 4) setStatus("Reducing only the overview resolution to fit the import limit. Individual Figma frame renders stay unchanged.");
   }
   throw new Error("The overview still exceeds Handoff’s 100 MiB import limit after reducing its resolution. Capture fewer frames at a time.");
+}
+
+async function cropFrameRender(render: CaptureAssetBytes): Promise<CaptureAssetBytes> {
+  if (render.contentType !== "image/png" || !render.renderBounds) return render;
+  const image = await loadImage(render.bytes, render.contentType);
+  const crop = frameRenderCrop(
+    { x: render.sourceX, y: render.sourceY, width: render.sourceWidth, height: render.sourceHeight },
+    render.renderBounds,
+    image.naturalWidth,
+    image.naturalHeight,
+  );
+  if (!crop) return { ...render, renderBounds: undefined };
+
+  const canvas = document.createElement("canvas");
+  canvas.width = crop.width;
+  canvas.height = crop.height;
+  const context = canvas.getContext("2d", { alpha: true });
+  if (!context) throw new Error(`The browser could not crop the Figma render for ${render.fileName}.`);
+  context.drawImage(image, crop.x, crop.y, crop.width, crop.height, 0, 0, crop.width, crop.height);
+  return { ...render, bytes: await canvasPngBytes(canvas), renderBounds: undefined };
 }
 
 function assetMetadata(
@@ -292,33 +320,62 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
   setStatus("Uploading the frozen snapshot to Asbir Handoff…");
 
   try {
-    const form = new FormData();
-    form.append("snapshot", JSON.stringify(pending.snapshot));
-    form.append("asset:overview", assetBlob(overviewBytes, "image/png"), "overview.png");
-    currentCapture.renders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
-    currentCapture.vectorRenders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
-    currentCapture.layerRenders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
-    if (frameMatches.length && pending.baselineVersionId) {
-      form.append("baselineVersionId", pending.baselineVersionId);
-      form.append("frameMatches", JSON.stringify(frameMatches));
-    }
-
     const endpoint = new URL("/api/capture-sessions/snapshot", pending.origin);
-    const response = await fetch(endpoint, {
-      method: "POST",
-      headers: { Authorization: `Bearer ${pending.token}` },
-      body: form,
-      mode: "cors",
-      credentials: "omit",
-      redirect: "error",
-    });
-    const body = await response.json().catch(() => ({})) as {
-      error?: string;
-      projectId?: string;
-      handoffId?: string;
-      versionId?: string;
-      reviewUrl?: string;
+    const postSnapshot = async (
+      snapshot: SnapshotEnvelope,
+      vectorRenders: CaptureAssetBytes[],
+      layerRenders: CaptureReadyMessage["layerRenders"],
+    ) => {
+      const form = new FormData();
+      form.append("snapshot", JSON.stringify(snapshot));
+      form.append("asset:overview", assetBlob(overviewBytes!, "image/png"), "overview.png");
+      currentCapture!.renders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
+      vectorRenders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
+      layerRenders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
+      if (frameMatches.length && pending.baselineVersionId) {
+        form.append("baselineVersionId", pending.baselineVersionId);
+        form.append("frameMatches", JSON.stringify(frameMatches));
+      }
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${pending.token}` },
+        body: form,
+        mode: "cors",
+        credentials: "omit",
+        redirect: "error",
+      });
+      const body = await response.json().catch(() => ({})) as {
+        error?: string;
+        projectId?: string;
+        handoffId?: string;
+        versionId?: string;
+        reviewUrl?: string;
+      };
+      return { response, body };
     };
+
+    let uploadSnapshot = pending.snapshot;
+    let vectorRenders = currentCapture.vectorRenders;
+    let layerRenders = currentCapture.layerRenders;
+    let fallbackUsed = false;
+    let { response, body } = await postSnapshot(uploadSnapshot, vectorRenders, layerRenders);
+    if (!response.ok && isRejectedSvgAssetResponse(response.status, body.error ?? "")) {
+      const fallback = makeRasterOnlyFallback(uploadSnapshot, { vectorRenders, layerRenders });
+      if (fallback.removedAssetKeys.length) {
+        setStatus("The server rejected an SVG export. Retrying with PNG renders and structured layer data…");
+        const contentHash = await hashSnapshotPayload(fallback.snapshot);
+        const parsedFallback = snapshotEnvelopeSchema.safeParse({ ...fallback.snapshot, contentHash });
+        if (!parsedFallback.success) {
+          const first = parsedFallback.error.issues[0];
+          throw new Error(first ? `Raster fallback validation failed: ${first.path.join(".")} ${first.message}` : "Raster fallback validation failed.");
+        }
+        uploadSnapshot = parsedFallback.data;
+        vectorRenders = fallback.vectorRenders;
+        layerRenders = fallback.layerRenders;
+        fallbackUsed = true;
+        ({ response, body } = await postSnapshot(uploadSnapshot, vectorRenders, layerRenders));
+      }
+    }
     if (!response.ok || !body.reviewUrl) throw new Error(body.error || `Upload failed with status ${response.status}.`);
     const reviewUrl = new URL(body.reviewUrl);
     if (reviewUrl.origin !== pending.origin) throw new Error("Handoff returned a review link on a different site; check the server URL configuration.");
@@ -328,12 +385,11 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
     resultVersionId.textContent = body.versionId ?? "Not returned";
     result.hidden = false;
     tokenInput.value = "";
-    setStatus(
-      frameMatches.length
+    setStatus(fallbackUsed
+      ? "Snapshot imported with PNG renders and structured layer data. Rejected SVG assets were omitted; see capture warnings in the snapshot."
+      : frameMatches.length
         ? `Snapshot imported with ${frameMatches.length} confirmed frame ${frameMatches.length === 1 ? "replacement" : "replacements"}.`
-        : "Snapshot imported. Open the frozen canvas in Asbir Handoff.",
-      "success",
-    );
+        : "Snapshot imported. Open the frozen canvas in Asbir Handoff.", "success");
     currentCapture = null;
     overviewBytes = null;
     overviewWidth = 0;
@@ -487,7 +543,13 @@ window.onmessage = (event: MessageEvent) => {
   if (data.type !== "capture-ready") return;
   currentCapture = data;
   setStatus("Preparing the Figma-rendered overview and inspectable layer data…");
-  void Promise.resolve().then(() => createOverviewPng(data)).then(async ({ bytes, width, height }) => {
+  void Promise.resolve().then(async () => {
+    const overview = await createOverviewPng(data);
+    const renders = await Promise.all(data.renders.map(cropFrameRender));
+    currentCapture = { ...data, renders };
+    return { overview, data };
+  }).then(async ({ overview, data: capture }) => {
+    const { bytes, width, height } = overview;
     overviewBytes = bytes;
     overviewWidth = width;
     overviewHeight = height;
@@ -498,13 +560,13 @@ window.onmessage = (event: MessageEvent) => {
     const pixelPreview = await loadImage(bytes, "image/png");
     context.clearRect(0, 0, preview.width, preview.height);
     context.drawImage(pixelPreview, 0, 0, preview.width, preview.height);
-    const nodeCount = data.payload.frames.reduce((count, frame) => count + frame.nodes.length, 0);
-    const frameCount = data.payload.frames.length;
-    const renderScale = data.payload.sourceMetadata.renderScale === 2 ? "2×" : "1×";
-    const vectorSourceCount = data.vectorRenders.length;
-    const layerExportCount = data.layerRenders.length;
-    const fallbackFrameIds = Array.isArray(data.payload.sourceMetadata.renderScaleFallbackFrameIds)
-      ? data.payload.sourceMetadata.renderScaleFallbackFrameIds.filter((frameId): frameId is string => typeof frameId === "string")
+    const nodeCount = capture.payload.frames.reduce((count, frame) => count + frame.nodes.length, 0);
+    const frameCount = capture.payload.frames.length;
+    const renderScale = capture.payload.sourceMetadata.renderScale === 2 ? "2×" : "1×";
+    const vectorSourceCount = capture.vectorRenders.length;
+    const layerExportCount = capture.layerRenders.length;
+    const fallbackFrameIds = Array.isArray(capture.payload.sourceMetadata.renderScaleFallbackFrameIds)
+      ? capture.payload.sourceMetadata.renderScaleFallbackFrameIds.filter((frameId): frameId is string => typeof frameId === "string")
       : [];
     const vectorSummary = vectorSourceCount === frameCount
       ? "SVG sources retained"
@@ -514,11 +576,11 @@ window.onmessage = (event: MessageEvent) => {
       : fallbackFrameIds.length
         ? `${renderScale} Figma render · ${fallbackFrameIds.length} frame${fallbackFrameIds.length === 1 ? "" : "s"} rendered at 1×`
         : `${renderScale} Figma render`;
-    const warningSummary = data.warnings.length ? ` · ${data.warnings.length} capture warning${data.warnings.length === 1 ? "" : "s"}` : "";
+    const warningSummary = capture.warnings.length ? ` · ${capture.warnings.length} capture warning${capture.warnings.length === 1 ? "" : "s"}` : "";
     const layerExportSummary = layerExportCount ? ` · ${layerExportCount} layers ready to export` : "";
     summary.textContent = `${frameCount} frame${frameCount === 1 ? "" : "s"} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary} · ${vectorSummary}${layerExportSummary}${warningSummary}`;
-    setStatus(data.warnings.length
-      ? `Capture is ready with warnings: ${data.warnings.join(" ")} Review the Figma-rendered preview and layer data before uploading.`
+    setStatus(capture.warnings.length
+      ? `Capture is ready with warnings: ${capture.warnings.join(" ")} Review the Figma-rendered preview and layer data before uploading.`
       : "Review the Figma-rendered preview and layer count, then upload this snapshot.");
     setBusy(false);
   }).catch((error: unknown) => {

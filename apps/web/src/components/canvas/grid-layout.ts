@@ -1,4 +1,4 @@
-import { formatPixelValue } from "./format-captured-measurement";
+import { formatPixelValue } from "./format-captured-measurement.ts";
 
 type GridLayoutVisibilityInput = {
   mode: string | null;

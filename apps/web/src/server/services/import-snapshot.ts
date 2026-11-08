@@ -554,11 +554,14 @@ export async function readRequestBodyLimited(request: Request, maximumBytes: num
   return output;
 }
 
-export async function parseUploadForm(request: Request) {
-  const contentLength = Number(request.headers.get("content-length") ?? 0);
-  const maximumRequestBytes = MAX_UPLOAD_BYTES + 2_000_000;
+export async function parseUploadForm(
+  request: Request,
+  maximumRequestBytes = MAX_UPLOAD_BYTES + 2_000_000,
+) {
+  const contentLengthHeader = request.headers.get("content-length");
+  const contentLength = contentLengthHeader === null ? Number.NaN : Number(contentLengthHeader);
   if (Number.isFinite(contentLength) && contentLength > maximumRequestBytes) {
-    throw new SnapshotImportError("The upload request is larger than 102 MB.", 413);
+    throw new SnapshotImportError("The upload request is too large.", 413);
   }
 
   const body = await readRequestBodyLimited(request, maximumRequestBytes);

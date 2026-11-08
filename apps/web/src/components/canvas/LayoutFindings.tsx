@@ -203,7 +203,7 @@ function FindingCard({
   }
 
   return (
-    <article className="grid gap-3 lg:grid-cols-[minmax(0,1fr)_220px]">
+    <article className="grid gap-3">
       <div className="min-w-0">
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-control bg-warning/10 px-2 py-1 font-mono text-[10px] uppercase text-warning">{finding.category}</span>
@@ -257,7 +257,7 @@ function FindingCard({
           </form>
         </section>
       </div>
-      <div className="flex flex-col gap-2">
+      <div className="grid grid-cols-2 gap-2">
         <label className="grid gap-1 text-[10px] text-foreground-subtle">
           Assigned to
           <select aria-label={`Assign finding ${finding.ruleId}`} className="min-h-10 rounded-control border border-border bg-background px-2 text-xs text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" disabled={saving} onChange={(event) => void save({ assigneeUserId: event.target.value || null })} value={finding.assigneeUserId ?? ""}>

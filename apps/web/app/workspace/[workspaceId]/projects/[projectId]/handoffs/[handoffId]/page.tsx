@@ -10,14 +10,28 @@ import { getProject } from "@/src/server/repositories/projects";
 import { getVersion } from "@/src/server/repositories/versions";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
 import { PublishCanvasLink } from "@/src/components/canvas/PublishCanvasLink";
+import { ChangelogPanel } from "@/src/components/canvas/ChangelogPanel";
+import { LayoutFindings } from "@/src/components/canvas/LayoutFindings";
 import { HandoffSetupForm } from "../../handoff-setup-form";
+import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
 
 export const instant = false;
 
 type HandoffPageProps = {
   params: Promise<{ workspaceId: string; projectId: string; handoffId: string }>;
-  searchParams: Promise<{ versionId?: string | string[] }>;
+  searchParams: Promise<{
+    versionId?: string | string[];
+    compare?: string | string[];
+    compareFrom?: string | string[];
+    compareTo?: string | string[];
+    compareFrame?: string | string[];
+    compareMode?: string | string[];
+  }>;
 };
+
+function firstQueryValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 export default async function HandoffPage({ params, searchParams }: HandoffPageProps) {
   await connection();
@@ -35,7 +49,18 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
   const versions = listHandoffVersions({ workspaceId, handoffId }) as ReviewVersionSummary[];
   if (!versions.length) notFound();
 
-  const requestedVersionId = Array.isArray(query.versionId) ? query.versionId[0] : query.versionId;
+  const comparisonSearch = new URLSearchParams();
+  for (const key of ["compare", "compareFrom", "compareTo", "compareFrame", "compareMode"] as const) {
+    const value = firstQueryValue(query[key]);
+    if (value) comparisonSearch.set(key, value);
+  }
+  const parsedCompareRouteState = parseCompareRouteState(comparisonSearch);
+  const initialCompareRouteState: CompareRouteState | null = parsedCompareRouteState &&
+    versions.some((entry) => entry.id === parsedCompareRouteState.fromVersionId) &&
+    versions.some((entry) => entry.id === parsedCompareRouteState.toVersionId)
+    ? parsedCompareRouteState
+    : null;
+  const requestedVersionId = firstQueryValue(query.versionId) ?? initialCompareRouteState?.toVersionId;
   const selectedVersion = versions.find((version) => version.id === requestedVersionId) ?? versions[0];
   const version = getVersion({ workspaceId, versionId: selectedVersion.id });
   if (!version || version.handoffId !== handoffId) notFound();
@@ -46,7 +71,11 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
     : 0;
   const canCreateVersion = true;
   const routePath = `/workspace/${workspaceId}/projects/${projectId}/handoffs/${handoffId}`;
+  const changelogEndpoint = `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/changelog`;
+  const findingsEndpoint = `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/versions/${encodeURIComponent(selectedVersion.id)}/findings`;
   const dockPanels = {
+    qa: <LayoutFindings endpoint={findingsEndpoint} />,
+    changelog: <ChangelogPanel endpoint={changelogEndpoint} versions={versions} selectedVersionId={selectedVersion.id} versionHrefPrefix={routePath} />,
     version: canCreateVersion ? (
       <div className="space-y-3">
         <section aria-label="Release note and publish" className="rounded-[6px] border border-[#383838] bg-[#242424] p-3">
@@ -111,6 +140,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
         handoffName={handoff.name}
         versions={versions}
         selectedVersion={version}
+        initialCompareRouteState={initialCompareRouteState}
         versionHrefPrefix={routePath}
         reviewHref={handoff.reviewShareId ? `/review/${encodeURIComponent(handoff.reviewShareId)}` : null}
         reviewShareId={handoff.reviewShareId}

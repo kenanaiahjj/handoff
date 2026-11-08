@@ -5,7 +5,7 @@ import type { SnapshotNode } from "@asbir/snapshot-contract";
 import type { HandoffComment } from "../comments/CommentPin";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import { MeasurementRow } from "./MeasurementRow";
-import { formatPixelValue } from "./format-captured-measurement";
+import { formatFrameSize, formatPixelValue, inspectionMargins } from "./format-captured-measurement";
 import { capturedGridTracks, formatGridTrack, shouldShowGridLayout } from "./grid-layout";
 import { readPaintDetails, readTextStyleRuns, type TextStyleRun } from "./text-style-runs";
 
@@ -450,7 +450,7 @@ export function ElementInspector({
             <p className="mt-2 text-[10px] leading-4 text-[#888]">The aspect ratio is calculated from the captured source bounds.</p>
           </section>
           <MeasurementGroup title="Padding" values={selectedNode.padding} />
-          <MeasurementGroup title="Measured margins" values={selectedNode.margins} />
+          <MeasurementGroup title="Measured margins" values={inspectionMargins(selectedNode)} />
           <MeasurementGroup title="Spacing" values={selectedNode.spacing} />
 
           <section className="border-t border-[#393939] pt-3">
@@ -627,7 +627,7 @@ export function ElementInspector({
           </div>
           <p className="mt-2 text-[12px] leading-5 text-[#999]">Switch to Inspect in the top bar, then select an element to inspect its captured attributes.</p>
           <dl className="mt-4 space-y-2 border-t border-[#393939] pt-3 text-[11px]">
-            <div className="flex justify-between gap-3"><dt className="text-[#969696]">Size</dt><dd className="font-mono text-[#ddd]">{frame.sourceWidth} × {frame.sourceHeight}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-[#969696]">Size</dt><dd className="font-mono text-[#ddd]">{formatFrameSize(frame.sourceWidth, frame.sourceHeight)}</dd></div>
             <div className="flex justify-between gap-3"><dt className="text-[#969696]">Elements</dt><dd className="font-mono text-[#ddd]">{frame.nodes.length}</dd></div>
           </dl>
           <p className="mt-4 border-t border-[#393939] pt-3 text-[10px] leading-4 text-[#888]">Measurements retain source or measured provenance.</p>

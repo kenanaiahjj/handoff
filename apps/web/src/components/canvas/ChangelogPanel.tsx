@@ -51,9 +51,18 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
-  const newestOtherVersion = versions.find((version) => version.id !== selectedVersionId)?.id ?? "";
-  const [fromVersionId, setFromVersionId] = useState(newestOtherVersion);
-  const [toVersionId, setToVersionId] = useState(selectedVersionId);
+  const selectedVersionIndex = versions.findIndex((version) => version.id === selectedVersionId);
+  const precedingVersionId = versions[selectedVersionIndex + 1]?.id
+    ?? versions.find((version) => version.id !== selectedVersionId)?.id
+    ?? "";
+  const [versionPair, setVersionPair] = useState<{
+    selectedVersionId: string;
+    fromVersionId: string;
+    toVersionId: string;
+  } | null>(null);
+  const currentVersionPair = versionPair?.selectedVersionId === selectedVersionId ? versionPair : null;
+  const fromVersionId = currentVersionPair?.fromVersionId ?? precedingVersionId;
+  const toVersionId = currentVersionPair?.toVersionId ?? selectedVersionId;
   const evidenceById = useMemo(
     () => new Map(drafts.flatMap((draft) => draft.evidence.map((item) => [item.id, item] as const))),
     [drafts],
@@ -168,8 +177,8 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
   }
 
   return (
-    <section className="mt-4 rounded-panel border border-border bg-surface p-4 sm:p-5" aria-labelledby="changelog-title">
-      <div className="flex flex-col justify-between gap-3 sm:flex-row sm:items-start">
+    <section className="rounded-panel border border-border bg-surface p-3" aria-labelledby="changelog-title">
+      <div className="flex flex-col justify-between gap-3">
         <div>
           <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-primary">AI-assisted · evidence linked</p>
           <h2 className="mt-1 text-base font-semibold text-foreground" id="changelog-title">Changelog</h2>
@@ -188,16 +197,16 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
       </div>
 
       {versions.length >= 2 ? (
-        <div className="mt-4 grid gap-3 rounded-control bg-surface-raised p-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] sm:items-end">
+        <div className="mt-4 grid gap-2 rounded-control bg-surface-raised p-2">
           <label className="block text-xs font-medium text-foreground-muted">
             Before
-            <select className="mt-1.5 block min-h-10 w-full rounded-control border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" value={fromVersionId} onChange={(event) => setFromVersionId(event.target.value)}>
+            <select className="mt-1.5 block min-h-10 w-full rounded-control border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" value={fromVersionId} onChange={(event) => setVersionPair({ selectedVersionId, fromVersionId: event.target.value, toVersionId })}>
               {versions.map((version) => <option key={version.id} value={version.id}>{version.versionLabel}</option>)}
             </select>
           </label>
           <label className="block text-xs font-medium text-foreground-muted">
             After
-            <select className="mt-1.5 block min-h-10 w-full rounded-control border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" value={toVersionId} onChange={(event) => setToVersionId(event.target.value)}>
+            <select className="mt-1.5 block min-h-10 w-full rounded-control border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" value={toVersionId} onChange={(event) => setVersionPair({ selectedVersionId, fromVersionId, toVersionId: event.target.value })}>
               {versions.map((version) => <option key={version.id} value={version.id}>{version.versionLabel}</option>)}
             </select>
           </label>
@@ -225,7 +234,7 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
 
       <div className="mt-4 space-y-3">
         {drafts.map((draft) => (
-          <article className="rounded-control border border-border bg-background p-4" key={draft.id}>
+          <article className="rounded-control border border-border bg-background p-3" key={draft.id}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
                 <span className={`rounded-pill px-2 py-1 font-mono text-[10px] uppercase tracking-wide ${draft.status === "approved" ? "bg-primary/15 text-primary" : "bg-surface-raised text-foreground-subtle"}`}>

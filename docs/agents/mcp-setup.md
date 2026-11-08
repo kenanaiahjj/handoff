@@ -87,7 +87,7 @@ Replace the endpoint with the URL from Integrations. Use the client's secret sto
 
 ## Choose scopes
 
-- `handoffs:read` lets the agent list projects, handoffs, and versions; retrieve snapshots and renders; inspect measurements and token bindings; compare versions; and read comments and findings.
+- `handoffs:read` lets the agent list projects, handoffs, and versions; retrieve snapshots, renders, and approved changelogs; inspect measurements and token bindings; compare versions; and read comments and findings.
 - `comments:write` lets the agent add a comment to a frozen version.
 - `changelog:write` lets the agent save an evidence-linked changelog draft.
 - `tasks:write` lets the agent record a task created through the AI client's own task MCP, with an optional screen and element reference.
@@ -99,7 +99,8 @@ Use this sequence to pull only the screen evidence the task needs:
 1. Call `list_projects`, then `list_handoffs` for the selected project.
 2. Call `list_versions`, then `list_frames` for the selected immutable version.
 3. Call `get_frame` for the relevant screen. Use `get_measurements` or `get_token_bindings` with an element ID when implementation details are needed.
-4. Call `get_snapshot` when the task needs the complete source payload across all screens.
+4. Call `list_approved_changelogs` for the selected version when you need the team's accepted product intent. The tool returns approved entries only.
+5. Call `get_snapshot` when the task needs the complete source payload across all screens.
 
 ## Draft a changelog with your connected AI
 

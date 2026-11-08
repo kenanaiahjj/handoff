@@ -2,7 +2,7 @@ import { createMcpHandler, McpServer, type AuthInfo } from "@modelcontextprotoco
 import { z } from "zod";
 import { collectChangelogEvidence, createEvidenceLinkedDraft } from "@/src/server/ai/draft-changelog";
 import { generatedChangelogSchema } from "@/src/server/ai/schema";
-import { createChangelogDraft } from "@/src/server/repositories/changelogs";
+import { createChangelogDraft, listApprovedChangelogsForVersion } from "@/src/server/repositories/changelogs";
 import { createHandoffComment, listHandoffComments } from "@/src/server/repositories/comments";
 import { listFindingStates } from "@/src/server/repositories/findings";
 import { getHandoff, listHandoffVersions, listHandoffs } from "@/src/server/repositories/handoffs";
@@ -11,6 +11,7 @@ import { resolveWorkspaceMcpToken, type McpScope } from "@/src/server/repositori
 import { listLinkedExternalTasks } from "@/src/server/repositories/linked-external-tasks";
 import { getConfirmedFrameMatchesBetweenVersions, getVersion, type StoredSnapshot } from "@/src/server/repositories/versions";
 import { linkExternalTaskToHandoff } from "@/src/server/services/link-external-task";
+import { toMcpApprovedChangelog } from "@/src/server/services/mcp-changelog";
 import { taskLinkFieldsSchema, taskLinkSchema } from "@/src/server/services/task-context";
 import { diffSnapshots, isStructuredSnapshot } from "@/src/server/services/diff";
 import { evaluateLayoutRules } from "@/src/server/services/layout-rules";
@@ -313,6 +314,19 @@ function registerReadTools(server: McpServer, workspaceId: string) {
         toVersion: { id: to.id, label: to.versionLabel },
         evidence: evidence.map(({ content, ...item }) => ({ ...item, content })),
       });
+    } catch (error) { return failure(error); }
+  });
+
+  server.registerTool("list_approved_changelogs", {
+    title: "List approved changelogs for a version",
+    description: "Return the team-approved changelog entries for one immutable version. Unapproved drafts are not included.",
+    inputSchema: versionInput,
+  }, async ({ projectId, handoffId, versionId }) => {
+    try {
+      const version = loadVersion(workspaceId, { projectId, handoffId, versionId });
+      const changelogs = listApprovedChangelogsForVersion({ workspaceId, handoffId, versionId })
+        .map(toMcpApprovedChangelog);
+      return textResult({ version: { id: version.id, label: version.versionLabel }, changelogs });
     } catch (error) { return failure(error); }
   });
 

@@ -6,22 +6,40 @@ import { getPublishedHandoffByShareId, listHandoffVersions } from "@/src/server/
 import { getProject } from "@/src/server/repositories/projects";
 import { getVersion } from "@/src/server/repositories/versions";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
+import { LayoutFindings } from "@/src/components/canvas/LayoutFindings";
+import { PublishedChangelogPanel } from "@/src/components/canvas/PublishedChangelogPanel";
+import { versionsVisibleToReview } from "@/src/server/services/published-review";
+import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
 
 export const instant = false;
 
 type PublishedReviewPageProps = {
   params: Promise<{ shareId: string }>;
-  searchParams: Promise<{ versionId?: string | string[] }>;
+  searchParams: Promise<{
+    versionId?: string | string[];
+    compare?: string | string[];
+    compareFrom?: string | string[];
+    compareTo?: string | string[];
+    compareFrame?: string | string[];
+    compareMode?: string | string[];
+  }>;
 };
+
+function firstQueryValue(value: string | string[] | undefined) {
+  return Array.isArray(value) ? value[0] : value;
+}
 
 export default async function PublishedReviewPage({ params, searchParams }: PublishedReviewPageProps) {
   const { shareId } = await params;
   const query = await searchParams;
-  const requestedVersionId = Array.isArray(query.versionId) ? query.versionId[0] : query.versionId;
+  const requestedVersionId = firstQueryValue(query.versionId);
   const reviewPath = `/review/${encodeURIComponent(shareId)}`;
-  const redirectPath = requestedVersionId
-    ? `${reviewPath}?versionId=${encodeURIComponent(requestedVersionId)}`
-    : reviewPath;
+  const redirectQuery = new URLSearchParams();
+  for (const key of ["versionId", "compare", "compareFrom", "compareTo", "compareFrame", "compareMode"] as const) {
+    const value = firstQueryValue(query[key]);
+    if (value) redirectQuery.set(key, value);
+  }
+  const redirectPath = reviewPath + (redirectQuery.toString() ? `?${redirectQuery.toString()}` : "");
 
   const session = await getSessionForHeaders(await headers());
   if (!session) redirect(`/sign-in?redirectTo=${encodeURIComponent(redirectPath)}`);
@@ -37,15 +55,38 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
   if (!project) notFound();
 
   const allVersions = listHandoffVersions({ workspaceId: handoff.workspaceId, handoffId: handoff.id }) as ReviewVersionSummary[];
-  const publishedThroughIndex = allVersions.findIndex((version) => version.id === handoff.publishedVersionId);
-  if (publishedThroughIndex < 0) notFound();
+  const versions = versionsVisibleToReview(allVersions, handoff.publishedVersionId);
+  if (!versions.length) notFound();
 
-  const versions = allVersions.slice(publishedThroughIndex);
-  const selectedVersion = versions.find((version) => version.id === requestedVersionId) ?? versions[0];
+  const comparisonSearch = new URLSearchParams();
+  for (const key of ["compare", "compareFrom", "compareTo", "compareFrame", "compareMode"] as const) {
+    const value = firstQueryValue(query[key]);
+    if (value) comparisonSearch.set(key, value);
+  }
+  const parsedCompareRouteState = parseCompareRouteState(comparisonSearch);
+  const initialCompareRouteState: CompareRouteState | null = parsedCompareRouteState &&
+    versions.some((entry) => entry.id === parsedCompareRouteState.fromVersionId) &&
+    versions.some((entry) => entry.id === parsedCompareRouteState.toVersionId)
+    ? parsedCompareRouteState
+    : null;
+  const selectedVersion = versions.find((version) => version.id === requestedVersionId) ??
+    versions.find((version) => version.id === initialCompareRouteState?.toVersionId) ??
+    versions[0];
   if (!selectedVersion) notFound();
 
   const version = getVersion({ workspaceId: handoff.workspaceId, versionId: selectedVersion.id });
   if (!version || version.handoffId !== handoff.id) notFound();
+
+  const findingsEndpoint = `/api/workspaces/${encodeURIComponent(handoff.workspaceId)}/projects/${encodeURIComponent(handoff.projectId)}/handoffs/${encodeURIComponent(handoff.id)}/versions/${encodeURIComponent(selectedVersion.id)}/findings`;
+  const dockPanels = {
+    qa: <LayoutFindings endpoint={findingsEndpoint} />,
+    changelog: <PublishedChangelogPanel
+      endpoint={`/api/review/${encodeURIComponent(shareId)}/changelog`}
+      versionId={selectedVersion.id}
+      versionLabel={selectedVersion.versionLabel}
+      versionHrefPrefix={reviewPath}
+    />,
+  };
 
   return (
     <main className="h-dvh min-h-0 overflow-hidden bg-[#202020] text-[#dedede]">
@@ -58,6 +99,7 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
         handoffName={handoff.name}
         versions={versions}
         selectedVersion={version}
+        initialCompareRouteState={initialCompareRouteState}
         versionHrefPrefix={reviewPath}
         reviewHref={reviewPath}
         reviewShareId={shareId}
@@ -65,6 +107,7 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
         canManageIntegrations={true}
         canAnnotate={true}
         canUseLocalPreview={true}
+        dockPanels={dockPanels}
       />
     </main>
   );

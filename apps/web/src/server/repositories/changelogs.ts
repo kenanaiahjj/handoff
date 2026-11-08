@@ -45,6 +45,15 @@ export function listChangelogDrafts(input: { workspaceId: string; handoffId: str
   return rows.map(parseRow);
 }
 
+export function listApprovedChangelogsForVersion(input: { workspaceId: string; handoffId: string; versionId: string }) {
+  const rows = getDatabase()
+    .prepare(`SELECT ${selectDraftColumns} FROM changelog_draft
+      WHERE workspace_id = ? AND handoff_id = ? AND to_version_id = ? AND status = 'approved'
+      ORDER BY updated_at DESC LIMIT 20`)
+    .all(input.workspaceId, input.handoffId, input.versionId) as Array<Record<string, unknown>>;
+  return rows.map(parseRow);
+}
+
 export function createChangelogDraft(input: {
   workspaceId: string;
   handoffId: string;

@@ -15,6 +15,7 @@ import { LocalPreviewPanel } from "./LocalPreviewPanel";
 import { CanvasAnnotationsPanel, type CanvasAnnotationRecord } from "./CanvasAnnotationsPanel";
 import { McpConnectionPanel } from "./McpConnectionPanel";
 import { hasVisibleLayoutGrids } from "./LayoutGridOverlay";
+import { formatComparisonChangeCount } from "./compare-presentation";
 import {
   FrameNavigator,
   type CanvasFrameChangeStatus,
@@ -46,7 +47,7 @@ export type ReviewMetadata = {
   canUseLocalPreview: boolean;
 };
 
-export type ReviewDockPanels = Partial<Record<"version", ReactNode>>;
+export type ReviewDockPanels = Partial<Record<"version" | "qa" | "changelog", ReactNode>>;
 
 type HandoffCanvasProps = {
   frames: CanvasFrameOption[];
@@ -58,7 +59,7 @@ type HandoffCanvasProps = {
   comparisonSummary: FrameComparisonSummary | null;
   canCompare: boolean;
   onCompareScreen: (frameId: string) => void;
-  onOpenComparison: () => void;
+  onOpenComparison: (frameId?: string) => void;
   comparisonOpen: boolean;
   metadata: ReviewMetadata;
   dockPanels: ReviewDockPanels;
@@ -92,7 +93,7 @@ function summaryText(summary: FrameComparisonSummary | null) {
   if (summary.changed) parts.push(summary.changed + " changed");
   if (summary.added) parts.push(summary.added + " new");
   if (summary.removed) parts.push(summary.removed + " removed");
-  if (summary.changeCount) parts.push(summary.changeCount + " captured " + (summary.changeCount === 1 ? "change" : "changes"));
+  if (summary.changeCount) parts.push(formatComparisonChangeCount(summary.changeCount, summary.visualChangeCount));
   return (parts.join(", ") || "No changes") + " since " + summary.earlierVersionLabel;
 }
 
@@ -155,7 +156,7 @@ export function HandoffCanvas({
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [localSelectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [showResolvedPins, setShowResolvedPins] = useState(false);
-  const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "agent" | "local" | "mcp">("inspect");
+  const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "qa" | "changelog" | "agent" | "local" | "mcp">("inspect");
   const [canvasModeOverride, setCanvasModeOverride] = useState<"view" | "inspect" | null>(null);
   const [statesOpen, setStatesOpen] = useState(false);
   const [mobilePanelOpenOverride, setMobilePanelOpenOverride] = useState<boolean | null>(null);
@@ -579,7 +580,7 @@ export function HandoffCanvas({
     onCompareScreen(frameId);
     setCommentMode(false);
     setStatesOpen(false);
-    onOpenComparison();
+    onOpenComparison(frameId);
   }
 
   function compareSelectedFrame() {
@@ -786,10 +787,7 @@ export function HandoffCanvas({
               comparisonSummary.added ? `${comparisonSummary.added} new` : "",
               comparisonSummary.removed ? `${comparisonSummary.removed} removed` : "",
             ].filter(Boolean).join(" · ")}</span>
-            {[
-              comparisonSummary.visualChangeCount ? `${comparisonSummary.visualChangeCount} visual ${comparisonSummary.visualChangeCount === 1 ? "difference" : "differences"}` : "",
-              comparisonSummary.changeCount > comparisonSummary.visualChangeCount ? `${comparisonSummary.changeCount - comparisonSummary.visualChangeCount} captured ${comparisonSummary.changeCount - comparisonSummary.visualChangeCount === 1 ? "change" : "changes"}` : "",
-            ].filter(Boolean).map((detail) => ` · ${detail}`).join("")}
+            {` · ${formatComparisonChangeCount(comparisonSummary.changeCount, comparisonSummary.visualChangeCount)}`}
             {` since ${comparisonSummary.earlierVersionLabel}`}
           </p>
           <button
@@ -966,6 +964,8 @@ export function HandoffCanvas({
               ["inspect", "Properties", true],
               ["compare", "Compare", canCompare],
               ["version", "Version", Boolean(dockPanels.version)],
+              ["changelog", "Changelog", Boolean(dockPanels.changelog)],
+              ["qa", "QA", Boolean(dockPanels.qa)],
               ["agent", "Agent", Boolean(metadata.reviewHref && metadata.versionIsPublished)],
               ["local", "Local", metadata.canUseLocalPreview],
               ["mcp", "MCP", true],
@@ -1021,6 +1021,10 @@ export function HandoffCanvas({
               onToggleResolvedPins={setShowResolvedPins}
             />
           </div>
+          ) : panelMode === "qa" && dockPanels.qa ? (
+            <div className="min-h-0 flex-1 overflow-y-auto p-3">{dockPanels.qa}</div>
+          ) : panelMode === "changelog" && dockPanels.changelog ? (
+            <div className="min-h-0 flex-1 overflow-y-auto">{dockPanels.changelog}</div>
           ) : panelMode === "version" && dockPanels.version ? (
             <div className="min-h-0 flex-1 overflow-y-auto p-3">{dockPanels.version}</div>
         ) : panelMode === "mcp" ? (

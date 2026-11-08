@@ -3,6 +3,7 @@ import type { SnapshotEnvelope, SnapshotNode, VisualOnlySnapshot } from "@asbir/
 import type { ReviewDockPanels, ReviewMetadata } from "./HandoffCanvas";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import type { VersionOption } from "./VersionCompare";
+import type { CompareRouteState } from "./compare-state";
 import { HandoffReview } from "./HandoffReview";
 import { getVersion, type StoredVersionAsset } from "@/src/server/repositories/versions";
 
@@ -150,6 +151,7 @@ export function HandoffReviewSurface({
   handoffName,
   versions,
   selectedVersion,
+  initialCompareRouteState,
   versionHrefPrefix,
   reviewHref,
   reviewShareId,
@@ -167,6 +169,7 @@ export function HandoffReviewSurface({
   handoffName: string;
   versions: ReviewVersionSummary[];
   selectedVersion: StoredVersion;
+  initialCompareRouteState?: CompareRouteState | null;
   versionHrefPrefix: string;
   reviewHref: string | null;
   reviewShareId: string | null;
@@ -209,6 +212,7 @@ export function HandoffReviewSurface({
       frames={frames}
       commentsEndpoint={commentsEndpoint}
       versions={versionOptions}
+      initialCompareRouteState={initialCompareRouteState ?? null}
       workspaceId={workspaceId}
       projectId={projectId}
       handoffId={handoffId}

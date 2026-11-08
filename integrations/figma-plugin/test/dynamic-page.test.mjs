@@ -49,6 +49,7 @@ function installCaptureFixture({ failHighResolution = false, failVariableLookup 
   };
 
   globalThis.figma = {
+    fileKey: "figma-file-key-123",
     currentPage: page,
     root: { id: "document-1", name: "Capture fixture" },
     variables: {
@@ -79,6 +80,7 @@ test("page capture loads the active page before reading its children", async () 
   };
 
   globalThis.figma = {
+    fileKey: "figma-file-key-123",
     currentPage: page,
     root: { id: "document-1", name: "Capture fixture" },
     variables: {},
@@ -94,6 +96,7 @@ test("page capture loads the active page before reading its children", async () 
 test("reports an active-page load failure before reading the selection", async () => {
   let selectionRead = false;
   globalThis.figma = {
+    fileKey: "figma-file-key-123",
     currentPage: {
       id: "unavailable-page",
       type: "PAGE",
@@ -112,6 +115,25 @@ test("reports an active-page load failure before reading the selection", async (
   assert.equal(selectionRead, false);
 });
 
+test("uses the Figma file key as the snapshot source identity", async () => {
+  installCaptureFixture();
+  globalThis.figma.fileKey = "figma-file-key-123";
+
+  const result = await captureFigmaCanvas("selected", () => {});
+
+  assert.equal(result.payload.sourceFileId, "figma-file-key-123");
+});
+
+test("rejects capture when Figma does not provide a unique file key", async () => {
+  installCaptureFixture();
+  globalThis.figma.fileKey = undefined;
+
+  await assert.rejects(
+    captureFigmaCanvas("selected", () => {}),
+    /Figma did not provide a unique file key for this capture/,
+  );
+});
+
 test("selected capture loads the active page and retries a failed 2x render at 1x", async () => {
   const fixture = installCaptureFixture({ failHighResolution: true });
   const result = await captureFigmaCanvas("selected", () => {});
@@ -124,6 +146,36 @@ test("selected capture loads the active page and retries a failed 2x render at 1
   assert.equal(result.renders[0].bytes, fixture.png);
   assert.deepEqual(fixture.exportSettings.filter((settings) => settings.format === "PNG").map((settings) => settings.constraint.value), [2, 1]);
   assert.ok(fixture.exportSettings.filter((settings) => settings.format === "PNG").every((settings) => settings.contentsOnly === true));
+});
+
+test("preserves out-of-frame Figma render bounds for exact canvas placement", async () => {
+  const fixture = installCaptureFixture();
+  fixture.frame.absoluteRenderBounds = { x: 5, y: 10, width: 150, height: 125 };
+
+  const result = await captureFigmaCanvas("selected", () => {});
+
+  assert.deepEqual(result.renders[0].renderBounds, fixture.frame.absoluteRenderBounds);
+  assert.equal(result.payload.canvasBounds.x.value, 5);
+  assert.equal(result.payload.canvasBounds.y.value, 10);
+  assert.equal(result.payload.canvasBounds.width.value, 150);
+  assert.equal(result.payload.canvasBounds.height.value, 125);
+});
+
+test("does not report a Figma section's canvas placement as frame margins", async () => {
+  const fixture = installCaptureFixture();
+  fixture.frame.parent = {
+    id: "section-1",
+    type: "SECTION",
+    absoluteBoundingBox: { x: -3500, y: -3500, width: 4000, height: 4000 },
+  };
+
+  const result = await captureFigmaCanvas("selected", () => {});
+  const frameNode = result.payload.frames[0].nodes[0];
+
+  assert.equal(frameNode.margins.top.provenance, "unavailable");
+  assert.equal(frameNode.margins.right.provenance, "unavailable");
+  assert.equal(frameNode.margins.bottom.provenance, "unavailable");
+  assert.equal(frameNode.margins.left.provenance, "unavailable");
 });
 
 test("retries a malformed 2x Figma PNG at 1x", async () => {
@@ -404,6 +456,42 @@ test("uses 2x renders for multiple small frames even when their combined area is
 
   assert.deepEqual(pngScales, [2, 2]);
   assert.deepEqual(result.payload.sourceMetadata.renderScaleFallbackFrameIds, []);
+});
+
+test("captures five top-level frames in page order without changing the Figma selection", async () => {
+  const fixture = installCaptureFixture();
+  await fixture.page.loadAsync();
+  const originalSelection = fixture.page.selection;
+  const roots = Array.from({ length: 5 }, (_, index) => ({
+    ...fixture.frame,
+    id: `flow-frame-${index + 1}`,
+    name: `Flow screen ${index + 1}`,
+    absoluteBoundingBox: {
+      x: 10 + index * 120,
+      y: 20 + (index % 2) * 140,
+      width: 100,
+      height: 100,
+    },
+    children: [],
+    parent: fixture.page,
+  }));
+  Object.defineProperty(fixture.page, "children", { get: () => roots });
+
+  const result = await captureFigmaCanvas("page", () => {});
+
+  assert.deepEqual(result.payload.frames.map((frame) => frame.sourceFrameId), roots.map((root) => root.id));
+  assert.deepEqual(result.payload.frames.map((frame) => frame.name), roots.map((root) => root.name));
+  assert.equal(new Set(result.payload.frames.map((frame) => frame.renderAssetKey)).size, 5);
+  assert.deepEqual(result.renders.map((render) => render.key), result.payload.frames.map((frame) => frame.renderAssetKey));
+  assert.deepEqual(
+    result.renders.map((render) => [render.sourceX, render.sourceY, render.sourceWidth, render.sourceHeight]),
+    roots.map((root) => [root.absoluteBoundingBox.x, root.absoluteBoundingBox.y, 100, 100]),
+  );
+  assert.deepEqual(
+    [result.payload.canvasBounds.x.value, result.payload.canvasBounds.y.value, result.payload.canvasBounds.width.value, result.payload.canvasBounds.height.value],
+    [10, 20, 580, 240],
+  );
+  assert.deepEqual(fixture.page.selection, originalSelection);
 });
 
 test("rejects an oversized layer payload before exporting frame images", async () => {

@@ -13,6 +13,8 @@ export interface CaptureAssetBytes {
   sourceY: number;
   sourceWidth: number;
   sourceHeight: number;
+  /** Full Figma render bounds before the frame image is cropped for review. */
+  renderBounds?: { x: number; y: number; width: number; height: number };
 }
 
 export interface LayerExportAssetBytes extends CaptureAssetBytes {

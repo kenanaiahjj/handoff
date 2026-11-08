@@ -9,6 +9,10 @@ import {
 } from "@asbir/snapshot-contract";
 import { getDatabase } from "../db";
 import { objectStore } from "../storage/local-object-store";
+import {
+  resolveFrameReplacementMatches,
+  type ConfirmedFrameReplacement,
+} from "../services/frame-replacements";
 
 export type StoredSnapshot = SnapshotEnvelope | VisualOnlySnapshot;
 
@@ -247,6 +251,99 @@ type FrameIdentitySnapshot = {
   frames: Array<{ sourceFrameId: string }>;
 };
 
+export class FrameReplacementConflictError extends Error {
+  constructor() {
+    super("This screen is already matched to another screen in that version.");
+    this.name = "FrameReplacementConflictError";
+  }
+}
+
+type FrameReplacementMatchInput = {
+  workspaceId: string;
+  handoffId: string;
+  baselineVersionId: string;
+  newVersionId: string;
+  beforeFrameId: string;
+  afterFrameId: string;
+  confirmedByUserId: string;
+};
+
+export function hasConfirmedFrameReplacementMatch(input: Omit<FrameReplacementMatchInput, "confirmedByUserId">) {
+  return Boolean(getDatabase()
+    .prepare(
+      `SELECT 1 FROM handoff_frame_replacement
+       WHERE workspace_id = ? AND handoff_id = ?
+         AND baseline_version_id = ? AND new_version_id = ?
+         AND before_frame_id = ? AND after_frame_id = ?`,
+    )
+    .get(
+      input.workspaceId,
+      input.handoffId,
+      input.baselineVersionId,
+      input.newVersionId,
+      input.beforeFrameId,
+      input.afterFrameId,
+    ));
+}
+
+export function createConfirmedFrameReplacementMatch(input: FrameReplacementMatchInput) {
+  const database = getDatabase();
+  const confirmMatch = database.transaction(() => {
+    const versions = database
+      .prepare(
+        `SELECT id FROM handoff_version
+         WHERE workspace_id = ? AND handoff_id = ? AND id IN (?, ?)
+         ORDER BY created_at ASC, id ASC`,
+      )
+      .all(input.workspaceId, input.handoffId, input.baselineVersionId, input.newVersionId) as Array<{ id: string }>;
+    if (versions.length !== 2 || versions[0].id !== input.baselineVersionId) {
+      throw new Error("Choose two versions in the same handoff, with the earlier version as the baseline.");
+    }
+
+    const existing = database
+      .prepare(
+        `SELECT baseline_version_id AS baselineVersionId, before_frame_id AS beforeFrameId,
+                after_frame_id AS afterFrameId
+         FROM handoff_frame_replacement
+         WHERE workspace_id = ? AND handoff_id = ? AND new_version_id = ?
+           AND (before_frame_id = ? OR after_frame_id = ?)`,
+      )
+      .all(input.workspaceId, input.handoffId, input.newVersionId, input.beforeFrameId, input.afterFrameId) as Array<{
+        baselineVersionId: string;
+        beforeFrameId: string;
+        afterFrameId: string;
+      }>;
+
+    if (existing.some((match) =>
+      match.baselineVersionId === input.baselineVersionId &&
+      match.beforeFrameId === input.beforeFrameId &&
+      match.afterFrameId === input.afterFrameId,
+    )) return "already-confirmed" as const;
+    if (existing.length) throw new FrameReplacementConflictError();
+
+    database
+      .prepare(
+        `INSERT INTO handoff_frame_replacement
+          (handoff_id, workspace_id, baseline_version_id, new_version_id,
+           before_frame_id, after_frame_id, confirmed_by_user_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.handoffId,
+        input.workspaceId,
+        input.baselineVersionId,
+        input.newVersionId,
+        input.beforeFrameId,
+        input.afterFrameId,
+        input.confirmedByUserId,
+        new Date().toISOString(),
+      );
+    return "created" as const;
+  });
+
+  return confirmMatch.immediate();
+}
+
 export function getConfirmedFrameMatchesBetweenVersions(input: {
   workspaceId: string;
   handoffId: string;
@@ -261,10 +358,6 @@ export function getConfirmedFrameMatchesBetweenVersions(input: {
        ORDER BY created_at ASC, id ASC`,
     )
     .all(input.workspaceId, input.handoffId) as Array<{ id: string }>;
-  const fromIndex = versions.findIndex((version) => version.id === input.from.id);
-  const toIndex = versions.findIndex((version) => version.id === input.to.id);
-  if (fromIndex < 0 || toIndex < 0 || fromIndex === toIndex) return [];
-
   const replacements = database
     .prepare(
       `SELECT baseline_version_id AS baselineVersionId, new_version_id AS newVersionId,
@@ -272,44 +365,18 @@ export function getConfirmedFrameMatchesBetweenVersions(input: {
        FROM handoff_frame_replacement
        WHERE workspace_id = ? AND handoff_id = ?`,
     )
-    .all(input.workspaceId, input.handoffId) as Array<{
-      baselineVersionId: string;
-      newVersionId: string;
-      beforeFrameId: string;
-      afterFrameId: string;
-    }>;
-  const currentFrameIds = new Map(input.from.snapshot.frames.map((frame) => [frame.sourceFrameId, frame.sourceFrameId]));
+    .all(input.workspaceId, input.handoffId) as ConfirmedFrameReplacement[];
 
-  if (fromIndex < toIndex) {
-    for (let index = fromIndex + 1; index <= toIndex; index += 1) {
-      const baselineVersionId = versions[index - 1].id;
-      const newVersionId = versions[index].id;
-      for (const replacement of replacements) {
-        if (replacement.baselineVersionId !== baselineVersionId || replacement.newVersionId !== newVersionId) continue;
-        for (const [originalId, currentId] of currentFrameIds) {
-          if (currentId === replacement.beforeFrameId) currentFrameIds.set(originalId, replacement.afterFrameId);
-        }
-      }
-    }
-  } else {
-    for (let index = fromIndex; index > toIndex; index -= 1) {
-      const baselineVersionId = versions[index - 1].id;
-      const newVersionId = versions[index].id;
-      for (const replacement of replacements) {
-        if (replacement.baselineVersionId !== baselineVersionId || replacement.newVersionId !== newVersionId) continue;
-        for (const [originalId, currentId] of currentFrameIds) {
-          if (currentId === replacement.afterFrameId) currentFrameIds.set(originalId, replacement.beforeFrameId);
-        }
-      }
-    }
-  }
-
-  const targetFrameIds = new Set(input.to.snapshot.frames.map((frame) => frame.sourceFrameId));
-  return [...currentFrameIds].flatMap(([beforeFrameId, afterFrameId]) =>
-    (afterFrameId !== beforeFrameId || input.from.snapshot.sourceFileId !== input.to.snapshot.sourceFileId) && targetFrameIds.has(afterFrameId)
-      ? [{ beforeFrameId, afterFrameId }]
-      : [],
-  );
+  return resolveFrameReplacementMatches({
+    versionIds: versions.map((version) => version.id),
+    fromVersionId: input.from.id,
+    toVersionId: input.to.id,
+    fromFrameIds: input.from.snapshot.frames.map((frame) => frame.sourceFrameId),
+    toFrameIds: input.to.snapshot.frames.map((frame) => frame.sourceFrameId),
+    fromSourceFileId: input.from.snapshot.sourceFileId,
+    toSourceFileId: input.to.snapshot.sourceFileId,
+    replacements,
+  });
 }
 
 export function getVersion(input: { workspaceId: string; versionId: string }) {

@@ -28,6 +28,7 @@ type JsonValue = null | boolean | number | string | JsonValue[] | JsonObject;
 type RootCapture = {
   root: SceneNode;
   rect: Rect;
+  renderRect: Rect;
   nodes: Array<{ node: SceneNode; parentId: string | null }>;
   key: string;
 };
@@ -77,6 +78,14 @@ function measurement(value: number | null | undefined, unit = "px", sourceProper
 function rectOf(node: SceneNode): Rect | null {
   const rect = node.absoluteBoundingBox;
   if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite)) return null;
+  return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
+}
+
+function renderRectOf(node: SceneNode, fallback: Rect): Rect {
+  const rect = nodeProperty(node, "absoluteRenderBounds") as Rect | null | undefined;
+  if (!rect || ![rect.x, rect.y, rect.width, rect.height].every(Number.isFinite) || rect.width <= 0 || rect.height <= 0) {
+    return fallback;
+  }
   return { x: rect.x, y: rect.y, width: rect.width, height: rect.height };
 }
 
@@ -584,7 +593,7 @@ function makeNode(
     bounds: bounds(nodeRect, frameRect),
     layout,
     padding,
-    margins: marginsFor(node, nodeRect),
+    margins: node.id === frameId ? fourUnavailable() : marginsFor(node, nodeRect),
     spacing,
     fills: fillBindings,
     strokes: strokeBindings,
@@ -708,15 +717,15 @@ function assetNameSlug(name: string) {
 }
 
 function pageCanvasBounds(roots: RootCapture[]): Bounds {
-  const minX = Math.min(...roots.map((entry) => entry.rect.x));
-  const minY = Math.min(...roots.map((entry) => entry.rect.y));
-  const maxX = Math.max(...roots.map((entry) => entry.rect.x + entry.rect.width));
-  const maxY = Math.max(...roots.map((entry) => entry.rect.y + entry.rect.height));
+  const minX = Math.min(...roots.map((entry) => entry.renderRect.x));
+  const minY = Math.min(...roots.map((entry) => entry.renderRect.y));
+  const maxX = Math.max(...roots.map((entry) => entry.renderRect.x + entry.renderRect.width));
+  const maxY = Math.max(...roots.map((entry) => entry.renderRect.y + entry.renderRect.height));
   return {
-    x: measurement(minX, "px", "capturedFrames.minimum.absoluteBoundingBox.x"),
-    y: measurement(minY, "px", "capturedFrames.minimum.absoluteBoundingBox.y"),
-    width: measurement(maxX - minX, "px", "capturedFrames.union.width"),
-    height: measurement(maxY - minY, "px", "capturedFrames.union.height"),
+    x: measurement(minX, "px", "capturedFrames.minimum.absoluteRenderBounds.x"),
+    y: measurement(minY, "px", "capturedFrames.minimum.absoluteRenderBounds.y"),
+    width: measurement(maxX - minX, "px", "capturedFrames.union.absoluteRenderBounds.width"),
+    height: measurement(maxY - minY, "px", "capturedFrames.union.absoluteRenderBounds.height"),
   };
 }
 
@@ -751,6 +760,11 @@ async function loadVariablesAndStyles(nodes: SceneNode[], textSegmentsCache: Tex
 }
 
 export async function captureFigmaCanvas(scope: "selected" | "page", report: (message: string) => void) {
+  const sourceFileId = figma.fileKey?.trim();
+  if (!sourceFileId) {
+    throw new Error("Figma did not provide a unique file key for this capture. Rebuild and reload the local development plugin, then try again.");
+  }
+
   const page = figma.currentPage;
   try {
     await page.loadAsync();
@@ -780,10 +794,11 @@ export async function captureFigmaCanvas(scope: "selected" | "page", report: (me
   for (const [index, root] of distinct.entries()) {
     const rect = rectOf(root);
     if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+    const renderRect = renderRectOf(root, rect);
     const nodes = flattenNodes(root, maxNodes - totalNodes);
     totalNodes += nodes.length;
     for (const item of nodes) sourceNodes.push(item.node);
-    roots.push({ root, rect, nodes, key: rootKey(root, index) });
+    roots.push({ root, rect, renderRect, nodes, key: rootKey(root, index) });
   }
   if (roots.length === 0) throw new Error("The selected frames do not have exportable canvas bounds.");
 
@@ -805,8 +820,6 @@ export async function captureFigmaCanvas(scope: "selected" | "page", report: (me
       return new Map<string, { id: string; name: string }>();
     }),
   ]);
-  const fileKey = (figma as unknown as { fileKey?: string | null }).fileKey;
-  const sourceFileId = fileKey || figma.root.id;
   const sourceFileName = figma.root.name || "Untitled Figma file";
   const snapshotFrames: SnapshotFrame[] = roots.map(({ root, rect, nodes, key }) => ({
     sourceFrameId: root.id,
@@ -919,6 +932,7 @@ export async function captureFigmaCanvas(scope: "selected" | "page", report: (me
       sourceY: entry.rect.y,
       sourceWidth: entry.rect.width,
       sourceHeight: entry.rect.height,
+      renderBounds: entry.renderRect,
     });
     try {
       const svg = await entry.root.exportAsync({

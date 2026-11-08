@@ -4,12 +4,24 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { SnapshotDiff } from "@/src/server/services/diff";
-import { formatPixelValue } from "./format-captured-measurement";
+import { formatComparisonValue, formatPixelValue } from "./format-captured-measurement";
+import {
+  comparisonCategories,
+  comparisonCategoryLabel,
+  comparisonChangeLabel,
+  countComparisonChangesByCategory,
+  formatComparisonChangeCount,
+  comparisonValueLabel,
+  groupComparisonChanges,
+  separateSupplementalChanges,
+  sourceIdentityNotice,
+} from "./compare-presentation";
 import { PixelDiffView } from "./PixelDiffView";
 import {
   compareResultForPair,
   defaultCompareViewMode,
   preferredCompareFrameId,
+  type CompareRouteState,
   type CompareViewMode,
 } from "./compare-state";
 
@@ -59,20 +71,78 @@ type PairViewPreference = {
   mode: CompareViewMode;
 };
 
+type UnmatchedFrameCandidate = SnapshotDiff["unmatchedFrameCandidates"][number];
+
+function frameMatchKey(beforeFrameId: string, afterFrameId: string) {
+  return beforeFrameId + "\u0000" + afterFrameId;
+}
+
+function UnmatchedFrameCandidates({
+  candidates,
+  savingKey,
+  error,
+  onConfirm,
+}: {
+  candidates: UnmatchedFrameCandidate[];
+  savingKey: string | null;
+  error: { key: string; message: string } | null;
+  onConfirm: (candidate: UnmatchedFrameCandidate, afterFrameId: string, afterName: string) => void;
+}) {
+  if (!candidates.length) return null;
+
+  return (
+    <section aria-label="Confirm screen matches" className="mx-2 mt-3 rounded-[6px] border border-[#51412a] bg-[#27231c] p-2.5">
+      <h4 className="text-[11px] font-semibold text-[#e1c58e]">Confirm screen matches</h4>
+      <p className="mt-1 text-[11px] leading-4 text-[#b6aa94]">Figma changed these screen IDs. Review each suggested pair before matching it.</p>
+      <ul className="mt-2 space-y-2">
+        {candidates.map((candidate) => (
+          <li className="rounded-[5px] bg-[#302b23] p-2" key={candidate.beforeFrameId}>
+            <p className="text-[9px] font-medium uppercase tracking-[0.06em] text-[#9e927d]">Before</p>
+            <p className="break-words text-[11px] leading-4 text-[#e7e2d8]">{candidate.beforeName}</p>
+            <ul className="mt-1.5 space-y-1.5">
+              {candidate.afterCandidates.map((after) => {
+                const key = frameMatchKey(candidate.beforeFrameId, after.frameId);
+                return (
+                  <li className="space-y-1.5" key={after.frameId}>
+                    <p className="break-words text-[11px] leading-4 text-[#bdb6a8]">
+                      <span className="mb-0.5 block text-[9px] font-medium uppercase tracking-[0.06em] text-[#9e927d]">After</span>
+                      {after.name}
+                    </p>
+                    <button
+                      aria-label={`Confirm that ${candidate.beforeName} matches ${after.name}`}
+                      className="min-h-7 w-full rounded-[4px] bg-[#49402f] px-2 text-[10px] font-medium text-[#f0d5a0] hover:bg-[#5a4a31] disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e1c58e]"
+                      disabled={savingKey !== null}
+                      onClick={() => onConfirm(candidate, after.frameId, after.name)}
+                      type="button"
+                    >
+                      {savingKey === key ? "Matching…" : "Confirm match"}
+                    </button>
+                  </li>
+                );
+              })}
+            </ul>
+            {error?.key === candidate.beforeFrameId ? <p className="mt-2 text-[11px] leading-4 text-[#f0c77b]" role="alert">{error.message}</p> : null}
+          </li>
+        ))}
+      </ul>
+    </section>
+  );
+}
+
 type VersionCompareProps = {
   versions: VersionOption[];
   workspaceId: string;
   projectId: string;
   handoffId: string;
   selectedVersionId: string;
+  initialRouteState: CompareRouteState | null;
   initialResult?: CompareResult | null;
   compareScreenRequest: { frameId: string; requestId: number } | null;
   onComparisonChange: (diff: SnapshotDiff | null, fromVersionId: string, toVersionId: string) => void;
   onComparisonFrameSelect: () => void;
+  onRouteStateChange: (state: CompareRouteState) => void;
   onClose: () => void;
 };
-
-const categories = ["geometry", "layout", "style", "text", "token", "structure", "visual"] as const;
 
 function defaultComparedVersions(versions: VersionOption[], selectedVersionId: string) {
   const chronological = [...versions].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
@@ -84,14 +154,6 @@ function defaultComparedVersions(versions: VersionOption[], selectedVersionId: s
     return { fromVersionId: chronological[0].id, toVersionId: chronological[1].id };
   }
   return { fromVersionId: chronological[selectedIndex - 1].id, toVersionId: chronological[selectedIndex].id };
-}
-
-function prettyValue(value: unknown) {
-  if (value === undefined) return "Not present";
-  if (value === null) return "Unavailable";
-  if (typeof value === "string") return value;
-  if (typeof value === "number" || typeof value === "boolean") return String(value);
-  return JSON.stringify(value);
 }
 
 function frameStatusLabel(status: CompareFrame["status"]) {
@@ -112,24 +174,40 @@ export function VersionCompare({
   projectId,
   handoffId,
   selectedVersionId,
+  initialRouteState,
   initialResult = null,
   compareScreenRequest,
   onComparisonChange,
   onComparisonFrameSelect,
+  onRouteStateChange,
   onClose,
 }: VersionCompareProps) {
   const [defaultFromVersionId, defaultToVersionId] = useMemo(() => {
     const defaults = defaultComparedVersions(versions, selectedVersionId);
     return [defaults.fromVersionId, defaults.toVersionId] as const;
   }, [selectedVersionId, versions]);
-  const [toVersionId, setToVersionId] = useState(defaultToVersionId);
-  const [fromVersionId, setFromVersionId] = useState(defaultFromVersionId);
+  const validInitialRouteState = initialRouteState &&
+    initialRouteState.fromVersionId !== initialRouteState.toVersionId &&
+    versions.some((version) => version.id === initialRouteState.fromVersionId) &&
+    versions.some((version) => version.id === initialRouteState.toVersionId)
+    ? initialRouteState
+    : null;
+  const [toVersionId, setToVersionId] = useState(validInitialRouteState?.toVersionId ?? defaultToVersionId);
+  const [fromVersionId, setFromVersionId] = useState(validInitialRouteState?.fromVersionId ?? defaultFromVersionId);
   const [pairResultState, setPairResultState] = useState<PairResultState | null>(null);
   const [pairFrameSelection, setPairFrameSelection] = useState<PairFrameSelection | null>(null);
-  const [pairViewPreference, setPairViewPreference] = useState<PairViewPreference | null>(null);
+  const [pairViewPreference, setPairViewPreference] = useState<PairViewPreference | null>(() =>
+    validInitialRouteState?.mode
+      ? { fromVersionId: validInitialRouteState.fromVersionId, toVersionId: validInitialRouteState.toVersionId, mode: validInitialRouteState.mode }
+      : null,
+  );
   const [overlayAmount, setOverlayAmount] = useState(50);
+  const [frameMatchSavingKey, setFrameMatchSavingKey] = useState<string | null>(null);
+  const [frameMatchError, setFrameMatchError] = useState<{ key: string; message: string } | null>(null);
+  const [frameMatchStatus, setFrameMatchStatus] = useState("");
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
+  const frameToFocusAfterMatchRef = useRef<string | null>(null);
 
   useEffect(() => {
     onCloseRef.current = onClose;
@@ -218,13 +296,22 @@ export function VersionCompare({
     : compareResultForPair(initialResult, pairResultState, fromVersionId, toVersionId);
   const currentResult = pairResult.result;
   const error = pairResult.error;
-  const requestedFrameId = compareScreenRequest?.frameId;
+  const requestedFrameId = compareScreenRequest?.frameId ?? validInitialRouteState?.frameId ?? null;
   const preferredFrameId = pairFrameSelection?.fromVersionId === fromVersionId && pairFrameSelection.toVersionId === toVersionId
     ? pairFrameSelection.frameId
     : preferredCompareFrameId(currentResult);
   const focusedFrameId = requestedFrameId && currentResult?.frames.some((frame) => frame.frameId === requestedFrameId)
     ? requestedFrameId
     : preferredFrameId;
+  useEffect(() => {
+    const frameId = frameToFocusAfterMatchRef.current;
+    if (!frameId || !currentResult?.frames.some((frame) => frame.frameId === frameId)) return;
+    const target = Array.from(dialogRef.current?.querySelectorAll<HTMLButtonElement>("[data-compare-frame-id]") ?? [])
+      .find((button) => button.dataset.compareFrameId === frameId && button.getClientRects().length > 0);
+    if (!target) return;
+    target.focus();
+    frameToFocusAfterMatchRef.current = null;
+  }, [currentResult, focusedFrameId]);
   const viewMode = pairViewPreference?.fromVersionId === fromVersionId && pairViewPreference.toVersionId === toVersionId
     ? pairViewPreference.mode
     : defaultCompareViewMode(currentResult);
@@ -235,13 +322,17 @@ export function VersionCompare({
   );
   const selectionError = versions.length >= 2 && fromVersionId === toVersionId ? "Choose two different versions." : null;
   const changesForFrame = currentResult?.diff.changes.filter((change) => change.frameId === focusedFrameId) ?? [];
+  const changeGroupsForFrame = groupComparisonChanges(changesForFrame, activeFrame?.name ?? "Screen");
   const captureCoverage = currentResult?.diff.captureCoverage ?? [];
   const captureCoverageForFrame = captureCoverage.filter((difference) => difference.frameId === focusedFrameId);
   const captureCoverageFieldCount = new Set(captureCoverage.map((difference) => difference.path)).size;
   const captureCoverageFieldCountForFrame = new Set(captureCoverageForFrame.map((difference) => difference.path)).size;
-  const categoryCounts = categories.map((category) => ({
+  const selectedFrameCategoryCounts = currentResult
+    ? countComparisonChangesByCategory(currentResult.diff.changes, focusedFrameId)
+    : null;
+  const categoryCounts = comparisonCategories.map((category) => ({
     category,
-    count: currentResult?.diff.changes.filter((change) => change.category === category).length ?? 0,
+    count: selectedFrameCategoryCounts?.[category] ?? 0,
   }));
   const frameCounts = currentResult ? {
     changed: currentResult.diff.frames.filter((frame) => frame.status === "changed").length,
@@ -258,7 +349,10 @@ export function VersionCompare({
   const comparisonSummary = currentResult
     ? [
         frameSummary,
-        currentResult.diff.changes.length + " recorded " + (currentResult.diff.changes.length === 1 ? "change" : "changes"),
+        formatComparisonChangeCount(
+          currentResult.diff.changes.length,
+          currentResult.diff.changes.filter((change) => change.category === "visual").length,
+        ),
         captureCoverageFieldCount ? captureCoverageFieldCount + " capture fields available in only one version" : "",
       ].filter(Boolean).join(" · ")
     : "Version comparison";
@@ -271,7 +365,11 @@ export function VersionCompare({
     }
     setFromVersionId(nextFromVersionId);
     setToVersionId(value);
+    setPairFrameSelection(null);
+    setFrameMatchError(null);
+    setFrameMatchStatus("");
     onComparisonChange(null, nextFromVersionId, value);
+    onRouteStateChange({ fromVersionId: nextFromVersionId, toVersionId: value, frameId: null, mode: null });
   }
 
   function updateFromVersion(value: string) {
@@ -282,11 +380,60 @@ export function VersionCompare({
     }
     setFromVersionId(value);
     setToVersionId(nextToVersionId);
+    setPairFrameSelection(null);
+    setFrameMatchError(null);
+    setFrameMatchStatus("");
     onComparisonChange(null, value, nextToVersionId);
+    onRouteStateChange({ fromVersionId: value, toVersionId: nextToVersionId, frameId: null, mode: null });
+  }
+
+  async function confirmFrameMatch(candidate: UnmatchedFrameCandidate, afterFrameId: string, afterName: string) {
+    const key = frameMatchKey(candidate.beforeFrameId, afterFrameId);
+    setFrameMatchSavingKey(key);
+    setFrameMatchError(null);
+    setFrameMatchStatus(`Matching ${candidate.beforeName} with ${afterName}…`);
+    try {
+      const response = await fetch(
+        "/api/workspaces/" + encodeURIComponent(workspaceId) + "/projects/" + encodeURIComponent(projectId) + "/handoffs/" + encodeURIComponent(handoffId) + "/compare",
+        {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            fromVersionId,
+            toVersionId,
+            beforeFrameId: candidate.beforeFrameId,
+            afterFrameId,
+          }),
+        },
+      );
+      const payload = await response.json() as CompareResult | { error?: string };
+      if (!response.ok || !("diff" in payload)) {
+        throw new Error("error" in payload ? payload.error ?? "Could not confirm this screen match." : "Could not confirm this screen match.");
+      }
+
+      setPairResultState({ fromVersionId, toVersionId, result: payload, error: null });
+      onComparisonChange(payload.diff, fromVersionId, toVersionId);
+      frameToFocusAfterMatchRef.current = afterFrameId;
+      selectComparedFrame(afterFrameId);
+      setFrameMatchStatus(`Matched ${candidate.beforeName} with ${afterName}.`);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Could not confirm this screen match.";
+      setFrameMatchError({ key: candidate.beforeFrameId, message });
+      setFrameMatchStatus("");
+    } finally {
+      setFrameMatchSavingKey(null);
+    }
+  }
+
+  function selectComparedFrame(frameId: string) {
+    setPairFrameSelection({ fromVersionId, toVersionId, frameId });
+    onComparisonFrameSelect();
+    onRouteStateChange({ fromVersionId, toVersionId, frameId, mode: viewMode });
   }
 
   const fromLabel = versionLabel(versions, fromVersionId);
   const toLabel = versionLabel(versions, toVersionId);
+  const sourceIdentityMessage = currentResult ? sourceIdentityNotice(currentResult.diff.sourceIdentity) : null;
 
   return (
     <div className="fixed inset-0 z-[70] bg-[#111]/90 backdrop-blur-[2px]">
@@ -304,6 +451,7 @@ export function VersionCompare({
             <p aria-live="polite" className="mt-1 truncate text-[12px] text-[#949494]">
               {loading ? "Calculating the version diff…" : comparisonSummary}
             </p>
+            {!loading && sourceIdentityMessage ? <p className="mt-1 text-[11px] text-[#d7b775]" role="status">{sourceIdentityMessage}</p> : null}
           </div>
           <div aria-label="Comparison view" className="flex rounded-[7px] border border-[#414141] p-0.5" role="group">
             {([
@@ -315,7 +463,10 @@ export function VersionCompare({
                 aria-pressed={viewMode === mode}
                 className={"min-h-8 rounded-[5px] px-2.5 text-[12px] transition-colors sm:px-3 " + (viewMode === mode ? "bg-[#414141] text-white" : "text-[#aaa] hover:text-white")}
                 key={mode}
-                onClick={() => setPairViewPreference({ fromVersionId, toVersionId, mode })}
+                onClick={() => {
+                  setPairViewPreference({ fromVersionId, toVersionId, mode });
+                  onRouteStateChange({ fromVersionId, toVersionId, frameId: focusedFrameId || null, mode });
+                }}
                 type="button"
               >
                 {label}
@@ -330,6 +481,7 @@ export function VersionCompare({
             Close <span className="ml-1 text-[#8c8c8c]">Esc</span>
           </button>
         </header>
+        <p aria-live="polite" className="sr-only">{frameMatchStatus}</p>
 
         {versions.length < 2 ? (
           <div className="m-6 rounded-[8px] border border-[#3b3b3b] bg-[#242424] p-5 text-[13px] text-[#aaa]">Add another version to compare screen and layout changes.</div>
@@ -349,22 +501,25 @@ export function VersionCompare({
                     <button
                       aria-pressed={frame.frameId === focusedFrameId}
                       className={"min-h-9 w-full rounded-[5px] px-2.5 py-2 text-left transition-colors " + (frame.frameId === focusedFrameId ? "bg-[#3a3a3a] text-white" : "text-[#aaa] hover:bg-[#2d2d2d] hover:text-white")}
-                      onClick={() => {
-                        setPairFrameSelection({ fromVersionId, toVersionId, frameId: frame.frameId });
-                        onComparisonFrameSelect();
-                      }}
+                      data-compare-frame-id={frame.frameId}
+                      onClick={() => selectComparedFrame(frame.frameId)}
                       type="button"
                     >
                       <span className="flex items-center justify-between gap-2 text-[12px]">
                         <span className="truncate">{frame.name}</span>
-                        <span className="shrink-0 font-mono text-[10px] uppercase text-[#8e8e8e]">{frameStatusLabel(frame.status)}</span>
+                        <span className="shrink-0 font-mono text-[10px] uppercase text-[#bdbdbd]">{frameStatusLabel(frame.status)}</span>
                       </span>
                     </button>
                   </li>
                 ))}
               </ul>
               {currentResult.diff.unmatchedFrameCandidates.length ? (
-                <p className="mx-2 mt-3 rounded-[5px] bg-[#292929] p-2.5 text-[12px] leading-5 text-[#999]">Some removed screens have same-name candidates in the newer version. They stay separate until someone confirms a match.</p>
+                <UnmatchedFrameCandidates
+                  candidates={currentResult.diff.unmatchedFrameCandidates}
+                  error={frameMatchError}
+                  onConfirm={confirmFrameMatch}
+                  savingKey={frameMatchSavingKey}
+                />
               ) : null}
             </nav>
 
@@ -406,28 +561,36 @@ export function VersionCompare({
                   </details>
                 ) : null}
                 <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5 lg:hidden" aria-label="Compared screens" role="group">
-                      {currentResult.frames.map((frame) => (
+                  {currentResult.frames.map((frame) => (
                     <button
                       aria-pressed={frame.frameId === focusedFrameId}
                       className={"min-h-8 shrink-0 rounded-[5px] px-2.5 text-[12px] " + (frame.frameId === focusedFrameId ? "bg-[#414141] text-white" : "bg-[#292929] text-[#aaa]")}
+                      data-compare-frame-id={frame.frameId}
                       key={frame.sourceFileId + frame.frameId}
-                      onClick={() => {
-                        setPairFrameSelection({ fromVersionId, toVersionId, frameId: frame.frameId });
-                        onComparisonFrameSelect();
-                      }}
+                      onClick={() => selectComparedFrame(frame.frameId)}
                       type="button"
                     >
                       {frame.name}
                     </button>
                   ))}
                 </div>
+                {currentResult.diff.unmatchedFrameCandidates.length ? (
+                  <div className="lg:hidden">
+                    <UnmatchedFrameCandidates
+                      candidates={currentResult.diff.unmatchedFrameCandidates}
+                      error={frameMatchError}
+                      onConfirm={confirmFrameMatch}
+                      savingKey={frameMatchSavingKey}
+                    />
+                  </div>
+                ) : null}
               </div>
 
               {activeFrame ? (
                 <div className="min-h-0 flex-1 overflow-y-auto px-3 py-3 sm:px-5 sm:py-4">
                   <div className="mb-3 grid grid-cols-2 gap-3">
-                    <VersionSelect side="Before" value={fromVersionId} versions={versions} onChange={updateFromVersion} />
-                    <VersionSelect side="After" value={toVersionId} versions={versions} onChange={updateToVersion} />
+                    <VersionSelect disabled={frameMatchSavingKey !== null} side="Before" value={fromVersionId} versions={versions} onChange={updateFromVersion} />
+                    <VersionSelect disabled={frameMatchSavingKey !== null} side="After" value={toVersionId} versions={versions} onChange={updateToVersion} />
                   </div>
 
                   {viewMode === "side-by-side" ? (
@@ -455,22 +618,10 @@ export function VersionCompare({
 
                   <details className="mt-4 rounded-[6px] border border-[#393939] lg:hidden">
                     <summary className="cursor-pointer list-none px-3 py-3 text-[12px] font-medium text-[#c8c8c8]">
-                      Recorded changes <span className="ml-1 font-mono text-[#888]">{changesForFrame.length.toString().padStart(2, "0")}</span>
+                      Changes on this screen <span className="ml-1 font-mono text-[#888]">{changesForFrame.length.toString().padStart(2, "0")}</span>
                     </summary>
                     {changesForFrame.length ? (
-                      <ul className="divide-y divide-[#383838] px-3">
-                        {changesForFrame.map((change, index) => (
-                          <li className="py-3" key={(change.sourceNodeId ?? "frame") + change.path + index}>
-                            <p className="text-[11px] uppercase tracking-wide text-[#d7d7d7]">{change.category === "visual" && change.path === "renderAsset" ? "Visual" : change.category}</p>
-                            <p className="mt-1 truncate font-mono text-[11px] text-[#888]">{change.sourceNodeId ?? activeFrame.name}</p>
-                            <p className="mt-2 break-all font-mono text-[11px] text-[#aaa]">{change.path === "renderAsset" ? "Screen appearance" : change.path}</p>
-                            <div className="mt-1.5 grid gap-1.5">
-                              <p className="break-words rounded-[5px] bg-[#171717] p-2 text-[11px] leading-5 text-[#999]">− {change.path === "renderAsset" ? "Previous render" : prettyValue(change.before)}</p>
-                              <p className="break-words rounded-[5px] bg-[#2d2d2d] p-2 text-[11px] leading-5 text-[#ddd]">+ {change.path === "renderAsset" ? "Updated render" : prettyValue(change.after)}</p>
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
+                      <RecordedChanges groups={changeGroupsForFrame} />
                     ) : <p className="px-3 pb-3 text-[12px] text-[#999]">No structured changes were captured for this screen.</p>}
                   </details>
                 </div>
@@ -481,23 +632,11 @@ export function VersionCompare({
 
             <aside aria-label="Recorded changes" className="hidden min-h-0 flex-col overflow-y-auto border-l border-[#383838] bg-[#202020] lg:flex">
               <div className="flex items-center justify-between border-b border-[#383838] px-4 py-3">
-                <h3 className="text-[12px] font-semibold text-[#c8c8c8]">Recorded changes</h3>
+                <h3 className="text-[12px] font-semibold text-[#c8c8c8]">Changes</h3>
                 <span className="font-mono text-[11px] text-[#898989]">{changesForFrame.length.toString().padStart(2, "0")}</span>
               </div>
               {changesForFrame.length ? (
-                <ul className="divide-y divide-[#383838] px-4">
-                  {changesForFrame.map((change, index) => (
-                    <li className="py-3" key={(change.sourceNodeId ?? "frame") + change.path + index}>
-                      <p className="text-[11px] uppercase tracking-wide text-[#d7d7d7]">{change.category === "visual" && change.path === "renderAsset" ? "Visual" : change.category}</p>
-                      <p className="mt-1 truncate font-mono text-[11px] text-[#888]" title={change.sourceNodeId ?? undefined}>{change.sourceNodeId ?? activeFrame?.name}</p>
-                      <p className="mt-2 break-all font-mono text-[11px] text-[#aaa]">{change.path === "renderAsset" ? "Screen appearance" : change.path}</p>
-                      <div className="mt-1.5 grid gap-1.5">
-                        <p className="break-words rounded-[5px] bg-[#171717] p-2 text-[11px] leading-5 text-[#999]" title={change.path === "renderAsset" ? "Previous screen render" : prettyValue(change.before)}>− {change.path === "renderAsset" ? "Previous render" : prettyValue(change.before)}</p>
-                        <p className="break-words rounded-[5px] bg-[#2d2d2d] p-2 text-[11px] leading-5 text-[#ddd]" title={change.path === "renderAsset" ? "Updated screen render" : prettyValue(change.after)}>+ {change.path === "renderAsset" ? "Updated render" : prettyValue(change.after)}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ul>
+                <RecordedChanges groups={changeGroupsForFrame} />
               ) : <p className="p-4 text-[12px] text-[#999]">No structured changes were captured for this screen.</p>}
             </aside>
           </div>
@@ -509,16 +648,92 @@ export function VersionCompare({
   );
 }
 
+function rawChangeValue(value: unknown) {
+  if (value === undefined) return "Not present";
+  if (value === null) return "Unavailable";
+  if (typeof value === "string") return value;
+  return JSON.stringify(value);
+}
+
+function RecordedChanges({ groups }: { groups: ReturnType<typeof groupComparisonChanges> }) {
+  return (
+    <ul className="divide-y divide-[#383838] px-3 sm:px-4">
+      {groups.map((group) => {
+        const { visible, supplemental } = separateSupplementalChanges(group.changes);
+        return (
+          <li className="py-3" key={group.id}>
+            <div className="flex items-baseline justify-between gap-2">
+              <h4 className="min-w-0 truncate text-[12px] font-medium text-[#e0e0e0]" title={group.label}>{group.label}</h4>
+              <span className="shrink-0 font-mono text-[10px] text-[#929292]">
+                {visible.length ? `${visible.length} ${visible.length === 1 ? "change" : "changes"}` : ""}
+                {visible.length && supplemental.length ? " · " : ""}
+                {supplemental.length ? `${supplemental.length} capture fields` : ""}
+              </span>
+            </div>
+            {visible.length ? (
+              <ul className="mt-2 space-y-3">
+                {visible.map((change, index) => (
+                  <li className="border-l border-[#505050] pl-2.5" key={change.path + index}>
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-[9px] uppercase tracking-[0.08em] text-[#929292]">{comparisonCategoryLabel(change.category)}</span>
+                      <span className="text-[11px] text-[#d4d4d4]">{comparisonChangeLabel(change)}</span>
+                    </div>
+                    <div className="mt-1.5 grid grid-cols-[42px_minmax(0,1fr)] items-baseline gap-x-2 gap-y-1">
+                      <span className="text-[10px] text-[#929292]">Before</span>
+                      <p className="break-words font-mono text-[11px] leading-4 text-[#aaa]">{comparisonValueLabel(change, "before", formatComparisonValue)}</p>
+                      <span className="text-[10px] text-[#929292]">After</span>
+                      <p className="break-words font-mono text-[11px] leading-4 text-[#ededed]">{comparisonValueLabel(change, "after", formatComparisonValue)}</p>
+                    </div>
+                    <details className="mt-1.5 text-[10px] text-[#888]">
+                      <summary className="w-fit cursor-pointer rounded-[3px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">Captured source details</summary>
+                      <div className="mt-1.5 max-h-40 space-y-1 overflow-auto rounded-[4px] bg-[#171717] p-2">
+                        <p className="break-all font-mono">Path: {change.path}</p>
+                        {group.sourceNodeId ? <p className="break-all font-mono">Layer ID: {group.sourceNodeId}</p> : null}
+                        {change.path !== "node" ? (
+                          <>
+                            <p className="break-all font-mono">Before: {rawChangeValue(change.before)}</p>
+                            <p className="break-all font-mono">After: {rawChangeValue(change.after)}</p>
+                          </>
+                        ) : null}
+                      </div>
+                    </details>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+            {supplemental.length ? (
+              <details className="mt-2 text-[10px] text-[#888]">
+                <summary className="w-fit cursor-pointer rounded-[3px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">Show captured paint data ({supplemental.length})</summary>
+                <ul className="mt-1.5 max-h-40 space-y-2 overflow-auto rounded-[4px] bg-[#171717] p-2">
+                  {supplemental.map((change, index) => (
+                    <li className="space-y-1" key={change.path + index}>
+                      <p className="break-all font-mono">{change.path}</p>
+                      <p className="break-all font-mono">Before: {rawChangeValue(change.before)}</p>
+                      <p className="break-all font-mono">After: {rawChangeValue(change.after)}</p>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 function VersionSelect({
   side,
   value,
   versions,
   onChange,
+  disabled = false,
 }: {
   side: "Before" | "After";
   value: string;
   versions: VersionOption[];
   onChange: (value: string) => void;
+  disabled?: boolean;
 }) {
   return (
     <label className="grid min-w-0 gap-1.5 rounded-[6px] border border-[#3c3c3c] bg-[#222] p-2.5 text-[12px] text-[#aaa]">
@@ -526,6 +741,7 @@ function VersionSelect({
       <select
         aria-label={side + " version"}
         className="min-h-9 w-full min-w-0 rounded-[5px] border border-[#414141] bg-[#303030] px-2 text-[12px] text-[#ececec] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+        disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
         value={value}
       >

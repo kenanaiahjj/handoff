@@ -350,7 +350,7 @@ export function AgentHandoffPanel({ input }: {
         baseline ? `2. Call get_version_diff with fromVersionId=${baseline.id} and toVersionId=${input.versionId} to verify the included comparison.` : "2. This handoff has no earlier version to compare.",
         selectedFrame ? `3. Call get_token_bindings with frameId=${selectedFrame.id}; call get_measurements for any sourceNodeId that needs closer inspection.` : "3. Use get_measurements and get_token_bindings for the target frame and elements before changing layout code.",
         `4. Call list_comments and list_findings for versionId=${input.versionId}; preserve unresolved review feedback and rule findings in the implementation plan.`,
-        "5. Use the approved changelog only as accepted product intent. Keep measured distances distinct from authored margins and do not infer token bindings.",
+        `5. Call list_approved_changelogs for versionId=${input.versionId}; use approved entries as accepted product intent. Keep measured distances distinct from authored margins and do not infer token bindings.`,
       ];
       const generatedBrief = [
         `# Agent handoff: ${input.versionLabel}`,

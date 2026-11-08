@@ -5,6 +5,7 @@ import type { SnapshotDiff } from "@/src/server/services/diff";
 import { HandoffCanvas, type ReviewDockPanels, type ReviewMetadata } from "./HandoffCanvas";
 import type { CanvasFrameChangeStatus, CanvasFrameOption, FrameComparisonSummary } from "./FrameNavigator";
 import { VersionCompare, type CompareResult, type VersionOption } from "./VersionCompare";
+import { updateCompareRouteUrl, type CompareRouteState } from "./compare-state";
 
 type HandoffReviewProps = {
   frames: CanvasFrameOption[];
@@ -14,6 +15,7 @@ type HandoffReviewProps = {
   projectId: string;
   handoffId: string;
   selectedVersionId: string;
+  initialCompareRouteState: CompareRouteState | null;
   visualOnly: boolean;
   metadata: ReviewMetadata;
   dockPanels?: ReviewDockPanels;
@@ -33,21 +35,59 @@ export function HandoffReview({
   projectId,
   handoffId,
   selectedVersionId,
+  initialCompareRouteState,
   metadata,
   dockPanels = {},
 }: HandoffReviewProps) {
   const [comparison, setComparison] = useState<LoadedComparison | null>(null);
   const [initialCompareResult, setInitialCompareResult] = useState<CompareResult | null>(null);
   const [compareScreenRequest, setCompareScreenRequest] = useState<{ frameId: string; requestId: number } | null>(null);
-  const [comparisonOpen, setComparisonOpen] = useState(false);
-  const openComparison = useCallback(() => setComparisonOpen(true), []);
-  const closeComparison = useCallback(() => setComparisonOpen(false), []);
+  const [comparisonOpen, setComparisonOpen] = useState(Boolean(initialCompareRouteState));
+  const [compareRouteState, setCompareRouteState] = useState<CompareRouteState | null>(initialCompareRouteState);
 
   const previousVersion = useMemo(() => {
     const chronological = [...versions].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     const selectedIndex = chronological.findIndex((version) => version.id === selectedVersionId);
     return selectedIndex > 0 ? chronological[selectedIndex - 1] ?? null : null;
   }, [selectedVersionId, versions]);
+
+  const writeCompareRouteState = useCallback((state: CompareRouteState | null) => {
+    window.history.replaceState(null, "", updateCompareRouteUrl(window.location.href, state));
+    setCompareRouteState(state);
+  }, []);
+
+  const openComparison = useCallback((frameId?: string) => {
+    const chronological = [...versions].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
+    const selectedIndex = chronological.findIndex((version) => version.id === selectedVersionId);
+    const fromVersion = selectedIndex > 0 ? chronological[selectedIndex - 1] : chronological[0];
+    const toVersion = selectedIndex > 0 ? chronological[selectedIndex] : chronological[1];
+    if (!fromVersion || !toVersion || fromVersion.id === toVersion.id) return;
+    setComparisonOpen(true);
+    writeCompareRouteState({
+      fromVersionId: fromVersion.id,
+      toVersionId: toVersion.id,
+      frameId: frameId ?? null,
+      mode: null,
+    });
+  }, [selectedVersionId, versions, writeCompareRouteState]);
+
+  const closeComparison = useCallback(() => {
+    const url = new URL(updateCompareRouteUrl(window.location.href, null));
+    const nextVersionId = compareRouteState?.toVersionId ?? selectedVersionId;
+    url.searchParams.set("versionId", nextVersionId);
+    if (nextVersionId !== selectedVersionId) {
+      window.location.assign(url.toString());
+      return;
+    }
+    window.history.replaceState(null, "", url.toString());
+    setCompareRouteState(null);
+    setComparisonOpen(false);
+  }, [compareRouteState, selectedVersionId]);
+
+  const handleCompareRouteStateChange = useCallback((state: CompareRouteState) => {
+    writeCompareRouteState(state);
+  }, [writeCompareRouteState]);
+
   const visibleComparison = previousVersion ? comparison : null;
   const visibleInitialCompareResult = previousVersion ? initialCompareResult : null;
 
@@ -139,10 +179,12 @@ export function HandoffReview({
           projectId={projectId}
           handoffId={handoffId}
           selectedVersionId={selectedVersionId}
+          initialRouteState={compareRouteState}
           initialResult={visibleInitialCompareResult}
           compareScreenRequest={compareScreenRequest}
           onComparisonChange={handleComparisonChange}
           onComparisonFrameSelect={handleComparisonFrameSelect}
+          onRouteStateChange={handleCompareRouteStateChange}
           onClose={closeComparison}
         />
       ) : null}

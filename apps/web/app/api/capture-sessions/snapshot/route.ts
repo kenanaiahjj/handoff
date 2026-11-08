@@ -3,7 +3,7 @@ import { getCaptureSession } from "@/src/server/repositories/capture-sessions";
 import { createHandoffVersion, getVersion, type VersionAssetInput } from "@/src/server/repositories/versions";
 import { getDatabase } from "@/src/server/db";
 import { diffSnapshots } from "@/src/server/services/diff";
-import { SnapshotImportError, verifyRenderAssetBytes } from "@/src/server/services/import-snapshot";
+import { parseUploadForm, SnapshotImportError, verifyRenderAssetBytes } from "@/src/server/services/import-snapshot";
 import { snapshotEnvelopeSchema } from "@asbir/snapshot-contract";
 
 const maxAssetsBytes = 100 * 1024 * 1024;
@@ -38,14 +38,19 @@ export async function POST(request: Request) {
   if (!token) return jsonResponse({ error: "A valid capture token is required." }, { status: 401 });
   const session = getCaptureSession(token);
   if (!session) return jsonResponse({ error: "This capture token is invalid, expired, already used, or no longer authorized." }, { status: 401 });
-  const contentLength = Number(request.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > maxAssetsBytes + maxSnapshotJsonBytes + 2 * 1024 * 1024) {
-    return jsonResponse({ error: "This capture exceeds the 100 MiB upload limit." }, { status: 413 });
-  }
 
   let form: FormData;
-  try { form = await request.formData(); }
-  catch { return jsonResponse({ error: "Send the snapshot and render assets as multipart form data." }, { status: 400 }); }
+  try {
+    form = await parseUploadForm(
+      request,
+      maxAssetsBytes + maxSnapshotJsonBytes + 2 * 1024 * 1024,
+    );
+  } catch (error) {
+    if (error instanceof SnapshotImportError) {
+      return jsonResponse({ error: error.message }, { status: error.status });
+    }
+    return jsonResponse({ error: "Send the snapshot and render assets as multipart form data." }, { status: 400 });
+  }
   if (form.getAll("snapshot").length !== 1) return jsonResponse({ error: "Send exactly one snapshot JSON field." }, { status: 400 });
   const serializedSnapshot = form.get("snapshot");
   if (typeof serializedSnapshot !== "string") return jsonResponse({ error: "Snapshot JSON is required." }, { status: 400 });

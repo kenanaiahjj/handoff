@@ -1,5 +1,6 @@
 import { getPublishedHandoffByShareId, listHandoffVersions } from "@/src/server/repositories/handoffs";
 import { getVersion } from "@/src/server/repositories/versions";
+import { versionsVisibleToReview } from "@/src/server/services/published-review";
 import { requireWorkspaceRole, WorkspaceAccessError, workspaceRoles } from "@/src/server/workspace-access";
 
 type LatestReviewRoute = RouteContext<"/api/review/[shareId]/latest">;
@@ -13,8 +14,7 @@ export async function GET(request: Request, context: LatestReviewRoute) {
     const version = getVersion({ workspaceId: handoff.workspaceId, versionId: handoff.publishedVersionId });
     if (!version) return Response.json({ error: "Published version not found." }, { status: 404 });
     const versions = listHandoffVersions({ workspaceId: handoff.workspaceId, handoffId: handoff.id }) as Array<{ id: string; versionLabel: string }>;
-    const publishedIndex = versions.findIndex((entry) => entry.id === handoff.publishedVersionId);
-    const visibleVersions = publishedIndex < 0 ? [] : versions.slice(publishedIndex);
+    const visibleVersions = versionsVisibleToReview(versions, handoff.publishedVersionId);
     return Response.json({
       versionId: version.id,
       versionLabel: version.versionLabel,

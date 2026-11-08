@@ -1,3 +1,5 @@
+import { compareRgbaPixels } from "./pixel-diff";
+
 type PixelDiffMessage = {
   before: ImageBitmap;
   after: ImageBitmap;
@@ -32,28 +34,12 @@ workerScope.onmessage = async ({ data }) => {
   context.clearRect(0, 0, width, height);
   context.drawImage(data.after, 0, 0, Math.ceil(data.afterSourceWidth * 2), Math.ceil(data.afterSourceHeight * 2));
   const afterPixels = context.getImageData(0, 0, width, height).data;
-  const diff = new ImageData(width, height);
-  let changedPixels = 0;
-
-  for (let offset = 0; offset < beforePixels.length; offset += 4) {
-    const difference = Math.max(
-      Math.abs(beforePixels[offset] - afterPixels[offset]),
-      Math.abs(beforePixels[offset + 1] - afterPixels[offset + 1]),
-      Math.abs(beforePixels[offset + 2] - afterPixels[offset + 2]),
-      Math.abs(beforePixels[offset + 3] - afterPixels[offset + 3]),
-    );
-    if (difference < 16) continue;
-    diff.data[offset] = 255;
-    diff.data[offset + 1] = 75;
-    diff.data[offset + 2] = 125;
-    diff.data[offset + 3] = Math.min(245, 70 + difference);
-    changedPixels += 1;
-  }
+  const { pixels, changedPixels } = compareRgbaPixels(beforePixels, afterPixels);
 
   data.before.close();
   data.after.close();
   workerScope.postMessage(
-    { width, height, pixels: diff.data.buffer, changedPixels },
-    [diff.data.buffer],
+    { width, height, pixels: pixels.buffer, changedPixels },
+    [pixels.buffer],
   );
 };

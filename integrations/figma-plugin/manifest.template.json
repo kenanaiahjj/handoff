@@ -1,6 +1,7 @@
 {
   "name": "Asbir Handoff Capture",
   "api": "1.0.0",
+  "enablePrivatePluginApi": true,
   "documentAccess": "dynamic-page",
   "editorType": ["figma"],
   "main": "dist/code.js",
