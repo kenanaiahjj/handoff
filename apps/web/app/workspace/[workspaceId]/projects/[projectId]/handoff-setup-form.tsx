@@ -153,11 +153,11 @@ export function HandoffSetupForm({ input, mode }: {
 
           <fieldset className="sm:col-span-2">
             <legend className="mb-2 text-xs font-medium text-foreground-muted">Version source</legend>
-            <div aria-label="Version source" className="grid grid-cols-2 gap-1 rounded-xl bg-surface-inset p-1" role="group">
+            <div aria-label="Version source" className="grid grid-cols-2 gap-1 rounded-[5px] bg-[#292929] p-1" role="group">
               {(["figma", "upload"] as const).map((option) => (
                 <button
                   aria-pressed={source === option}
-                  className={"min-h-9 rounded-lg px-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary " + (source === option ? "bg-surface-raised text-foreground shadow-sm" : "text-foreground-muted hover:text-foreground")}
+                  className={"min-h-9 rounded-[4px] px-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary " + (source === option ? "bg-[#3a3a3a] text-foreground" : "text-foreground-muted hover:bg-[#333] hover:text-foreground")}
                   key={option}
                   onClick={() => { setSource(option); setErrorMessage(""); setNotice(""); }}
                   type="button"
