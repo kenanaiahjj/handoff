@@ -100,7 +100,8 @@ Use this sequence to pull only the screen evidence the task needs:
 2. Call `list_versions`, then `list_frames` for the selected immutable version.
 3. Call `get_frame` for the relevant screen. Use `get_measurements` or `get_token_bindings` with an element ID when implementation details are needed.
 4. Call `list_approved_changelogs` for the selected version when you need the team's accepted product intent. The tool returns approved entries only.
-5. Call `get_snapshot` when the task needs the complete source payload across all screens.
+5. Call `get_version_diff` with the two version IDs and a `frameId` to inspect one screen. The tool returns up to 100 changes, capture-coverage differences, and unmatched-layer suggestions by default. Pass `offset` and `limit` to page through each collection; pages support up to 500 entries. Each collection has page metadata such as `changePage.nextOffset`, `captureCoveragePage.nextOffset`, and `unmatchedNodeCandidatePage.nextOffset`. Continue a collection while its `hasMore` value is true. Calls without pagination fields still return the complete diff.
+6. Call `get_snapshot` when the task needs the complete source payload across all screens.
 
 ## Draft a changelog with your connected AI
 
@@ -115,7 +116,7 @@ Handoff rejects evidence IDs that do not belong to the selected version pair. Th
 
 ## Use the agent's other MCP tools
 
-Connect Asbir Handoff to the same AI client that has your task tracker or repository tools. The agent can read the frozen handoff, use its own ClickUp or Linear MCP to create work, and use its repository MCP to inspect or change code. Asbir does not store credentials for those tools or execute code itself.
+Connect Asbir Handoff to the same AI client that has your task tracker or repository tools. The agent can read the frozen handoff, create work through its connected [Asbir Teams](https://teams.asbir.tech) or ClickUp task tool, and use its repository MCP to inspect or change code. Asbir does not store credentials for those tools or execute code itself.
 
 After creating an external task, the agent can call `link_task` with the handoff and version IDs, task title, task system, task ID or URL, and optional `frameId` and `sourceNodeId`. Use `list_linked_tasks` to retrieve tasks already recorded for that handoff.
 

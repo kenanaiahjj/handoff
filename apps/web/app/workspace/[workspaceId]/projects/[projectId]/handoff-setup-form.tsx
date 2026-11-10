@@ -66,8 +66,8 @@ export function HandoffSetupForm({ input, mode }: {
         setExpiresAt(result.expiresAt);
         const copied = await writeTokenToClipboard(result.token);
         setNotice(copied
-          ? "Capture token copied. Paste it into the Figma plugin. It expires in 10 minutes and works once."
-          : "Token created, but automatic copying was blocked. Use Copy token or select it and copy it manually. It expires in 10 minutes and works once.");
+          ? "Capture token copied. Paste it into the Figma plugin. It expires in one hour and works once."
+          : "Token created, but automatic copying was blocked. Use Copy token or select it and copy it manually. It expires in one hour and works once.");
         return;
       }
 
@@ -97,13 +97,13 @@ export function HandoffSetupForm({ input, mode }: {
     <section
       aria-labelledby="handoff-setup-title"
       className={mode === "project"
-        ? "rounded-project-panel border border-primary/25 bg-surface-raised p-5"
-        : "rounded-xl border border-[#383838] bg-[#242424] p-3"}
+        ? "rounded-project-panel bg-surface-raised p-5"
+        : "rounded-panel bg-surface p-3"}
     >
-      <h2 className={mode === "project" ? "text-base font-semibold tracking-[-0.02em] text-foreground" : "text-[12px] font-semibold text-[#ededed]"} id="handoff-setup-title">
+      <h2 className={mode === "project" ? "text-base font-semibold tracking-[-0.02em] text-foreground" : "text-[12px] font-semibold text-foreground"} id="handoff-setup-title">
         {mode === "project" ? "Start a handoff" : "Add a version"}
       </h2>
-      <p className={mode === "project" ? "mt-2 text-[13px] leading-5 text-foreground-muted" : "mb-3 mt-1 text-[10px] leading-4 text-[#999]"}>
+      <p className={mode === "project" ? "mt-2 text-[13px] leading-5 text-foreground-muted" : "mb-3 mt-1 text-[10px] leading-4 text-foreground-subtle"}>
         {mode === "project" ? "Create a new handoff or add a version. Capture from Figma or upload a snapshot." : "Capture an update from Figma or upload a snapshot."}
       </p>
 
@@ -111,12 +111,12 @@ export function HandoffSetupForm({ input, mode }: {
         <div className="mt-4 border-t border-border/80 pt-4">
           <label className="block text-xs font-medium text-foreground-muted" htmlFor="figma-capture-token">One-time capture token</label>
           <div className="mt-2 flex gap-2">
-            <input id="figma-capture-token" readOnly value={token} className="min-h-11 min-w-0 flex-1 rounded-xl border border-border bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
-            <button type="button" onClick={() => void copyToken()} className="capture-primary-action min-h-11 rounded-full px-4 text-xs font-semibold">Copy token</button>
+            <input id="figma-capture-token" readOnly value={token} className="min-h-11 min-w-0 flex-1 rounded-control border border-border/70 bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+            <button type="button" onClick={() => void copyToken()} className="capture-primary-action min-h-11 rounded-control px-4 text-xs font-semibold">Copy token</button>
           </div>
           {expiresAt ? <p className="mt-2 text-xs text-foreground-subtle">Expires {new Date(expiresAt).toLocaleTimeString()} · use once</p> : null}
           <p className="mt-2 text-xs leading-5 text-foreground-muted">In Figma, load <code className="font-mono text-foreground">integrations/figma-plugin/manifest.json</code> as a development plugin, enter the app URL and token, then select the frames to capture.</p>
-          <button type="button" onClick={() => { setToken(null); setExpiresAt(null); setVersionLabel(""); setReleaseNote(""); setNotice(""); setErrorMessage(""); }} className="mt-4 min-h-10 rounded-full border border-border-strong bg-surface-raised px-4 text-xs font-medium text-foreground transition-colors hover:bg-surface-raised/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Hide token</button>
+          <button type="button" onClick={() => { setToken(null); setExpiresAt(null); setVersionLabel(""); setReleaseNote(""); setNotice(""); setErrorMessage(""); }} className="mt-4 min-h-10 rounded-control bg-surface-raised px-4 text-xs font-medium text-foreground transition-colors hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Hide token</button>
         </div>
       ) : (
         <form className="mt-4 grid gap-x-3 gap-y-4 border-t border-border/80 pt-4 sm:grid-cols-2" onSubmit={submit}>
@@ -183,19 +183,19 @@ export function HandoffSetupForm({ input, mode }: {
               <span className="mt-2 block text-xs leading-5 text-foreground-muted" id="setup-upload-hint">{uploadHint}</span>
             </label>
           ) : (
-            <p className="rounded-xl border border-border bg-surface px-3 py-3 text-xs leading-5 text-foreground-muted sm:col-span-2">Create a short-lived token, then use the Figma plugin to capture selected frames and their inspectable properties.</p>
+            <p className="rounded-control bg-surface-raised px-3 py-3 text-xs leading-5 text-foreground-muted sm:col-span-2">Create a short-lived token, then use the Figma plugin to capture selected frames and their inspectable properties.</p>
           )}
 
           {errorMessage ? <p className="text-xs text-danger sm:col-span-2" role="alert">{errorMessage}</p> : null}
           <div className="sm:col-span-2">
-            <button className="capture-primary-action min-h-12 w-full rounded-full px-4 text-sm font-semibold disabled:opacity-60" disabled={pending} type="submit">
+            <button className="capture-primary-action min-h-12 w-full rounded-control px-4 text-sm font-semibold disabled:opacity-60" disabled={pending} type="submit">
               {pending ? source === "figma" ? "Creating token…" : "Uploading…" : source === "figma" ? "Create Figma capture token" : handoffId ? "Add version" : "Create handoff"}
             </button>
           </div>
         </form>
       )}
       {errorMessage && token ? <p className="mt-3 text-xs text-warning" role="alert">{errorMessage}</p> : null}
-      {notice ? <p className="mt-3 text-xs leading-5 text-primary" role="status">{notice}</p> : null}
+      {notice ? <p className="mt-3 text-xs leading-5 text-success" role="status">{notice}</p> : null}
     </section>
   );
 }

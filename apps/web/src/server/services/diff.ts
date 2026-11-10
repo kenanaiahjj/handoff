@@ -4,6 +4,7 @@ import type {
   SnapshotNode,
   VisualOnlySnapshot,
 } from "@asbir/snapshot-contract";
+import { formatFigmaCaptureScope, normalizeFigmaCaptureScope } from "@asbir/snapshot-contract";
 
 export type DiffCategory =
   | "geometry"
@@ -33,7 +34,7 @@ export type FrameDiff = {
   afterFrameId: string | null;
   sourceFileId: string;
   name: string;
-  status: "added" | "removed" | "changed" | "unchanged";
+  status: "added" | "removed" | "changed" | "unchanged" | "only-in-before-capture" | "only-in-after-capture";
 };
 
 export type FrameMatch = {
@@ -42,6 +43,10 @@ export type FrameMatch = {
 };
 
 export type SnapshotSourceIdentity = "exact" | "inferred" | "different";
+
+export type CaptureScopeComparison =
+  | { status: "different"; before: string; after: string }
+  | { status: "unrecorded"; before: string | null; after: string | null };
 
 export type NodeCandidate = {
   sourceNodeId: string;
@@ -62,6 +67,7 @@ export type SnapshotDiff = {
   fromVersionId: string;
   toVersionId: string;
   sourceIdentity: SnapshotSourceIdentity;
+  captureScopeComparison: CaptureScopeComparison | null;
   frames: FrameDiff[];
   changes: SnapshotDiffChange[];
   captureCoverage: CaptureCoverageDifference[];
@@ -70,6 +76,8 @@ export type SnapshotDiff = {
     beforeFrameId: string;
     beforeName: string;
     afterCandidates: Array<{ frameId: string; name: string; score: number }>;
+    totalCandidates: number;
+    candidatesTruncated: boolean;
   }>;
   unmatchedNodeCandidates: Array<{
     sourceFileId: string;
@@ -77,8 +85,13 @@ export type SnapshotDiff = {
     beforeNodeId: string;
     beforeName: string;
     afterCandidates: NodeCandidate[];
+    totalCandidates: number;
+    candidatesTruncated: boolean;
   }>;
 };
+
+const maxUnmatchedNodeSuggestions = 10;
+const maxUnmatchedFrameSuggestions = 10;
 
 const sourcePayloadLayoutFields = new Set([
   "constraints",
@@ -529,30 +542,81 @@ function matchFrameNodes(
   };
 }
 
-function nodeCandidates(removed: SnapshotNode, added: SnapshotNode[]): NodeCandidate[] {
-  return added
-    .map((node) => ({
-      sourceNodeId: node.sourceNodeId,
-      name: node.name,
-      type: node.type,
-      score: node.name === removed.name && node.type === removed.type ? 1 : node.type === removed.type ? 0.5 : 0,
-    }))
-    .filter((candidate) => candidate.score > 0)
-    .sort((left, right) => right.score - left.score || left.sourceNodeId.localeCompare(right.sourceNodeId));
+type NodeCandidateIdentity = Pick<NodeCandidate, "sourceNodeId" | "name" | "type">;
+type NodeCandidateIndex = Map<string, {
+  byId: NodeCandidateIdentity[];
+  byName: Map<string, NodeCandidateIdentity[]>;
+}>;
+
+function indexNodeCandidates(added: SnapshotNode[]): NodeCandidateIndex {
+  const index: NodeCandidateIndex = new Map();
+  for (const node of added) {
+    const candidate = { sourceNodeId: node.sourceNodeId, name: node.name, type: node.type };
+    let bucket = index.get(node.type);
+    if (!bucket) {
+      bucket = { byId: [], byName: new Map() };
+      index.set(node.type, bucket);
+    }
+    bucket.byId.push(candidate);
+    const sameName = bucket.byName.get(node.name) ?? [];
+    sameName.push(candidate);
+    bucket.byName.set(node.name, sameName);
+  }
+
+  for (const bucket of index.values()) {
+    bucket.byId.sort((left, right) => left.sourceNodeId.localeCompare(right.sourceNodeId));
+    for (const sameName of bucket.byName.values()) {
+      sameName.sort((left, right) => left.sourceNodeId.localeCompare(right.sourceNodeId));
+    }
+  }
+  return index;
+}
+
+function nodeCandidates(removed: SnapshotNode, index: NodeCandidateIndex) {
+  const bucket = index.get(removed.type);
+  if (!bucket) return null;
+
+  const exactNameCandidates = bucket.byName.get(removed.name) ?? [];
+  const afterCandidates: NodeCandidate[] = exactNameCandidates
+    .slice(0, maxUnmatchedNodeSuggestions)
+    .map((candidate) => ({ ...candidate, score: 1 }));
+
+  for (const candidate of bucket.byId) {
+    if (afterCandidates.length >= maxUnmatchedNodeSuggestions) break;
+    if (candidate.name === removed.name) continue;
+    afterCandidates.push({ ...candidate, score: 0.5 });
+  }
+
+  return {
+    afterCandidates,
+    totalCandidates: bucket.byId.length,
+    candidatesTruncated: bucket.byId.length > afterCandidates.length,
+  };
+}
+
+function indexFrameCandidates(added: Array<Pick<SnapshotFrame, "sourceFrameId" | "name">>) {
+  const candidatesByName = new Map<string, Array<{ frameId: string; name: string; score: number }>>();
+  for (const frame of added) {
+    const candidates = candidatesByName.get(frame.name) ?? [];
+    candidates.push({ frameId: frame.sourceFrameId, name: frame.name, score: 1 });
+    candidatesByName.set(frame.name, candidates);
+  }
+  for (const candidates of candidatesByName.values()) {
+    candidates.sort((left, right) => left.frameId.localeCompare(right.frameId));
+  }
+  return candidatesByName;
 }
 
 function frameCandidates(
-  removed: Pick<SnapshotFrame, "sourceFrameId" | "name">,
-  added: Array<Pick<SnapshotFrame, "sourceFrameId" | "name">>,
+  removed: Pick<SnapshotFrame, "name">,
+  candidatesByName: Map<string, Array<{ frameId: string; name: string; score: number }>>,
 ) {
-  return added
-    .map((frame) => ({
-      frameId: frame.sourceFrameId,
-      name: frame.name,
-      score: frame.name === removed.name ? 1 : 0,
-    }))
-    .filter((candidate) => candidate.score > 0)
-    .sort((left, right) => right.score - left.score || left.frameId.localeCompare(right.frameId));
+  const candidates = candidatesByName.get(removed.name) ?? [];
+  return {
+    afterCandidates: candidates.slice(0, maxUnmatchedFrameSuggestions),
+    totalCandidates: candidates.length,
+    candidatesTruncated: candidates.length > maxUnmatchedFrameSuggestions,
+  };
 }
 
 function assetMap(snapshot: VersionSnapshot) {
@@ -719,7 +783,10 @@ function compareFrame(
 
   const beforeRender = renderAssetSummary(beforeSnapshot, before);
   const afterRender = renderAssetSummary(afterSnapshot, after);
-  if (!equalValue(beforeRender, afterRender)) {
+  const renderChanged = beforeRender.sha256 !== null && afterRender.sha256 !== null
+    ? beforeRender.sha256 !== afterRender.sha256
+    : !equalValue(beforeRender, afterRender);
+  if (renderChanged) {
     output.push({
       frameId,
       sourceFileId,
@@ -791,18 +858,54 @@ function compareFrame(
       category: "structure",
     });
   }
+  const candidateIndex = indexNodeCandidates(addedNodes);
   for (const removedNode of removedNodes) {
-    const candidates = nodeCandidates(removedNode, addedNodes);
-    if (candidates.length) {
+    const candidates = nodeCandidates(removedNode, candidateIndex);
+    if (candidates) {
       unmatchedNodeCandidates.push({
         sourceFileId,
         frameId,
         beforeNodeId: removedNode.sourceNodeId,
         beforeName: removedNode.name,
-        afterCandidates: candidates,
+        ...candidates,
       });
     }
   }
+}
+
+function snapshotPageId(snapshot: VersionSnapshot) {
+  if (isStructuredSnapshot(snapshot)) {
+    const metadataPageId = snapshot.sourceMetadata.sourcePageId;
+    if (typeof metadataPageId === "string" && metadataPageId.trim()) return metadataPageId;
+  }
+  const pageIds = new Set(snapshot.frames.flatMap((frame) =>
+    "sourcePageId" in frame && typeof frame.sourcePageId === "string" ? [frame.sourcePageId] : [],
+  ));
+  return pageIds.size === 1 ? [...pageIds][0] : null;
+}
+
+function canInferFrameMembershipChanges(
+  from: DiffInput,
+  to: DiffInput,
+  sourceIdentity: SnapshotSourceIdentity,
+  captureScopeComparison: CaptureScopeComparison | null,
+) {
+  if (sourceIdentity !== "exact" || from.snapshot.source !== to.snapshot.source) return false;
+  if (from.snapshot.source !== "figma") return true;
+  if (captureScopeComparison) return false;
+
+  const beforeScope = isStructuredSnapshot(from.snapshot)
+    ? normalizeFigmaCaptureScope(from.snapshot.sourceMetadata.captureScope)
+    : null;
+  const afterScope = isStructuredSnapshot(to.snapshot)
+    ? normalizeFigmaCaptureScope(to.snapshot.sourceMetadata.captureScope)
+    : null;
+  if (beforeScope !== afterScope) return false;
+  if (beforeScope === "file") return true;
+  if (beforeScope !== "page") return false;
+
+  const beforePageId = snapshotPageId(from.snapshot);
+  return Boolean(beforePageId && beforePageId === snapshotPageId(to.snapshot));
 }
 
 export function diffSnapshots(
@@ -825,6 +928,21 @@ export function diffSnapshots(
   const sourceIdentity: SnapshotSourceIdentity = exactSourceIdentity
     ? "exact"
     : inferredSourceIdentity ? "inferred" : "different";
+  let captureScopeComparison: CaptureScopeComparison | null = null;
+  if (from.snapshot.source === "figma" && to.snapshot.source === "figma") {
+    const beforeScope = isStructuredSnapshot(from.snapshot)
+      ? formatFigmaCaptureScope(from.snapshot.sourceMetadata.captureScope)
+      : null;
+    const afterScope = isStructuredSnapshot(to.snapshot)
+      ? formatFigmaCaptureScope(to.snapshot.sourceMetadata.captureScope)
+      : null;
+    captureScopeComparison = !beforeScope || !afterScope
+      ? { status: "unrecorded", before: beforeScope, after: afterScope }
+      : beforeScope === afterScope
+        ? null
+        : { status: "different", before: beforeScope, after: afterScope };
+  }
+  const canInferFrameMembership = canInferFrameMembershipChanges(from, to, sourceIdentity, captureScopeComparison);
   const sharedSourceFileId = exactSourceIdentity
     ? fromFileId
     : inferredSourceIdentity
@@ -887,23 +1005,28 @@ export function diffSnapshots(
     const sourceFileId = sharedSourceFileId ?? (before ? fromFileId : toFileId);
 
     if (!before || !after) {
+        const status = before
+          ? canInferFrameMembership ? "removed" : "only-in-before-capture"
+          : canInferFrameMembership ? "added" : "only-in-after-capture";
       frameDiffs.push({
         frameId: frame.sourceFrameId,
         beforeFrameId: before?.sourceFrameId ?? null,
         afterFrameId: after?.sourceFrameId ?? null,
         sourceFileId,
         name: frame.name,
-        status: before ? "removed" : "added",
+          status,
       });
-      changes.push({
-        frameId: frame.sourceFrameId,
-        sourceFileId,
-        sourceNodeId: null,
-        path: "frame",
-        before,
-        after,
-        category: "structure",
-      });
+        if (status === "added" || status === "removed") {
+          changes.push({
+            frameId: frame.sourceFrameId,
+            sourceFileId,
+            sourceNodeId: null,
+            path: "frame",
+            before: before ? { name: before.name } : undefined,
+            after: after ? { name: after.name } : undefined,
+            category: "structure",
+          });
+        }
       continue;
     }
 
@@ -937,15 +1060,16 @@ export function diffSnapshots(
     (frame) => !beforeByKey.has(frameIdentity(afterIdentityFileId, frame.sourceFrameId)) &&
       !explicitlyMatchedAfter.has(frameIdentity(afterIdentityFileId, frame.sourceFrameId)),
   );
+  const addedFrameCandidatesByName = indexFrameCandidates(addedFrames);
   const unmatchedFrameCandidates = removedFrames.flatMap((frame) => {
-    const afterCandidates = frameCandidates(frame, addedFrames);
-    return afterCandidates.length
+    const candidates = frameCandidates(frame, addedFrameCandidatesByName);
+    return candidates.totalCandidates > 0
       ? [
           {
             sourceFileId: fromFileId,
             beforeFrameId: frame.sourceFrameId,
             beforeName: frame.name,
-            afterCandidates,
+            ...candidates,
           },
         ]
       : [];
@@ -966,6 +1090,7 @@ export function diffSnapshots(
     fromVersionId: from.versionId,
     toVersionId: to.versionId,
     sourceIdentity,
+    captureScopeComparison,
     frames: frameDiffs,
     changes,
     captureCoverage: [...captureCoverage.values()]

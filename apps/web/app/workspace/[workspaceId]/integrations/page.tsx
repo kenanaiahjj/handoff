@@ -25,7 +25,7 @@ export default async function IntegrationsPage({ params }: IntegrationsPageProps
     .get(workspaceId, session.user.id) as { id: string; name: string; role: string } | undefined;
   if (!workspace) notFound();
   return (
-    <main className="mx-auto w-full max-w-4xl px-5 py-6 sm:px-8">
+    <main className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 sm:py-9">
       <header className="flex items-center justify-between border-b border-border pb-5">
         <Link href={`/workspace/${workspaceId}`} className="inline-flex items-center gap-2 text-sm font-semibold tracking-[0.08em] text-foreground">
           <Image alt="" aria-hidden="true" className="size-7 rounded-control object-cover" height={28} src="/icons/asbir-handoff-v2-180.png" width={28} />
@@ -40,9 +40,9 @@ export default async function IntegrationsPage({ params }: IntegrationsPageProps
         <span aria-current="page" className="text-foreground-muted">Integrations</span>
       </nav>
       <section className="mt-6 border-b border-border pb-5">
-        <p className="font-mono text-xs uppercase tracking-[0.16em] text-primary">Workspace integrations</p>
+        <p className="font-mono text-xs uppercase tracking-[0.16em] text-accent">Workspace integrations</p>
         <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">MCP access</h1>
-        <p className="mt-2 max-w-2xl text-sm leading-6 text-foreground-muted">Connect Asbir Handoff to your AI client with a personal, scoped token. Your AI client can also use its own ClickUp, repository, and QA MCP connections. Tokens stop working when revoked, expired, or when you leave the workspace.</p>
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-foreground-muted">Connect Asbir Handoff to your AI client with a personal, scoped token. Your AI client can also use its own Asbir Teams or ClickUp task tools, plus repository and QA MCP connections. Tokens stop working when revoked, expired, or when you leave the workspace.</p>
       </section>
       <div className="mt-5"><McpTokenManager workspaceId={workspaceId} canManageAll={true} /></div>
     </main>

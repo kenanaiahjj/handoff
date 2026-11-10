@@ -2,6 +2,7 @@
 
 import { useId, useState, type FormEvent } from "react";
 import type { CanvasFrameOption } from "../canvas/FrameNavigator";
+import { overviewCanvasFrameId } from "../canvas/canvas-anchor";
 import type { HandoffComment } from "./CommentPin";
 
 export type PendingCommentPoint = {
@@ -18,6 +19,8 @@ type CommentThreadProps = {
   selectedCommentId: string | null;
   error: string | null;
   openCount: number;
+  canWrite: boolean;
+  hasSelectedScreen: boolean;
   showResolvedPins: boolean;
   commentMode: boolean;
   onCreate: (body: string, point: PendingCommentPoint) => Promise<void>;
@@ -25,6 +28,7 @@ type CommentThreadProps = {
   onResolve: (commentId: string, resolved: boolean) => Promise<void>;
   onSelect: (commentId: string) => void;
   onStartComment: () => void;
+  onPlaceAtSelectedScreen: () => void;
   onToggleResolvedPins: (show: boolean) => void;
 };
 
@@ -32,10 +36,12 @@ function CommentComposer({
   label,
   submitLabel,
   onSubmit,
+  autoFocus = false,
 }: {
   label: string;
   submitLabel: string;
   onSubmit: (body: string) => Promise<void>;
+  autoFocus?: boolean;
 }) {
   const inputId = useId();
   const [body, setBody] = useState("");
@@ -61,6 +67,7 @@ function CommentComposer({
     <form className="space-y-2" onSubmit={submit}>
       <label className="sr-only" htmlFor={inputId}>{label}</label>
       <textarea
+        autoFocus={autoFocus}
         aria-describedby={error ? `${inputId}-error` : undefined}
         className="min-h-20 w-full resize-y rounded-[6px] border border-[#414141] bg-[#191919] px-3 py-2 text-[12px] leading-5 text-[#eee] placeholder:text-[#888] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
         id={inputId}
@@ -88,6 +95,8 @@ export function CommentThread({
   selectedCommentId,
   error,
   openCount,
+  canWrite,
+  hasSelectedScreen,
   showResolvedPins,
   commentMode,
   onCreate,
@@ -95,25 +104,26 @@ export function CommentThread({
   onResolve,
   onSelect,
   onStartComment,
+  onPlaceAtSelectedScreen,
   onToggleResolvedPins,
 }: CommentThreadProps) {
   const [activeTab, setActiveTab] = useState<"open" | "resolved">("open");
   const roots = comments.filter((comment) => comment.parentCommentId === null);
   const visibleRoots = roots.filter((comment) => activeTab === "resolved" ? Boolean(comment.resolvedAt) : !comment.resolvedAt);
-  const frameName = (frameId: string) => frames.find((frame) => frame.id === frameId)?.name ?? "Screen";
+  const frameName = (frameId: string) => frameId === overviewCanvasFrameId ? "Canvas" : frames.find((frame) => frame.id === frameId)?.name ?? "Screen";
 
   return (
     <section aria-labelledby="comments-title" className="text-[#d5d5d5]">
       <div className="flex items-center justify-between gap-2">
         <h2 className="text-[14px] font-semibold text-[#ededed]" id="comments-title">Comments</h2>
-        <button
+        {canWrite ? <button
           aria-pressed={commentMode}
           className="min-h-8 rounded-[5px] px-2.5 text-[11px] text-[#c8c8c8] hover:bg-[#353535] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
           onClick={onStartComment}
           type="button"
         >
           {commentMode ? "Cancel" : "Add comment"}
-        </button>
+        </button> : null}
       </div>
       <p className="mt-1 text-[11px] text-[#969696]">{openCount} open · {roots.length} total</p>
 
@@ -141,15 +151,28 @@ export function CommentThread({
         Show resolved pins
       </label>
 
-      {commentMode ? <p aria-live="polite" className="rounded-[5px] bg-[#343434] px-2.5 py-2 text-[11px] leading-5 text-[#ddd]">Click a screen point to place a comment pin.</p> : null}
-      {pendingPoint ? (
+      {commentMode ? (
+        <div aria-live="polite" className="rounded-[5px] bg-[#343434] px-2.5 py-2 text-[11px] leading-5 text-[#ddd]">
+          <p>Click a frame or empty canvas point to place a comment pin, or use the button to place it at the selected screen center.</p>
+          <button
+            className="mt-2 min-h-8 rounded-[5px] border border-[#555] px-2.5 text-[11px] text-[#ddd] hover:bg-[#414141] disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!hasSelectedScreen}
+            onClick={onPlaceAtSelectedScreen}
+            type="button"
+          >
+            Place at center of selected screen
+          </button>
+          {!hasSelectedScreen ? <p className="mt-1 text-[#aaa]">Select a screen to enable this option.</p> : null}
+        </div>
+      ) : null}
+      {pendingPoint && canWrite ? (
         <div className="mt-3 rounded-[6px] border border-[#555] bg-[#292929] p-3">
           <p className="mb-1 text-[12px] font-medium text-[#eee]">Comment on {frameName(pendingPoint.frameId)}</p>
           <p className="mb-3 font-mono text-[10px] text-[#969696]">
             {Math.round(pendingPoint.x)}, {Math.round(pendingPoint.y)} source units
-            {pendingPoint.sourceNodeId ? " · selected element" : " · screen point"}
+            {pendingPoint.sourceNodeId ? " · selected element" : pendingPoint.frameId === overviewCanvasFrameId ? " · canvas point" : " · screen point"}
           </p>
-          <CommentComposer label="Write a comment" submitLabel="Comment" onSubmit={(body) => onCreate(body, pendingPoint)} />
+          <CommentComposer autoFocus label="Write a comment" submitLabel="Comment" onSubmit={(body) => onCreate(body, pendingPoint)} />
         </div>
       ) : null}
       {error ? <p aria-live="assertive" className="mt-3 rounded-[5px] border border-[#76522a] bg-[#332718] p-2.5 text-[11px] text-[#efb45f]">{error}</p> : null}
@@ -174,7 +197,7 @@ export function CommentThread({
                   </button>
                   <p className="ml-7 mt-1.5 text-[10px] text-[#8e8e8e]">{frameName(comment.frameId)}{comment.sourceNodeId ? " · element linked" : ""}</p>
                   <div className="ml-7 mt-2 flex flex-wrap gap-3">
-                    <button className="min-h-7 text-[10px] text-[#aaa] hover:text-white hover:underline" onClick={() => onResolve(comment.id, !comment.resolvedAt)} type="button">{comment.resolvedAt ? "Reopen" : "Resolve"}</button>
+                    {canWrite ? <button className="min-h-7 text-[10px] text-[#aaa] hover:text-white hover:underline" onClick={() => onResolve(comment.id, !comment.resolvedAt)} type="button">{comment.resolvedAt ? "Reopen" : "Resolve"}</button> : null}
                     <button className="min-h-7 text-[10px] text-[#aaa] hover:text-white hover:underline" onClick={() => onSelect(comment.id)} type="button">Show pin</button>
                   </div>
                   {replies.length ? (
@@ -187,12 +210,12 @@ export function CommentThread({
                       ))}
                     </ol>
                   ) : null}
-                  <div className="ml-7 mt-2">
+                  {canWrite ? <div className="ml-7 mt-2">
                     <details>
                       <summary className="min-h-7 cursor-pointer text-[10px] text-[#969696] hover:text-white">Reply</summary>
                       <div className="mt-2"><CommentComposer label={"Reply to " + comment.authorName} submitLabel="Reply" onSubmit={(body) => onReply(comment.id, body)} /></div>
                     </details>
-                  </div>
+                  </div> : null}
                 </article>
               </li>
             );

@@ -80,7 +80,7 @@ AI uses the deterministic structured diff and layout findings to draft:
 
 Every generated statement must link to its supporting source evidence. Users can edit generated content before publishing it. AI must not infer token identities or exact spacing when the source data does not provide them.
 
-Handoff exposes a remote MCP server with tools to list projects, handoffs, and versions; retrieve snapshots and frames; inspect measurements and token bindings; compare versions; read comments, findings, and linked tasks; draft release notes; and record an externally created task with `link_task`. An AI client can connect to Handoff alongside its own ClickUp, Linear, repository, or QA MCP tools. The client creates tasks or performs code work through those tools, then can link the result back to the exact Handoff version, screen, or element. Handoff does not connect to or store credentials for those external tools, and it does not execute code. MCP tokens for Handoff are workspace-scoped and access-controlled.
+Handoff exposes a remote MCP server with tools to list projects, handoffs, and versions; retrieve snapshots and frames; inspect measurements and token bindings; compare versions; read comments, findings, and linked tasks; draft release notes; and record an externally created task with `link_task`. An AI client can connect to Handoff alongside its own task tools, such as Asbir Teams or ClickUp, plus Linear, repository, or QA tools. The client creates tasks or performs code work through those tools, then can link the result back to the exact Handoff version, screen, or element. Handoff does not connect to or store credentials for those external tools, and it does not execute code. MCP tokens for Handoff are workspace-scoped and access-controlled.
 
 ## System boundaries
 
@@ -116,4 +116,4 @@ The app is a TypeScript web product. Rust is not part of the initial architectur
 - The first team uses invite-based workspace access; a specific SSO provider is not required for the first release.
 - Figma capture uses a plugin so it can collect node properties and token bindings in one source-side action. The REST Variables endpoint has separate plan and scope requirements, so the plugin capture path avoids depending on REST token access for the core data contract; see the [Variables REST API requirements](https://developers.figma.com/docs/rest-api/variables-endpoints/).
 - Direct Paper MCP capture is out of scope for the current phase and needs a separate design and validation pass if resumed.
-- The AI client owns connections to ClickUp, Linear, repositories, and QA tools. Handoff stores links and design evidence for external work; it does not integrate directly with those providers.
+- The AI client owns connections to task tools such as Asbir Teams and ClickUp, as well as Linear, repository, and QA tools. Handoff stores links and design evidence for external work; it does not integrate directly with those providers.

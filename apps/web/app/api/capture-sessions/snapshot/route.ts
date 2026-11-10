@@ -1,18 +1,21 @@
+import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getCaptureSession } from "@/src/server/repositories/capture-sessions";
-import { createHandoffVersion, getVersion, type VersionAssetInput } from "@/src/server/repositories/versions";
+import { createHandoffVersion, getVersion, HandoffVersionConflictError, type VersionAssetInput } from "@/src/server/repositories/versions";
 import { getDatabase } from "@/src/server/db";
 import { diffSnapshots } from "@/src/server/services/diff";
 import { parseUploadForm, SnapshotImportError, verifyRenderAssetBytes } from "@/src/server/services/import-snapshot";
-import { snapshotEnvelopeSchema } from "@asbir/snapshot-contract";
+import { createSnapshotEnvelope, MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES, normalizeFigmaCaptureScope, snapshotEnvelopeSchema, type SnapshotEnvelope } from "@asbir/snapshot-contract";
+import { mergeFigmaCaptureSnapshots } from "@/src/server/services/merge-figma-capture";
+import { findReusableAsset } from "@/src/server/services/reusable-assets";
 
-const maxAssetsBytes = 100 * 1024 * 1024;
-const maxSnapshotJsonBytes = 16 * 1024 * 1024;
+const maxAssetsBytes = MAX_CAPTURE_ASSET_BYTES;
+const maxSnapshotJsonBytes = MAX_SNAPSHOT_JSON_BYTES;
 const supportedContentTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
 const frameMatchesSchema = z.array(z.object({
   beforeFrameId: z.string().trim().min(1).max(200),
   afterFrameId: z.string().trim().min(1).max(200),
-}).strict()).max(100);
+}).strict()).max(5_000);
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -54,8 +57,8 @@ export async function POST(request: Request) {
   if (form.getAll("snapshot").length !== 1) return jsonResponse({ error: "Send exactly one snapshot JSON field." }, { status: 400 });
   const serializedSnapshot = form.get("snapshot");
   if (typeof serializedSnapshot !== "string") return jsonResponse({ error: "Snapshot JSON is required." }, { status: 400 });
-  if (new TextEncoder().encode(serializedSnapshot).byteLength > maxSnapshotJsonBytes) {
-    return jsonResponse({ error: "The structured snapshot exceeds the 16 MiB JSON limit." }, { status: 413 });
+  if (Buffer.byteLength(serializedSnapshot, "utf8") > maxSnapshotJsonBytes) {
+    return jsonResponse({ error: "The structured snapshot exceeds Handoff’s 128 MiB JSON limit." }, { status: 413 });
   }
   let json: unknown;
   try { json = JSON.parse(serializedSnapshot); }
@@ -66,8 +69,6 @@ export async function POST(request: Request) {
   if (snapshot.source !== "figma" || snapshot.sourceMetadata.sourceTool !== "figma") {
     return jsonResponse({ error: "This capture endpoint accepts Figma plugin snapshots." }, { status: 400 });
   }
-  if (snapshot.assets.length > 300) return jsonResponse({ error: "A capture can contain at most 300 render assets." }, { status: 413 });
-
   const baselineFields = form.getAll("baselineVersionId");
   const matchFields = form.getAll("frameMatches");
   if (baselineFields.length > 1 || matchFields.length > 1) return jsonResponse({ error: "Send one frame replacement confirmation." }, { status: 400 });
@@ -88,27 +89,52 @@ export async function POST(request: Request) {
     if (!parsedMatches.success) return jsonResponse({ error: "The frame replacement confirmation is invalid." }, { status: 400 });
     frameMatches = parsedMatches.data;
   }
-  if (!frameMatches.length && baselineVersionId) return jsonResponse({ error: "A baseline version is only needed when confirming frame replacements." }, { status: 400 });
-
-  if (frameMatches.length) {
-    if (!session.handoffId || !baselineVersionId) return jsonResponse({ error: "A previous handoff version is required to confirm frame replacements." }, { status: 400 });
-    const latest = getDatabase()
-      .prepare(
-        `SELECT id FROM handoff_version
-         WHERE workspace_id = ? AND handoff_id = ?
-         ORDER BY created_at DESC, id DESC LIMIT 1`,
-      )
-      .get(session.workspaceId, session.handoffId) as { id: string } | undefined;
-    if (latest?.id !== baselineVersionId) {
-      return jsonResponse({ error: "The handoff changed while you reviewed frame replacements. Capture again to compare with the latest version." }, { status: 409 });
+  const captureScope = normalizeFigmaCaptureScope(snapshot.sourceMetadata.captureScope);
+  const isPartialCapture = captureScope === "selected" || captureScope === "page";
+  const database = getDatabase();
+  const latest = session.handoffId
+    ? database
+        .prepare(
+          `SELECT id FROM handoff_version
+           WHERE workspace_id = ? AND handoff_id = ?
+           ORDER BY created_at DESC, id DESC LIMIT 1`,
+        )
+        .get(session.workspaceId, session.handoffId) as { id: string } | undefined
+    : undefined;
+  if (baselineVersionId && (!session.handoffId || latest?.id !== baselineVersionId)) {
+    return jsonResponse({ error: "The handoff changed while you reviewed this capture. Capture again to compare with the latest version." }, { status: 409 });
+  }
+  if (isPartialCapture && latest && !baselineVersionId) {
+    return jsonResponse({ error: "The latest handoff version is required to merge a selected-frame capture. Preview the capture again." }, { status: 409 });
+  }
+  if (frameMatches.length && (!session.handoffId || !baselineVersionId)) {
+    return jsonResponse({ error: "A previous handoff version is required to confirm frame replacements." }, { status: 400 });
+  }
+  const baseline = baselineVersionId
+    ? getVersion({ workspaceId: session.workspaceId, versionId: baselineVersionId })
+    : null;
+  if (baselineVersionId && !baseline) return jsonResponse({ error: "The replacement baseline could not be loaded." }, { status: 409 });
+  if (isPartialCapture && baseline) {
+    if (baseline.snapshot.source !== "figma" || baseline.snapshot.sourceFileId !== snapshot.sourceFileId) {
+      return jsonResponse({ error: "A selected-frame or page capture can only update the same Figma file. Capture the full file to replace this handoff." }, { status: 409 });
     }
-    const baseline = getVersion({ workspaceId: session.workspaceId, versionId: baselineVersionId });
-    if (!baseline) return jsonResponse({ error: "The replacement baseline could not be loaded." }, { status: 409 });
+  }
+
+  if (frameMatches.length && baseline) {
     const candidateDiff = diffSnapshots(
       { versionId: baseline.id, snapshot: baseline.snapshot },
       { versionId: "incoming-capture", snapshot },
     );
-    const allowedPairs = new Set(candidateDiff.unmatchedFrameCandidates.flatMap((candidate) =>
+    const capturedPageIds = new Set(snapshot.frames.flatMap((frame) => frame.sourcePageId ? [frame.sourcePageId] : []));
+    const eligibleCandidates = isPartialCapture && baseline.snapshot.source === "figma"
+      ? candidateDiff.unmatchedFrameCandidates.filter((candidate) => {
+          const before = baseline.snapshot.source === "figma"
+            ? baseline.snapshot.frames.find((frame) => frame.sourceFrameId === candidate.beforeFrameId)
+            : undefined;
+          return Boolean(before?.sourcePageId && capturedPageIds.has(before.sourcePageId));
+        })
+      : candidateDiff.unmatchedFrameCandidates;
+    const allowedPairs = new Set(eligibleCandidates.flatMap((candidate) =>
       candidate.afterCandidates.map((frame) => `${candidate.beforeFrameId}\u0000${frame.frameId}`),
     ));
     const beforeIds = new Set<string>();
@@ -133,7 +159,7 @@ export async function POST(request: Request) {
       return jsonResponse({ error: `Render asset metadata does not match for "${asset.fileName}".` }, { status: 400 });
     }
     totalBytes += uploaded.size;
-    if (totalBytes > maxAssetsBytes) return jsonResponse({ error: "This capture exceeds the 100 MiB upload limit." }, { status: 413 });
+    if (totalBytes > maxAssetsBytes) return jsonResponse({ error: "This capture exceeds Handoff’s 256 MiB asset limit." }, { status: 413 });
     const bytes = new Uint8Array(await uploaded.arrayBuffer());
     try {
       const dimensions = verifyRenderAssetBytes(bytes, asset.contentType, asset.fileName);
@@ -152,6 +178,52 @@ export async function POST(request: Request) {
   }
 
   try {
+    let versionSnapshot: SnapshotEnvelope = snapshot;
+    let versionAssets: VersionAssetInput[] = assets;
+    let reuseAssetsFromVersionId: string | undefined;
+
+    if (isPartialCapture && baseline && baselineVersionId) {
+      if (baseline.snapshot.source !== "figma") {
+        return jsonResponse({ error: "A selected-frame or page capture requires a structured Figma baseline." }, { status: 409 });
+      }
+      const merged = mergeFigmaCaptureSnapshots({
+        baseline: baseline.snapshot,
+        incoming: snapshot,
+        baselineVersionId,
+        assetPrefix: randomUUID().replace(/-/g, ""),
+        frameMatches,
+      });
+      if (!merged) return jsonResponse({ error: "This capture scope cannot be merged. Capture the full file to replace this handoff." }, { status: 400 });
+      const finalized = await createSnapshotEnvelope(merged.snapshot);
+      if (!finalized.success) {
+        return jsonResponse({ error: "The merged capture does not match the structured snapshot format.", issues: finalized.error.issues.slice(0, 30) }, { status: 400 });
+      }
+      if (Buffer.byteLength(JSON.stringify(finalized.data), "utf8") > maxSnapshotJsonBytes) {
+        return jsonResponse({ error: "The merged structured snapshot exceeds Handoff’s 128 MiB JSON limit. Capture fewer frames in each update." }, { status: 413 });
+      }
+
+      versionSnapshot = finalized.data;
+      reuseAssetsFromVersionId = baselineVersionId;
+      const uploadedByKey = new Map(assets.map((asset) => [asset.key, asset] as const));
+      const baselineByKey = new Map(baseline.assets.map((asset) => [asset.assetKey, asset] as const));
+      const inheritedKeys = new Set(merged.inheritedAssetKeys);
+      const incomingKeyByMergedKey = new Map([...merged.incomingAssetKeyMap].map(([incomingKey, mergedKey]) => [mergedKey, incomingKey] as const));
+      versionAssets = finalized.data.assets.map((asset): VersionAssetInput => {
+        if (inheritedKeys.has(asset.key)) {
+          const previous = baselineByKey.get(asset.key);
+          if (!previous) throw new Error(`The baseline asset "${asset.fileName}" could not be reused.`);
+          return { ...asset, reuseObjectKey: previous.objectKey };
+        }
+        const sourceKey = incomingKeyByMergedKey.get(asset.key);
+        const uploaded = sourceKey ? uploadedByKey.get(sourceKey) : undefined;
+        if (!uploaded?.bytes) throw new Error(`The captured asset "${asset.fileName}" could not be matched to its upload.`);
+        const duplicate = findReusableAsset(asset, baseline.assets);
+        return duplicate
+          ? { ...asset, reuseObjectKey: duplicate.objectKey }
+          : { ...asset, bytes: uploaded.bytes };
+      });
+    }
+
     const created = await createHandoffVersion({
       workspaceId: session.workspaceId,
       projectId: session.projectId,
@@ -160,8 +232,10 @@ export async function POST(request: Request) {
       versionLabel: session.versionLabel,
       releaseNote: session.releaseNote,
       createdBy: session.createdBy,
-      snapshot,
-      assets,
+      expectedLatestVersionId: baselineVersionId ?? undefined,
+      snapshot: versionSnapshot,
+      assets: versionAssets,
+      reuseAssetsFromVersionId,
       consumeCaptureSessionId: session.id,
       frameReplacementMatches: frameMatches.length && baselineVersionId
         ? { baselineVersionId, matches: frameMatches }
@@ -171,6 +245,9 @@ export async function POST(request: Request) {
     const reviewUrl = new URL(`/workspace/${encodeURIComponent(session.workspaceId)}/projects/${encodeURIComponent(session.projectId)}/handoffs/${encodeURIComponent(created.handoffId)}?versionId=${encodeURIComponent(created.versionId)}`, origin).toString();
       return jsonResponse({ ...created, projectId: session.projectId, reviewUrl }, { status: 201 });
   } catch (error) {
+    if (error instanceof HandoffVersionConflictError) {
+      return jsonResponse({ error: error.message }, { status: 409 });
+    }
     if (error instanceof Error && /Capture session expired|already used|no longer matches/i.test(error.message)) {
       return jsonResponse({ error: error.message }, { status: 401 });
     }

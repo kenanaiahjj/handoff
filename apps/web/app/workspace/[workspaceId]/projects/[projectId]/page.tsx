@@ -9,6 +9,8 @@ import { listProjects } from "@/src/server/repositories/projects";
 import { ProjectPdInChargeForm } from "./project-actions";
 import { HandoffSetupForm } from "./handoff-setup-form";
 import { ProjectRulesForm } from "@/src/components/ProjectRulesForm";
+import { DeleteHandoffButton } from "@/src/components/canvas/HandoffLifecycleActions";
+import { HandoffAccessDialog } from "@/src/components/canvas/HandoffAccessDialog";
 import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
 
 export const instant = false;
@@ -23,6 +25,8 @@ type ProjectHandoff = {
   createdAt: string;
   versionCount: number;
   latestVersionAt: string | null;
+  publishedVersionId: string | null;
+  sharingMode: "workspace" | "invited" | "anyone";
 };
 
 export default async function ProjectPage({ params }: ProjectPageProps) {
@@ -35,6 +39,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     .prepare("SELECT role FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
     .get(workspaceId, session.user.id) as { role: string } | undefined;
   if (!project || !membership) notFound();
+  const canManageHandoffs = membership.role === "owner" || membership.role === "designer";
 
   const handoffs = listHandoffs({ workspaceId, projectId }) as ProjectHandoff[];
   const workspace = getDatabase()
@@ -77,7 +82,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">{project.name}</h1>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-2xl text-sm leading-6 text-foreground-muted">Keep the app’s design canvas and every reviewed version in this project.</p>
-            <Link className="capture-primary-action inline-flex min-h-11 items-center rounded-full px-5 text-sm font-semibold" href="#start-handoff">Start handoff</Link>
+            <Link className="capture-primary-action inline-flex min-h-11 items-center rounded-control px-5 text-sm font-semibold" href="#start-handoff">Start handoff</Link>
           </div>
         </header>
 
@@ -91,14 +96,28 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
               <ul className="divide-y divide-border">
                 {handoffs.map((handoff) => (
                   <li key={handoff.id}>
-                    <Link className="group flex min-h-[68px] items-center gap-3 px-2 transition-colors hover:bg-surface/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspaceId}/projects/${projectId}/handoffs/${handoff.id}`}>
-                      <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-control border border-border bg-surface text-foreground-subtle"><svg className="size-4" fill="none" viewBox="0 0 16 16"><path d="M3 3.5h10v9H3zM5.5 6h5M5.5 8.5h3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.2" /></svg></span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-foreground">{handoff.name}</span>
-                        <span className="mt-1 block text-xs text-foreground-subtle">{handoff.versionCount} versions <span aria-hidden="true">·</span> {handoff.latestVersionAt ? new Date(handoff.latestVersionAt).toLocaleDateString() : "No versions yet"}</span>
-                      </span>
-                      <svg aria-hidden="true" className="size-4 shrink-0 text-foreground-subtle transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
-                    </Link>
+                    <div className="flex items-center gap-2">
+                      <Link className="group flex min-h-[68px] min-w-0 flex-1 items-center gap-3 px-2 transition-colors hover:bg-surface/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspaceId}/projects/${projectId}/handoffs/${handoff.id}`} rel="noopener noreferrer" target="_blank">
+                        <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-control border border-border bg-surface text-foreground-subtle"><svg className="size-4" fill="none" viewBox="0 0 16 16"><path d="M3 3.5h10v9H3zM5.5 6h5M5.5 8.5h3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.2" /></svg></span>
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-sm font-medium text-foreground">{handoff.name}</span>
+                          <span className="mt-1 block text-xs text-foreground-subtle">
+                            {handoff.versionCount} {handoff.versionCount === 1 ? "version" : "versions"} <span aria-hidden="true">·</span> {handoff.latestVersionAt ? new Date(handoff.latestVersionAt).toLocaleDateString() : "No versions yet"}
+                            <span aria-hidden="true"> · </span>{!handoff.publishedVersionId ? "Not published" : handoff.sharingMode === "anyone" ? "Anyone with link" : handoff.sharingMode === "invited" ? "Only invited" : "Workspace members"}
+                          </span>
+                        </span>
+                        <svg aria-hidden="true" className="size-4 shrink-0 text-foreground-subtle transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
+                      </Link>
+                      {canManageHandoffs ? <HandoffAccessDialog
+                        endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoff.id)}`}
+                        handoffName={handoff.name}
+                      /> : null}
+                      {canManageHandoffs ? <DeleteHandoffButton
+                        endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoff.id)}`}
+                        handoffName={handoff.name}
+                        returnHref={`/workspace/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}`}
+                      /> : null}
+                    </div>
                   </li>
                 ))}
               </ul>

@@ -33,7 +33,7 @@ export interface CaptureReadyMessage {
   layerRenders: LayerExportAssetBytes[];
   /** Optional Figma lookups that could not be read without blocking the frame capture. */
   warnings: string[];
-  scope: "selected" | "page";
+  scope: "selected" | "page" | "file";
 }
 
 export interface CaptureProgressMessage {

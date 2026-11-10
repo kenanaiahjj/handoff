@@ -84,6 +84,23 @@ export function listProjectPdCandidates(workspaceId: string) {
     .all(workspaceId) as Array<{ id: string; name: string; email: string; role: "owner" | "designer" }>;
 }
 
+export function listWorkspaceMembers(workspaceId: string) {
+  return getDatabase()
+    .prepare(
+      `SELECT workspace_membership.user_id AS id, "user".name, "user".email, workspace_membership.role
+       FROM workspace_membership
+       JOIN "user" ON "user".id = workspace_membership.user_id
+       WHERE workspace_membership.workspace_id = ?
+       ORDER BY "user".name COLLATE NOCASE, "user".email COLLATE NOCASE`,
+    )
+    .all(workspaceId) as Array<{
+      id: string;
+      name: string;
+      email: string;
+      role: "owner" | "designer" | "reviewer" | "developer" | "qa";
+    }>;
+}
+
 export function assignProjectPdInCharge(input: { workspaceId: string; projectId: string; pdInChargeUserId: string | null }) {
   const result = getDatabase()
     .prepare(

@@ -47,7 +47,7 @@ export interface CaptureSession {
 ```
 
 - [x] Add a designer-only action that creates a cryptographically random, single-use capture token, stores only its hash, and displays the token once.
-- [x] Expire capture sessions after 10 minutes and mark the session used in the same transaction that stores the snapshot.
+- [x] Expire capture sessions after one hour and mark the session used in the same transaction that stores the snapshot.
 - [x] Add `POST /api/capture-sessions` to issue a session and `POST /api/capture-sessions/snapshot` to accept one snapshot.
 - [x] Validate workspace, project, token expiry, token unused state, payload schema, and asset sizes before creating a version.
 - [x] Return the created project, handoff, and version IDs; reject replayed or expired tokens with 401.
@@ -74,6 +74,7 @@ export interface CaptureSession {
 - [x] Enumerate local variables and collections with the Figma Plugin API, then resolve every node's bound variable IDs to variable name, type, collection, mode, and value.
 - [x] Capture each frame using the Plugin API export method at source dimensions. Compose a page overview from captured frame positions and renders.
 - [x] Populate every `Measurement` with `provenance: "source"` for explicit values and `sourceProperty` such as `paddingLeft` or `itemSpacing`.
+- [x] Add synthetic capture regressions for automatic layout grids, exact four-side padding, wrap spacing, child-relative bounds, and measured margins. The Figma plugin suite passes 40 tests. Verified 2026-11-09.
 - [x] For unbound fills, store their raw paint values and an empty token list.
 - [x] Parse the completed envelope with `snapshotEnvelopeSchema`; block upload and name each missing required field when parsing fails.
 - [x] Run web and plugin lint/build commands.
@@ -86,9 +87,10 @@ export interface CaptureSession {
 - [x] Upload the validated snapshot with the one-time token, all frame images, and overview image.
 - [x] Display the returned project, handoff, and version IDs with a link to the hosted handoff page.
 - [x] Show upload failures without losing the local capture payload; allow the designer to retry with a valid capture token.
-- [ ] Confirm a second capture creates a second version and leaves the first version's snapshot hash unchanged.
+- [x] Stress the diff engine with 210 screens and 31,500 layers, including geometry, style, text, layout, visual, added-layer, and removed-layer changes across five screens; verify the other 205 screens remain unchanged.
+- [x] Confirm a second capture creates a second version and leaves the first version's snapshot hash unchanged. Verified 2026-11-09: Tripket.ph produced separate baseline, controlled-change, stress-resize, and restored versions; the baseline snapshot hash stayed unchanged.
 - [x] Run plugin and web lint/build commands.
-- [ ] Capture two revisions of the same Figma file and verify exact measurements and structured diffs in Handoff.
+- [x] Capture two revisions of the same Figma file and verify exact measurements and structured diffs in Handoff. Verified 2026-11-09 across four Tripket.ph frames: a 16 px frame-width change produced geometry and margin diffs, and a four-frame resize produced 38 structured/visual changes; restoring the source produced zero changes against baseline.
 
 ## Completion check
 

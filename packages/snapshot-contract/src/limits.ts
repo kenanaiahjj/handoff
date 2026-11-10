@@ -1,0 +1,2 @@
+export const MAX_SNAPSHOT_JSON_BYTES = 128 * 1024 * 1024;
+export const MAX_CAPTURE_ASSET_BYTES = 256 * 1024 * 1024;

@@ -1,12 +1,19 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent, type WheelEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import type { CanvasFrameChangeStatus, CanvasFrameOption } from "./FrameNavigator";
 import { useCanvasViewport } from "./useCanvasViewport";
+import { attachCanvasWheelZoom } from "./canvas-wheel-zoom";
+import { getCanvasImageRenderPlan } from "./canvas-image-plan";
+import { getVisibleCanvasOverlayNodes } from "./visible-canvas-overlay-nodes";
+import { canvasAnchorAtPoint, canvasAnchorToViewportPoint } from "./canvas-anchor";
 import { CommentPin, type HandoffComment } from "../comments/CommentPin";
 import type { PendingCommentPoint } from "../comments/CommentThread";
+import { layoutCommentPins } from "../comments/comment-pin-layout";
 import { LayoutGridOverlay } from "./LayoutGridOverlay";
+import { comparisonFrameStatusLabel } from "./compare-presentation";
+import { getCanvasFrameLabelMaxWidth, shouldShowCanvasFrameLabel } from "./canvas-frame-label-visibility";
 
 export type CanvasViewportControls = {
   scale: number;
@@ -17,8 +24,10 @@ export type CanvasViewportControls = {
 
 type CanvasViewportProps = {
   frame: CanvasFrameOption;
+  overviewOrigin: { sourceX: number; sourceY: number };
   interactionMode: "view" | "inspect";
   screens: CanvasFrameOption[];
+  changedOnly: boolean;
   selectedFrameId: string | null;
   frameStatuses: Record<string, CanvasFrameChangeStatus>;
   canCompare: boolean;
@@ -44,16 +53,15 @@ type CanvasViewportProps = {
 };
 
 function statusLabel(status: CanvasFrameChangeStatus | undefined) {
-  if (status === "changed") return "Changed";
-  if (status === "added") return "New";
-  if (status === "removed") return "Removed";
-  return null;
+  return status && status !== "unchanged" ? comparisonFrameStatusLabel(status) : null;
 }
 
 export function CanvasViewport({
   frame,
+  overviewOrigin,
   interactionMode,
   screens,
+  changedOnly,
   selectedFrameId,
   frameStatuses,
   canCompare,
@@ -82,7 +90,7 @@ export function CanvasViewport({
   const [isDragging, setIsDragging] = useState(false);
   const [altHeld, setAltHeld] = useState(false);
   const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
-  const { containerRef, transform, fitToFrame, zoomBy, zoomAt, panBy } = useCanvasViewport(
+  const { containerRef, viewportSize, transform, fitToFrame, zoomBy, zoomAt, panBy } = useCanvasViewport(
     frame.sourceWidth,
     frame.sourceHeight,
   );
@@ -92,8 +100,15 @@ export function CanvasViewport({
     zoomOut: () => zoomBy(1 / 1.2),
     zoomIn: () => zoomBy(1.2),
   }), [fitToFrame, transform.scale, zoomBy]);
+  const visibleScreenIds = useMemo(() => new Set(screens.map((screen) => screen.id)), [screens]);
 
   useEffect(() => onViewportChange(controls), [controls, onViewportChange]);
+
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    return attachCanvasWheelZoom(container, zoomAt);
+  }, [containerRef, zoomAt]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -161,11 +176,6 @@ export function CanvasViewport({
     }
   }
 
-  function handleWheel(event: WheelEvent<HTMLDivElement>) {
-    event.preventDefault();
-    zoomAt(Math.exp(-event.deltaY * 0.0015), { x: event.clientX, y: event.clientY });
-  }
-
   function handleCanvasKeyDown(event: ReactKeyboardEvent<HTMLDivElement>) {
     if (event.target !== event.currentTarget) return;
     const distance = event.shiftKey ? 12 : 40;
@@ -198,6 +208,12 @@ export function CanvasViewport({
     const localY = (event.clientY - rect.top - rect.height / 2 - transform.offsetY) / transform.scale + frame.sourceHeight / 2;
     if (localX < 0 || localY < 0 || localX > frame.sourceWidth || localY > frame.sourceHeight) return;
 
+    const anchor = canvasAnchorAtPoint(
+      frame,
+      screens,
+      { x: localX, y: localY },
+      nodeButton?.dataset.sourceNodeId ?? null,
+    );
     const sourceX = localX + frame.sourceX;
     const sourceY = localY + frame.sourceY;
     const screen = screens.find((candidate) =>
@@ -207,56 +223,91 @@ export function CanvasViewport({
     );
 
     if (commentMode) {
-      if (!screen) return;
-      const sourceNodeId = nodeButton?.dataset.sourceNodeId ?? selectedNodeId;
-      onPlaceComment({
-        frameId: screen.id,
-        sourceNodeId: sourceNodeId ?? null,
-        x: sourceX - screen.sourceX,
-        y: sourceY - screen.sourceY,
-      });
+      if (anchor) onPlaceComment(anchor);
       return;
     }
 
     if (annotationMode) {
-      if (!screen) return;
-      const sourceNodeId = nodeButton?.dataset.sourceNodeId ?? selectedNodeId;
-      onPlaceAnnotation({
-        frameId: screen.id,
-        sourceNodeId: sourceNodeId ?? null,
-        x: sourceX - screen.sourceX,
-        y: sourceY - screen.sourceY,
-      });
+      if (anchor) onPlaceAnnotation(anchor);
       return;
     }
 
     if (!nodeButton && screen) onSelectFrame(screen.id);
   }
 
-  const commentPins = comments
-    .filter((comment) => comment.parentCommentId === null && comment.x !== null && comment.y !== null && (showResolvedPins || !comment.resolvedAt))
-    .flatMap((comment, index) => {
-      const screen = screens.find((candidate) => candidate.id === comment.frameId);
-      if (!screen || comment.x === null || comment.y === null) return [];
-      const absoluteX = screen.sourceX + comment.x;
-      const absoluteY = screen.sourceY + comment.y;
-      return [{
-        comment: { ...comment, x: absoluteX - frame.sourceX, y: absoluteY - frame.sourceY },
-        index,
-      }];
-    });
+  const commentPins = layoutCommentPins(comments, screens, frame, showResolvedPins, overviewOrigin);
   const annotationPins = annotations.flatMap((annotation) => {
-    const screen = screens.find((candidate) => candidate.id === annotation.frameId);
-    if (!screen) return [];
+    const position = canvasAnchorToViewportPoint(annotation, frame, screens, overviewOrigin);
+    if (!position) return [];
     return [{
       annotation,
-      x: screen.sourceX + annotation.x - frame.sourceX,
-      y: screen.sourceY + annotation.y - frame.sourceY,
+      x: position.x,
+      y: position.y,
     }];
   });
   const inverseScale = 1 / Math.max(transform.scale, 0.01);
-  const selectedBounds = frame.nodes.find((node) => node.sourceNodeId === selectedNodeId)?.bounds;
-  const hoveredBounds = frame.nodes.find((node) => node.sourceNodeId === hoveredNodeId)?.bounds;
+  const canvasFrameLabelMaxWidth = getCanvasFrameLabelMaxWidth(viewportSize.width, transform.scale);
+  const overviewResolutionScale = Math.min(
+    frame.pixelWidth / Math.max(frame.sourceWidth, 1),
+    frame.pixelHeight / Math.max(frame.sourceHeight, 1),
+  );
+  const imageRenderPlan = getCanvasImageRenderPlan({
+    kind: frame.kind,
+    exact: frame.exact,
+    changedOnly,
+    frameVisible: visibleScreenIds.has(frame.id),
+    hasScreenFrames: screens.length > 0,
+    zoomScale: transform.scale,
+    overviewResolutionScale,
+  });
+  const sourceOverlayNodes = frame.overlayNodes ?? frame.nodes;
+  const overlayNodes = useMemo(
+    () => frame.kind === "overview" && changedOnly
+      ? sourceOverlayNodes.filter((node) => visibleScreenIds.has(node.sourceFrameId))
+      : sourceOverlayNodes,
+    [changedOnly, frame.kind, sourceOverlayNodes, visibleScreenIds],
+  );
+  const overlayNodesById = useMemo(
+    () => new Map(overlayNodes.map((node) => [node.sourceNodeId, node] as const)),
+    [overlayNodes],
+  );
+  const highlightedNodeIdSet = useMemo(() => new Set(highlightedNodeIds), [highlightedNodeIds]);
+  const selectedBounds = selectedNodeId ? overlayNodesById.get(selectedNodeId)?.bounds : undefined;
+  const hoveredBounds = hoveredNodeId ? overlayNodesById.get(hoveredNodeId)?.bounds : undefined;
+  const visibleOverlayNodes = useMemo(() => {
+    if (interactionMode !== "inspect" && !commentMode && !annotationMode) return [];
+    return getVisibleCanvasOverlayNodes({
+      nodes: overlayNodes,
+      frameWidth: frame.sourceWidth,
+      frameHeight: frame.sourceHeight,
+      frameOriginX: frame.kind === "overview" ? frame.sourceX : 0,
+      frameOriginY: frame.kind === "overview" ? frame.sourceY : 0,
+      viewportWidth: viewportSize.width,
+      viewportHeight: viewportSize.height,
+      offsetX: transform.offsetX,
+      offsetY: transform.offsetY,
+      scale: transform.scale,
+      selectedNodeId,
+      highlightedNodeIds,
+    });
+  }, [
+    annotationMode,
+    commentMode,
+    frame.kind,
+    frame.sourceHeight,
+    frame.sourceWidth,
+    frame.sourceX,
+    frame.sourceY,
+    highlightedNodeIds,
+    interactionMode,
+    overlayNodes,
+    selectedNodeId,
+    transform.offsetX,
+    transform.offsetY,
+    transform.scale,
+    viewportSize.height,
+    viewportSize.width,
+  ]);
   const distance = altHeld && selectedNodeId && hoveredNodeId && selectedNodeId !== hoveredNodeId && selectedBounds && hoveredBounds &&
     selectedBounds.x.value !== null && selectedBounds.y.value !== null && selectedBounds.width.value !== null && selectedBounds.height.value !== null &&
     hoveredBounds.x.value !== null && hoveredBounds.y.value !== null && hoveredBounds.width.value !== null && hoveredBounds.height.value !== null
@@ -271,16 +322,15 @@ export function CanvasViewport({
       <div
         aria-describedby="canvas-keyboard-help"
         aria-label={interactionMode === "inspect"
-          ? "Inspect mode. Select a highlighted element to inspect it, drag to pan and use the scroll wheel to zoom."
-          : "View mode. Drag to pan and use the scroll wheel to zoom. Switch to Inspect to select design elements."}
-        className={"review-dot-grid relative grid min-h-0 min-w-0 flex-1 touch-none place-items-center overflow-hidden outline-none focus-visible:ring-2 focus-visible:ring-[#b3b3b3] " + (commentMode || annotationMode ? "cursor-crosshair" : isDragging ? "cursor-grabbing" : "cursor-grab")}
+          ? "Inspect mode. Select a highlighted element to inspect it, drag to pan, and use the scroll wheel or trackpad pinch to zoom."
+          : "View mode. Drag to pan and use the scroll wheel or trackpad pinch to zoom. Switch to Inspect to select design elements."}
+        className={"review-dot-grid group relative grid min-h-0 min-w-0 flex-1 touch-none place-items-center overflow-hidden outline-none focus-visible:outline-none " + (commentMode || annotationMode ? "cursor-crosshair" : isDragging ? "cursor-grabbing" : "cursor-grab")}
         onClick={handleCanvasClick}
         onPointerCancel={handlePointerCancel}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onKeyDown={handleCanvasKeyDown}
-        onWheel={handleWheel}
         ref={containerRef}
         role="region"
         tabIndex={0}
@@ -288,8 +338,11 @@ export function CanvasViewport({
         <span className="sr-only" id="canvas-keyboard-help">
           Focus this canvas, then use the arrow keys to pan, plus or minus to zoom, and zero or Home to fit the design. To inspect a layer, expand Elements in the screen sidebar and choose it.
         </span>
+        <span aria-hidden="true" className="pointer-events-none absolute left-3 top-3 z-30 hidden rounded-[4px] border border-[#505050] bg-[#202020]/95 px-2 py-1 text-[10px] font-medium text-[#d7d7d7] group-focus-visible:flex">
+          Canvas focus
+        </span>
         <div
-            className="absolute left-1/2 top-1/2 shrink-0 shadow-[0_18px_55px_rgba(0,0,0,0.35)]"
+          className="absolute left-1/2 top-1/2 shrink-0"
           style={{
             width: frame.sourceWidth,
             height: frame.sourceHeight,
@@ -299,17 +352,39 @@ export function CanvasViewport({
             transformOrigin: "center center",
           }}
         >
-          <Image
-            alt={(frame.fileName.toLowerCase().endsWith(".svg") ? "Figma vector render: " : "Frozen design render: ") + frame.name}
-            className="pointer-events-none select-none object-fill"
-            draggable={false}
-            height={frame.pixelHeight}
-            priority
-            src={frame.imageSrc}
-            style={{ width: frame.sourceWidth, height: frame.sourceHeight }}
-            unoptimized
-            width={frame.pixelWidth}
-          />
+          {imageRenderPlan.showBaseImage ? (
+            <Image
+              alt={(frame.fileName.toLowerCase().endsWith(".svg") ? "Figma vector render: " : "Frozen design render: ") + frame.name}
+              className="pointer-events-none select-none object-fill"
+              draggable={false}
+              height={frame.pixelHeight}
+              priority
+              src={frame.imageSrc}
+              style={{ width: frame.sourceWidth, height: frame.sourceHeight }}
+              unoptimized
+              width={frame.pixelWidth}
+            />
+          ) : null}
+
+          {imageRenderPlan.showFrameImages ? screens.map((screen) => (
+            <Image
+              alt={(screen.fileName.toLowerCase().endsWith(".svg") ? "Figma vector render: " : "Frozen design render: ") + screen.name}
+              className="pointer-events-none absolute select-none object-fill"
+              draggable={false}
+              height={screen.pixelHeight}
+              key={screen.id}
+              loading="lazy"
+              src={screen.imageSrc}
+              style={{
+                left: screen.sourceX - frame.sourceX,
+                top: screen.sourceY - frame.sourceY,
+                width: screen.sourceWidth,
+                height: screen.sourceHeight,
+              }}
+              unoptimized
+              width={screen.pixelWidth}
+            />
+          )) : null}
 
           {layoutGridsVisible
             ? frame.kind === "overview" && frame.exact
@@ -328,7 +403,9 @@ export function CanvasViewport({
             const status = frameStatuses[screen.id];
             const label = statusLabel(status);
             const selected = screen.id === selectedFrameId;
-              const borderColor = status === "changed" ? "#e3a13a" : status === "added" ? "#55c987" : status === "removed" ? "#df7770" : selected ? "#888888" : "#4c4c4c";
+            const showLabel = shouldShowCanvasFrameLabel(transform.scale, selected, screens.length);
+              const captureOnly = status === "only-in-before-capture" || status === "only-in-after-capture";
+              const borderColor = status === "changed" ? "#e3a13a" : status === "added" ? "#55c987" : status === "removed" ? "#df7770" : captureOnly ? "#b99a5d" : selected ? "#888888" : "#4c4c4c";
             return (
               <div
                 className="pointer-events-none absolute"
@@ -341,24 +418,26 @@ export function CanvasViewport({
                   border: (selected ? 3 : 1.5) * inverseScale + "px solid " + borderColor,
                 }}
               >
-                  <div
+                  {showLabel ? (
+                    <div
                     className="pointer-events-auto absolute left-0 flex items-center gap-1 whitespace-nowrap"
                   style={{
                     bottom: "100%",
                     marginBottom: 4 * inverseScale,
-                    maxWidth: Math.max(screen.sourceWidth, 120) + "px",
+                    maxWidth: canvasFrameLabelMaxWidth + "px",
                   }}
                 >
                     <button
                       aria-label={"Select screen " + screen.name + (label ? ", " + label : "")}
                         aria-pressed={selected}
-                      className="flex max-w-[min(80vw,480px)] items-center gap-1.5 rounded-[4px] bg-[#202020]/95 text-left text-[#d7d7d7] shadow-sm hover:bg-[#303030] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+                      className="flex max-w-none items-center gap-1.5 rounded-[4px] bg-[#202020]/95 text-left text-[#d7d7d7] shadow-sm hover:bg-[#303030] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
                       onClick={() => onSelectFrame(screen.id)}
                       style={{
                         padding: 3 * inverseScale + "px " + 5 * inverseScale + "px",
                         fontSize: 12 * inverseScale + "px",
                         lineHeight: 1.3,
                         border: "1px solid " + borderColor,
+                        maxWidth: canvasFrameLabelMaxWidth + "px",
                       }}
                       type="button"
                     >
@@ -372,8 +451,8 @@ export function CanvasViewport({
                           style={{
                             padding: 2 * inverseScale + "px " + 4 * inverseScale + "px",
                             fontSize: 10 * inverseScale + "px",
-                            color: status === "added" ? "#76e0a5" : status === "removed" ? "#f18b84" : "#ffb646",
-                            backgroundColor: status === "added" ? "#173b2b" : status === "removed" ? "#3b2323" : "#46351e",
+                            color: status === "added" ? "#76e0a5" : status === "removed" || status === "only-in-before-capture" ? "#f18b84" : "#ffca71",
+                            backgroundColor: status === "added" ? "#173b2b" : status === "removed" || status === "only-in-before-capture" ? "#3b2323" : "#46351e",
                           }}
                         >
                           {label}
@@ -391,19 +470,20 @@ export function CanvasViewport({
                         Compare
                       </button>
                     ) : null}
-                  </div>
+                    </div>
+                  ) : null}
               </div>
             );
           }) : null}
 
-          {(interactionMode === "inspect" || commentMode || annotationMode ? frame.nodes.filter((node) => node.visible) : []).map((node) => {
+          {visibleOverlayNodes.map((node) => {
             const x = node.bounds.x.value === null ? null : node.bounds.x.value - (frame.kind === "overview" ? frame.sourceX : 0);
             const y = node.bounds.y.value === null ? null : node.bounds.y.value - (frame.kind === "overview" ? frame.sourceY : 0);
             const width = node.bounds.width.value;
             const height = node.bounds.height.value;
             if (x === null || y === null || width === null || height === null || width <= 0 || height <= 0) return null;
             const isSelected = node.sourceNodeId === selectedNodeId;
-            const isHighlighted = highlightedNodeIds.includes(node.sourceNodeId);
+            const isHighlighted = highlightedNodeIdSet.has(node.sourceNodeId);
             return (
               <button
                 aria-hidden="true"

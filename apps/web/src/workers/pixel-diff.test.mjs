@@ -1,6 +1,39 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compareRgbaPixels } from "./pixel-diff.ts";
+import { compareRgbaPixels, getPixelDiffPlan } from "./pixel-diff.ts";
+
+test("keeps a standard tall mobile screen at exact 2x comparison resolution", () => {
+  assert.deepEqual(getPixelDiffPlan(393, 2073, 393, 2073), {
+    status: "ready",
+    width: 786,
+    height: 4146,
+    pixelCount: 3_258_756,
+  });
+});
+
+test("keeps a common desktop screen at exact 2x comparison resolution", () => {
+  assert.deepEqual(getPixelDiffPlan(1440, 900, 1440, 900), {
+    status: "ready",
+    width: 2880,
+    height: 1800,
+    pixelCount: 5_184_000,
+  });
+});
+
+test("refuses oversized pixel diffs before allocating image buffers", () => {
+  assert.deepEqual(getPixelDiffPlan(2560, 1440, 2560, 1440), {
+    status: "too-large",
+    width: 5120,
+    height: 2880,
+    pixelCount: 14_745_600,
+  });
+});
+
+test("rejects invalid source dimensions", () => {
+  assert.deepEqual(getPixelDiffPlan(0, 100, 100, 100), {
+    status: "invalid",
+  });
+});
 
 test("detects subtle color changes in captured screen pixels", () => {
   const before = new Uint8ClampedArray([255, 255, 255, 255]);

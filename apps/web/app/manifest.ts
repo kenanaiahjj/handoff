@@ -14,19 +14,19 @@ export default function manifest(): MetadataRoute.Manifest {
     categories: ["productivity"],
     icons: [
       {
-        src: "/icons/asbir-handoff-v2-192.png",
+        src: "/icons/asbir-handoff-v3-192.png",
         sizes: "192x192",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icons/asbir-handoff-v2-512.png",
+        src: "/icons/asbir-handoff-v3-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icons/asbir-handoff-v2-512.png",
+        src: "/icons/asbir-handoff-v3-512.png",
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

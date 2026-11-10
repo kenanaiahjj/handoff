@@ -11,6 +11,15 @@ export {
   visualOnlySnapshotSchema,
 } from "./schema";
 export { hashSnapshotPayload, sha256Hex } from "./hash";
+export { createSnapshotEnvelope } from "./envelope";
+export {
+  createFigmaCaptureMergePlan,
+  getFigmaCaptureOverviewClearRects,
+  mergeFigmaCaptureSnapshots,
+  normalizeFigmaCaptureScope,
+} from "./capture-merge";
+export { formatFigmaCaptureScope } from "./figma-capture-scope";
+export { MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES } from "./limits";
 export type {
   Bounds,
   Measurement,

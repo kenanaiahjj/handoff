@@ -89,9 +89,9 @@ export function LinkedTasksPanel({ input }: {
     <section className="mt-4 rounded-panel border border-border bg-surface p-4 sm:p-5" aria-labelledby="linked-tasks-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-primary">Connected tools</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">Connected tools</p>
           <h2 id="linked-tasks-title" className="mt-1 text-base font-semibold text-foreground">Tasks</h2>
-          <p className="mt-1 text-xs leading-5 text-foreground-muted">Link work created by your AI in ClickUp, Linear, or another connected tool.</p>
+          <p className="mt-1 text-xs leading-5 text-foreground-muted">Link work created by your AI in Asbir Teams, ClickUp, Linear, or another connected tool.</p>
         </div>
         <span className="rounded-pill bg-surface-raised px-2.5 py-1 font-mono text-[10px] text-foreground-subtle">{tasks.length.toString().padStart(2, "0")} linked</span>
       </div>
@@ -105,7 +105,7 @@ export function LinkedTasksPanel({ input }: {
             </select>
           </label>
           <label className="block text-xs font-medium text-foreground-muted">Task system <span className="font-normal text-foreground-subtle">(optional)</span>
-            <input maxLength={80} value={sourceSystem} onChange={(event) => setSourceSystem(event.target.value)} placeholder="ClickUp, Linear, GitHub…" className="mt-1.5 min-h-10 w-full rounded-control border border-border bg-surface px-3 text-sm text-foreground placeholder:text-foreground-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+            <input maxLength={80} value={sourceSystem} onChange={(event) => setSourceSystem(event.target.value)} placeholder="Asbir Teams, ClickUp, Linear…" className="mt-1.5 min-h-10 w-full rounded-control border border-border bg-surface px-3 text-sm text-foreground placeholder:text-foreground-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
           </label>
           <label className="block text-xs font-medium text-foreground-muted">External task ID <span className="font-normal text-foreground-subtle">(optional)</span>
             <input maxLength={500} value={externalTaskId} onChange={(event) => setExternalTaskId(event.target.value)} className="mt-1.5 min-h-10 w-full rounded-control border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
@@ -124,18 +124,18 @@ export function LinkedTasksPanel({ input }: {
       </details>
 
       {error ? <p role="alert" className="mt-3 rounded-control border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs leading-5 text-warning">{error}</p> : null}
-      {notice ? <p role="status" className="mt-3 text-xs text-primary">{notice}</p> : null}
+      {notice ? <p role="status" className="mt-3 text-xs text-success">{notice}</p> : null}
       {loading ? <p role="status" className="mt-3 text-xs text-foreground-subtle">Loading tasks…</p> : null}
       {tasks.length ? (
         <ul className="mt-4 space-y-2">
           {tasks.map((task) => <li key={task.id} className="rounded-control border border-border bg-background px-3 py-3">
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-sm font-medium text-foreground">{task.title}</span>
-              {task.externalUrl ? <a href={task.externalUrl} target="_blank" rel="noreferrer" className="text-xs text-primary underline underline-offset-4">Open in {task.sourceSystem}</a> : <span className="text-xs text-foreground-subtle">{task.sourceSystem}{task.externalTaskId ? ` · ${task.externalTaskId}` : ""}</span>}
+              {task.externalUrl ? <a href={task.externalUrl} target="_blank" rel="noreferrer" className="text-xs text-accent underline underline-offset-4">Open in {task.sourceSystem}</a> : <span className="text-xs text-foreground-subtle">{task.sourceSystem}{task.externalTaskId ? ` · ${task.externalTaskId}` : ""}</span>}
             </div>
             <p className="mt-1 text-xs text-foreground-subtle">Version {input.versions.find((version) => version.id === task.versionId)?.versionLabel ?? "snapshot"} · {new Date(task.createdAt).toLocaleString()}</p>
             {task.description ? <p className="mt-2 whitespace-pre-wrap text-xs leading-5 text-foreground-muted">{task.description}</p> : null}
-            {task.agentRunUrl || task.pullRequestUrl ? <div className="mt-2 flex gap-3 text-xs">{task.agentRunUrl ? <a href={task.agentRunUrl} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">Agent run</a> : null}{task.pullRequestUrl ? <a href={task.pullRequestUrl} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-4">Pull request</a> : null}</div> : null}
+            {task.agentRunUrl || task.pullRequestUrl ? <div className="mt-2 flex gap-3 text-xs">{task.agentRunUrl ? <a href={task.agentRunUrl} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-4">Agent run</a> : null}{task.pullRequestUrl ? <a href={task.pullRequestUrl} target="_blank" rel="noreferrer" className="text-accent underline underline-offset-4">Pull request</a> : null}</div> : null}
           </li>)}
         </ul>
       ) : !loading ? <p className="mt-3 text-xs text-foreground-subtle">No external tasks linked to this handoff yet.</p> : null}

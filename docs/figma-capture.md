@@ -1,6 +1,6 @@
 # Figma capture and snapshot import
 
-Asbir Handoff imports a frozen canvas as an immutable handoff version. The Figma plugin captures the selected artboards or the top-level frames and components on the current page, then uploads the render images and structured source data as one version.
+Asbir Handoff imports a frozen canvas as an immutable handoff version. The Figma plugin can capture selected artboards, all top-level frames and components on the current page, or those objects across every page in the Figma file. It uploads the renders and structured source data as one version.
 
 ## Build and load the plugin
 
@@ -23,21 +23,21 @@ The manifest declares dynamic page access, which Figma requires for new plugins.
 
 1. In Handoff, open the project that owns the handoff.
 2. Start a Figma capture session. Choose an existing handoff or enter a name for a new handoff, then set the version label and release note.
-3. Copy the one-time token. It expires after 10 minutes.
+3. Copy the one-time token. It expires after one hour, giving large Figma captures time to finish before upload.
 4. In Figma, open **Asbir Handoff Capture**. Confirm the Handoff server and paste the one-time token. The URL is set when the plugin is built so it matches Figma's allowed network endpoint.
-5. Choose **Selected frames or components** to capture the selected artboards. When you select a layer inside an artboard, the plugin captures its closest containing frame. Choose **All top-level frames and components on this page** to capture every top-level artboard on the current page.
-6. Select **Capture canvas**. Review the overview, frame count, and layer count.
-7. Select **Upload frozen snapshot**. Handoff creates the first version or appends a new immutable version, then returns a link to the review page.
+5. Choose **Selected frames or components**, **All top-level frames and components on this page**, or **Entire Figma file (all pages)**. The file option loads pages sequentially and arranges their captured frames into separate regions in the overview.
+6. Select **Capture canvas**. Review the overview, page count, frame count, and layer count.
+7. Select **Upload frozen snapshot**. Handoff creates the first version or appends a new immutable version, then returns a link to the review page. In an existing handoff, a selected-frame capture updates those frames and preserves everything else. A page capture replaces only that page’s frames and retains frames from other pages. An entire-file capture replaces the full canvas. Confirm a suggested frame-name match when Figma assigns a replacement frame a new ID.
 
 The plugin exports each artboard as a PNG through Figma for the visual render. It also retains an SVG companion with text converted to outlines and layer-name IDs when Figma can provide one within the transfer limit. An unavailable SVG companion does not block the PNG render or layer data. Each frame uses 2× when its own area is at most 3 million pixels; larger frames start at 1×. If a 2× PNG export fails or exceeds the remaining transfer budget, the plugin retries that frame at 1×. It does not replace a missing Figma render with an image-only or browser-rendered snapshot. The overview combines the PNG renders at their source-canvas positions. Handoff displays the PNG render for pixel fidelity and links any available SVG source to the frame. The layer hierarchy, geometry, styles, typography, and variable bindings remain separate structured data, so the canvas is inspectable rather than image-only.
 
-Capture walks page and layer trees iteratively, stops as soon as the frame or layer limit is exceeded, and bounds asynchronous metadata lookups. This avoids recursive stack growth and unbounded bursts of Figma API calls on deep or large files. Structured data is size-checked before Figma exports begin. Captures above the documented limits must be split into smaller selections.
+Capture walks page and layer trees iteratively and bounds asynchronous metadata lookups. In full-file mode, the plugin loads one Figma page at a time. This avoids recursive stack growth and unbounded bursts of Figma API calls on deep or large files. Structured data is size-checked before Figma exports begin. A failed page load or exceeded safety budget stops the full capture; the plugin does not upload a partial file as if it were complete.
 
 Variable and style lookups are optional enhancements. If those lookups fail, the plugin keeps the Figma pixel render, full layer hierarchy, geometry, and other readable properties, then surfaces a warning before upload. A failure to capture the Figma render or structured layer tree stops the capture so the plugin cannot upload a misleading partial snapshot.
 
 The structured data includes source node IDs and hierarchy, frame-relative bounds, exact auto-layout padding and spacing when Figma provides them, paints, typography, style references, and variable bindings. Reviewers can select captured layers and inspect their measurements, corner radii, colors, fonts, and token bindings. It records only variables actually bound to captured nodes. The plugin does not guess a token by matching a color or number.
 
-Figma does not expose a revision ID to this capture flow, so `sourceRevisionId` is `null`. The snapshot records the Figma file ID, name, page ID and name, capture time, and adapter version.
+Figma does not expose a revision ID to this capture flow, so `sourceRevisionId` is `null`. The snapshot records the Figma file ID, name, capture time, and adapter version. A selected or page capture also records its page ID and name; a file capture records each page in its page layout metadata.
 
 ## Measurement provenance
 
@@ -54,14 +54,15 @@ Handoff marks a property as `source` when Figma provides it directly, `measured`
 
 ## Import validation and storage
 
-Before creating a version, Handoff checks the snapshot schema, source tool, asset list, content types, file names, byte counts, per-file SHA-256 hashes, and the hash of the structured snapshot. A capture session can be used once. Handoff stores the accepted snapshot, pixel renders, and linked SVG sources as a new immutable version; later captures create new versions that the app can compare.
+Before creating a version, Handoff checks the snapshot schema, source tool, asset list, content types, file names, byte counts, per-file SHA-256 hashes, and the hash of the structured snapshot. A capture session can be used once. Handoff stores the accepted snapshot, pixel renders, and linked SVG sources as a new immutable version. Partial captures compose into a complete new version, and unchanged assets reuse their stored objects. Later captures create new versions that the app can compare.
 
 The web app also accepts a source-agnostic structured ZIP package described in [snapshot-package.md](snapshot-package.md). Direct Paper MCP capture is deferred. A package can provide exact layout and token data when its exporter includes source geometry and bindings; image-only upload supports visual review but does not provide those properties.
 
-## Limits
+## Capture limits
 
-- A plugin capture can contain up to 120 artboards and 20,000 layers.
-- A snapshot upload can contain up to 300 assets and 100 MiB of render data.
-- Structured snapshot JSON is limited to 16 MiB.
+- There is no fixed artboard count limit. A capture can contain up to 50,000 layers.
+- A snapshot upload is limited to 100 MiB of assets. The plugin reserves part of this budget for the overview.
+- Structured snapshot JSON is limited to 128 MiB.
+- Individual layer exports are optional and capped at 256 files and 20 MiB total. This cap does not remove layer properties or prevent the frame from being captured.
 - A full-page capture includes top-level frames and components found under sections and groups. Loose page-level text, shapes, and notes outside those artboards are not included.
-- Review the capture preview before uploading. If a page exceeds these limits, capture a smaller selection and create separate handoffs or versions.
+- Review the capture preview before uploading. If a full-file capture exceeds the layer or byte limits, reduce the content in the Figma file or capture selected frames.

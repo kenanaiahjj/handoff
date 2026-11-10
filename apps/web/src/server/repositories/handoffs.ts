@@ -1,10 +1,20 @@
 import { randomUUID } from "node:crypto";
 import { getDatabase } from "../db";
+import { deleteHandoffInDatabase } from "../services/handoff-lifecycle";
+import {
+  createHandoffInviteInDatabase,
+  getHandoffInviteByTokenInDatabase,
+  listHandoffInvitesInDatabase,
+  revokeHandoffInviteInDatabase,
+  updateHandoffSharingModeInDatabase,
+} from "../services/handoff-sharing-data";
 
 export function listHandoffs(input: { workspaceId: string; projectId: string }) {
   return getDatabase()
     .prepare(
       `SELECT handoff.id, handoff.name, handoff.created_at AS createdAt,
+              handoff.published_version_id AS publishedVersionId,
+              handoff.sharing_mode AS sharingMode,
               COUNT(handoff_version.id) AS versionCount,
               MAX(handoff_version.created_at) AS latestVersionAt
        FROM handoff
@@ -26,7 +36,8 @@ export function getHandoff(input: {
       `SELECT id, workspace_id AS workspaceId, project_id AS projectId, name,
               created_at AS createdAt, review_share_id AS reviewShareId,
               published_version_id AS publishedVersionId, published_at AS publishedAt,
-              published_by_user_id AS publishedByUserId
+              published_by_user_id AS publishedByUserId,
+              sharing_mode AS sharingMode
        FROM handoff
        WHERE id = ? AND workspace_id = ? AND project_id = ?`,
     )
@@ -41,8 +52,17 @@ export function getHandoff(input: {
         publishedVersionId: string | null;
         publishedAt: string | null;
         publishedByUserId: string | null;
+        sharingMode: "workspace" | "invited" | "anyone";
       }
     | undefined;
+}
+
+export function deleteHandoff(input: {
+  workspaceId: string;
+  projectId: string;
+  handoffId: string;
+}) {
+  return deleteHandoffInDatabase(getDatabase(), input);
 }
 
 export function getLatestPublishedReviewShare(input: { workspaceId: string; projectId: string }) {
@@ -63,7 +83,7 @@ export function getPublishedHandoffByShareId(shareId: string) {
     .prepare(
       `SELECT id, workspace_id AS workspaceId, project_id AS projectId, name,
               review_share_id AS reviewShareId, published_version_id AS publishedVersionId,
-              published_at AS publishedAt
+              published_at AS publishedAt, sharing_mode AS sharingMode
        FROM handoff
        WHERE review_share_id = ? AND published_version_id IS NOT NULL`,
     )
@@ -75,7 +95,49 @@ export function getPublishedHandoffByShareId(shareId: string) {
       reviewShareId: string;
       publishedVersionId: string;
       publishedAt: string;
+      sharingMode: "workspace" | "invited" | "anyone";
     } | undefined;
+}
+
+export function setHandoffSharingMode(input: {
+  workspaceId: string;
+  projectId: string;
+  handoffId: string;
+  mode: "workspace" | "invited" | "anyone";
+}) {
+  return updateHandoffSharingModeInDatabase(getDatabase(), input);
+}
+
+export function createHandoffInvite(input: {
+  id?: string;
+  workspaceId: string;
+  projectId: string;
+  handoffId: string;
+  email: string;
+  token: string;
+  expiresAt: string | null;
+  invitedByUserId: string;
+  createdAt?: string;
+}) {
+  return createHandoffInviteInDatabase(getDatabase(), input);
+}
+
+export function listHandoffInvites(input: { workspaceId: string; handoffId: string; now?: string }) {
+  return listHandoffInvitesInDatabase(getDatabase(), input);
+}
+
+export function revokeHandoffInvite(input: {
+  workspaceId: string;
+  projectId: string;
+  handoffId: string;
+  inviteId: string;
+  revokedAt?: string;
+}) {
+  return revokeHandoffInviteInDatabase(getDatabase(), input);
+}
+
+export function getHandoffInviteByToken(shareId: string, token: string, now?: string) {
+  return getHandoffInviteByTokenInDatabase(getDatabase(), shareId, token, now);
 }
 
 export function publishHandoffVersion(input: {

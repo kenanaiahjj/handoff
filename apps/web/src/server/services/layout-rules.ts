@@ -73,11 +73,12 @@ export function evaluateLayoutRules(snapshot: VersionSnapshot, rules: ProjectRul
     const frameWidth = frame.bounds.width.value;
     const frameHeight = frame.bounds.height.value;
     const bounds = rules.frameBounds;
-    if (bounds && frameWidth !== null && frameHeight !== null) {
+    if (bounds) {
       for (const [dimension, actual, minimum, maximum] of [
         ["width", frameWidth, bounds.minWidth, bounds.maxWidth],
         ["height", frameHeight, bounds.minHeight, bounds.maxHeight],
       ] as const) {
+        if (actual === null) continue;
         if (minimum !== null && actual < minimum) {
           addFinding(findings, {
             ruleId: `frame.minimum-${dimension}`,

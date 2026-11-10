@@ -67,7 +67,7 @@ export function InviteClient({ token }: { token: string }) {
           <Image alt="" aria-hidden="true" className="size-7 rounded-control object-cover" height={28} src="/icons/asbir-handoff-v2-180.png" width={28} />
           ASBIR <span className="font-normal tracking-normal text-foreground-muted">/ HANDOFF</span>
         </Link>
-        <p className="mt-8 font-mono text-xs uppercase tracking-[0.16em] text-primary">Team invitation</p>
+        <p className="mt-8 font-mono text-xs uppercase tracking-[0.16em] text-accent">Team invitation</p>
         <h1 className="mt-2 text-title font-semibold leading-title text-foreground">
           {invite ? `Join ${invite.workspaceName}` : "Review invitation"}
         </h1>

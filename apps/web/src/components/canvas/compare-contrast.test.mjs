@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 const source = readFileSync(new URL("./VersionCompare.tsx", import.meta.url), "utf8");
+const frameNavigatorSource = readFileSync(new URL("./FrameNavigator.tsx", import.meta.url), "utf8");
 
 function colorFrom(pattern, label) {
   const match = source.match(pattern);
@@ -33,4 +34,16 @@ test("version-size metadata meets WCAG AA on the canvas", () => {
   const foreground = colorFrom(/className="text-\[10px\] text-\[#([\da-f]{6})\]">Before<\/span>/i, "version-size metadata");
 
   assert.ok(contrastRatio(foreground, "#202020") >= 4.5, `${foreground} does not meet 4.5:1 on #202020`);
+});
+
+test("mobile screen selectors announce each screen's change status", () => {
+  const selectors = frameNavigatorSource.slice(
+    frameNavigatorSource.indexOf("{visibleFrames.map"),
+    frameNavigatorSource.indexOf("{!visibleFrames.length"),
+  );
+
+  assert.notEqual(selectors, "");
+  assert.match(selectors, /<button\s+aria-pressed=\{selected\}/);
+  assert.match(selectors, /\{statusLabel\}/);
+  assert.match(selectors, /<span className="sr-only">Screen \{index \+ 1\} of \{screens\.length\}<\/span>/);
 });

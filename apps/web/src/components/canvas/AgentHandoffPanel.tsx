@@ -431,14 +431,14 @@ export function AgentHandoffPanel({ input }: {
       ) : null}
       {loading ? <p className="mt-1 text-[10px] text-[#888]" role="status">Loading linked tasks…</p> : null}
       {!loading && matchingTasks.length === 0 ? (
-        <p className="mt-2 text-[11px] leading-5 text-[#999]">Your AI can create work through its own ClickUp, Linear, or repository MCP. Link the result here, or use Asbir’s <code>link_task</code> tool.</p>
+        <p className="mt-2 text-[11px] leading-5 text-[#999]">Your AI can create work through its connected Asbir Teams or ClickUp task tools, then link it here with Asbir’s <code>link_task</code> tool.</p>
       ) : null}
 
       <details className="mt-3 rounded-[5px] border border-[#3d3d3d] bg-[#252525]">
           <summary className="cursor-pointer px-3 py-2.5 text-[11px] font-medium text-[#c9c9c9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">Link a task created elsewhere</summary>
           <form className="space-y-2.5 border-t border-[#3b3b3b] p-3" onSubmit={linkTask}>
             <label className="block text-[10px] text-[#aaa]">Task system <span className="font-normal text-[#888]">(optional)</span>
-              <input maxLength={80} value={newTaskSourceSystem} onChange={(event) => setNewTaskSourceSystem(event.target.value)} placeholder="ClickUp, Linear, GitHub…" className="mt-1 w-full rounded-[5px] border border-[#444] bg-[#202020] px-2 py-2 text-[11px] text-[#e4e4e4] placeholder:text-[#a0a0a0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" />
+              <input maxLength={80} value={newTaskSourceSystem} onChange={(event) => setNewTaskSourceSystem(event.target.value)} placeholder="Asbir Teams, ClickUp, Linear…" className="mt-1 w-full rounded-[5px] border border-[#444] bg-[#202020] px-2 py-2 text-[11px] text-[#e4e4e4] placeholder:text-[#a0a0a0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" />
             </label>
             <label className="block text-[10px] text-[#aaa]">Task ID <span className="font-normal text-[#888]">(optional)</span>
               <input maxLength={500} value={newTaskExternalId} onChange={(event) => setNewTaskExternalId(event.target.value)} className="mt-1 w-full rounded-[5px] border border-[#444] bg-[#202020] px-2 py-2 text-[11px] text-[#e4e4e4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" />

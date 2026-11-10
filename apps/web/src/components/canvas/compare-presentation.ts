@@ -1,4 +1,34 @@
-import type { SnapshotDiffChange, SnapshotSourceIdentity } from "../../server/services/diff";
+import type { SnapshotDiff, SnapshotDiffChange, SnapshotSourceIdentity } from "../../server/services/diff";
+
+export function captureScopeNotice(
+  comparison: SnapshotDiff["captureScopeComparison"],
+  hasCaptureOnlyFrames = false,
+) {
+  if (!comparison) {
+    return hasCaptureOnlyFrames
+      ? "Screens present in only one capture are not confirmed design additions or removals."
+      : null;
+  }
+  if (comparison.status === "different") {
+    return `Figma capture scopes differ. Before: ${comparison.before}. After: ${comparison.after}. Screens shown on only one side may be outside the other capture's scope.`;
+  }
+  return "Figma capture scope is missing for one or both versions. Treat screens shown on only one side as unconfirmed changes.";
+}
+
+export function comparisonFrameStatusLabel(
+  status: SnapshotDiff["frames"][number]["status"],
+) {
+  if (status === "only-in-before-capture") return "No match in after";
+  if (status === "only-in-after-capture") return "No match in before";
+  if (status === "unchanged") return "No changes";
+  if (status === "changed") return "Changed";
+  if (status === "added") return "New";
+  return "Removed";
+}
+
+export function captureCoverageAvailabilityLabel(availableIn: "before" | "after") {
+  return availableIn === "before" ? "Before capture only" : "After capture only";
+}
 
 export type ComparisonChangeGroup = {
   id: string;

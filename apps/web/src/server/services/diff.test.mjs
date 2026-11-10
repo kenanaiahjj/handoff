@@ -53,6 +53,88 @@ function compare(before, after, frameMatches) {
   );
 }
 
+function figmaSnapshot(scope, frameId = "frame") {
+  const value = snapshot("same-file", frameId, styleIds("shared"));
+  return {
+    ...value,
+    source: "figma",
+    sourceMetadata: scope === undefined
+      ? {}
+      : { captureScope: scope, sourcePageId: scope === "file" ? null : "page-1" },
+  };
+}
+
+function figmaSnapshotWithFrames(scope, frameIds, pageId = "page-1") {
+  const base = figmaSnapshot(scope, frameIds[0] ?? "empty");
+  return {
+    ...base,
+    sourceMetadata: {
+      ...base.sourceMetadata,
+      sourcePageId: scope === "file" ? null : pageId,
+    },
+    frames: frameIds.map((frameId) => ({
+      ...structuredClone(base.frames[0]),
+      sourceFrameId: frameId,
+      sourcePageId: scope === "file" ? `page-${frameId}` : pageId,
+      name: frameId,
+    })),
+  };
+}
+
+test("does not report a visual change when a render asset key changes but its bytes do not", () => {
+  const before = snapshot("same-file", "frame", styleIds("shared"));
+  const after = snapshot("same-file", "frame", styleIds("shared"));
+  before.frames[0].renderAssetKey = "render-before";
+  before.assets[0].key = "render-before";
+  after.frames[0].renderAssetKey = "render-after";
+  after.assets[0].key = "render-after";
+
+  const result = compare(before, after);
+
+  assert.deepEqual(result.changes, []);
+  assert.equal(result.frames[0].status, "unchanged");
+});
+
+test("reports when Figma versions were captured with different scopes", () => {
+  const result = compare(
+    figmaSnapshot("all top-level frames and components on current page"),
+    figmaSnapshot("selected frames and components"),
+  );
+
+  assert.deepEqual(result.captureScopeComparison, {
+    status: "different",
+    before: "All top-level frames and components on the current page",
+    after: "Selected frames and components",
+  });
+  assert.equal(result.frames[0].status, "unchanged");
+});
+
+test("normalizes equivalent Figma scope values before comparing them", () => {
+  const result = compare(
+    figmaSnapshot("selected"),
+    figmaSnapshot("selected frames and components"),
+  );
+
+  assert.equal(result.captureScopeComparison, null);
+});
+
+test("marks Figma scope as unrecorded when either version lacks it", () => {
+  const result = compare(figmaSnapshot(undefined), figmaSnapshot("file"));
+
+  assert.deepEqual(result.captureScopeComparison, {
+    status: "unrecorded",
+    before: null,
+    after: "All top-level frames and components across all pages",
+  });
+});
+
+test("does not apply Figma scope warnings to other snapshot sources", () => {
+  const before = { ...figmaSnapshot("selected"), source: "paper" };
+  const after = { ...figmaSnapshot("file"), source: "paper" };
+
+  assert.equal(compare(before, after).captureScopeComparison, null);
+});
+
 test("treats regenerated Figma style IDs as unchanged across copied files", () => {
   const result = compare(
     snapshot("file-copy-a", "frame-a", styleIds("old")),
@@ -135,7 +217,56 @@ test("does not infer a legacy source match when file names differ", () => {
   const result = compare(before, after);
 
   assert.equal(result.sourceIdentity, "different");
-  assert.deepEqual(result.frames.map((frame) => frame.status).sort(), ["added", "removed"]);
+  assert.deepEqual(result.frames.map((frame) => frame.status).sort(), ["only-in-after-capture", "only-in-before-capture"]);
+});
+
+test("classifies unmatched screens in selected Figma captures as capture-only", () => {
+  const result = compare(
+    figmaSnapshotWithFrames("selected", ["screen-before"]),
+    figmaSnapshotWithFrames("selected", ["screen-after"]),
+  );
+
+  assert.deepEqual(
+    result.frames.map((frame) => frame.status).sort(),
+    ["only-in-after-capture", "only-in-before-capture"],
+  );
+  assert.deepEqual(result.changes, []);
+});
+
+test("keeps true additions for complete captures of the same Figma page", () => {
+  const result = compare(
+    figmaSnapshotWithFrames("page", ["screen-existing"]),
+    figmaSnapshotWithFrames("page", ["screen-existing", "screen-new"]),
+  );
+
+  assert.equal(result.frames.find((frame) => frame.frameId === "screen-new")?.status, "added");
+  assert.equal(result.changes.filter((change) => change.path === "frame").length, 1);
+});
+
+test("classifies screens from different Figma pages as capture-only", () => {
+  const result = compare(
+    figmaSnapshotWithFrames("page", ["screen-before"], "page-before"),
+    figmaSnapshotWithFrames("page", ["screen-after"], "page-after"),
+  );
+
+  assert.deepEqual(
+    result.frames.map((frame) => frame.status).sort(),
+    ["only-in-after-capture", "only-in-before-capture"],
+  );
+  assert.deepEqual(result.changes, []);
+});
+
+test("treats a missing Figma capture scope as insufficient evidence for screen additions", () => {
+  const before = figmaSnapshotWithFrames(undefined, ["screen-before"]);
+  const after = figmaSnapshotWithFrames("page", ["screen-after"]);
+
+  const result = compare(before, after);
+
+  assert.equal(result.captureScopeComparison?.status, "unrecorded");
+  assert.deepEqual(
+    result.frames.map((frame) => frame.status).sort(),
+    ["only-in-after-capture", "only-in-before-capture"],
+  );
 });
 
 test("treats regenerated style IDs as unchanged within the same Figma file", () => {
@@ -189,6 +320,62 @@ test("keeps a same-name screen separate until an explicit frame match is supplie
   assert.equal(matched.frames[0].beforeFrameId, "review-before");
   assert.equal(matched.frames[0].afterFrameId, "review-after");
   assert.equal(matched.unmatchedFrameCandidates.length, 0);
+});
+
+test("bounds duplicate screen suggestions while keeping every after screen matchable", () => {
+  const before = snapshot("same-file", "before-000", styleIds("same"));
+  before.frames[0].name = "Screen";
+  before.frames = Array.from({ length: 210 }, (_, index) => ({
+    ...structuredClone(before.frames[0]),
+    sourceFrameId: `before-${String(index).padStart(3, "0")}`,
+  }));
+  const after = structuredClone(before);
+  after.frames = Array.from({ length: 210 }, (_, index) => ({
+    ...structuredClone(before.frames[0]),
+    sourceFrameId: `after-${String(index).padStart(2, "0")}`,
+  }));
+
+  const unmatched = compare(before, after);
+  const suggestion = unmatched.unmatchedFrameCandidates.find((candidate) => candidate.beforeFrameId === "before-000");
+
+  assert.equal(unmatched.unmatchedFrameCandidates.length, 210);
+  assert.ok(unmatched.unmatchedFrameCandidates.every((candidate) => candidate.totalCandidates === 210 && candidate.candidatesTruncated));
+  assert.ok(suggestion);
+  assert.equal(suggestion.totalCandidates, 210);
+  assert.equal(suggestion.candidatesTruncated, true);
+  assert.equal(suggestion.afterCandidates.length, 10);
+  assert.deepEqual(
+    suggestion.afterCandidates.map((candidate) => candidate.frameId),
+    after.frames.slice(0, 10).map((frame) => frame.sourceFrameId),
+  );
+  const availableAfterFrames = unmatched.frames.filter((frame) => frame.beforeFrameId === null && frame.afterFrameId !== null);
+  assert.equal(availableAfterFrames.length, 210);
+  assert.ok(availableAfterFrames.some((frame) => frame.afterFrameId === "after-209"));
+
+  const matched = compare(before, after, [{ beforeFrameId: "before-209", afterFrameId: "after-209" }]);
+  assert.ok(matched.frames.some((frame) => frame.beforeFrameId === "before-209" && frame.afterFrameId === "after-209"));
+  assert.equal(matched.unmatchedFrameCandidates.length, 209);
+});
+
+test("keeps unmatched frame change payloads compact instead of embedding their layer trees", () => {
+  const before = snapshot("same-file", "review-before", styleIds("shared"));
+  const after = snapshot("same-file", "review-after", styleIds("shared"));
+  after.frames[0].nodes = Array.from({ length: 100 }, (_, index) => ({
+    sourceNodeId: `node-${index}`,
+    name: `Layer ${index}`,
+    type: "RECTANGLE",
+    fills: [],
+    strokes: [],
+    styleReferences: [],
+    tokens: [],
+    sourcePayload: { metadata: "large payload" },
+  }));
+
+  const result = compare(before, after);
+  const addedFrameChange = result.changes.find((change) => change.path === "frame" && change.after !== undefined);
+
+  assert.deepEqual(addedFrameChange?.after, { name: "Review" });
+  assert.equal(JSON.stringify(result).includes("large payload"), false);
 });
 
 function fiveScreenSnapshot(revision) {
@@ -540,6 +727,215 @@ test("keeps text and paint changes while ignoring raw variable IDs and text offs
       ["sourcePayload.textSegments[0].characters", "text"],
     ],
   );
+});
+
+function highVolumeSnapshot(revision) {
+  const screenCount = 5;
+  const nodesPerScreen = 2000;
+  return {
+    sourceFileId: "high-volume-file",
+    frames: Array.from({ length: screenCount }, (_, screenIndex) => {
+      const frameId = `frame-${screenIndex}`;
+      return {
+        sourceFrameId: frameId,
+        sourcePageId: "page-1",
+        name: `Screen ${screenIndex + 1}`,
+        renderAssetKey: `render-${screenIndex}`,
+        nodes: Array.from({ length: nodesPerScreen }, (_, nodeIndex) => ({
+          sourceNodeId: `${revision}-${frameId}-node-${nodeIndex}`,
+          parentSourceNodeId: null,
+          sourceFrameId: frameId,
+          name: `Layer ${nodeIndex}`,
+          type: "RECTANGLE",
+          bounds: { x: nodeIndex, y: nodeIndex * 2, width: revision === "after" ? 101 : 100, height: 40 },
+          layout: { itemSpacing: revision === "after" ? 9 : 8 },
+          fills: [{ color: revision === "after" ? "#22aa88" : "#ff6600" }],
+          strokes: [],
+          styleReferences: [],
+          tokens: [{
+            bindingPath: "fills[0]",
+            category: "color",
+            name: "Action",
+            collectionName: "Semantic",
+            mode: "Light",
+            value: revision === "after" ? "#22aa88" : "#ff6600",
+          }],
+          sourcePayload: {
+            textSegments: [{ characters: revision === "after" ? `Updated ${nodeIndex}` : `Original ${nodeIndex}` }],
+          },
+        })),
+      };
+    }),
+    assets: Array.from({ length: screenCount }, (_, screenIndex) => ({
+      key: `render-${screenIndex}`,
+      sha256: `${revision}-${screenIndex}`,
+    })),
+  };
+}
+
+function largeCanvasSnapshot() {
+  const frameCount = 210;
+  const nodesPerFrame = 150;
+  const measurement = (value, sourceProperty) => ({
+    value,
+    unit: "px",
+    provenance: "source",
+    sourceProperty,
+  });
+  const frames = Array.from({ length: frameCount }, (_, frameIndex) => {
+    const frameId = `full-page-frame-${frameIndex}`;
+    const nodes = Array.from({ length: nodesPerFrame }, (_, nodeIndex) => {
+      const isRoot = nodeIndex === 0;
+      const isText = nodeIndex === 2;
+      return {
+        sourceNodeId: isRoot ? frameId : `${frameId}-node-${nodeIndex}`,
+        parentSourceNodeId: isRoot ? null : frameId,
+        sourceFrameId: frameId,
+        name: isRoot ? `Screen ${frameIndex}` : isText ? "Title" : `Layer ${nodeIndex}`,
+        type: isRoot ? "FRAME" : isText ? "TEXT" : "RECTANGLE",
+        bounds: {
+          x: measurement(isRoot ? 0 : nodeIndex * 2, "absoluteBoundingBox.x"),
+          y: measurement(isRoot ? 0 : nodeIndex * 3, "absoluteBoundingBox.y"),
+          width: measurement(isRoot ? 393 : 100, "absoluteBoundingBox.width"),
+          height: measurement(isRoot ? 852 : 40, "absoluteBoundingBox.height"),
+        },
+        layout: { itemSpacing: measurement(8, "itemSpacing") },
+        padding: { left: measurement(12, "paddingLeft") },
+        fills: [{ color: "#ffffff" }],
+        strokes: [],
+        styleReferences: [],
+        tokens: [],
+        sourcePayload: isText ? { textSegments: [{ characters: "Continue" }] } : {},
+      };
+    });
+
+    return {
+      sourceFrameId: frameId,
+      sourcePageId: "full-page",
+      name: `Screen ${frameIndex}`,
+      renderAssetKey: `render-${frameIndex}`,
+      nodes,
+    };
+  });
+
+  return {
+    sourceFileId: "large-figma-file",
+    frames,
+    assets: frames.map((frame, index) => ({ key: frame.renderAssetKey, sha256: `render-${index}` })),
+  };
+}
+
+test("preserves 50,000 structured changes across five screens when every layer ID regenerates", () => {
+  const result = compare(highVolumeSnapshot("before"), highVolumeSnapshot("after"));
+  const categoryCounts = result.changes.reduce((counts, change) => {
+    counts[change.category] = (counts[change.category] ?? 0) + 1;
+    return counts;
+  }, {});
+  const changedNodeIds = new Set(result.changes.flatMap((change) => change.sourceNodeId ? [change.sourceNodeId] : []));
+
+  assert.equal(result.frames.length, 5);
+  assert.equal(result.frames.filter((frame) => frame.status === "changed").length, 5);
+  assert.equal(changedNodeIds.size, 10_000);
+  assert.equal(result.changes.length, 50_005);
+  assert.deepEqual(categoryCounts, {
+    geometry: 10_000,
+    layout: 10_000,
+    style: 10_000,
+    text: 10_000,
+    token: 10_000,
+    visual: 5,
+  });
+  assert.equal(result.unmatchedNodeCandidates.length, 0);
+});
+
+test("detects precise edits across five of 210 screens in a 31,500-node canvas", () => {
+  const before = largeCanvasSnapshot();
+  const after = structuredClone(before);
+
+  after.frames[0].nodes[1].bounds.x.value += 3.25;
+  after.frames[1].nodes[1].fills[0].color = "#123456";
+  after.frames[2].nodes[2].sourcePayload.textSegments[0].characters += " booking";
+  after.frames[2].nodes.push({
+    ...structuredClone(after.frames[2].nodes[3]),
+    sourceNodeId: `${after.frames[2].sourceFrameId}-new-layer`,
+    name: "New checkout action",
+  });
+  after.frames[3].nodes[4].padding.left.value += 4.5;
+  after.frames[3].nodes.splice(5, 1);
+  after.assets[4].sha256 = "updated-render-4";
+
+  const result = compare(before, after);
+  const categories = result.changes.reduce((counts, change) => {
+    counts[change.category] = (counts[change.category] ?? 0) + 1;
+    return counts;
+  }, {});
+
+  assert.equal(before.frames.length, 210);
+  assert.equal(before.frames.reduce((count, frame) => count + frame.nodes.length, 0), 31_500);
+  assert.equal(result.frames.length, 210);
+  assert.equal(result.frames.filter((frame) => frame.status === "changed").length, 5);
+  assert.equal(result.frames.filter((frame) => frame.status === "unchanged").length, 205);
+  assert.equal(result.changes.length, 7);
+  assert.deepEqual(categories, {
+    geometry: 1,
+    style: 1,
+    text: 1,
+    structure: 2,
+    layout: 1,
+    visual: 1,
+  });
+  assert.ok(result.changes.some((change) => change.path === "bounds.x.value" && change.before === 2 && change.after === 5.25));
+  assert.ok(result.changes.some((change) => change.path === "padding.left.value" && change.before === 12 && change.after === 16.5));
+  assert.ok(result.changes.some((change) => change.path === "renderAsset"));
+  assert.equal(result.unmatchedFrameCandidates.length, 0);
+  assert.equal(result.unmatchedNodeCandidates.length, 0);
+});
+
+test("bounds a million ambiguous node pairs to ten suggestions per removed layer", () => {
+  const before = {
+    sourceFileId: "replacement-file",
+    frames: [{
+      sourceFrameId: "frame",
+      sourcePageId: "page-1",
+      name: "Screen",
+      renderAssetKey: "render",
+      nodes: Array.from({ length: 1000 }, (_, index) => ({
+        sourceNodeId: `removed-layer-${index}`,
+        sourceFrameId: "frame",
+        parentSourceNodeId: null,
+        name: `Removed layer ${index}`,
+        type: "RECTANGLE",
+      })),
+    }],
+    assets: [{ key: "render", sha256: "same" }],
+  };
+  const after = {
+    sourceFileId: "replacement-file",
+    frames: [{
+      sourceFrameId: "frame",
+      sourcePageId: "page-1",
+      name: "Screen",
+      renderAssetKey: "render",
+      nodes: Array.from({ length: 1000 }, (_, index) => ({
+        sourceNodeId: `added-layer-${index}`,
+        sourceFrameId: "frame",
+        parentSourceNodeId: null,
+        name: `Added layer ${index}`,
+        type: "RECTANGLE",
+      })),
+    }],
+    assets: [{ key: "render", sha256: "same" }],
+  };
+
+  const result = compare(before, after);
+  assert.equal(result.changes.length, 2000);
+  assert.equal(result.unmatchedNodeCandidates.length, 1000);
+  const [suggestion] = result.unmatchedNodeCandidates;
+  assert.equal(suggestion.afterCandidates.length, 10);
+  assert.equal(suggestion.totalCandidates, 1000);
+  assert.equal(suggestion.candidatesTruncated, true);
+  assert.ok(result.unmatchedNodeCandidates.every((item) =>
+    item.afterCandidates.length === 10 && item.totalCandidates === 1000 && item.candidatesTruncated));
 });
 
 test("ignores Figma canvas movement while retaining screen size changes", () => {

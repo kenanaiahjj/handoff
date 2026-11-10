@@ -12,6 +12,9 @@ import {
   countComparisonChangesByCategory,
   formatComparisonChangeCount,
   comparisonValueLabel,
+  captureScopeNotice,
+  captureCoverageAvailabilityLabel,
+  comparisonFrameStatusLabel,
   groupComparisonChanges,
   separateSupplementalChanges,
   sourceIdentityNotice,
@@ -79,48 +82,92 @@ function frameMatchKey(beforeFrameId: string, afterFrameId: string) {
 
 function UnmatchedFrameCandidates({
   candidates,
+  afterFrames,
   savingKey,
   error,
   onConfirm,
 }: {
   candidates: UnmatchedFrameCandidate[];
+  afterFrames: Array<{ frameId: string; name: string }>;
   savingKey: string | null;
   error: { key: string; message: string } | null;
   onConfirm: (candidate: UnmatchedFrameCandidate, afterFrameId: string, afterName: string) => void;
 }) {
+  const [reviewingBeforeFrameId, setReviewingBeforeFrameId] = useState<string | null>(null);
+  const [selectedAfterFrameId, setSelectedAfterFrameId] = useState("");
+  const afterFramesByName = useMemo(() => {
+    const framesByName = new Map<string, Array<{ frameId: string; name: string }>>();
+    for (const frame of afterFrames) {
+      const frames = framesByName.get(frame.name) ?? [];
+      frames.push(frame);
+      framesByName.set(frame.name, frames);
+    }
+    return framesByName;
+  }, [afterFrames]);
+
   if (!candidates.length) return null;
 
   return (
     <section aria-label="Confirm screen matches" className="mx-2 mt-3 rounded-[6px] border border-[#51412a] bg-[#27231c] p-2.5">
       <h4 className="text-[11px] font-semibold text-[#e1c58e]">Confirm screen matches</h4>
-      <p className="mt-1 text-[11px] leading-4 text-[#b6aa94]">Figma changed these screen IDs. Review each suggested pair before matching it.</p>
+      <p className="mt-1 text-[11px] leading-4 text-[#b6aa94]">Figma changed these screen IDs. Review the matching screen before comparing changes.</p>
       <ul className="mt-2 space-y-2">
         {candidates.map((candidate) => (
           <li className="rounded-[5px] bg-[#302b23] p-2" key={candidate.beforeFrameId}>
             <p className="text-[9px] font-medium uppercase tracking-[0.06em] text-[#9e927d]">Before</p>
             <p className="break-words text-[11px] leading-4 text-[#e7e2d8]">{candidate.beforeName}</p>
-            <ul className="mt-1.5 space-y-1.5">
-              {candidate.afterCandidates.map((after) => {
-                const key = frameMatchKey(candidate.beforeFrameId, after.frameId);
-                return (
-                  <li className="space-y-1.5" key={after.frameId}>
-                    <p className="break-words text-[11px] leading-4 text-[#bdb6a8]">
-                      <span className="mb-0.5 block text-[9px] font-medium uppercase tracking-[0.06em] text-[#9e927d]">After</span>
-                      {after.name}
-                    </p>
-                    <button
-                      aria-label={`Confirm that ${candidate.beforeName} matches ${after.name}`}
-                      className="min-h-7 w-full rounded-[4px] bg-[#49402f] px-2 text-[10px] font-medium text-[#f0d5a0] hover:bg-[#5a4a31] disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e1c58e]"
-                      disabled={savingKey !== null}
-                      onClick={() => onConfirm(candidate, after.frameId, after.name)}
-                      type="button"
-                    >
-                      {savingKey === key ? "Matching…" : "Confirm match"}
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
+            {(() => {
+              const afterOptions = afterFramesByName.get(candidate.beforeName) ?? candidate.afterCandidates;
+              const isOpen = reviewingBeforeFrameId === candidate.beforeFrameId;
+              const selectedAfter = afterOptions.find((after) => after.frameId === selectedAfterFrameId)
+                ?? afterOptions[0];
+              const key = selectedAfter ? frameMatchKey(candidate.beforeFrameId, selectedAfter.frameId) : null;
+              return (
+                <div className="mt-1.5">
+                  <button
+                    aria-expanded={isOpen}
+                    className="min-h-7 w-full rounded-[4px] bg-[#49402f] px-2 text-left text-[10px] font-medium text-[#f0d5a0] hover:bg-[#5a4a31] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e1c58e]"
+                    onClick={() => {
+                      if (isOpen) {
+                        setReviewingBeforeFrameId(null);
+                        return;
+                      }
+                      setReviewingBeforeFrameId(candidate.beforeFrameId);
+                      setSelectedAfterFrameId(candidate.afterCandidates[0]?.frameId ?? afterOptions[0]?.frameId ?? "");
+                    }}
+                    type="button"
+                  >
+                    {isOpen ? "Hide screen choices" : `Choose from ${candidate.totalCandidates} matching screen${candidate.totalCandidates === 1 ? "" : "s"}`}
+                  </button>
+                  {isOpen ? (
+                    <div className="mt-2 space-y-1.5">
+                      <label className="block text-[9px] font-medium uppercase tracking-[0.06em] text-[#9e927d]">
+                        After screen
+                        <select
+                          aria-label={`After screen for ${candidate.beforeName}`}
+                          className="mt-1 min-h-8 w-full rounded-[4px] border border-[#514a3d] bg-[#211f1c] px-2 text-[11px] normal-case tracking-normal text-[#e7e2d8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e1c58e]"
+                          onChange={(event) => setSelectedAfterFrameId(event.currentTarget.value)}
+                          value={selectedAfter?.frameId ?? ""}
+                        >
+                          {afterOptions.map((after) => (
+                            <option key={after.frameId} value={after.frameId}>{after.name} · {after.frameId}</option>
+                          ))}
+                        </select>
+                      </label>
+                      <button
+                        aria-label={selectedAfter ? `Confirm that ${candidate.beforeName} matches ${selectedAfter.name} (${selectedAfter.frameId})` : "Choose a matching screen"}
+                        className="min-h-7 w-full rounded-[4px] bg-[#49402f] px-2 text-[10px] font-medium text-[#f0d5a0] hover:bg-[#5a4a31] disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e1c58e]"
+                        disabled={savingKey !== null || !selectedAfter || !key}
+                        onClick={() => selectedAfter && onConfirm(candidate, selectedAfter.frameId, selectedAfter.name)}
+                        type="button"
+                      >
+                        {key && savingKey === key ? "Matching…" : "Confirm match"}
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              );
+            })()}
             {error?.key === candidate.beforeFrameId ? <p className="mt-2 text-[11px] leading-4 text-[#f0c77b]" role="alert">{error.message}</p> : null}
           </li>
         ))}
@@ -131,10 +178,9 @@ function UnmatchedFrameCandidates({
 
 type VersionCompareProps = {
   versions: VersionOption[];
-  workspaceId: string;
-  projectId: string;
-  handoffId: string;
   selectedVersionId: string;
+  compareEndpointBase: string;
+  canConfirmFrameMatches: boolean;
   initialRouteState: CompareRouteState | null;
   initialResult?: CompareResult | null;
   compareScreenRequest: { frameId: string; requestId: number } | null;
@@ -156,13 +202,6 @@ function defaultComparedVersions(versions: VersionOption[], selectedVersionId: s
   return { fromVersionId: chronological[selectedIndex - 1].id, toVersionId: chronological[selectedIndex].id };
 }
 
-function frameStatusLabel(status: CompareFrame["status"]) {
-  if (status === "unchanged") return "No changes";
-  if (status === "changed") return "Changed";
-  if (status === "added") return "New";
-  return "Removed";
-}
-
 function versionLabel(versions: VersionOption[], id: string) {
   const version = versions.find((item) => item.id === id);
   return version ? "Version " + version.versionLabel : "Select a version";
@@ -170,10 +209,9 @@ function versionLabel(versions: VersionOption[], id: string) {
 
 export function VersionCompare({
   versions,
-  workspaceId,
-  projectId,
-  handoffId,
   selectedVersionId,
+  compareEndpointBase,
+  canConfirmFrameMatches,
   initialRouteState,
   initialResult = null,
   compareScreenRequest,
@@ -214,8 +252,8 @@ export function VersionCompare({
   }, [onClose]);
 
   const endpoint = useMemo(() =>
-    "/api/workspaces/" + encodeURIComponent(workspaceId) + "/projects/" + encodeURIComponent(projectId) + "/handoffs/" + encodeURIComponent(handoffId) + "/compare?from=" + encodeURIComponent(fromVersionId) + "&to=" + encodeURIComponent(toVersionId),
-  [workspaceId, projectId, handoffId, fromVersionId, toVersionId]);
+    compareEndpointBase + "?from=" + encodeURIComponent(fromVersionId) + "&to=" + encodeURIComponent(toVersionId),
+  [compareEndpointBase, fromVersionId, toVersionId]);
 
   useEffect(() => {
     const dialog = dialogRef.current;
@@ -295,6 +333,11 @@ export function VersionCompare({
     ? { result: null, error: null }
     : compareResultForPair(initialResult, pairResultState, fromVersionId, toVersionId);
   const currentResult = pairResult.result;
+  const afterFramesForMatching = useMemo(() => (currentResult?.frames ?? [])
+    .flatMap((frame) => frame.beforeFrameId === null && frame.afterFrameId !== null
+      ? [{ frameId: frame.afterFrameId, name: frame.name }]
+      : [])
+    .sort((left, right) => left.frameId.localeCompare(right.frameId)), [currentResult]);
   const error = pairResult.error;
   const requestedFrameId = compareScreenRequest?.frameId ?? validInitialRouteState?.frameId ?? null;
   const preferredFrameId = pairFrameSelection?.fromVersionId === fromVersionId && pairFrameSelection.toVersionId === toVersionId
@@ -338,12 +381,16 @@ export function VersionCompare({
     changed: currentResult.diff.frames.filter((frame) => frame.status === "changed").length,
     added: currentResult.diff.frames.filter((frame) => frame.status === "added").length,
     removed: currentResult.diff.frames.filter((frame) => frame.status === "removed").length,
+    onlyInAfterCapture: currentResult.diff.frames.filter((frame) => frame.status === "only-in-after-capture").length,
+    onlyInBeforeCapture: currentResult.diff.frames.filter((frame) => frame.status === "only-in-before-capture").length,
   } : null;
   const frameSummary = frameCounts
     ? [
         frameCounts.changed ? frameCounts.changed + " screen" + (frameCounts.changed === 1 ? "" : "s") + " changed" : "",
         frameCounts.added ? frameCounts.added + " new" : "",
         frameCounts.removed ? frameCounts.removed + " removed" : "",
+        frameCounts.onlyInAfterCapture ? frameCounts.onlyInAfterCapture + " screen" + (frameCounts.onlyInAfterCapture === 1 ? "" : "s") + " with no match in the before capture" : "",
+        frameCounts.onlyInBeforeCapture ? frameCounts.onlyInBeforeCapture + " screen" + (frameCounts.onlyInBeforeCapture === 1 ? "" : "s") + " with no match in the after capture" : "",
       ].filter(Boolean).join(" · ") || "No screen changes"
     : "";
   const comparisonSummary = currentResult
@@ -388,14 +435,13 @@ export function VersionCompare({
   }
 
   async function confirmFrameMatch(candidate: UnmatchedFrameCandidate, afterFrameId: string, afterName: string) {
+    if (!canConfirmFrameMatches) return;
     const key = frameMatchKey(candidate.beforeFrameId, afterFrameId);
     setFrameMatchSavingKey(key);
     setFrameMatchError(null);
     setFrameMatchStatus(`Matching ${candidate.beforeName} with ${afterName}…`);
     try {
-      const response = await fetch(
-        "/api/workspaces/" + encodeURIComponent(workspaceId) + "/projects/" + encodeURIComponent(projectId) + "/handoffs/" + encodeURIComponent(handoffId) + "/compare",
-        {
+      const response = await fetch(compareEndpointBase, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({
@@ -404,8 +450,7 @@ export function VersionCompare({
             beforeFrameId: candidate.beforeFrameId,
             afterFrameId,
           }),
-        },
-      );
+      });
       const payload = await response.json() as CompareResult | { error?: string };
       if (!response.ok || !("diff" in payload)) {
         throw new Error("error" in payload ? payload.error ?? "Could not confirm this screen match." : "Could not confirm this screen match.");
@@ -434,6 +479,10 @@ export function VersionCompare({
   const fromLabel = versionLabel(versions, fromVersionId);
   const toLabel = versionLabel(versions, toVersionId);
   const sourceIdentityMessage = currentResult ? sourceIdentityNotice(currentResult.diff.sourceIdentity) : null;
+  const captureScopeMessage = currentResult ? captureScopeNotice(
+    currentResult.diff.captureScopeComparison,
+    currentResult.diff.frames.some((frame) => frame.status === "only-in-before-capture" || frame.status === "only-in-after-capture"),
+  ) : null;
 
   return (
     <div className="fixed inset-0 z-[70] bg-[#111]/90 backdrop-blur-[2px]">
@@ -452,6 +501,7 @@ export function VersionCompare({
               {loading ? "Calculating the version diff…" : comparisonSummary}
             </p>
             {!loading && sourceIdentityMessage ? <p className="mt-1 text-[11px] text-[#d7b775]" role="status">{sourceIdentityMessage}</p> : null}
+            {!loading && captureScopeMessage ? <p className="mt-1 text-[11px] leading-4 text-[#d7b775]" role="status">{captureScopeMessage}</p> : null}
           </div>
           <div aria-label="Comparison view" className="flex rounded-[7px] border border-[#414141] p-0.5" role="group">
             {([
@@ -507,14 +557,15 @@ export function VersionCompare({
                     >
                       <span className="flex items-center justify-between gap-2 text-[12px]">
                         <span className="truncate">{frame.name}</span>
-                        <span className="shrink-0 font-mono text-[10px] uppercase text-[#bdbdbd]">{frameStatusLabel(frame.status)}</span>
+                        <span className="shrink-0 font-mono text-[10px] uppercase text-[#bdbdbd]">{comparisonFrameStatusLabel(frame.status)}</span>
                       </span>
                     </button>
                   </li>
                 ))}
               </ul>
-              {currentResult.diff.unmatchedFrameCandidates.length ? (
+              {canConfirmFrameMatches && currentResult.diff.unmatchedFrameCandidates.length ? (
                 <UnmatchedFrameCandidates
+                  afterFrames={afterFramesForMatching}
                   candidates={currentResult.diff.unmatchedFrameCandidates}
                   error={frameMatchError}
                   onConfirm={confirmFrameMatch}
@@ -528,7 +579,7 @@ export function VersionCompare({
                 <div className="flex items-center justify-between gap-3">
                   <div className="min-w-0">
                     <h2 className="truncate text-[14px] font-medium text-[#ededed]">{activeFrame?.name ?? "Select a screen"}</h2>
-                    {activeFrame ? <p className="mt-0.5 text-[12px] text-[#929292]">{frameStatusLabel(activeFrame.status)} · {changesForFrame.length} recorded {changesForFrame.length === 1 ? "change" : "changes"}</p> : null}
+                    {activeFrame ? <p className="mt-0.5 text-[12px] text-[#929292]">{comparisonFrameStatusLabel(activeFrame.status)} · {changesForFrame.length} recorded {changesForFrame.length === 1 ? "change" : "changes"}</p> : null}
                   </div>
                   {categoryCounts.some((item) => item.count > 0) ? (
                     <div className="hidden flex-wrap justify-end gap-1.5 xl:flex">
@@ -552,7 +603,7 @@ export function VersionCompare({
                           <li className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5" key={difference.path + difference.availableIn}>
                             <code className="break-all text-[11px] text-[#bdbdbd]">{difference.path}</code>
                             <span className="shrink-0 text-[11px] text-[#888]">
-                              {difference.availableIn === "before" ? "Before only" : "After only"} · {difference.nodeCount} {difference.nodeCount === 1 ? "layer" : "layers"}
+                              {captureCoverageAvailabilityLabel(difference.availableIn)} · {difference.nodeCount} {difference.nodeCount === 1 ? "layer" : "layers"}
                             </span>
                           </li>
                         ))}
@@ -563,6 +614,7 @@ export function VersionCompare({
                 <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5 lg:hidden" aria-label="Compared screens" role="group">
                   {currentResult.frames.map((frame) => (
                     <button
+                      aria-label={`${frame.name}, ${comparisonFrameStatusLabel(frame.status)}`}
                       aria-pressed={frame.frameId === focusedFrameId}
                       className={"min-h-8 shrink-0 rounded-[5px] px-2.5 text-[12px] " + (frame.frameId === focusedFrameId ? "bg-[#414141] text-white" : "bg-[#292929] text-[#aaa]")}
                       data-compare-frame-id={frame.frameId}
@@ -574,9 +626,10 @@ export function VersionCompare({
                     </button>
                   ))}
                 </div>
-                {currentResult.diff.unmatchedFrameCandidates.length ? (
+                {canConfirmFrameMatches && currentResult.diff.unmatchedFrameCandidates.length ? (
                   <div className="lg:hidden">
                     <UnmatchedFrameCandidates
+                      afterFrames={afterFramesForMatching}
                       candidates={currentResult.diff.unmatchedFrameCandidates}
                       error={frameMatchError}
                       onConfirm={confirmFrameMatch}

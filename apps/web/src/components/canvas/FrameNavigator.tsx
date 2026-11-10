@@ -2,10 +2,13 @@
 
 import { useMemo, useState } from "react";
 import type { SnapshotNode } from "@asbir/snapshot-contract";
+import { filterChangedFrames } from "./changed-frame-filter";
+import { comparisonFrameStatusLabel } from "./compare-presentation";
 
 type CanvasFrameOption = {
   id: string;
   name: string;
+  pageName?: string;
   imageSrc: string;
   fileName: string;
   sourceWidth: number;
@@ -15,13 +18,16 @@ type CanvasFrameOption = {
   sourceX: number;
   sourceY: number;
   nodes: SnapshotNode[];
+  overlayNodes?: CanvasOverlayNode[];
   layerExports?: Record<string, { downloadUrl: string; fileName: string; contentType: "image/png" | "image/svg+xml" }>;
   exact: boolean;
   kind: "overview" | "frame";
 };
 
+export type CanvasOverlayNode = Pick<SnapshotNode, "sourceNodeId" | "sourceFrameId" | "name" | "type" | "visible" | "bounds">;
+
 export type { CanvasFrameOption };
-export type CanvasFrameChangeStatus = "added" | "removed" | "changed" | "unchanged";
+export type CanvasFrameChangeStatus = "added" | "removed" | "changed" | "unchanged" | "only-in-before-capture" | "only-in-after-capture";
 
 export type FrameComparisonSummary = {
   earlierVersionLabel: string;
@@ -30,6 +36,8 @@ export type FrameComparisonSummary = {
   removed: number;
   changeCount: number;
   visualChangeCount: number;
+  onlyInAfterCapture: number;
+  onlyInBeforeCapture: number;
 };
 
 type FrameNavigatorProps = {
@@ -41,6 +49,8 @@ type FrameNavigatorProps = {
   onOpenSearch: () => void;
   frameStatuses: Record<string, CanvasFrameChangeStatus>;
   comparisonSummary: FrameComparisonSummary | null;
+  changedOnly: boolean;
+  onChangedOnlyChange: (changedOnly: boolean) => void;
 };
 
 export function FrameNavigator({
@@ -52,20 +62,22 @@ export function FrameNavigator({
   onOpenSearch,
   frameStatuses,
   comparisonSummary,
+  changedOnly,
+  onChangedOnlyChange,
 }: FrameNavigatorProps) {
   const [screenQuery, setScreenQuery] = useState("");
-  const [changedOnly, setChangedOnly] = useState(false);
   const [elementQuery, setElementQuery] = useState("");
   const screens = useMemo(() => frames.filter((frame) => frame.kind === "frame"), [frames]);
-  const activeFrame = screens.find((frame) => frame.id === activeFrameId) ?? null;
+  const activeFrame = filterChangedFrames(
+    screens.filter((frame) => frame.id === activeFrameId),
+    changedOnly,
+    frameStatuses,
+    Boolean(comparisonSummary),
+  )[0] ?? null;
   const nodeIndex = new Map(activeFrame?.nodes.map((node) => [node.sourceNodeId, node]) ?? []);
-  const visibleFrames = screens.filter((frame) => {
-    if (!frame.name.toLowerCase().includes(screenQuery.trim().toLowerCase())) return false;
-    if (changedOnly && comparisonSummary) {
-      const status = frameStatuses[frame.id];
-      return status === "changed" || status === "added";
-    }
-    return true;
+  const visibleFrames = filterChangedFrames(screens, changedOnly, frameStatuses, Boolean(comparisonSummary)).filter((frame) => {
+    const searchText = `${frame.name} ${frame.pageName ?? ""}`.toLowerCase();
+    return searchText.includes(screenQuery.trim().toLowerCase());
   });
   const filteredNodes = (activeFrame?.nodes ?? []).filter((node) =>
     (node.name + " " + node.type + " " + node.sourceNodeId).toLowerCase().includes(elementQuery.toLowerCase()),
@@ -88,6 +100,7 @@ export function FrameNavigator({
       <div className="shrink-0 space-y-3 p-3">
         <button
           className="flex h-9 w-full items-center gap-2 rounded-[7px] border border-[#3b3b3b] bg-[#292929] px-2.5 text-left text-[12px] text-[#c3c3c3] hover:border-[#555] hover:bg-[#303030] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+          id="canvas-search-screens-trigger"
           onClick={onOpenSearch}
           title="Search captured text, colours, and elements"
           type="button"
@@ -113,12 +126,12 @@ export function FrameNavigator({
             checked={changedOnly}
             className="size-3.5 accent-[#d99a32]"
             disabled={!comparisonSummary}
-            onChange={(event) => setChangedOnly(event.target.checked)}
+            onChange={(event) => onChangedOnlyChange(event.target.checked)}
             title={comparisonSummary ? undefined : "Compare versions to filter changed screens."}
             type="checkbox"
           />
-          <span>Changed in this version</span>
-          {comparisonSummary ? <span className="ml-auto font-mono text-[10px] text-[#888]">{comparisonSummary.changed + comparisonSummary.added}</span> : null}
+          <span>{comparisonSummary?.onlyInAfterCapture ? "Changed or no before match" : "Changed in this version"}</span>
+          {comparisonSummary ? <span className="ml-auto font-mono text-[10px] text-[#888]">{comparisonSummary.changed + comparisonSummary.added + comparisonSummary.onlyInAfterCapture}</span> : null}
         </label>
       </div>
 
@@ -131,18 +144,25 @@ export function FrameNavigator({
         {visibleFrames.map((frame, index) => {
           const selected = frame.id === activeFrameId;
           const status = frameStatuses[frame.id];
-          const statusLabel = status === "added" ? "New" : status === "changed" ? "Changed" : status === "removed" ? "Removed" : null;
+          const statusLabel = status && status !== "unchanged" ? comparisonFrameStatusLabel(status) : null;
+          const statusTone = status === "added" ? "bg-[#183a2d] text-[#67d59a]"
+            : status === "removed" || status === "only-in-before-capture" ? "bg-[#3b2525] text-[#e58b83]"
+              : "bg-[#43331f] text-[#efae3d]";
           return (
             <li key={frame.id}>
               <button
                 aria-pressed={selected}
                 className={"flex min-h-9 w-full items-center gap-2 rounded-[5px] border px-2.5 text-left text-[13px] transition-colors " + (selected ? "border-[#454545] bg-[#343434] text-[#f0f0f0]" : "border-transparent text-[#bdbdbd] hover:bg-[#2b2b2b] hover:text-[#f2f2f2]")}
                 onClick={() => onSelect(frame.id)}
+                title={frame.pageName ? `${frame.name} · ${frame.pageName}` : frame.name}
                 type="button"
               >
-                <span className="min-w-0 flex-1 truncate">{frame.name}</span>
+                <span className="min-w-0 flex-1 truncate">
+                  {frame.name}
+                  {frame.pageName ? <span className="ml-1.5 text-[10px] text-[#888]">· {frame.pageName}</span> : null}
+                </span>
                 {statusLabel ? (
-                  <span className={"shrink-0 rounded-[5px] px-1.5 py-0.5 text-[10px] font-medium leading-4 " + (status === "added" ? "bg-[#183a2d] text-[#67d59a]" : status === "removed" ? "bg-[#3b2525] text-[#e58b83]" : "bg-[#43331f] text-[#efae3d]")}>{statusLabel}</span>
+                  <span className={"shrink-0 rounded-[5px] px-1.5 py-0.5 text-[10px] font-medium leading-4 " + statusTone}>{statusLabel}</span>
                 ) : null}
                 <span className="sr-only">Screen {index + 1} of {screens.length}</span>
               </button>

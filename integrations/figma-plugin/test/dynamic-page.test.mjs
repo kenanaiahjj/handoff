@@ -1,8 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { captureFigmaCanvas } from "../src/capture.ts";
+import { frameRenderCrop } from "../src/render-crop.ts";
 
-function installCaptureFixture({ failHighResolution = false, failVariableLookup = false, failPaintRead = false } = {}) {
+function installCaptureFixture({ failHighResolution = false, failPaintRead = false } = {}) {
   let loaded = false;
   const exportSettings = [];
   const png = new Uint8Array(24);
@@ -54,7 +55,6 @@ function installCaptureFixture({ failHighResolution = false, failVariableLookup 
     root: { id: "document-1", name: "Capture fixture" },
     variables: {
       async getLocalVariablesAsync() {
-        if (failVariableLookup) throw new Error("Variable service unavailable");
         return [];
       },
       async getLocalVariableCollectionsAsync() { return []; },
@@ -148,6 +148,104 @@ test("selected capture loads the active page and retries a failed 2x render at 1
   assert.ok(fixture.exportSettings.filter((settings) => settings.format === "PNG").every((settings) => settings.contentsOnly === true));
 });
 
+test("captures visible Figma layout grids on the root screen and preserves automatic counts", async () => {
+  const fixture = installCaptureFixture();
+  fixture.frame.layoutGrids = [
+    {
+      pattern: "COLUMNS",
+      visible: true,
+      color: { r: 0.2, g: 0.4, b: 0.8, a: 0.2 },
+      alignment: "MIN",
+      sectionSize: 72,
+      gutterSize: 16,
+      offset: 12,
+      count: Infinity,
+    },
+    {
+      pattern: "GRID",
+      visible: false,
+      sectionSize: 8,
+      count: 1,
+    },
+  ];
+
+  const result = await captureFigmaCanvas("selected", () => {});
+  const root = result.payload.frames[0].nodes[0];
+
+  assert.equal(root.sourceNodeId, fixture.frame.id);
+  assert.deepEqual(root.sourcePayload.layoutGrids, [
+    {
+      pattern: "COLUMNS",
+      visible: true,
+      color: { r: 0.2, g: 0.4, b: 0.8, a: 0.2 },
+      alignment: "MIN",
+      sectionSize: 72,
+      gutterSize: 16,
+      offset: 12,
+      count: "AUTO",
+    },
+    { pattern: "GRID", visible: false, sectionSize: 8, count: 1 },
+  ]);
+});
+
+test("captures exact auto-layout padding and wrap spacing with measured child margins", async () => {
+  const fixture = installCaptureFixture();
+  Object.assign(fixture.frame, {
+    layoutMode: "VERTICAL",
+    layoutDirection: "VERTICAL",
+    layoutWrap: "WRAP",
+    paddingTop: 8.5,
+    paddingRight: 12,
+    paddingBottom: 10.25,
+    paddingLeft: 14.75,
+    itemSpacing: 6.5,
+    counterAxisSpacing: 4.5,
+  });
+  const child = {
+    id: "child-1",
+    type: "RECTANGLE",
+    name: "Card",
+    visible: true,
+    absoluteBoundingBox: { x: 24.5, y: 38.25, width: 50.5, height: 41.5 },
+    fills: [],
+    strokes: [],
+    children: [],
+    parent: fixture.frame,
+    async exportAsync(settings) {
+      if (settings.format === "SVG_STRING") return '<svg xmlns="http://www.w3.org/2000/svg" width="50" height="41" />';
+      return fixture.png;
+    },
+  };
+  fixture.frame.children = [child];
+
+  const result = await captureFigmaCanvas("selected", () => {});
+  const [root, capturedChild] = result.payload.frames[0].nodes;
+
+  assert.deepEqual(root.padding, {
+    top: { value: 8.5, unit: "px", provenance: "source", sourceProperty: "paddingTop" },
+    right: { value: 12, unit: "px", provenance: "source", sourceProperty: "paddingRight" },
+    bottom: { value: 10.25, unit: "px", provenance: "source", sourceProperty: "paddingBottom" },
+    left: { value: 14.75, unit: "px", provenance: "source", sourceProperty: "paddingLeft" },
+  });
+  assert.deepEqual(root.spacing, {
+    rowGap: { value: 6.5, unit: "px", provenance: "source", sourceProperty: "itemSpacing" },
+    columnGap: { value: 4.5, unit: "px", provenance: "source", sourceProperty: "counterAxisSpacing" },
+    itemGap: { value: 6.5, unit: "px", provenance: "source", sourceProperty: "itemSpacing" },
+  });
+  assert.deepEqual(capturedChild.bounds, {
+    x: { value: 14.5, unit: "px", provenance: "measured", sourceProperty: "absoluteBoundingBox.x - frame.absoluteBoundingBox.x" },
+    y: { value: 18.25, unit: "px", provenance: "measured", sourceProperty: "absoluteBoundingBox.y - frame.absoluteBoundingBox.y" },
+    width: { value: 50.5, unit: "px", provenance: "source", sourceProperty: "absoluteBoundingBox.width" },
+    height: { value: 41.5, unit: "px", provenance: "source", sourceProperty: "absoluteBoundingBox.height" },
+  });
+  assert.deepEqual(capturedChild.margins, {
+    top: { value: 18.25, unit: "px", provenance: "measured", sourceProperty: "absoluteBoundingBox.y - parent.absoluteBoundingBox.y" },
+    right: { value: 35, unit: "px", provenance: "measured", sourceProperty: "parent.absoluteBoundingBox.right - absoluteBoundingBox.right" },
+    bottom: { value: 40.25, unit: "px", provenance: "measured", sourceProperty: "parent.absoluteBoundingBox.bottom - absoluteBoundingBox.bottom" },
+    left: { value: 14.5, unit: "px", provenance: "measured", sourceProperty: "absoluteBoundingBox.x - parent.absoluteBoundingBox.x" },
+  });
+});
+
 test("preserves out-of-frame Figma render bounds for exact canvas placement", async () => {
   const fixture = installCaptureFixture();
   fixture.frame.absoluteRenderBounds = { x: 5, y: 10, width: 150, height: 125 };
@@ -206,13 +304,15 @@ test("fails clearly when Figma cannot render at either scale", async () => {
   );
 });
 
-test("variable lookup failures warn without dropping the Figma render or layer tree", async () => {
-  installCaptureFixture({ failVariableLookup: true });
+test("warns when a bound variable cannot be resolved without dropping the capture", async () => {
+  const fixture = installCaptureFixture();
+  fixture.frame.boundVariables = { fills: [{ type: "VARIABLE_ALIAS", id: "variable-missing" }] };
+  globalThis.figma.variables.getVariableByIdAsync = async () => { throw new Error("Variable service unavailable"); };
   const result = await captureFigmaCanvas("selected", () => {});
 
   assert.equal(result.renders.length, 1);
   assert.equal(result.payload.frames[0].nodes.length, 1);
-  assert.match(result.warnings[0], /Variable and style lookups were unavailable/);
+  assert.match(result.warnings[0], /1 Figma variable binding could not be resolved/);
   assert.deepEqual(result.payload.sourceMetadata.captureWarnings, result.warnings);
 });
 
@@ -267,7 +367,7 @@ test("captures deep page and layer trees without recursive stack growth", async 
   assert.equal(result.payload.frames[0].nodes.at(-1).name, "Group 6999");
 });
 
-test("stops walking a frame as soon as its layer budget is exceeded", async () => {
+test("captures a frame with more than 20,000 layers when it fits the snapshot budget", async () => {
   const fixture = installCaptureFixture();
   let childPropertyReads = 0;
   fixture.frame.children = Array.from({ length: 20_100 }, (_, index) => {
@@ -287,11 +387,110 @@ test("stops walking a frame as soon as its layer budget is exceeded", async () =
     return child;
   });
 
-  await assert.rejects(
-    captureFigmaCanvas("selected", () => {}),
-    /more than 20,000 layers/,
-  );
-  assert.ok(childPropertyReads < 20_000, `expected an early stop, read children on ${childPropertyReads} layers`);
+  const result = await captureFigmaCanvas("selected", () => {});
+
+  assert.equal(result.payload.frames[0].nodes.length, 20_101);
+  assert.equal(childPropertyReads, 20_100);
+});
+
+test("resolves only the variables used by the captured layers", async () => {
+  const fixture = installCaptureFixture();
+  let allVariablesRead = 0;
+  let allCollectionsRead = 0;
+  const variableLookups = [];
+  const collectionLookups = [];
+  fixture.frame.boundVariables = {
+    fills: [{ type: "VARIABLE_ALIAS", id: "variable-used" }],
+  };
+  globalThis.figma.variables.getLocalVariablesAsync = async () => {
+    allVariablesRead += 1;
+    return [];
+  };
+  globalThis.figma.variables.getLocalVariableCollectionsAsync = async () => {
+    allCollectionsRead += 1;
+    return [];
+  };
+  globalThis.figma.variables.getVariableByIdAsync = async (id) => {
+    variableLookups.push(id);
+    return {
+      id,
+      name: "color/surface",
+      resolvedType: "COLOR",
+      variableCollectionId: "collection-used",
+      valuesByMode: { "mode-1": { r: 1, g: 1, b: 1 } },
+      resolveForConsumer: () => ({ value: { r: 1, g: 1, b: 1 } }),
+    };
+  };
+  globalThis.figma.variables.getVariableCollectionByIdAsync = async (id) => {
+    collectionLookups.push(id);
+    return {
+      id,
+      name: "Tripket",
+      defaultModeId: "mode-1",
+      modes: [{ modeId: "mode-1", name: "Light" }],
+    };
+  };
+
+  const result = await captureFigmaCanvas("selected", () => {});
+
+  assert.equal(allVariablesRead, 0);
+  assert.equal(allCollectionsRead, 0);
+  assert.deepEqual(variableLookups, ["variable-used"]);
+  assert.deepEqual(collectionLookups, ["collection-used"]);
+  assert.equal(result.payload.frames[0].nodes[0].tokens[0].name, "color/surface");
+});
+
+test("releases one frame's capture tree before traversing the next frame", async () => {
+  const fixture = installCaptureFixture();
+  const variableLookups = [];
+  const events = [];
+  fixture.frame.boundVariables = {
+    fills: [{ type: "VARIABLE_ALIAS", id: "variable-first-frame" }],
+  };
+  const secondFrame = {
+    ...fixture.frame,
+    id: "frame-2",
+    name: "Second frame",
+    absoluteBoundingBox: { x: 140, y: 20, width: 100, height: 100 },
+    parent: fixture.page,
+  };
+  secondFrame.boundVariables = {
+    fills: [{ type: "VARIABLE_ALIAS", id: "variable-second-frame" }],
+  };
+  Object.defineProperty(secondFrame, "children", {
+    get() {
+      events.push("traverse-second-frame");
+      assert.ok(
+        variableLookups.includes("variable-first-frame"),
+        "the first frame's metadata should be resolved before traversing the next frame",
+      );
+      return [];
+    },
+  });
+  Object.defineProperty(fixture.page, "children", {
+    get() {
+      assert.equal(fixture.isLoaded(), true);
+      return [fixture.frame, secondFrame];
+    },
+  });
+  globalThis.figma.variables.getVariableByIdAsync = async (id) => {
+    variableLookups.push(id);
+    events.push(`lookup-${id}`);
+    return {
+      id,
+      name: id,
+      resolvedType: "COLOR",
+      variableCollectionId: "",
+      valuesByMode: {},
+      resolveForConsumer: () => ({ value: { r: 1, g: 1, b: 1 } }),
+    };
+  };
+
+  const result = await captureFigmaCanvas("page", () => {});
+
+  assert.deepEqual(result.payload.frames.map((captured) => captured.sourceFrameId), ["frame-1", "frame-2"]);
+  assert.deepEqual(variableLookups, ["variable-first-frame", "variable-second-frame"]);
+  assert.deepEqual(events.slice(0, 2), ["lookup-variable-first-frame", "traverse-second-frame"]);
 });
 
 test("bounds concurrent style lookups for large frames", async () => {
@@ -346,6 +545,35 @@ test("captures frame, component, instance, and component-set roots from a page",
 
   assert.deepEqual(result.payload.frames.map((frame) => frame.sourceFrameId), ["root-0", "root-1", "root-2", "root-3"]);
   assert.deepEqual(result.renders.map((render) => render.key), result.payload.frames.map((frame) => frame.renderAssetKey));
+});
+
+test("renders page frames with bounded concurrency while preserving their order", async () => {
+  const fixture = installCaptureFixture();
+  let activeExports = 0;
+  let peakExports = 0;
+  const roots = Array.from({ length: 6 }, (_, index) => ({
+    ...fixture.frame,
+    id: `frame-${index + 1}`,
+    name: `Frame ${index + 1}`,
+    absoluteBoundingBox: { x: index * 120, y: 20, width: 100, height: 100 },
+    children: [],
+    parent: fixture.page,
+    async exportAsync(settings) {
+      activeExports += 1;
+      peakExports = Math.max(peakExports, activeExports);
+      await new Promise((resolve) => setTimeout(resolve, 5));
+      activeExports -= 1;
+      if (settings.format === "SVG_STRING") return '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" />';
+      return fixture.png;
+    },
+  }));
+  Object.defineProperty(fixture.page, "children", { get: () => roots });
+
+  const result = await captureFigmaCanvas("page", () => {});
+
+  assert.ok(peakExports > 1, `expected concurrent frame exports, saw a peak of ${peakExports}`);
+  assert.ok(peakExports <= 2, `expected no more than 2 concurrent frame exports, saw ${peakExports}`);
+  assert.deepEqual(result.payload.frames.map((frame) => frame.sourceFrameId), roots.map((frame) => frame.id));
 });
 
 test("captures the containing frame when a child layer is selected", async () => {
@@ -496,6 +724,12 @@ test("captures five top-level frames in page order without changing the Figma se
 
 test("rejects an oversized layer payload before exporting frame images", async () => {
   const fixture = installCaptureFixture();
+  let encodedLargeStructuredPayload = false;
+  const originalEncodeURIComponent = globalThis.encodeURIComponent;
+  globalThis.encodeURIComponent = (value) => {
+    if (value.length > 1024 * 1024) encodedLargeStructuredPayload = true;
+    return originalEncodeURIComponent(value);
+  };
   let exportCount = 0;
   const originalExport = fixture.frame.exportAsync.bind(fixture.frame);
   fixture.frame.exportAsync = async (settings) => {
@@ -507,44 +741,128 @@ test("rejects an oversized layer payload before exporting frame images", async (
     type: "TEXT",
     name: "Large text layer",
     visible: true,
-    characters: "x".repeat(17 * 1024 * 1024),
+    characters: "x".repeat(129 * 1024 * 1024),
     getStyledTextSegments() { return []; },
     parent: fixture.frame,
   }];
 
-  await assert.rejects(
-    captureFigmaCanvas("selected", () => {}),
-    /structured layer data exceeds Handoff’s 16 MiB limit/,
-  );
+  try {
+    await assert.rejects(
+      captureFigmaCanvas("selected", () => {}),
+      /structured layer data is .* above Handoff’s 128 MiB limit/,
+    );
+  } finally {
+    globalThis.encodeURIComponent = originalEncodeURIComponent;
+  }
+  assert.equal(encodedLargeStructuredPayload, false, "the capture must enforce its JSON budget without allocating a huge UTF-8 copy");
   assert.equal(exportCount, 0);
 });
 
-test("stops page discovery after the supported frame limit", async () => {
+test("captures structured layer data larger than the former 64 MiB ceiling", async () => {
   const fixture = installCaptureFixture();
-  let walkedFrameCount = 0;
+  const characters = "x".repeat(65 * 1024 * 1024);
+  fixture.frame.children = [{
+    id: "large-text",
+    type: "TEXT",
+    name: "Large text layer",
+    visible: true,
+    characters,
+    getStyledTextSegments() { return []; },
+    parent: fixture.frame,
+  }];
+
+  const result = await captureFigmaCanvas("selected", () => {});
+
+  assert.equal(result.payload.frames[0].nodes[1].typography.content.length, characters.length);
+  assert.equal(result.renders.length, 1);
+});
+
+test("captures every frame on a page when the canvas contains more than 120 frames", async () => {
+  const fixture = installCaptureFixture();
   const frames = Array.from({ length: 200 }, (_, index) => ({
     ...fixture.frame,
     id: `page-frame-${index}`,
     name: `Page frame ${index}`,
     parent: fixture.page,
   }));
-  for (const frame of frames) {
-    Object.defineProperty(frame, "type", {
-      get() {
-        walkedFrameCount += 1;
-        return "FRAME";
-      },
-    });
-  }
   Object.defineProperty(fixture.page, "children", {
     get: () => frames,
   });
 
-  await assert.rejects(
-    captureFigmaCanvas("page", () => {}),
-    /more than 120 frames/,
+  const result = await captureFigmaCanvas("page", () => {});
+
+  assert.equal(result.payload.frames.length, 200);
+});
+
+test("captures frames from every page in the Figma file", async () => {
+  const fixture = installCaptureFixture();
+  let loadedPageCount = 0;
+  const pages = Array.from({ length: 3 }, (_, pageIndex) => {
+    let loaded = false;
+    const page = {
+      id: `file-page-${pageIndex}`,
+      name: `File page ${pageIndex + 1}`,
+      type: "PAGE",
+      async loadAsync() {
+        loaded = true;
+        loadedPageCount += 1;
+      },
+      get children() {
+        assert.equal(loaded, true, `page ${pageIndex + 1} must load before its children are read`);
+        return Array.from({ length: pageIndex === 0 ? 101 : 50 }, (_, frameIndex) => ({
+          ...fixture.frame,
+          id: `file-frame-${pageIndex}-${frameIndex}`,
+          name: `File frame ${pageIndex}-${frameIndex}`,
+          absoluteBoundingBox: { x: 0, y: 0, width: 100, height: 100 },
+          ...(pageIndex === 1 && frameIndex === 0
+            ? { absoluteRenderBounds: { x: -10, y: -20, width: 125, height: 130 } }
+            : {}),
+          children: [],
+          parent: page,
+        }));
+      },
+    };
+    return page;
+  });
+  globalThis.figma.root.children = pages;
+  globalThis.figma.currentPage = pages[0];
+
+  const result = await captureFigmaCanvas("file", () => {});
+
+  assert.equal(loadedPageCount, 3);
+  assert.equal(result.payload.frames.length, 201);
+  assert.ok(result.renders.length + result.vectorRenders.length + 1 > 300, "full-file assets can exceed the former server count limit");
+  assert.deepEqual(
+    [...new Set(result.payload.frames.map((frame) => frame.sourcePageId))].sort(),
+    ["file-page-0", "file-page-1", "file-page-2"],
   );
-  assert.equal(walkedFrameCount, 121);
+  assert.equal(result.payload.sourceMetadata.captureScope, "all top-level frames and components across all pages");
+  assert.equal(result.payload.sourceMetadata.sourcePageId, null);
+  assert.equal(result.payload.sourceMetadata.pageLayout.length, 3);
+  assert.notDeepEqual(
+    [result.payload.sourceMetadata.pageLayout[0].offsetX, result.payload.sourceMetadata.pageLayout[0].offsetY],
+    [result.payload.sourceMetadata.pageLayout[1].offsetX, result.payload.sourceMetadata.pageLayout[1].offsetY],
+  );
+  const secondPageFrame = result.payload.frames.find((frame) => frame.sourcePageId === "file-page-1");
+  const secondPageRender = result.renders.find((render) => render.key === secondPageFrame.renderAssetKey);
+  const secondPageLayout = result.payload.sourceMetadata.pageLayout.find((page) => page.sourcePageId === "file-page-1");
+  assert.equal(secondPageRender.sourceX, secondPageFrame.bounds.x.value + secondPageLayout.offsetX);
+  assert.equal(secondPageRender.sourceY, secondPageFrame.bounds.y.value + secondPageLayout.offsetY);
+  assert.deepEqual(secondPageRender.renderBounds, {
+    x: 340,
+    y: 0,
+    width: 125,
+    height: 130,
+  });
+  assert.deepEqual(
+    frameRenderCrop(
+      { x: secondPageRender.sourceX, y: secondPageRender.sourceY, width: secondPageRender.sourceWidth, height: secondPageRender.sourceHeight },
+      secondPageRender.renderBounds,
+      250,
+      260,
+    ),
+    { x: 20, y: 40, width: 200, height: 200 },
+  );
 });
 
 test("reads text style segments once and preserves the captured typography", async () => {

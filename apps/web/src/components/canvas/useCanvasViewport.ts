@@ -13,6 +13,7 @@ const MAX_SCALE = 5;
 
 export function useCanvasViewport(frameWidth: number, frameHeight: number) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [transform, setTransform] = useState<CanvasTransform>({
     scale: 0.3,
     offsetX: 0,
@@ -41,7 +42,14 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number) {
     const container = containerRef.current;
     if (!container || typeof ResizeObserver === "undefined") return;
 
-    const observer = new ResizeObserver(() => fitToFrame());
+    const observer = new ResizeObserver((entries) => {
+      const contentRect = entries[0]?.contentRect;
+      if (contentRect) {
+        const nextSize = { width: contentRect.width, height: contentRect.height };
+        setViewportSize((current) => current.width === nextSize.width && current.height === nextSize.height ? current : nextSize);
+      }
+      fitToFrame();
+    });
     observer.observe(container);
     return () => observer.disconnect();
   }, [fitToFrame]);
@@ -85,6 +93,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number) {
 
   return {
     containerRef,
+    viewportSize,
     transform,
     fitToFrame,
     zoomBy,

@@ -16,6 +16,9 @@ import { CanvasAnnotationsPanel, type CanvasAnnotationRecord } from "./CanvasAnn
 import { McpConnectionPanel } from "./McpConnectionPanel";
 import { hasVisibleLayoutGrids } from "./LayoutGridOverlay";
 import { formatComparisonChangeCount } from "./compare-presentation";
+import { formatCapturedAt } from "./captured-at";
+import { filterChangedFrames } from "./changed-frame-filter";
+import { overviewCanvasFrameId } from "./canvas-anchor";
 import {
   FrameNavigator,
   type CanvasFrameChangeStatus,
@@ -34,6 +37,7 @@ export type ReviewMetadata = {
   versions: VersionOption[];
   capturedAt: string;
   source: string;
+  captureScope: string | null;
   sourceRevisionId: string | null;
   releaseNote: string | null;
   visualOnly: boolean;
@@ -75,24 +79,14 @@ type SearchResult = {
   detail: string;
 };
 
-function formatCapturedAt(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return value;
-  return new Intl.DateTimeFormat("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  }).format(date);
-}
-
 function summaryText(summary: FrameComparisonSummary | null) {
   if (!summary) return "";
   const parts = [];
   if (summary.changed) parts.push(summary.changed + " changed");
   if (summary.added) parts.push(summary.added + " new");
   if (summary.removed) parts.push(summary.removed + " removed");
+  if (summary.onlyInAfterCapture) parts.push(summary.onlyInAfterCapture + " screen" + (summary.onlyInAfterCapture === 1 ? "" : "s") + " with no match in the earlier capture");
+  if (summary.onlyInBeforeCapture) parts.push(summary.onlyInBeforeCapture + " screen" + (summary.onlyInBeforeCapture === 1 ? "" : "s") + " with no match in this capture");
   if (summary.changeCount) parts.push(formatComparisonChangeCount(summary.changeCount, summary.visualChangeCount));
   return (parts.join(", ") || "No changes") + " since " + summary.earlierVersionLabel;
 }
@@ -112,6 +106,13 @@ function getLocationHash() {
 
 function getServerLocationHash() {
   return "";
+}
+
+const MOBILE_PANEL_FOCUSABLE_SELECTOR = "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex='-1'])";
+
+function getFocusableElements(container: HTMLElement) {
+  return Array.from(container.querySelectorAll<HTMLElement>(MOBILE_PANEL_FOCUSABLE_SELECTOR))
+    .filter((element) => element.getClientRects().length > 0 && !element.closest("[hidden], [aria-hidden='true']"));
 }
 
 export function HandoffCanvas({
@@ -151,6 +152,7 @@ export function HandoffCanvas({
   );
   const [localSelectedFrameId, setSelectedFrameId] = useState<string | null>(null);
   const [localSelectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+  const [changedOnly, setChangedOnly] = useState(false);
   const [comments, setComments] = useState<HandoffComment[]>([]);
   const [annotations, setAnnotations] = useState<CanvasAnnotationRecord[]>([]);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
@@ -177,8 +179,18 @@ export function HandoffCanvas({
   const [searchCategory, setSearchCategory] = useState<SearchCategory>("All");
   const [activeSearchIndex, setActiveSearchIndex] = useState(-1);
   const searchInputRef = useRef<HTMLInputElement | null>(null);
+  const screenPanelRef = useRef<HTMLDivElement | null>(null);
+  const detailsPanelRef = useRef<HTMLElement | null>(null);
+  const mobilePanelOpenerRef = useRef<HTMLElement | null>(null);
+  const activeMobilePanelRef = useRef<HTMLElement | null>(null);
+  const mobilePanelWasOpenRef = useRef(false);
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
   const [latestPublished, setLatestPublished] = useState<{ versionId: string; versionLabel: string } | null>(null);
+
+  const closeSearchPanel = useCallback(() => {
+    setSearchOpen(false);
+    window.requestAnimationFrame(() => document.getElementById("canvas-search-screens-trigger")?.focus());
+  }, []);
 
   useEffect(() => {
     if (!metadata.latestPublishedEndpoint) return;
@@ -216,20 +228,117 @@ export function HandoffCanvas({
     return () => media.removeEventListener("change", updateLayout);
   }, []);
 
-  const selectedFrameId = localSelectedFrameId ??
-    (linkedFrameId && screens.some((frame) => frame.id === linkedFrameId) ? linkedFrameId : linkedNode?.sourceFrameId ?? null);
-  const selectedNodeId = localSelectedNodeId ?? linkedNode?.sourceNodeId ?? null;
+  useEffect(() => {
+    if (!isMobile) return;
+    const panel = statesOpen ? screenPanelRef.current : mobilePanelOpen ? detailsPanelRef.current : null;
+    if (!panel) {
+      if (mobilePanelWasOpenRef.current) {
+        const opener = mobilePanelOpenerRef.current;
+        window.requestAnimationFrame(() => {
+          if (opener?.isConnected) opener.focus();
+          else document.getElementById("canvas-mobile-screens-toggle")?.focus();
+        });
+      }
+      mobilePanelWasOpenRef.current = false;
+      activeMobilePanelRef.current = null;
+      mobilePanelOpenerRef.current = null;
+      return;
+    }
+    const activePanel = panel;
+
+    if (!mobilePanelWasOpenRef.current) {
+      const activeElement = document.activeElement;
+      mobilePanelOpenerRef.current = activeElement instanceof HTMLElement && activeElement !== document.body ? activeElement : null;
+      mobilePanelWasOpenRef.current = true;
+    }
+    if (activeMobilePanelRef.current !== activePanel) {
+      activeMobilePanelRef.current = activePanel;
+      window.requestAnimationFrame(() => {
+        const initialTarget = searchOpen
+          ? activePanel.querySelector<HTMLElement>("#handoff-search-input")
+          : getFocusableElements(activePanel)[0];
+        (initialTarget ?? activePanel).focus();
+      });
+    }
+
+    function containMobilePanelFocus(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        if (searchOpen) {
+          closeSearchPanel();
+          return;
+        }
+        if (commentMode || annotationMode) {
+          setCommentMode(false);
+          setAnnotationMode(false);
+          setPendingPoint(null);
+          setPendingAnnotationPoint(null);
+          return;
+        }
+        setStatesOpen(false);
+        setSearchOpen(false);
+        setMobilePanelOpenOverride(false);
+        return;
+      }
+      if (event.key !== "Tab") return;
+
+      const focusable = getFocusableElements(activePanel);
+      if (!focusable.length) {
+        event.preventDefault();
+        activePanel.focus();
+        return;
+      }
+      const activeIndex = focusable.indexOf(document.activeElement as HTMLElement);
+      if (event.shiftKey && (activeIndex <= 0 || !activePanel.contains(document.activeElement))) {
+        event.preventDefault();
+        focusable[focusable.length - 1].focus();
+      } else if (!event.shiftKey && (activeIndex < 0 || activeIndex === focusable.length - 1 || !activePanel.contains(document.activeElement))) {
+        event.preventDefault();
+        focusable[0].focus();
+      }
+    }
+
+    document.addEventListener("keydown", containMobilePanelFocus);
+    return () => document.removeEventListener("keydown", containMobilePanelFocus);
+  }, [annotationMode, closeSearchPanel, commentMode, isMobile, mobilePanelOpen, searchOpen, statesOpen]);
+
+  const requestedSelectedFrameId = localSelectedFrameId ??
+    (linkedFrameId === overviewCanvasFrameId || screens.some((frame) => frame.id === linkedFrameId)
+      ? linkedFrameId
+      : linkedNode?.sourceFrameId ?? null);
+  const overviewSelected = requestedSelectedFrameId === overviewCanvasFrameId;
+  const changedOnlyActive = changedOnly && Boolean(comparisonSummary);
+  const canvasScreens = useMemo(
+    () => filterChangedFrames(screens, changedOnlyActive, frameStatuses, Boolean(comparisonSummary)),
+    [screens, changedOnlyActive, frameStatuses, comparisonSummary],
+  );
+  const selectedFrameId = overviewSelected
+    ? overviewCanvasFrameId
+    : changedOnlyActive && !canvasScreens.some((frame) => frame.id === requestedSelectedFrameId)
+    ? canvasScreens[0]?.id ?? null
+    : requestedSelectedFrameId;
+  const requestedSelectedNodeId = localSelectedNodeId ?? linkedNode?.sourceNodeId ?? null;
   const selectedCommentId = localSelectedCommentId ?? linkedCommentId;
   const annotationsEndpoint = commentsEndpoint.replace(/\/comments$/, "/annotations");
   const selectedFrame = screens.find((frame) => frame.id === selectedFrameId) ?? null;
-  const visualFrame = overviewFrame?.exact ? overviewFrame : selectedFrame ?? overviewFrame;
+  const visualFrame = overviewFrame?.exact || overviewSelected
+    ? overviewFrame
+    : changedOnlyActive
+      ? canvasScreens.find((frame) => frame.id === selectedFrameId) ?? canvasScreens[0] ?? overviewFrame
+      : selectedFrame ?? overviewFrame;
   const hasLayoutGrids = useMemo(() => hasVisibleLayoutGrids(
-    visualFrame?.kind === "overview" && visualFrame.exact ? screens : visualFrame ? [visualFrame] : [],
-  ), [screens, visualFrame]);
-  const selectedNode = useMemo<SnapshotNode | null>(() => {
-    if (!selectedNodeId) return null;
-    return screens.flatMap((frame) => frame.nodes).find((node) => node.sourceNodeId === selectedNodeId) ?? null;
-  }, [screens, selectedNodeId]);
+    visualFrame?.kind === "overview" && visualFrame.exact ? canvasScreens : visualFrame ? [visualFrame] : [],
+  ), [canvasScreens, visualFrame]);
+  const requestedSelectedNode = useMemo<SnapshotNode | null>(() => {
+    if (!requestedSelectedNodeId) return null;
+    return screens.flatMap((frame) => frame.nodes).find((node) => node.sourceNodeId === requestedSelectedNodeId) ?? null;
+  }, [screens, requestedSelectedNodeId]);
+  const selectedNode = changedOnlyActive && requestedSelectedNode &&
+    !canvasScreens.some((frame) => frame.id === requestedSelectedNode.sourceFrameId)
+    ? null
+    : requestedSelectedNode;
+  const selectedNodeId = selectedNode?.sourceNodeId ?? (changedOnlyActive ? null : requestedSelectedNodeId);
 
   const commentCount = comments.filter((comment) => comment.parentCommentId === null).length;
   const openCommentCount = comments.filter((comment) => comment.parentCommentId === null && !comment.resolvedAt).length;
@@ -367,7 +476,7 @@ export function HandoffCanvas({
       if (searchOpen) {
         if (event.key === "Escape") {
           event.preventDefault();
-          setSearchOpen(false);
+          closeSearchPanel();
           return;
         }
         if (target?.id === "handoff-search-input" && event.key === "ArrowDown" && searchResults.length) {
@@ -407,7 +516,7 @@ export function HandoffCanvas({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeSearchIndex, copySearchHighlights, previewSearchResult, searchOpen, searchResults, selectSearchResult, viewportControls]);
+  }, [activeSearchIndex, closeSearchPanel, copySearchHighlights, previewSearchResult, searchOpen, searchResults, selectSearchResult, viewportControls]);
 
   if (!overviewFrame || !visualFrame) {
     return <p className="p-6 text-sm text-[#aaa]">This snapshot has no frames to display.</p>;
@@ -627,10 +736,25 @@ export function HandoffCanvas({
     updateLinkState(frame.id, null);
   }
 
+  function commentOnSelectedScreen() {
+    if (selectedFrame) commentOnScreen(selectedFrame.id);
+  }
+
+  function annotateSelectedScreen() {
+    if (!selectedFrame) return;
+    placeAnnotation({
+      frameId: selectedFrame.id,
+      sourceNodeId: null,
+      x: selectedFrame.sourceWidth / 2,
+      y: selectedFrame.sourceHeight / 2,
+    });
+  }
+
   const metaParts = [
     metadata.projectName + " · " + metadata.handoffName,
     formatCapturedAt(metadata.capturedAt),
     metadata.source + (metadata.sourceRevisionId ? " @ " + metadata.sourceRevisionId : ""),
+    metadata.captureScope ? "Capture scope: " + metadata.captureScope : "",
     summaryText(comparisonSummary) || screens.length + " screens",
     metadata.releaseNote ?? "",
   ].filter(Boolean);
@@ -661,6 +785,7 @@ export function HandoffCanvas({
           <button
             aria-pressed={statesOpen}
             className={"h-8 shrink-0 rounded-[7px] px-2 text-[11px] font-medium transition-colors lg:hidden " + (statesOpen ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
+            id="canvas-mobile-screens-toggle"
             onClick={() => {
               setSearchOpen(false);
               setStatesOpen((current) => !current);
@@ -688,7 +813,7 @@ export function HandoffCanvas({
             ))}
           </div>
           <button
-            aria-current={panelMode === "comments" ? "page" : undefined}
+            aria-pressed={panelMode === "comments"}
             className={"h-9 rounded-[7px] px-3 text-[12px] transition-colors " + (panelMode === "comments" ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
             onClick={() => {
               setPanelMode("comments");
@@ -722,7 +847,7 @@ export function HandoffCanvas({
           >
             Notes{annotations.length ? " " + annotations.length : ""}
           </button>
-          <button
+          {metadata.canManageIntegrations ? <button
             aria-pressed={panelMode === "mcp"}
             className={"h-9 rounded-[7px] px-3 text-[12px] transition-colors lg:hidden " + (panelMode === "mcp" ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
             onClick={() => {
@@ -737,7 +862,7 @@ export function HandoffCanvas({
             type="button"
           >
             MCP
-          </button>
+          </button> : null}
           <button
             aria-pressed={outlinesVisible}
             className={"hidden h-9 rounded-[7px] px-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] sm:inline-flex sm:items-center " + (outlinesVisible ? "bg-[#3b3b3b] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
@@ -779,15 +904,20 @@ export function HandoffCanvas({
           <Link className="shrink-0 rounded-[4px] px-2 py-1 font-medium text-[#ffe0a4] hover:bg-white/10 hover:text-white" href={metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(latestPublished.versionId)}>View latest</Link>
         </div>
       ) : null}
-      {comparisonSummary && comparisonSummary.changeCount > 0 ? (
+      {comparisonSummary && (
+        comparisonSummary.changed > 0 || comparisonSummary.added > 0 || comparisonSummary.removed > 0 ||
+        comparisonSummary.onlyInAfterCapture > 0 || comparisonSummary.onlyInBeforeCapture > 0 || comparisonSummary.changeCount > 0
+      ) ? (
         <div aria-live="polite" className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[#514127] bg-[#342a1a] px-4 py-2 text-[11px] text-[#f0c77b]">
           <p>
             <span className="font-semibold text-[#ffe0a4]">{[
               comparisonSummary.changed ? `${comparisonSummary.changed} screen${comparisonSummary.changed === 1 ? "" : "s"} changed` : "",
               comparisonSummary.added ? `${comparisonSummary.added} new` : "",
               comparisonSummary.removed ? `${comparisonSummary.removed} removed` : "",
+              comparisonSummary.onlyInAfterCapture ? `${comparisonSummary.onlyInAfterCapture} screen${comparisonSummary.onlyInAfterCapture === 1 ? "" : "s"} with no match in the earlier capture` : "",
+              comparisonSummary.onlyInBeforeCapture ? `${comparisonSummary.onlyInBeforeCapture} screen${comparisonSummary.onlyInBeforeCapture === 1 ? "" : "s"} with no match in this capture` : "",
             ].filter(Boolean).join(" · ")}</span>
-            {` · ${formatComparisonChangeCount(comparisonSummary.changeCount, comparisonSummary.visualChangeCount)}`}
+            {comparisonSummary.changeCount ? ` · ${formatComparisonChangeCount(comparisonSummary.changeCount, comparisonSummary.visualChangeCount)}` : ""}
             {` since ${comparisonSummary.earlierVersionLabel}`}
           </p>
           <button
@@ -819,14 +949,37 @@ export function HandoffCanvas({
           />
         ) : null}
         {statesOpen ? (
-          <div className="absolute inset-y-0 left-0 z-30 w-[min(260px,86vw)] shadow-2xl lg:static lg:z-auto lg:w-auto lg:shadow-none">
+          <div
+            aria-label={searchOpen ? "Search screens" : "Snapshot screens"}
+            aria-modal={isMobile && statesOpen ? true : undefined}
+            className="absolute inset-y-0 left-0 z-30 w-[min(260px,86vw)] shadow-2xl lg:static lg:z-auto lg:w-auto lg:shadow-none"
+            ref={screenPanelRef}
+            role={isMobile && statesOpen ? "dialog" : undefined}
+            tabIndex={isMobile ? -1 : undefined}
+          >
+            {isMobile ? (
+              <div className="flex justify-end border-b border-[#3a3a3a] bg-[#202020] px-2 py-1.5 lg:hidden">
+                <button
+                  aria-label="Close screens panel"
+                  className="min-h-8 rounded-[5px] px-2.5 text-[11px] text-[#bdbdbd] hover:bg-[#303030] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+                  onClick={() => {
+                    setStatesOpen(false);
+                    setSearchOpen(false);
+                    setMobilePanelOpenOverride(false);
+                  }}
+                  type="button"
+                >
+                  Close
+                </button>
+              </div>
+            ) : null}
             {searchOpen ? (
               <nav aria-label="Search screens" className="flex h-full min-h-0 min-w-0 flex-col border-r border-[#3a3a3a] bg-[#202020] text-[#c4c4c4]">
                 <div className="shrink-0 space-y-3 border-b border-[#3a3a3a] p-3">
                   <div className="flex items-center justify-between gap-2">
                     <button
                       className="rounded-[5px] px-2 py-1 text-[11px] text-[#bdbdbd] hover:bg-[#303030] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
-                      onClick={() => setSearchOpen(false)}
+                      onClick={closeSearchPanel}
                       type="button"
                     >
                       ← Screens
@@ -925,6 +1078,8 @@ export function HandoffCanvas({
                 }}
                 frameStatuses={frameStatuses}
                 comparisonSummary={comparisonSummary}
+                changedOnly={changedOnlyActive}
+                onChangedOnlyChange={setChangedOnly}
               />
             )}
           </div>
@@ -932,8 +1087,10 @@ export function HandoffCanvas({
         <div className="col-start-1 row-start-1 flex h-full min-h-0 min-w-0 lg:col-auto lg:row-auto">
         <CanvasViewport
           frame={visualFrame}
+          overviewOrigin={{ sourceX: overviewFrame.sourceX, sourceY: overviewFrame.sourceY }}
           interactionMode={canvasMode}
-          screens={screens}
+          screens={canvasScreens}
+          changedOnly={changedOnlyActive}
           selectedFrameId={selectedFrameId}
           frameStatuses={frameStatuses}
           canCompare={canCompare}
@@ -958,7 +1115,26 @@ export function HandoffCanvas({
           onViewportChange={setViewportControls}
         />
         </div>
-        <aside aria-label="Handoff details" className={"min-h-0 min-w-0 flex-col overflow-hidden border-l border-[#3a3a3a] bg-[#202020] " + (mobilePanelOpen ? "absolute inset-y-0 right-0 z-30 flex w-[min(340px,94vw)] shadow-2xl lg:static lg:z-auto lg:w-auto lg:shadow-none" : "hidden lg:static lg:flex")}>
+        <aside
+          aria-label="Handoff details"
+          aria-modal={isMobile && mobilePanelOpen ? true : undefined}
+          className={"min-h-0 min-w-0 flex-col overflow-hidden border-l border-[#3a3a3a] bg-[#202020] " + (mobilePanelOpen ? "absolute inset-y-0 right-0 z-30 flex w-[min(340px,94vw)] shadow-2xl lg:static lg:z-auto lg:w-auto lg:shadow-none" : "hidden lg:static lg:flex")}
+          ref={detailsPanelRef}
+          role={isMobile && mobilePanelOpen ? "dialog" : undefined}
+          tabIndex={isMobile && mobilePanelOpen ? -1 : undefined}
+        >
+          {isMobile && mobilePanelOpen ? (
+            <div className="flex shrink-0 justify-end border-b border-[#393939] px-2 py-1.5 lg:hidden">
+              <button
+                aria-label="Close details panel"
+                className="min-h-8 rounded-[5px] px-2.5 text-[11px] text-[#bdbdbd] hover:bg-[#303030] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+                onClick={() => setMobilePanelOpenOverride(false)}
+                type="button"
+              >
+                Close
+              </button>
+            </div>
+          ) : null}
           <nav aria-label="Details panels" className="grid shrink-0 grid-cols-4 gap-1 border-b border-[#393939] p-2">
             {([
               ["inspect", "Properties", true],
@@ -966,9 +1142,9 @@ export function HandoffCanvas({
               ["version", "Version", Boolean(dockPanels.version)],
               ["changelog", "Changelog", Boolean(dockPanels.changelog)],
               ["qa", "QA", Boolean(dockPanels.qa)],
-              ["agent", "Agent", Boolean(metadata.reviewHref && metadata.versionIsPublished)],
+              ["agent", "Agent", Boolean(metadata.canManageIntegrations && metadata.reviewHref && metadata.versionIsPublished)],
               ["local", "Local", metadata.canUseLocalPreview],
-              ["mcp", "MCP", true],
+              ["mcp", "MCP", metadata.canManageIntegrations],
             ] as const).filter(([, , visible]) => visible).map(([mode, label]) => (
               <button
                 aria-pressed={mode === "compare" ? comparisonOpen : panelMode === mode}
@@ -992,7 +1168,7 @@ export function HandoffCanvas({
             ))}
           </nav>
           {panelMode === "annotations" ? (
-            <CanvasAnnotationsPanel key={`${selectedAnnotationId ?? "new"}:${pendingAnnotationPoint?.frameId ?? ""}:${pendingAnnotationPoint?.x ?? ""}:${pendingAnnotationPoint?.y ?? ""}`} annotations={annotations} screenNames={Object.fromEntries(screens.map((screen) => [screen.id, screen.name]))} selectedAnnotationId={selectedAnnotationId} pendingPoint={pendingAnnotationPoint} placing={annotationMode} canEdit={metadata.canAnnotate} error={annotationError} onSelect={selectAnnotation} onStartPlacement={() => { setCommentMode(false); setSelectedAnnotationId(null); setPendingAnnotationPoint(null); setAnnotationMode(true); }} onCancel={() => { setAnnotationMode(false); setPendingAnnotationPoint(null); setSelectedAnnotationId(null); }} onCreate={createAnnotation} onUpdate={updateAnnotation} onDelete={deleteAnnotation} />
+            <CanvasAnnotationsPanel key={`${selectedAnnotationId ?? "new"}:${pendingAnnotationPoint?.frameId ?? ""}:${pendingAnnotationPoint?.x ?? ""}:${pendingAnnotationPoint?.y ?? ""}`} annotations={annotations} screenNames={{ [overviewCanvasFrameId]: "Canvas", ...Object.fromEntries(screens.map((screen) => [screen.id, screen.name])) }} selectedAnnotationId={selectedAnnotationId} pendingPoint={pendingAnnotationPoint} placing={annotationMode} canEdit={metadata.canAnnotate} hasSelectedScreen={Boolean(selectedFrame)} error={annotationError} onSelect={selectAnnotation} onStartPlacement={() => { setCommentMode(false); setSelectedAnnotationId(null); setPendingAnnotationPoint(null); setAnnotationMode(true); }} onPlaceAtSelectedScreen={annotateSelectedScreen} onCancel={() => { setAnnotationMode(false); setPendingAnnotationPoint(null); setSelectedAnnotationId(null); }} onCreate={createAnnotation} onUpdate={updateAnnotation} onDelete={deleteAnnotation} />
           ) : panelMode === "comments" ? (
           <div className="min-h-0 flex-1 overflow-y-auto p-3">
             <CommentThread
@@ -1002,12 +1178,15 @@ export function HandoffCanvas({
               selectedCommentId={selectedCommentId}
               error={commentError}
               openCount={openCommentCount}
+              canWrite={metadata.canAnnotate}
+              hasSelectedScreen={Boolean(selectedFrame)}
               showResolvedPins={showResolvedPins}
               commentMode={commentMode}
               onCreate={createComment}
               onReply={replyToComment}
               onResolve={resolveComment}
               onSelect={selectComment}
+              onPlaceAtSelectedScreen={commentOnSelectedScreen}
               onStartComment={() => {
                 if (!screens.length) return;
                 if (commentMode) {
@@ -1064,6 +1243,7 @@ export function HandoffCanvas({
             frameCount={screens.length}
             totalNodeCount={screens.reduce((count, frame) => count + frame.nodes.length, 0)}
             comments={selectedNode ? comments.filter((comment) => comment.sourceNodeId === selectedNode.sourceNodeId) : []}
+            canComment={metadata.canAnnotate}
             canCompare={canCompare}
             onCompare={compareSelectedFrame}
             onAddComment={commentOnSelectedElement}

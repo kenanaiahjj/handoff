@@ -3,30 +3,27 @@ version: alpha
 name: Asbir Handoff
 description: Versioned design handoffs for product, engineering, and QA teams.
 colors:
-  background: "oklch(0.09 0 0)"
-  surface: "oklch(0.14 0.004 140)"
-  surface-raised: "oklch(0.18 0.005 140)"
-  surface-inset: "oklch(0.06 0 0)"
-  foreground: "oklch(0.96 0.004 140)"
-  foreground-muted: "oklch(0.72 0.01 140)"
-  foreground-subtle: "oklch(0.63 0.01 140)"
-  border: "oklch(0.28 0.005 140)"
-  border-strong: "oklch(0.36 0.005 140)"
-  primary: "oklch(0.6 0.12 140)"
-  primary-hover: "oklch(0.62 0.12 140)"
-  primary-foreground: "oklch(0.16 0.005 140)"
-  capture-action: "oklch(0.82 0.17 84)"
-  capture-action-hover: "oklch(0.88 0.14 92)"
-  capture-action-highlight: "oklch(0.96 0.09 95)"
-  capture-action-deep: "oklch(0.75 0.18 70)"
-  capture-action-foreground: "oklch(0.19 0.03 55)"
-  capture-action-glow: "oklch(0.8 0.16 82 / 0.38)"
-  capture-action-glow-hover: "oklch(0.8 0.16 82 / 0.56)"
-  ai-accent: "oklch(0.88 0.08 300)"
-  ai-accent-foreground: "oklch(0.2 0.02 300)"
-  success: "oklch(0.66 0.13 145)"
-  warning: "oklch(0.76 0.14 80)"
-  danger: "oklch(0.66 0.17 25)"
+  background: "#1e1e1e"
+  surface: "#202020"
+  surface-raised: "#303030"
+  surface-inset: "#171717"
+  foreground: "#ededed"
+  foreground-muted: "#b0b0b0"
+  foreground-subtle: "#929292"
+  border: "#383838"
+  border-strong: "#4a4a4a"
+  primary: "#dedede"
+  primary-hover: "#f2f2f2"
+  primary-foreground: "#171717"
+  accent: "#83a878"
+  capture-action: "#dedede"
+  capture-action-hover: "#f2f2f2"
+  capture-action-foreground: "#171717"
+  ai-accent: "#83a878"
+  ai-accent-foreground: "#171717"
+  success: "#83a878"
+  warning: "#d7b86e"
+  danger: "#d2786f"
 typography:
   figmaPlugin:
     fontFamily: system-ui
@@ -95,7 +92,7 @@ The review canvas shows the source app's frozen snapshot. Keep its pixels unchan
 
 ## Colors
 
-Use charcoal surfaces for the review chrome: `#202020` for panels, `#1e1e1e` for the canvas, `#303030` for raised controls, and `#383838` for borders. Use white and gray for type. Use warm amber for changed screens and restrained green for new screens. Every status uses a text label as well as color.
+Use one charcoal palette across the workspace, settings, and review canvas: `#202020` for app chrome and panels, `#1e1e1e` for canvas and inset surfaces, `#303030` for raised controls, and `#383838` for quiet separators. Use white and gray for type. Use neutral light-gray primary actions across the app. Reserve restrained moss green for new and success states, and warm amber for changed screens. Every status uses a text label as well as color.
 
 ## Typography
 
@@ -125,7 +122,7 @@ Keep the screen inventory searchable. Show changed and new badges, and provide a
 
 ## Elevation & Depth
 
-Separate panels with small tonal shifts and quiet borders. Use the dotted canvas as the visual anchor. Keep menus and temporary search surfaces above the canvas with a restrained shadow.
+Separate panels with tonal shifts; omit an outer border when surface contrast already defines the section. Use quiet separators between adjacent content and reserve stronger borders for inputs, selection, and focus. Use the dotted canvas as the visual anchor. Keep menus and temporary search surfaces above the canvas with a restrained shadow.
 
 ## Shapes
 

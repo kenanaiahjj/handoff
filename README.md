@@ -17,6 +17,8 @@ npm run dev
 
 `npm run setup:env` creates `apps/web/.env.local` with a unique local authentication secret. For self-hosting, set `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET`, and `ASBIR_DATA_DIR` on a server with persistent disk. Add `OPENAI_API_KEY` and optionally `OPENAI_MODEL` to enable AI changelog drafts. The default model is `gpt-6-astra`.
 
+Run the unit and integration suites with `npm test`.
+
 ## Self-host for your team
 
 The Docker Compose setup runs the app behind Caddy, which provides HTTPS for a public domain. Point the domain at the server and allow inbound TCP ports 80 and 443 before starting the stack.
@@ -45,7 +47,7 @@ AI changelog drafting sends version differences, layout findings, and relevant t
 
 Workspace owners can create MCP tokens from **Workspace → Integrations**. Configure an MCP client with the workspace-specific URL shown there and send the token as a bearer credential. The URL includes a workspace ID, which Asbir Handoff checks against the token. The token secret is shown once, stored as a hash, scoped to one workspace, and expires within one year. If an MCP client sends an `Origin` header, set `ASBIR_MCP_ALLOWED_ORIGINS` to a comma-separated list of trusted origins. See [the agent MCP setup guide](docs/agents/mcp-setup.md) for Codex and generic client snippets.
 
-Connect Asbir Handoff to the AI client your team already uses. That client can connect to its own ClickUp, Linear, repository, and QA tools alongside Asbir, then use the handoff evidence to create tasks or do implementation work. The `tasks:write` scope lets the client record an external task in Asbir with its version, screen, and optional element reference. Asbir does not need credentials for the client's other MCP tools.
+Connect Asbir Handoff to the AI client your team already uses. That client can connect to its own Asbir Teams, ClickUp, Linear, repository, and QA tools alongside Handoff, then use the handoff evidence to create tasks or do implementation work. The `tasks:write` scope lets the client record an external task in Asbir Handoff with its version, screen, and optional element reference. Handoff does not need credentials for the client's other MCP tools.
 
 The Next.js app lives in `apps/web`. Shared handoff data contracts and source integrations live in separate npm workspaces.
 
@@ -53,9 +55,11 @@ The Next.js app lives in `apps/web`. Shared handoff data contracts and source in
 
 Build and import the Figma plugin using the [Figma capture setup guide](docs/figma-plugin.md). For local development, the build defaults to `http://localhost:3000`. For a hosted handoff, set `HANDOFF_PUBLIC_URL` to its HTTPS origin before building so the plugin can reach that server.
 
-In Asbir Handoff, open a project and create a Figma capture session. The app shows a one-time token that expires after 10 minutes. Open the plugin, confirm its Handoff server, paste the token, choose selected artboards or all top-level frames and components on the current Figma page, and capture the canvas. Review its overview image and upload the frozen version.
+In Asbir Handoff, open a project and create a Figma capture session. The app shows a one-time token that expires after one hour, giving large captures time to finish before upload. Open the plugin, confirm its Handoff server, paste the token, and choose selected artboards, the current page, or the entire Figma file across all pages. Review its overview image and upload the frozen version.
 
 The plugin stores the canvas overview, a PNG for each captured artboard, layer geometry, Figma auto-layout padding and gaps, paint details, style references, and only variables that are bound to captured layers. Figma does not define CSS margins, so Handoff labels distances measured from the immediate parent bounds as measured margins. See [the snapshot package and Figma capture guide](docs/figma-capture.md) for the import format and source limits. Direct Paper MCP capture is deferred; structured package upload remains source-agnostic.
+
+Owners and designers can publish a canvas, choose its sharing mode, invite external email addresses, and remove versions or handoffs. See [handoff sharing and lifecycle behavior](docs/handoff-sharing.md) for access rules, invite links, and deletion behavior.
 
 ## Vercel status
 

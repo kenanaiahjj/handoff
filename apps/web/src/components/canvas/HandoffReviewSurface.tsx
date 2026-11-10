@@ -4,8 +4,10 @@ import type { ReviewDockPanels, ReviewMetadata } from "./HandoffCanvas";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import type { VersionOption } from "./VersionCompare";
 import type { CompareRouteState } from "./compare-state";
+import { formatFigmaCaptureScope } from "@asbir/snapshot-contract";
 import { HandoffReview } from "./HandoffReview";
 import { getVersion, type StoredVersionAsset } from "@/src/server/repositories/versions";
+import { buildOverviewOverlayNodes } from "./overview-overlay-nodes";
 
 export type ReviewVersionSummary = VersionOption & {
   id: string;
@@ -28,17 +30,35 @@ type AssetFrameInput = {
   sourceX: number;
   sourceY: number;
   nodes: SnapshotNode[];
+  overlayNodes?: CanvasFrameOption["overlayNodes"];
   exact: boolean;
   kind: "overview" | "frame";
 };
 
-function buildCanvasFrames(version: StoredVersion) {
+function buildCanvasFrames(version: StoredVersion, publicReviewShareId?: string) {
   const visualOnly = version.visualOnly;
   const structuredSnapshot = visualOnly ? null : version.snapshot as SnapshotEnvelope;
+  const captureScope = formatFigmaCaptureScope(structuredSnapshot?.sourceMetadata.captureScope);
   const snapshot = version.snapshot;
+  const rawPageLayout = structuredSnapshot?.sourceMetadata.pageLayout;
+  const pageLayout = Array.isArray(rawPageLayout)
+    ? rawPageLayout.flatMap((page) => {
+        if (typeof page !== "object" || page === null || Array.isArray(page)) return [];
+        const value = page as Record<string, unknown>;
+        return typeof value.sourcePageId === "string" && typeof value.offsetX === "number" && typeof value.offsetY === "number"
+          ? [{ sourcePageId: value.sourcePageId, sourcePageName: typeof value.sourcePageName === "string" ? value.sourcePageName : null, offsetX: value.offsetX, offsetY: value.offsetY }]
+          : [];
+      })
+    : [];
+  const pageOffsets = new Map(pageLayout.map((page) => [page.sourcePageId, { offsetX: page.offsetX, offsetY: page.offsetY }] as const));
+  const pageNames = new Map(pageLayout.flatMap((page) => page.sourcePageName ? [[page.sourcePageId, page.sourcePageName] as const] : []));
+  const pageIdByFrameId = new Map(structuredSnapshot?.frames.map((frame) => [frame.sourceFrameId, frame.sourcePageId] as const) ?? []);
   const assetByKey = new Map<string, StoredVersionAsset>(
     version.assets.map((asset) => [asset.assetKey, asset] as const),
   );
+  const assetUrl = (objectKey: string) => publicReviewShareId
+    ? `/api/review/${encodeURIComponent(publicReviewShareId)}/assets/${encodeURIComponent(objectKey)}`
+    : `/api/assets/${encodeURIComponent(objectKey)}`;
 
   function assetFrame(input: AssetFrameInput): CanvasFrameOption {
     const asset = assetByKey.get(input.assetKey);
@@ -50,14 +70,15 @@ function buildCanvasFrames(version: StoredVersion) {
       const layerAsset = assetByKey.get(layerAssetKey);
       if (!layerAsset || (layerAsset.contentType !== "image/png" && layerAsset.contentType !== "image/svg+xml")) continue;
       layerExports[node.sourceNodeId] = {
-        downloadUrl: `/api/assets/${encodeURIComponent(layerAsset.objectKey)}?download=1`,
+        downloadUrl: `${assetUrl(layerAsset.objectKey)}?download=1`,
         fileName: layerAsset.fileName,
         contentType: layerAsset.contentType,
       };
     }
     return {
       ...input,
-      imageSrc: `/api/assets/${asset.objectKey}`,
+      pageName: input.kind === "frame" ? pageNames.get(pageIdByFrameId.get(input.id) ?? "") : undefined,
+      imageSrc: assetUrl(asset.objectKey),
       fileName: asset.fileName,
       pixelWidth: asset.width ?? input.sourceWidth,
       pixelHeight: asset.height ?? input.sourceHeight,
@@ -85,14 +106,10 @@ function buildCanvasFrames(version: StoredVersion) {
     sourceHeight: overviewHeight,
     sourceX: overviewBounds?.x.value ?? 0,
     sourceY: overviewBounds?.y.value ?? 0,
-    nodes: overviewExact && structuredSnapshot ? structuredSnapshot.frames.flatMap((frame) => frame.nodes.map((node) => ({
-      ...node,
-      bounds: {
-        ...node.bounds,
-        x: { ...node.bounds.x, value: node.bounds.x.value === null || frame.bounds.x.value === null ? null : node.bounds.x.value + frame.bounds.x.value },
-        y: { ...node.bounds.y, value: node.bounds.y.value === null || frame.bounds.y.value === null ? null : node.bounds.y.value + frame.bounds.y.value },
-      },
-    }))) : [],
+    nodes: [],
+    overlayNodes: overviewExact && structuredSnapshot
+      ? buildOverviewOverlayNodes(structuredSnapshot.frames, pageOffsets)
+      : [],
     exact: overviewExact,
     kind: "overview",
   });
@@ -110,8 +127,8 @@ function buildCanvasFrames(version: StoredVersion) {
         assetKey: frame.renderAssetKey,
         sourceWidth: sourceWidth > 0 ? sourceWidth : frameAsset.width ?? 1,
         sourceHeight: sourceHeight > 0 ? sourceHeight : frameAsset.height ?? 1,
-        sourceX: frame.bounds.x.value ?? 0,
-        sourceY: frame.bounds.y.value ?? 0,
+        sourceX: (frame.bounds.x.value ?? 0) + (pageOffsets.get(frame.sourcePageId ?? "")?.offsetX ?? 0),
+        sourceY: (frame.bounds.y.value ?? 0) + (pageOffsets.get(frame.sourcePageId ?? "")?.offsetY ?? 0),
         nodes: frame.nodes,
         exact: true,
         kind: "frame",
@@ -139,7 +156,7 @@ function buildCanvasFrames(version: StoredVersion) {
     }
   }
 
-  return { frames, visualOnly };
+  return { frames, visualOnly, captureScope };
 }
 
 export function HandoffReviewSurface({
@@ -155,6 +172,8 @@ export function HandoffReviewSurface({
   versionHrefPrefix,
   reviewHref,
   reviewShareId,
+  publicReviewShareId,
+  canConfirmFrameMatches,
   publishedVersionId,
   canManageIntegrations,
   canAnnotate,
@@ -173,15 +192,19 @@ export function HandoffReviewSurface({
   versionHrefPrefix: string;
   reviewHref: string | null;
   reviewShareId: string | null;
+  publicReviewShareId?: string;
+  canConfirmFrameMatches?: boolean;
   publishedVersionId: string | null;
   canManageIntegrations: boolean;
   canAnnotate: boolean;
   canUseLocalPreview: boolean;
   dockPanels?: ReviewDockPanels;
 }) {
-  const { frames, visualOnly } = buildCanvasFrames(selectedVersion);
+  const { frames, visualOnly, captureScope } = buildCanvasFrames(selectedVersion, publicReviewShareId);
   const versionOptions = versions.map(({ id, versionLabel, releaseNote, createdAt }) => ({ id, versionLabel, releaseNote, createdAt }));
-  const commentsEndpoint = `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/versions/${encodeURIComponent(selectedVersion.id)}/comments`;
+  const commentsEndpoint = publicReviewShareId
+    ? `/api/review/${encodeURIComponent(publicReviewShareId)}/versions/${encodeURIComponent(selectedVersion.id)}/comments`
+    : `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/versions/${encodeURIComponent(selectedVersion.id)}/comments`;
   const selectedVersionIndex = versions.findIndex((version) => version.id === selectedVersion.id);
   const publishedVersionIndex = publishedVersionId ? versions.findIndex((version) => version.id === publishedVersionId) : -1;
   const metadata: ReviewMetadata = {
@@ -194,6 +217,7 @@ export function HandoffReviewSurface({
     versions: versionOptions,
     capturedAt: selectedVersion.capturedAt,
     source: selectedVersion.source,
+    captureScope,
     sourceRevisionId: selectedVersion.sourceRevisionId,
     releaseNote: selectedVersion.releaseNote,
     visualOnly,
@@ -220,6 +244,10 @@ export function HandoffReviewSurface({
       visualOnly={visualOnly}
       metadata={metadata}
       dockPanels={dockPanels}
+      compareEndpointBase={publicReviewShareId
+        ? `/api/review/${encodeURIComponent(publicReviewShareId)}/compare`
+        : `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/compare`}
+      canConfirmFrameMatches={publicReviewShareId ? false : canConfirmFrameMatches ?? true}
     />
   );
 }

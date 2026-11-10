@@ -1,10 +1,13 @@
 import {
-  hashSnapshotPayload,
+  createSnapshotEnvelope,
+  MAX_CAPTURE_ASSET_BYTES,
   sha256Hex,
-  snapshotEnvelopeSchema,
   type SnapshotAsset,
   type SnapshotEnvelope,
+  type SnapshotFrame,
   type SnapshotPayload,
+  createFigmaCaptureMergePlan,
+  getFigmaCaptureOverviewClearRects,
 } from "@asbir/snapshot-contract";
 import { encodeUtf8 } from "../../../packages/snapshot-contract/src/utf8";
 import type {
@@ -15,6 +18,8 @@ import type {
 } from "./types";
 import { isRejectedSvgAssetResponse, makeRasterOnlyFallback } from "./raster-fallback";
 import { frameRenderCrop } from "./render-crop";
+import { availableOverviewBudget } from "./transfer-budget";
+import { formatFigmaCaptureScope } from "@asbir/snapshot-contract";
 
 declare const __ASBIR_HANDOFF_ORIGIN__: string;
 
@@ -46,9 +51,19 @@ type FrameReplacementCandidate = {
 };
 
 type FrameReplacementMatch = { beforeFrameId: string; afterFrameId: string };
+type CaptureMergeContext = {
+  versionId: string;
+  overviewUrl: string;
+  overviewWidth: number | null;
+  overviewHeight: number | null;
+  canvasBounds: SnapshotEnvelope["canvasBounds"] | null;
+  frames: Array<Pick<SnapshotFrame, "sourceFrameId" | "sourcePageId" | "bounds" | "renderBounds">>;
+  pageLayout: unknown;
+};
 type PendingUpload = {
   snapshot: SnapshotEnvelope;
   baselineVersionId: string | null;
+  mergeContext?: CaptureMergeContext;
   token: string;
   origin: string;
 };
@@ -163,11 +178,11 @@ async function createOverviewPng(capture: CaptureReadyMessage) {
   let scale = Math.min(1, maxDimension / width, maxDimension / height);
   const boundedPixels = width * scale * height * scale;
   if (boundedPixels > maxPixels) scale *= Math.sqrt(maxPixels / boundedPixels);
-  let frameBytes = 0;
-  for (const render of capture.renders) frameBytes += render.bytes.byteLength;
-  for (const render of capture.vectorRenders) frameBytes += render.bytes.byteLength;
-  const overviewBudget = 100 * 1024 * 1024 - frameBytes;
-  if (overviewBudget <= 0) throw new Error("The captured frame assets leave no room for the overview. Capture fewer frames at a time.");
+  const overviewBudget = availableOverviewBudget(
+    [...capture.renders, ...capture.vectorRenders, ...capture.layerRenders],
+    MAX_CAPTURE_ASSET_BYTES,
+  );
+  if (overviewBudget <= 0) throw new Error("The captured frame assets leave no room for Handoff’s canvas overview within the 256 MiB capture asset limit.");
 
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const canvasWidth = Math.max(1, Math.min(maxDimension, Math.round(width * scale)));
@@ -205,7 +220,131 @@ async function createOverviewPng(capture: CaptureReadyMessage) {
     scale *= Math.min(0.85, Math.sqrt(overviewBudget / bytes.byteLength) * 0.9);
     if (attempt < 4) setStatus("Reducing only the overview resolution to fit the import limit. Individual Figma frame renders stay unchanged.");
   }
-  throw new Error("The overview still exceeds Handoff’s 100 MiB import limit after reducing its resolution. Capture fewer frames at a time.");
+  throw new Error("The overview still exceeds Handoff’s 256 MiB capture asset limit after reducing its resolution.");
+}
+
+function measuredRect(bounds: SnapshotFrame["bounds"] | undefined) {
+  if (!bounds) return null;
+  const { x, y, width, height } = bounds;
+  if (x.value === null || y.value === null || width.value === null || height.value === null) return null;
+  if (![x.value, y.value, width.value, height.value].every(Number.isFinite) || width.value <= 0 || height.value <= 0) return null;
+  return { x: x.value, y: y.value, width: width.value, height: height.value };
+}
+
+async function createMergedOverviewPng(
+  pending: PendingUpload,
+  frameMatches: FrameReplacementMatch[],
+) {
+  const merge = pending.mergeContext;
+  const capture = currentCapture;
+  if (!merge || !capture || !overviewBytes) throw new Error("The previous canvas overview is unavailable. Capture again before uploading.");
+  if (merge.versionId !== pending.baselineVersionId) throw new Error("The merge preview no longer matches the selected baseline version.");
+
+  const overviewUrl = new URL(merge.overviewUrl, pending.origin);
+  if (overviewUrl.origin !== pending.origin) throw new Error("The previous canvas overview came from a different Handoff server.");
+  const baselineResponse = await fetch(overviewUrl, {
+    headers: { Authorization: `Bearer ${pending.token}` },
+    mode: "cors",
+    credentials: "omit",
+    redirect: "error",
+  });
+  if (!baselineResponse.ok) {
+    const body = await baselineResponse.json().catch(() => ({})) as { error?: string };
+    throw new Error(body.error || `The previous canvas overview could not be loaded (${baselineResponse.status}).`);
+  }
+  const baselineBytes = new Uint8Array(await baselineResponse.arrayBuffer());
+  const [baselineImage, incomingImage] = await Promise.all([
+    loadImage(baselineBytes, "image/png"),
+    loadImage(overviewBytes, "image/png"),
+  ]);
+  if ((merge.overviewWidth && baselineImage.naturalWidth !== merge.overviewWidth) ||
+      (merge.overviewHeight && baselineImage.naturalHeight !== merge.overviewHeight)) {
+    throw new Error("The previous canvas overview dimensions changed. Capture again before uploading.");
+  }
+  const baselineBounds = measuredRect(merge.canvasBounds ?? undefined) ?? {
+    x: 0,
+    y: 0,
+    width: baselineImage.naturalWidth,
+    height: baselineImage.naturalHeight,
+  };
+  const incomingBounds = measuredRect(pending.snapshot.canvasBounds);
+  if (!incomingBounds) throw new Error("The selected capture does not have valid canvas bounds.");
+
+  const plan = createFigmaCaptureMergePlan({
+    baseline: {
+      frames: merge.frames,
+      canvasBounds: merge.canvasBounds ?? undefined,
+      sourceMetadata: { pageLayout: merge.pageLayout },
+    },
+    incoming: pending.snapshot,
+    frameMatches,
+  });
+  if (!plan) throw new Error("This Figma capture scope cannot be merged with the previous canvas.");
+  const mergedBounds = measuredRect(plan.canvasBounds);
+  if (!mergedBounds) throw new Error("The merged canvas does not have valid bounds.");
+  const incomingPageIds = new Set(capture.payload.frames.flatMap((frame) => frame.sourcePageId ? [frame.sourcePageId] : []));
+  if (incomingPageIds.size > 1) throw new Error("Capture one Figma page at a time when adding frames to an existing version.");
+
+  const baselineScaleX = baselineImage.naturalWidth / baselineBounds.width;
+  const baselineScaleY = baselineImage.naturalHeight / baselineBounds.height;
+  let scale = Math.min(baselineScaleX, baselineScaleY);
+  if (!Number.isFinite(scale) || scale <= 0) throw new Error("The previous canvas overview has invalid dimensions.");
+  const maxDimension = 8192;
+  const maxPixels = 12_000_000;
+  scale = Math.min(scale, maxDimension / mergedBounds.width, maxDimension / mergedBounds.height);
+  const boundedPixels = mergedBounds.width * scale * mergedBounds.height * scale;
+  if (boundedPixels > maxPixels) scale *= Math.sqrt(maxPixels / boundedPixels);
+  const overviewBudget = availableOverviewBudget(
+    [...capture.renders, ...capture.vectorRenders, ...capture.layerRenders],
+    MAX_CAPTURE_ASSET_BYTES,
+  );
+  if (overviewBudget <= 0) throw new Error("The captured frame assets leave no room for the merged overview within the 256 MiB asset limit.");
+
+  const incomingPageId = [...incomingPageIds][0];
+  const incomingDelta = incomingPageId ? plan.incomingOffsetDeltas.get(incomingPageId) ?? { x: 0, y: 0 } : { x: 0, y: 0 };
+  const clearRects = getFigmaCaptureOverviewClearRects(
+    merge.frames,
+    plan.replacedFrameIds,
+    plan.pageOffsets,
+  );
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.min(maxDimension, Math.round(mergedBounds.width * scale)));
+    canvas.height = Math.max(1, Math.min(maxDimension, Math.round(mergedBounds.height * scale)));
+    const context = canvas.getContext("2d", { alpha: true });
+    if (!context) throw new Error("The browser could not create the merged canvas overview.");
+
+    context.drawImage(
+      baselineImage,
+      (baselineBounds.x - mergedBounds.x) * scale,
+      (baselineBounds.y - mergedBounds.y) * scale,
+      baselineBounds.width * scale,
+      baselineBounds.height * scale,
+    );
+    for (const bounds of clearRects) {
+      context.clearRect(
+        (bounds.x - mergedBounds.x) * scale,
+        (bounds.y - mergedBounds.y) * scale,
+        bounds.width * scale,
+        bounds.height * scale,
+      );
+    }
+    context.drawImage(
+      incomingImage,
+      (incomingBounds.x + incomingDelta.x - mergedBounds.x) * scale,
+      (incomingBounds.y + incomingDelta.y - mergedBounds.y) * scale,
+      incomingBounds.width * scale,
+      incomingBounds.height * scale,
+    );
+
+    const bytes = await canvasPngBytes(canvas);
+    if (bytes.byteLength <= overviewBudget) return { bytes, width: canvas.width, height: canvas.height };
+    canvas.width = 1;
+    canvas.height = 1;
+    scale *= Math.min(0.85, Math.sqrt(overviewBudget / bytes.byteLength) * 0.9);
+    if (attempt < 4) setStatus("Reducing only the merged overview resolution to fit the import limit. Individual Figma frame renders stay unchanged.");
+  }
+  throw new Error("The merged overview still exceeds Handoff’s 256 MiB asset limit after reducing its resolution.");
 }
 
 async function cropFrameRender(render: CaptureAssetBytes): Promise<CaptureAssetBytes> {
@@ -317,23 +456,52 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
   const pending = pendingUpload;
   setBusy(true);
   result.hidden = true;
-  setStatus("Uploading the frozen snapshot to Asbir Handoff…");
+  setStatus(pending.mergeContext ? "Merging this capture with the previous version…" : "Uploading the frozen snapshot to Asbir Handoff…");
 
   try {
     const endpoint = new URL("/api/capture-sessions/snapshot", pending.origin);
+    let uploadSnapshot = pending.snapshot;
+    let uploadOverviewBytes = overviewBytes;
+    if (pending.mergeContext) {
+      const mergedOverview = await createMergedOverviewPng(pending, frameMatches);
+      uploadOverviewBytes = mergedOverview.bytes;
+      const overviewAssets = pending.snapshot.assets.map((asset) => asset.key === pending.snapshot.overviewAssetKey
+        ? {
+            ...asset,
+            sizeBytes: mergedOverview.bytes.byteLength,
+            sha256: "",
+            width: mergedOverview.width,
+            height: mergedOverview.height,
+          }
+        : asset);
+      const overviewAsset = overviewAssets.find((asset) => asset.key === pending.snapshot.overviewAssetKey);
+      if (!overviewAsset) throw new Error("The captured canvas overview is missing from its snapshot.");
+      overviewAsset.sha256 = await sha256(mergedOverview.bytes);
+      const { contentHash: _contentHash, ...payload } = pending.snapshot;
+      const mergedEnvelope = await createSnapshotEnvelope({ ...payload, assets: overviewAssets });
+      if (!mergedEnvelope.success) {
+        const first = mergedEnvelope.error.issues[0];
+        throw new Error(first ? `Merged capture validation failed: ${first.path.join(".")} ${first.message}` : "Merged capture validation failed.");
+      }
+      uploadSnapshot = mergedEnvelope.data;
+    }
     const postSnapshot = async (
       snapshot: SnapshotEnvelope,
+      overviewAssetBytes: Uint8Array,
       vectorRenders: CaptureAssetBytes[],
       layerRenders: CaptureReadyMessage["layerRenders"],
     ) => {
       const form = new FormData();
       form.append("snapshot", JSON.stringify(snapshot));
-      form.append("asset:overview", assetBlob(overviewBytes!, "image/png"), "overview.png");
+      const overviewDescriptor = snapshot.assets.find((asset) => asset.key === snapshot.overviewAssetKey);
+      if (!overviewDescriptor) throw new Error("The snapshot overview asset is missing.");
+      form.append(`asset:${snapshot.overviewAssetKey}`, assetBlob(overviewAssetBytes, "image/png"), overviewDescriptor.fileName);
       currentCapture!.renders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
       vectorRenders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
       layerRenders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
-      if (frameMatches.length && pending.baselineVersionId) {
-        form.append("baselineVersionId", pending.baselineVersionId);
+      if (pending.baselineVersionId) form.append("baselineVersionId", pending.baselineVersionId);
+      if (frameMatches.length) {
+        if (!pending.baselineVersionId) throw new Error("A previous handoff version is required to confirm frame replacements.");
         form.append("frameMatches", JSON.stringify(frameMatches));
       }
       const response = await fetch(endpoint, {
@@ -354,17 +522,15 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
       return { response, body };
     };
 
-    let uploadSnapshot = pending.snapshot;
     let vectorRenders = currentCapture.vectorRenders;
     let layerRenders = currentCapture.layerRenders;
     let fallbackUsed = false;
-    let { response, body } = await postSnapshot(uploadSnapshot, vectorRenders, layerRenders);
+    let { response, body } = await postSnapshot(uploadSnapshot, uploadOverviewBytes, vectorRenders, layerRenders);
     if (!response.ok && isRejectedSvgAssetResponse(response.status, body.error ?? "")) {
       const fallback = makeRasterOnlyFallback(uploadSnapshot, { vectorRenders, layerRenders });
       if (fallback.removedAssetKeys.length) {
         setStatus("The server rejected an SVG export. Retrying with PNG renders and structured layer data…");
-        const contentHash = await hashSnapshotPayload(fallback.snapshot);
-        const parsedFallback = snapshotEnvelopeSchema.safeParse({ ...fallback.snapshot, contentHash });
+        const parsedFallback = await createSnapshotEnvelope(fallback.snapshot);
         if (!parsedFallback.success) {
           const first = parsedFallback.error.issues[0];
           throw new Error(first ? `Raster fallback validation failed: ${first.path.join(".")} ${first.message}` : "Raster fallback validation failed.");
@@ -373,7 +539,7 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
         vectorRenders = fallback.vectorRenders;
         layerRenders = fallback.layerRenders;
         fallbackUsed = true;
-        ({ response, body } = await postSnapshot(uploadSnapshot, vectorRenders, layerRenders));
+        ({ response, body } = await postSnapshot(uploadSnapshot, uploadOverviewBytes, vectorRenders, layerRenders));
       }
     }
     if (!response.ok || !body.reviewUrl) throw new Error(body.error || `Upload failed with status ${response.status}.`);
@@ -387,7 +553,9 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
     tokenInput.value = "";
     setStatus(fallbackUsed
       ? "Snapshot imported with PNG renders and structured layer data. Rejected SVG assets were omitted; see capture warnings in the snapshot."
-      : frameMatches.length
+      : pending.mergeContext
+        ? `Merged ${pending.snapshot.frames.length} captured frame${pending.snapshot.frames.length === 1 ? "" : "s"} into the previous version. Uncaptured frames and their layer data were kept.`
+        : frameMatches.length
         ? `Snapshot imported with ${frameMatches.length} confirmed frame ${frameMatches.length === 1 ? "replacement" : "replacements"}.`
         : "Snapshot imported. Open the frozen canvas in Asbir Handoff.", "success");
     currentCapture = null;
@@ -461,9 +629,7 @@ async function uploadCapture() {
       overviewAssetKey: "overview",
       assets: [overviewDescriptor, ...renderMetadata, ...vectorMetadata, ...layerMetadata],
     };
-    const contentHash = await hashSnapshotPayload(payload);
-    const envelope = { ...payload, contentHash };
-    const parsed = snapshotEnvelopeSchema.safeParse(envelope);
+    const parsed = await createSnapshotEnvelope(payload);
     if (!parsed.success) {
       const first = parsed.error.issues[0];
       throw new Error(first ? `Capture validation failed: ${first.path.join(".")} ${first.message}` : "Capture validation failed.");
@@ -483,17 +649,24 @@ async function uploadCapture() {
       error?: string;
       baselineVersionId?: string | null;
       candidates?: FrameReplacementCandidate[];
+      mergeContext?: CaptureMergeContext;
     };
     if (!previewResponse.ok || !previewBody.candidates) throw new Error(previewBody.error || `The replacement check failed with status ${previewResponse.status}.`);
+    if (previewBody.mergeContext && previewBody.mergeContext.versionId !== previewBody.baselineVersionId) {
+      throw new Error("The selected capture’s merge preview does not match the current handoff version. Capture again before uploading.");
+    }
     pendingUpload = {
       snapshot: parsed.data,
       baselineVersionId: previewBody.baselineVersionId ?? null,
+      mergeContext: previewBody.mergeContext,
       token,
       origin: appUrl.origin,
     };
     if (previewBody.candidates.length) {
       showReplacementReview(previewBody.candidates);
-      setStatus("Review the suggested frame replacements before uploading.");
+      setStatus(previewBody.mergeContext
+        ? "Review the suggested replacements. This capture will merge into the latest version and keep untouched frames."
+        : "Review the suggested frame replacements before uploading.");
       setBusy(false);
       return;
     }
@@ -562,6 +735,9 @@ window.onmessage = (event: MessageEvent) => {
     context.drawImage(pixelPreview, 0, 0, preview.width, preview.height);
     const nodeCount = capture.payload.frames.reduce((count, frame) => count + frame.nodes.length, 0);
     const frameCount = capture.payload.frames.length;
+    const pageCount = Array.isArray(capture.payload.sourceMetadata.pageLayout)
+      ? capture.payload.sourceMetadata.pageLayout.length
+      : 0;
     const renderScale = capture.payload.sourceMetadata.renderScale === 2 ? "2×" : "1×";
     const vectorSourceCount = capture.vectorRenders.length;
     const layerExportCount = capture.layerRenders.length;
@@ -578,7 +754,10 @@ window.onmessage = (event: MessageEvent) => {
         : `${renderScale} Figma render`;
     const warningSummary = capture.warnings.length ? ` · ${capture.warnings.length} capture warning${capture.warnings.length === 1 ? "" : "s"}` : "";
     const layerExportSummary = layerExportCount ? ` · ${layerExportCount} layers ready to export` : "";
-    summary.textContent = `${frameCount} frame${frameCount === 1 ? "" : "s"} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary} · ${vectorSummary}${layerExportSummary}${warningSummary}`;
+    const pageSummary = capture.scope === "file" ? ` · ${pageCount} pages` : "";
+    const captureScopeSummary = formatFigmaCaptureScope(capture.scope);
+    const scopeSummary = captureScopeSummary ? `Capture scope: ${captureScopeSummary} · ` : "";
+    summary.textContent = `${scopeSummary}${frameCount} frame${frameCount === 1 ? "" : "s"}${pageSummary} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary} · ${vectorSummary}${layerExportSummary}${warningSummary}`;
     setStatus(capture.warnings.length
       ? `Capture is ready with warnings: ${capture.warnings.join(" ")} Review the Figma-rendered preview and layer data before uploading.`
       : "Review the Figma-rendered preview and layer count, then upload this snapshot.");

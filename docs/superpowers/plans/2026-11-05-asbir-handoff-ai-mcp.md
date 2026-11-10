@@ -94,7 +94,9 @@ export interface HandoffMcpContext {
 - [x] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`.
 - [x] Exercise the remote MCP JSON-RPC endpoint with a temporary read-only token: initialize a client, enumerate the then-current 13 read tools, retrieve an authorized snapshot and exact measurement fields, and confirm a mismatched workspace URL returns HTTP 403. Baseline verified 2026-11-07; the temporary token was removed afterward.
 - [x] Compare all four adjacent version pairs in the local fixture through `get_version_diff`. The route returned changed and removed frame records plus visual/structural changes. Verified 2026-11-07.
-- [ ] Verify denial for a handoff or version that belongs to a different workspace, and connect a full AI client alongside its own task, repository, and QA MCP tools. Create a task externally, link it through Handoff, and retrieve the link with `list_linked_tasks`.
+- [x] Exercise `POST /api/mcp` with an in-memory workspace token: verify cross-workspace handoff denial, workspace URL mismatch returns HTTP 403, and an external task reference round-trips through `link_task` and `list_linked_tasks` with its exact version and evidence hash.
+- [x] Exercise `get_changelog_evidence` and `save_changelog_draft` with a synthetic two-version fixture: verify added-screen evidence is attached to the exact version pair and fabricated evidence IDs are rejected without inserting a draft.
+- [ ] Connect a full AI client to Handoff and its Asbir Teams or ClickUp task tool, plus repository and QA MCP tools. Create an external task, link it through Handoff, and retrieve the exact version link with `list_linked_tasks`.
 
 ## Task 3: Link tasks created through the AI client's own tools
 

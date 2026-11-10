@@ -2,6 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
+import { getPixelDiffPlan } from "../../workers/pixel-diff";
 
 type PixelPreview = {
   name: string;
@@ -40,10 +41,14 @@ async function decodeScreenImage(imageUrl: string, signal: AbortSignal) {
 
 export function PixelDiffView({ before, after }: { before: PixelPreview; after: PixelPreview }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const plan = getPixelDiffPlan(before.sourceWidth, before.sourceHeight, after.sourceWidth, after.sourceHeight);
+  const plannedWidth = plan.status === "ready" ? plan.width : null;
+  const plannedHeight = plan.status === "ready" ? plan.height : null;
   const [result, setResult] = useState<{ width: number; height: number; changedPixels: number } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    if (plannedWidth === null || plannedHeight === null) return;
     const controller = new AbortController();
     const worker = new Worker(new URL("../../workers/pixel-diff.worker.ts", import.meta.url), { type: "module" });
     worker.onmessage = (event: MessageEvent<PixelDiffResult | { error: string }>) => {
@@ -93,7 +98,7 @@ export function PixelDiffView({ before, after }: { before: PixelPreview; after: 
       controller.abort();
       worker.terminate();
     };
-  }, [before.imageUrl, before.sourceWidth, before.sourceHeight, after.imageUrl, after.sourceWidth, after.sourceHeight]);
+  }, [plannedWidth, plannedHeight, before.imageUrl, before.sourceWidth, before.sourceHeight, after.imageUrl, after.sourceWidth, after.sourceHeight]);
 
   return (
     <div className="relative grid min-h-[min(68vh,760px)] place-items-center overflow-hidden rounded-surface border border-border bg-surface-inset p-3">
@@ -105,14 +110,18 @@ export function PixelDiffView({ before, after }: { before: PixelPreview; after: 
         unoptimized
         width={after.width ?? 1280}
       />
-      <canvas
-        aria-label="Pixel difference overlay. Changed pixels are highlighted in pink."
-        className="relative z-10 max-h-[min(68vh,760px)] max-w-full object-contain"
-        ref={canvasRef}
-        role="img"
-      />
+      {plan.status === "ready" ? (
+        <canvas
+          aria-label="Pixel difference overlay. Changed pixels are highlighted in pink."
+          className="relative z-10 max-h-[min(68vh,760px)] max-w-full object-contain"
+          ref={canvasRef}
+          role="img"
+        />
+      ) : null}
       {error ? <p aria-live="assertive" className="relative z-20 rounded-control bg-background/90 p-3 text-xs text-warning">{error}</p> : null}
-      {!result && !error ? <p aria-live="polite" className="relative z-20 rounded-control bg-background/90 p-3 text-xs text-foreground-muted">Computing pixel difference…</p> : null}
+      {plan.status === "too-large" ? <p aria-live="polite" className="relative z-20 max-w-md rounded-control bg-background/90 p-3 text-xs text-foreground-muted">Pixel diff is unavailable for screens this large. Use side-by-side or overlay to compare them at full size.</p> : null}
+      {plan.status === "invalid" ? <p aria-live="polite" className="relative z-20 max-w-md rounded-control bg-background/90 p-3 text-xs text-foreground-muted">Pixel diff is unavailable because the captured screen dimensions are invalid. Use side-by-side or overlay instead.</p> : null}
+      {plan.status === "ready" && !result && !error ? <p aria-live="polite" className="relative z-20 rounded-control bg-background/90 p-3 text-xs text-foreground-muted">Computing pixel difference…</p> : null}
       {result ? <p className="absolute bottom-2 right-2 z-20 rounded-control bg-background/90 px-2 py-1 font-mono text-[10px] text-foreground">{result.changedPixels.toLocaleString()} changed pixels · {result.width}×{result.height}</p> : null}
     </div>
   );

@@ -9,6 +9,7 @@
   ],
   "scripts": {
     "setup:env": "node scripts/setup-env.mjs",
+    "test": "node --experimental-transform-types --loader ./scripts/node-esm-loader.mjs --test",
     "dev": "npm run dev --workspace @asbir/web",
     "build": "npm run build --workspace @asbir/web",
     "lint": "npm run lint --workspace @asbir/web"

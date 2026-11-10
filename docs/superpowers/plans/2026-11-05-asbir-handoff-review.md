@@ -94,6 +94,9 @@ export interface SnapshotDiff {
 - [ ] Compare bound token ID, collection, mode, and value separately from raw fills.
 - [ ] Implement pixel diff in a Web Worker using decoded image bitmaps and `ImageData`; produce an overlay-ready difference bitmap at the canonical source dimensions.
 - [ ] Add before/after, overlay, and pixel-diff modes with a structured change list linked to frame and node IDs.
+- [x] Stress-test structured diffs across 210 screens and 31,500 nodes with five changed screens, and preserve 50,000 changes across five frames when layer IDs regenerate. Verified 2026-11-09.
+- [x] Cull inspect hit targets to visible, actionable elements and use ID-based lookup for selected and hovered nodes. A 31,500-node fixture renders only the 150 targets in its viewport. Verified 2026-11-09.
+- [x] Manually inspect a four-screen resize comparison in the running app: verify side-by-side, overlay opacity, pixel diff, and selection of another screen with its own recorded changes. Restored the browser to its original URL. Verified 2026-11-09.
 - [ ] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`; manually compare two versions containing added, removed, moved, resized, and restyled elements.
 
 ## Task 4: Add comments, layout rules, and exports
@@ -102,6 +105,7 @@ export interface SnapshotDiff {
 
 - [ ] Add comment tables and API operations for create, list, resolve, and reply. Every comment stores workspace, version, frame ID, optional node ID, frame-relative point, author, and timestamp.
 - [ ] Render comments from saved frame-relative points and convert them through the same canvas transform used by pins.
+- [x] Test frame-relative pin placement in both overview and selected-screen coordinates, including reply and resolved-pin visibility. Verified 2026-11-09.
 - [ ] Add a project rules JSON shape for allowed spacing values, required token binding categories, and optional frame bounds.
 - [ ] Implement deterministic checks that return `ruleId`, `frameId`, `sourceNodeId`, actual value, expected values, and a human-readable explanation.
 - [x] Keep rule findings distinct from AI-generated notes. Allow assignee, open/resolved status, comment, and export.

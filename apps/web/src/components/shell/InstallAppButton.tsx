@@ -109,7 +109,7 @@ export function InstallAppButton({ compact = false }: InstallAppButtonProps) {
     <>
       <button
         aria-label="Install Asbir Handoff"
-        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-[5px] border border-[#3b3b3b] px-2.5 text-[11px] text-[#c3c3c3] transition-colors hover:bg-[#303030] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control border border-border px-2.5 text-[11px] text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
         onClick={() => void installApp()}
         title="Install Asbir Handoff as an app"
         type="button"
@@ -121,30 +121,30 @@ export function InstallAppButton({ compact = false }: InstallAppButtonProps) {
       </button>
       <dialog
         aria-labelledby="install-app-title"
-        className="m-auto w-[min(92vw,420px)] rounded-[8px] border border-[#454545] bg-[#242424] p-0 text-[#e5e5e5] shadow-2xl backdrop:bg-black/65"
+        className="m-auto w-[min(92vw,420px)] rounded-panel border border-border bg-surface p-0 text-foreground shadow-2xl backdrop:bg-black/65"
         onClose={() => setInstructionsOpen(false)}
         ref={dialogRef}
       >
         <div className="p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-[#929292]">Asbir Handoff</p>
+              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-foreground-subtle">Asbir Handoff</p>
               <h2 className="mt-1 text-[15px] font-semibold" id="install-app-title">Install this app</h2>
             </div>
             <button
               aria-label="Close install instructions"
-              className="grid size-7 place-items-center rounded-[4px] text-lg leading-none text-[#aaa] hover:bg-[#343434] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+              className="grid size-7 place-items-center rounded-control text-lg leading-none text-foreground-muted hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
               onClick={() => setInstructionsOpen(false)}
               type="button"
             >
               ×
             </button>
           </div>
-          <p className="mt-3 text-[12px] leading-5 text-[#bdbdbd]">{instructions}</p>
-          <p className="mt-2 text-[11px] leading-5 text-[#929292]">The browser adds Asbir Handoff to your device and opens it in its own app window.</p>
+          <p className="mt-3 text-[12px] leading-5 text-foreground-muted">{instructions}</p>
+          <p className="mt-2 text-[11px] leading-5 text-foreground-subtle">The browser adds Asbir Handoff to your device and opens it in its own app window.</p>
           <div className="mt-5 flex justify-end">
             <button
-              className="min-h-8 rounded-[5px] bg-[#dedede] px-3 text-[11px] font-medium text-[#202020] hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aaa]"
+              className="min-h-8 rounded-control bg-primary px-3 text-[11px] font-medium text-primary-foreground hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
               onClick={() => setInstructionsOpen(false)}
               type="button"
             >

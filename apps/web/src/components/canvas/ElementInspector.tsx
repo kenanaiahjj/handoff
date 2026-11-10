@@ -15,6 +15,7 @@ type ElementInspectorProps = {
   frameCount: number;
   totalNodeCount: number;
   comments: HandoffComment[];
+  canComment: boolean;
   canCompare: boolean;
   onCompare: () => void;
   onAddComment: () => void;
@@ -273,6 +274,7 @@ export function ElementInspector({
   frameCount,
   totalNodeCount,
   comments,
+  canComment,
   canCompare,
   onCompare,
   onAddComment,
@@ -410,7 +412,7 @@ export function ElementInspector({
             {comments.slice(0, 3).map((comment) => (
               <p className="mb-2 text-[11px] leading-5 text-[#aaa]" key={comment.id}><span className="font-medium text-[#d4d4d4]">{comment.authorName}</span> · {comment.body}</p>
             ))}
-            <button className="min-h-8 rounded-[5px] bg-[#353535] px-2.5 text-[11px] text-[#e5e5e5] hover:bg-[#414141]" onClick={onAddComment} type="button">Comment</button>
+            {canComment ? <button className="min-h-8 rounded-[5px] bg-[#353535] px-2.5 text-[11px] text-[#e5e5e5] hover:bg-[#414141]" onClick={onAddComment} type="button">Comment</button> : null}
           </section>
 
           <MeasurementGroup title="Layout" values={selectedNode.bounds} />

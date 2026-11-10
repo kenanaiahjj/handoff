@@ -1,4 +1,4 @@
-import { hashSnapshotPayload, snapshotEnvelopeSchema } from "@asbir/snapshot-contract";
+import { hashSnapshotPayload, MAX_SNAPSHOT_JSON_BYTES, normalizeFigmaCaptureScope, snapshotEnvelopeSchema, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { getCaptureSession } from "@/src/server/repositories/capture-sessions";
 import { getVersion } from "@/src/server/repositories/versions";
 import { getDatabase } from "@/src/server/db";
@@ -30,8 +30,8 @@ export async function POST(request: Request) {
   if (!session) return jsonResponse({ error: "This capture token is invalid, expired, already used, or no longer authorized." }, { status: 401 });
 
   const contentLength = Number(request.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > 16 * 1024 * 1024) {
-    return jsonResponse({ error: "The snapshot exceeds the 16 MiB preview limit." }, { status: 413 });
+  if (Number.isFinite(contentLength) && contentLength > MAX_SNAPSHOT_JSON_BYTES) {
+    return jsonResponse({ error: "The snapshot exceeds Handoff’s 128 MiB preview limit." }, { status: 413 });
   }
 
   let body: unknown;
@@ -63,13 +63,52 @@ export async function POST(request: Request) {
 
   const baseline = getVersion({ workspaceId: session.workspaceId, versionId: latest.id });
   if (!baseline) return jsonResponse({ error: "The previous handoff version could not be loaded." }, { status: 409 });
+  const scope = normalizeFigmaCaptureScope(snapshot.sourceMetadata.captureScope);
+  let mergeContext: {
+    versionId: string;
+    overviewUrl: string;
+    overviewWidth: number | null;
+    overviewHeight: number | null;
+    canvasBounds: SnapshotEnvelope["canvasBounds"] | null;
+    frames: Array<Pick<SnapshotEnvelope["frames"][number], "sourceFrameId" | "sourcePageId" | "bounds" | "renderBounds">>;
+    pageLayout: unknown;
+  } | undefined;
+  if (scope === "selected" || scope === "page") {
+    if (baseline.snapshot.source !== "figma" || baseline.snapshot.sourceFileId !== snapshot.sourceFileId) {
+      return jsonResponse({ error: "A selected-frame or page capture can only update the same Figma file. Capture the full file to replace this handoff." }, { status: 409 });
+    }
+    const overviewAsset = baseline.assets.find((asset) => asset.assetKey === baseline.snapshot.overviewAssetKey);
+    if (!overviewAsset) return jsonResponse({ error: "The previous canvas overview is missing. Capture the full page to replace it." }, { status: 409 });
+    mergeContext = {
+      versionId: baseline.id,
+      overviewUrl: `/api/capture-sessions/baseline-overview?versionId=${encodeURIComponent(baseline.id)}`,
+      overviewWidth: overviewAsset.width,
+      overviewHeight: overviewAsset.height,
+      canvasBounds: baseline.snapshot.canvasBounds ?? null,
+      frames: baseline.snapshot.source === "figma"
+        ? baseline.snapshot.frames.map(({ sourceFrameId, sourcePageId, bounds, renderBounds }) => ({ sourceFrameId, sourcePageId, bounds, renderBounds }))
+        : [],
+      pageLayout: baseline.snapshot.source === "figma" ? baseline.snapshot.sourceMetadata.pageLayout ?? [] : [],
+    };
+  }
   const diff = diffSnapshots(
     { versionId: baseline.id, snapshot: baseline.snapshot },
     { versionId: "incoming-capture", snapshot },
   );
 
+  const capturedPageIds = new Set(snapshot.frames.flatMap((frame) => frame.sourcePageId ? [frame.sourcePageId] : []));
+  const replacementCandidates = scope === "selected" || scope === "page"
+    ? diff.unmatchedFrameCandidates.filter((candidate) => {
+        const before = baseline.snapshot.source === "figma"
+          ? baseline.snapshot.frames.find((frame) => frame.sourceFrameId === candidate.beforeFrameId)
+          : undefined;
+        return Boolean(before?.sourcePageId && capturedPageIds.has(before.sourcePageId));
+      })
+    : diff.unmatchedFrameCandidates;
+
   return jsonResponse({
     baselineVersionId: baseline.id,
-    candidates: diff.unmatchedFrameCandidates,
+    candidates: replacementCandidates,
+    ...(mergeContext ? { mergeContext } : {}),
   });
 }

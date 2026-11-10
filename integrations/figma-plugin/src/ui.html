@@ -5,45 +5,67 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Asbir Handoff Capture</title>
     <style>
-      :root { color-scheme: dark; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #202020; color: #e5e5e5; }
+      :root {
+        color-scheme: dark;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        --background: #1e1e1e;
+        --surface: #202020;
+        --surface-raised: #303030;
+        --surface-inset: #171717;
+        --foreground: #ededed;
+        --foreground-muted: #b0b0b0;
+        --foreground-subtle: #929292;
+        --border: #383838;
+        --border-strong: #4a4a4a;
+        --primary: #dedede;
+        --primary-hover: #f2f2f2;
+        --primary-foreground: #171717;
+        --accent: #83a878;
+        --success: #83a878;
+        --warning: #d7b86e;
+        --danger: #d2786f;
+        background: var(--background);
+        color: var(--foreground);
+      }
       * { box-sizing: border-box; }
-      body { margin: 0; padding: 16px; background: #202020; color: #e5e5e5; font-size: 12px; line-height: 1.5; }
+      body { margin: 0; padding: 16px; background: var(--background); color: var(--foreground); font-size: 12px; line-height: 1.5; }
       main { display: grid; gap: 16px; }
       header { display: grid; gap: 4px; }
       h1 { margin: 0; font-size: 18px; line-height: 1.3; font-weight: 600; letter-spacing: -0.02em; }
-      header p, .hint { margin: 0; color: #999; font-size: 12px; }
+      header p, .hint { margin: 0; color: var(--foreground-subtle); font-size: 12px; }
       .field { display: grid; gap: 6px; }
-      label { color: #c8c8c8; font-size: 12px; font-weight: 500; }
-      input, select { min-height: 36px; width: 100%; border: 1px solid #3a3a3a; border-radius: 6px; padding: 0 10px; color: #ededed; background: #303030; font: inherit; }
-      input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid #aaa; outline-offset: 2px; }
-      button { min-height: 36px; border: 1px solid #4a4a4a; border-radius: 6px; padding: 0 12px; background: #393939; color: #ededed; font: inherit; font-weight: 600; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease; }
-      button:hover:not(:disabled) { background: #444; border-color: #5b5b5b; }
-      button.primary { background: #4a3a20; border-color: #71562e; color: #ffe0a4; }
-      button.primary:hover:not(:disabled) { background: #594628; border-color: #8b6a36; }
-      button.secondary { background: #252525; border-color: #3a3a3a; color: #c8c8c8; }
+      label { color: var(--foreground-muted); font-size: 12px; font-weight: 500; }
+      input, select { min-height: 36px; width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 0 10px; color: var(--foreground); background: var(--surface-inset); font: inherit; }
+      input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--primary-hover); outline-offset: 2px; }
+      button { min-height: 36px; border: 0; border-radius: 6px; padding: 0 12px; background: var(--surface-raised); color: var(--foreground); font: inherit; font-weight: 600; cursor: pointer; transition: background-color 120ms ease; }
+      button:hover:not(:disabled) { background: var(--border-strong); }
+      button.primary { background: var(--primary); color: var(--primary-foreground); }
+      button.primary:hover:not(:disabled) { background: var(--primary-hover); }
+      button.secondary { background: var(--surface); color: var(--foreground-muted); }
+      button.secondary:hover:not(:disabled) { background: var(--surface-raised); color: var(--foreground); }
       button:disabled { opacity: .48; cursor: not-allowed; }
-      .panel { overflow: hidden; border: 1px solid #3a3a3a; border-radius: 8px; background: #252525; }
-      .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 9px 11px; color: #bdbdbd; font-size: 12px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
-      .preview-wrap { display: grid; place-items: center; min-height: 150px; max-height: 230px; padding: 8px; overflow: auto; background-color: #1e1e1e; background-image: radial-gradient(#383838 1px, transparent 1px); background-size: 10px 10px; }
+      .panel { overflow: hidden; border-radius: 8px; background: var(--surface); }
+      .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 9px 11px; color: var(--foreground-muted); font-size: 12px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
+      .preview-wrap { display: grid; place-items: center; min-height: 150px; max-height: 230px; padding: 8px; overflow: auto; background-color: var(--background); background-image: radial-gradient(#383838 1px, transparent 1px); background-size: 10px 10px; }
       canvas { display: block; max-width: 100%; max-height: 210px; width: auto; height: auto; object-fit: contain; box-shadow: 0 3px 14px #0008; }
-      #capture-summary { min-height: 18px; padding: 8px 11px; color: #a9a9a9; font-size: 12px; }
-      #status { min-height: 36px; padding: 9px 11px; border: 1px solid #3a3a3a; border-radius: 6px; background: #252525; color: #c8c8c8; }
-      #status[data-kind="error"] { color: #f0b1a8; border-color: #70443e; }
-      #status[data-kind="success"] { color: #c5e3ac; border-color: #526a42; }
+      #capture-summary { min-height: 18px; padding: 8px 11px; color: var(--foreground-muted); font-size: 12px; }
+      #status { min-height: 36px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); color: var(--foreground-muted); }
+      #status[data-kind="error"] { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
+      #status[data-kind="success"] { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, transparent); }
       #result { display: grid; gap: 8px; }
-      #result a { color: #c5e3ac; text-decoration-thickness: 1px; text-underline-offset: 3px; }
+      #result a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
       #capture-identifiers { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: 0; }
-      #capture-identifiers dt { color: #999; font-size: 12px; }
-      #capture-identifiers dd { margin: 0; overflow-wrap: anywhere; color: #c8c8c8; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
-      .note { padding: 10px 11px; border: 1px solid #3a3a3a; border-radius: 6px; background: #252525; color: #aaa; font-size: 12px; }
+      #capture-identifiers dt { color: var(--foreground-subtle); font-size: 12px; }
+      #capture-identifiers dd { margin: 0; overflow-wrap: anywhere; color: var(--foreground-muted); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .note { padding: 10px 11px; border-radius: 6px; background: var(--surface); color: var(--foreground-muted); font-size: 12px; }
       #replacement-review { padding-bottom: 10px; }
-      #replacement-intro { margin: 0; padding: 0 11px 10px; color: #aaa; font-size: 12px; line-height: 1.5; }
+      #replacement-intro { margin: 0; padding: 0 11px 10px; color: var(--foreground-muted); font-size: 12px; line-height: 1.5; }
       #replacement-list { display: grid; gap: 8px; padding: 0 11px; }
-      .replacement-row { display: grid; gap: 6px; padding: 10px; border: 1px solid #3a3a3a; border-radius: 6px; background: #202020; }
-      .replacement-source { color: #ededed; font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
-      .replacement-source small { display: block; margin-top: 2px; color: #999; font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 400; }
-      .replacement-arrow { color: #999; font-size: 12px; }
-      #replacement-validation { min-height: 18px; padding: 8px 11px 0; color: #f0c77b; font-size: 12px; }
+      .replacement-row { display: grid; gap: 6px; padding: 10px; border-radius: 6px; background: var(--surface-raised); }
+      .replacement-source { color: var(--foreground); font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+      .replacement-source small { display: block; margin-top: 2px; color: var(--foreground-subtle); font: 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 400; }
+      .replacement-arrow { color: var(--foreground-subtle); font-size: 12px; }
+      #replacement-validation { min-height: 18px; padding: 8px 11px 0; color: var(--warning); font-size: 12px; }
       .replacement-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 11px 0; }
       .replacement-actions button { flex: 1 1 180px; }
       @media (prefers-reduced-motion: reduce) { *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; } }
@@ -69,8 +91,9 @@
         <select id="capture-scope">
           <option value="selected">Selected frames or components</option>
           <option value="page">All top-level frames and components on this page</option>
+          <option value="file">Entire Figma file (all pages)</option>
         </select>
-        <p class="hint">For a complete canvas, choose all top-level frames on the current Figma page.</p>
+        <p class="hint">Selected captures use their containing frames. Page captures include this page; file captures include every page and can take longer.</p>
       </div>
       <button id="capture-button" type="button">Capture canvas</button>
       <section class="panel" aria-label="Snapshot overview preview">

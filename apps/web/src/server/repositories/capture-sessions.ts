@@ -17,7 +17,7 @@ export function createCaptureSession(input: {
   const id = randomUUID();
   const token = `asbir_capture_${randomBytes(32).toString("base64url")}`;
   const createdAt = new Date();
-  const expiresAt = new Date(createdAt.getTime() + 10 * 60 * 1000).toISOString();
+  const expiresAt = new Date(createdAt.getTime() + 60 * 60 * 1000).toISOString();
   getDatabase()
     .prepare(
       `INSERT INTO capture_session

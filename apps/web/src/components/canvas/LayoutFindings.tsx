@@ -31,7 +31,7 @@ function csvCell(value: unknown) {
   return `"${text.replaceAll('"', '""')}"`;
 }
 
-export function LayoutFindings({ endpoint }: { endpoint: string }) {
+export function LayoutFindings({ endpoint, canEdit = true, canComment = true }: { endpoint: string; canEdit?: boolean; canComment?: boolean }) {
   const [data, setData] = useState<FindingPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -56,6 +56,7 @@ export function LayoutFindings({ endpoint }: { endpoint: string }) {
     findingKey: string,
     updates: { status?: "open" | "resolved"; assigneeUserId?: string | null; note?: string | null },
   ) => {
+    if (!canEdit) return;
     const current = data?.findings.find((finding) => finding.findingKey === findingKey);
     if (!current) return;
     const response = await fetch(`${endpoint}?findingKey=${encodeURIComponent(findingKey)}`, {
@@ -73,9 +74,10 @@ export function LayoutFindings({ endpoint }: { endpoint: string }) {
       ...latest,
       findings: latest.findings.map((finding) => finding.findingKey === findingKey ? { ...finding, ...updates } : finding),
     } : latest);
-  }, [data, endpoint]);
+  }, [canEdit, data, endpoint]);
 
   const addFindingComment = useCallback(async (findingKey: string, body: string) => {
+    if (!canComment) throw new Error("You cannot comment on findings in this handoff.");
     const response = await fetch(`${endpoint}?findingKey=${encodeURIComponent(findingKey)}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -91,7 +93,7 @@ export function LayoutFindings({ endpoint }: { endpoint: string }) {
         : finding),
     } : latest);
     return comment;
-  }, [endpoint]);
+  }, [canComment, endpoint]);
 
   const openCount = useMemo(() => data?.findings.filter((finding) => finding.status === "open").length ?? 0, [data]);
 
@@ -142,7 +144,7 @@ export function LayoutFindings({ endpoint }: { endpoint: string }) {
         <ul className="mt-4 divide-y divide-border">
           {data.findings.map((finding) => (
             <li className="py-4 first:pt-0" key={finding.findingKey}>
-              <FindingCard finding={finding} members={data.members} onComment={addFindingComment} onUpdate={updateFinding} />
+              <FindingCard finding={finding} members={data.members} canEdit={canEdit} canComment={canComment} onComment={addFindingComment} onUpdate={updateFinding} />
             </li>
           ))}
         </ul>
@@ -154,11 +156,15 @@ export function LayoutFindings({ endpoint }: { endpoint: string }) {
 function FindingCard({
   finding,
   members,
+  canEdit,
+  canComment,
   onComment,
   onUpdate,
 }: {
   finding: Finding;
   members: FindingMember[];
+  canEdit: boolean;
+  canComment: boolean;
   onComment: (findingKey: string, body: string) => Promise<FindingComment>;
   onUpdate: (findingKey: string, updates: { status?: "open" | "resolved"; assigneeUserId?: string | null; note?: string | null }) => Promise<void>;
 }) {
@@ -208,7 +214,7 @@ function FindingCard({
         <div className="flex flex-wrap items-center gap-2">
           <span className="rounded-control bg-warning/10 px-2 py-1 font-mono text-[10px] uppercase text-warning">{finding.category}</span>
           <span className="font-mono text-[10px] text-foreground-subtle">{finding.ruleId}</span>
-          <span className={`rounded-control px-2 py-1 text-[10px] ${finding.status === "open" ? "bg-primary/10 text-primary" : "bg-surface-raised text-foreground-muted"}`}>{finding.status}</span>
+          <span className={`rounded-control px-2 py-1 text-[10px] ${finding.status === "open" ? "bg-warning/10 text-warning" : "bg-surface-raised text-foreground-muted"}`}>{finding.status}</span>
         </div>
         <p className="mt-2 text-xs leading-5 text-foreground">{finding.summary}</p>
         <p className="mt-1 break-all font-mono text-[10px] text-foreground-subtle">{finding.frameName}{finding.nodeName ? ` · ${finding.nodeName}` : ""} · {finding.path}</p>
@@ -216,12 +222,16 @@ function FindingCard({
           <p className="rounded-control bg-surface-inset p-2 text-[10px] text-foreground-muted">Actual: {JSON.stringify(finding.actual) ?? "—"}</p>
           <p className="rounded-control bg-surface-inset p-2 text-[10px] text-foreground-muted">Expected: {JSON.stringify(finding.expected)}</p>
         </div>
-        <label className="mt-3 block text-[10px] text-foreground-subtle">
-          Finding note
-          <textarea className="mt-1 min-h-16 w-full resize-y rounded-control border border-border bg-background px-2.5 py-2 text-xs text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" maxLength={2000} onChange={(event) => setNote(event.target.value)} placeholder="Add an implementation or QA note" value={note} />
-        </label>
-        {error ? <p aria-live="assertive" className="mt-1 text-[10px] text-warning">{error}</p> : null}
-        <button className="mt-2 min-h-8 rounded-control bg-surface-raised px-2.5 text-[10px] text-foreground-muted hover:text-foreground disabled:opacity-50" disabled={saving || note === (finding.note ?? "")} onClick={() => void save({ note: note.trim() || null })} type="button">{saving ? "Saving…" : "Save note"}</button>
+        {canEdit ? (
+          <>
+            <label className="mt-3 block text-[10px] text-foreground-subtle">
+              Finding note
+              <textarea className="mt-1 min-h-16 w-full resize-y rounded-control border border-border bg-background px-2.5 py-2 text-xs text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" maxLength={2000} onChange={(event) => setNote(event.target.value)} placeholder="Add an implementation or QA note" value={note} />
+            </label>
+            {error ? <p aria-live="assertive" className="mt-1 text-[10px] text-warning">{error}</p> : null}
+            <button className="mt-2 min-h-8 rounded-control bg-surface-raised px-2.5 text-[10px] text-foreground-muted hover:text-foreground disabled:opacity-50" disabled={saving || note === (finding.note ?? "")} onClick={() => void save({ note: note.trim() || null })} type="button">{saving ? "Saving…" : "Save note"}</button>
+          </>
+        ) : finding.note ? <p className="mt-3 whitespace-pre-wrap text-xs leading-5 text-foreground-muted">{finding.note}</p> : null}
         <section aria-label={`Comments for ${finding.ruleId}`} className="mt-4 border-t border-border pt-3">
           <h3 className="text-[10px] font-semibold text-foreground">Comments <span className="font-normal text-foreground-subtle">({finding.comments.length})</span></h3>
           {finding.comments.length ? (
@@ -237,7 +247,7 @@ function FindingCard({
               ))}
             </ol>
           ) : <p className="mt-2 text-[10px] text-foreground-subtle">No comments yet.</p>}
-          <form className="mt-3" onSubmit={(event) => void submitComment(event)}>
+          {canComment ? <form className="mt-3" onSubmit={(event) => void submitComment(event)}>
             <label className="block text-[10px] text-foreground-subtle" htmlFor={commentInputId}>Add a comment</label>
             <textarea
               aria-describedby={commentError ? commentErrorId : undefined}
@@ -254,10 +264,10 @@ function FindingCard({
             {commentError ? <p className="mt-1 text-[10px] text-warning" id={commentErrorId} role="alert">{commentError}</p> : null}
             {commentAdded ? <p className="mt-1 text-[10px] text-foreground-muted" role="status">Comment added.</p> : null}
             <button className="mt-2 min-h-8 rounded-control bg-surface-raised px-2.5 text-[10px] text-foreground-muted hover:text-foreground disabled:opacity-50" disabled={commenting || !commentDraft.trim()} type="submit">{commenting ? "Posting…" : "Post comment"}</button>
-          </form>
+          </form> : null}
         </section>
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      {canEdit ? <div className="grid grid-cols-2 gap-2">
         <label className="grid gap-1 text-[10px] text-foreground-subtle">
           Assigned to
           <select aria-label={`Assign finding ${finding.ruleId}`} className="min-h-10 rounded-control border border-border bg-background px-2 text-xs text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" disabled={saving} onChange={(event) => void save({ assigneeUserId: event.target.value || null })} value={finding.assigneeUserId ?? ""}>
@@ -266,7 +276,7 @@ function FindingCard({
           </select>
         </label>
         <button className="min-h-10 rounded-control border border-border bg-surface-inset px-3 text-xs text-foreground-muted hover:text-foreground disabled:opacity-50" disabled={saving} onClick={() => void save({ status: finding.status === "open" ? "resolved" : "open" })} type="button">{finding.status === "open" ? "Mark resolved" : "Reopen finding"}</button>
-      </div>
+      </div> : null}
     </article>
   );
 }

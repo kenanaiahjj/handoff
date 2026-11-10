@@ -5,13 +5,14 @@ import { generatedChangelogSchema } from "@/src/server/ai/schema";
 import { createChangelogDraft, listApprovedChangelogsForVersion } from "@/src/server/repositories/changelogs";
 import { createHandoffComment, listHandoffComments } from "@/src/server/repositories/comments";
 import { listFindingStates } from "@/src/server/repositories/findings";
-import { getHandoff, listHandoffVersions, listHandoffs } from "@/src/server/repositories/handoffs";
+import { listHandoffVersions, listHandoffs } from "@/src/server/repositories/handoffs";
 import { listProjects, getProject } from "@/src/server/repositories/projects";
 import { resolveWorkspaceMcpToken, type McpScope } from "@/src/server/repositories/mcp-tokens";
 import { listLinkedExternalTasks } from "@/src/server/repositories/linked-external-tasks";
-import { getConfirmedFrameMatchesBetweenVersions, getVersion, type StoredSnapshot } from "@/src/server/repositories/versions";
+import { getConfirmedFrameMatchesBetweenVersions, getVersion } from "@/src/server/repositories/versions";
 import { linkExternalTaskToHandoff } from "@/src/server/services/link-external-task";
 import { toMcpApprovedChangelog } from "@/src/server/services/mcp-changelog";
+import { loadHandoff, loadVersion } from "@/src/server/services/mcp-access";
 import { taskLinkFieldsSchema, taskLinkSchema } from "@/src/server/services/task-context";
 import { diffSnapshots, isStructuredSnapshot } from "@/src/server/services/diff";
 import { evaluateLayoutRules } from "@/src/server/services/layout-rules";
@@ -22,8 +23,8 @@ const idInput = z.object({ projectId: idSchema, handoffId: idSchema });
 const versionInput = idInput.extend({ versionId: idSchema });
 const changelogPairInput = idInput.extend({ fromVersionId: idSchema, toVersionId: idSchema });
 const maxInlineImageBytes = 8 * 1024 * 1024;
-type VersionAsset = { assetKey: string; objectKey: string; fileName: string; contentType: string; sizeBytes: number; sha256: string; width: number | null; height: number | null };
-type LoadedVersion = Omit<NonNullable<ReturnType<typeof getVersion>>, "assets"> & { assets: VersionAsset[] };
+const maxVersionDiffPageSize = 500;
+const defaultVersionDiffPageSize = 100;
 
 function textResult(value: unknown) {
   return { content: [{ type: "text" as const, text: JSON.stringify(value) }] };
@@ -37,6 +38,64 @@ function failure(error: unknown) {
   return toolError(error instanceof Error ? error.message : "The MCP operation could not be completed.");
 }
 
+function pageVersionDiff(
+  diff: ReturnType<typeof diffSnapshots>,
+  input: { frameId?: string; offset?: number; limit?: number },
+) {
+  const selectedFrames = input.frameId
+    ? diff.frames.filter((frame) =>
+        frame.frameId === input.frameId || frame.beforeFrameId === input.frameId || frame.afterFrameId === input.frameId)
+    : diff.frames;
+  if (input.frameId && selectedFrames.length === 0) throw new Error("Screen not found in these versions.");
+
+  const selectedFrameIds = new Set(selectedFrames.map((frame) => frame.frameId));
+  const changes = input.frameId
+    ? diff.changes.filter((change) => selectedFrameIds.has(change.frameId))
+    : diff.changes;
+  const captureCoverage = input.frameId
+    ? diff.captureCoverage.filter((difference) => selectedFrameIds.has(difference.frameId))
+    : diff.captureCoverage;
+  const unmatchedFrameCandidates = input.frameId
+    ? diff.unmatchedFrameCandidates.filter((candidate) =>
+        candidate.beforeFrameId === input.frameId || candidate.afterCandidates.some((frame) => frame.frameId === input.frameId))
+    : diff.unmatchedFrameCandidates;
+  const unmatchedNodeCandidates = input.frameId
+    ? diff.unmatchedNodeCandidates.filter((candidate) => selectedFrameIds.has(candidate.frameId))
+    : diff.unmatchedNodeCandidates;
+  const offset = input.offset ?? 0;
+  const limit = input.limit ?? defaultVersionDiffPageSize;
+  const page = <T,>(items: T[]) => ({
+    items: items.slice(offset, offset + limit),
+    metadata: {
+      offset,
+      limit,
+      total: items.length,
+      hasMore: offset + limit < items.length,
+      nextOffset: offset + limit < items.length ? offset + limit : null,
+    },
+  });
+  const changePage = page(changes);
+  const captureCoveragePage = page(captureCoverage);
+  const unmatchedFrameCandidatePage = page(unmatchedFrameCandidates);
+  const unmatchedNodeCandidatePage = page(unmatchedNodeCandidates);
+
+  return {
+    ...diff,
+    frames: selectedFrames,
+    changes: changePage.items,
+    captureCoverage: captureCoveragePage.items,
+    unmatchedFrameCandidates: unmatchedFrameCandidatePage.items,
+    unmatchedNodeCandidates: unmatchedNodeCandidatePage.items,
+    changePage: {
+      frameId: input.frameId ?? null,
+      ...changePage.metadata,
+    },
+    captureCoveragePage: captureCoveragePage.metadata,
+    unmatchedFrameCandidatePage: unmatchedFrameCandidatePage.metadata,
+    unmatchedNodeCandidatePage: unmatchedNodeCandidatePage.metadata,
+  };
+}
+
 function allowMcpOrigin(request: Request) {
   const origin = request.headers.get("origin");
   if (!origin) return true;
@@ -47,19 +106,6 @@ function allowMcpOrigin(request: Request) {
     try { allowed.add(new URL(value.trim()).origin); } catch { /* Ignore malformed optional configuration. */ }
   }
   return allowed.has(origin);
-}
-
-function loadHandoff(workspaceId: string, projectId: string, handoffId: string) {
-  const handoff = getHandoff({ workspaceId, projectId, handoffId });
-  if (!handoff) throw new Error("Handoff not found in this workspace.");
-  return handoff;
-}
-
-function loadVersion(workspaceId: string, input: { projectId: string; handoffId: string; versionId: string }) {
-  loadHandoff(workspaceId, input.projectId, input.handoffId);
-  const version = getVersion({ workspaceId, versionId: input.versionId });
-  if (!version || version.handoffId !== input.handoffId) throw new Error("Version not found in this handoff.");
-  return version as LoadedVersion;
 }
 
 function registerReadTools(server: McpServer, workspaceId: string) {
@@ -272,20 +318,28 @@ function registerReadTools(server: McpServer, workspaceId: string) {
 
   server.registerTool("get_version_diff", {
     title: "Compare two snapshot versions",
-    description: "Compare two immutable versions of the same handoff by stable source frame and element IDs.",
-    inputSchema: idInput.extend({ fromVersionId: idSchema, toVersionId: idSchema }),
-  }, async ({ projectId, handoffId, fromVersionId, toVersionId }) => {
+    description: "Compare two immutable versions of the same handoff by stable source frame and element IDs. For large comparisons, pass frameId and optional offset/limit to retrieve one screen's changes, capture-coverage differences, and unmatched-layer suggestions in pages; each collection includes its own page metadata. Calls without pagination fields still return the complete diff.",
+    inputSchema: idInput.extend({
+      fromVersionId: idSchema,
+      toVersionId: idSchema,
+      frameId: z.string().trim().min(1).max(256).optional(),
+      offset: z.number().int().min(0).max(1_000_000).optional(),
+      limit: z.number().int().min(1).max(maxVersionDiffPageSize).optional(),
+    }),
+  }, async ({ projectId, handoffId, fromVersionId, toVersionId, frameId, offset, limit }) => {
     try {
       loadHandoff(workspaceId, projectId, handoffId);
       const from = getVersion({ workspaceId, versionId: fromVersionId });
       const to = getVersion({ workspaceId, versionId: toVersionId });
       if (!from || !to || from.handoffId !== handoffId || to.handoffId !== handoffId) throw new Error("Both versions must belong to this handoff.");
-        const frameMatches = getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to });
-        return textResult(diffSnapshots(
-          { versionId: from.id, snapshot: from.snapshot },
-          { versionId: to.id, snapshot: to.snapshot },
-          { frameMatches },
-        ));
+      const frameMatches = getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to });
+      const diff = diffSnapshots(
+        { versionId: from.id, snapshot: from.snapshot },
+        { versionId: to.id, snapshot: to.snapshot },
+        { frameMatches },
+      );
+      if (frameId === undefined && offset === undefined && limit === undefined) return textResult(diff);
+      return textResult(pageVersionDiff(diff, { frameId, offset, limit }));
     } catch (error) { return failure(error); }
   });
 
@@ -481,7 +535,7 @@ function registerWriteTools(server: McpServer, input: { workspaceId: string; cre
   if (input.scopes.includes("tasks:write")) {
     server.registerTool("link_task", {
       title: "Link an externally created task to a handoff",
-      description: "After creating a task with your AI client's own ClickUp, Linear, or other MCP tools, record its link here with the exact handoff version and optional screen or element evidence.",
+      description: "After creating a task with your AI client's connected Asbir Teams, ClickUp, or other task tools, record its link here with the exact handoff version and optional screen or element evidence.",
       inputSchema: versionInput.extend({
         ...taskLinkFieldsSchema.shape,
       }),

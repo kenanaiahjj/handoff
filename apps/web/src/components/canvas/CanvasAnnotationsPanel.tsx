@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import type { PendingCommentPoint } from "../comments/CommentThread";
+import { overviewCanvasFrameId } from "./canvas-anchor";
 
 export type CanvasAnnotationRecord = {
   id: string;
@@ -21,9 +22,11 @@ export function CanvasAnnotationsPanel({
   pendingPoint,
   placing,
   canEdit,
+  hasSelectedScreen,
   error,
   onSelect,
   onStartPlacement,
+  onPlaceAtSelectedScreen,
   onCancel,
   onCreate,
   onUpdate,
@@ -35,9 +38,11 @@ export function CanvasAnnotationsPanel({
   pendingPoint: PendingCommentPoint | null;
   placing: boolean;
   canEdit: boolean;
+  hasSelectedScreen: boolean;
   error: string | null;
   onSelect: (annotationId: string) => void;
   onStartPlacement: () => void;
+  onPlaceAtSelectedScreen: () => void;
   onCancel: () => void;
   onCreate: (point: PendingCommentPoint, title: string, body: string) => Promise<void>;
   onUpdate: (annotationId: string, title: string, body: string) => Promise<void>;
@@ -102,15 +107,28 @@ export function CanvasAnnotationsPanel({
             Add canvas note
           </button>
         ) : null}
-        {placing ? <p className="mt-2 text-[10px] text-[#d8bf89]">Click a point on a screen to place the note.</p> : null}
+        {placing ? (
+          <div aria-live="polite" className="mt-2 space-y-2 text-[10px] leading-4 text-[#d8bf89]">
+            <p>Click a frame or empty canvas point to place a note, or use the button to place it at the selected screen center.</p>
+            <button
+              className="min-h-8 rounded-[5px] border border-[#76633a] px-2.5 text-[10px] font-medium text-[#f4d89e] hover:bg-[#393329] disabled:cursor-not-allowed disabled:opacity-50"
+              disabled={!hasSelectedScreen}
+              onClick={onPlaceAtSelectedScreen}
+              type="button"
+            >
+              Place at center of selected screen
+            </button>
+            {!hasSelectedScreen ? <p className="text-[#b9aa86]">Select a screen to enable this option.</p> : null}
+          </div>
+        ) : null}
       </section>
 
       {editing ? (
         <section className="rounded-[6px] border border-[#76633a] bg-[#29251d] p-3" aria-label={selected ? "Edit canvas note" : "Add canvas note"}>
           <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#d3b975]">{selected ? "Edit note" : "New note"}</p>
-          {pendingPoint ? <p className="mt-1 text-[10px] text-[#a99975]">Placed on {screenNames[pendingPoint.frameId] ?? "selected screen"}</p> : null}
+          {pendingPoint ? <p className="mt-1 text-[10px] text-[#a99975]">Placed on {screenNames[pendingPoint.frameId] ?? (pendingPoint.frameId === overviewCanvasFrameId ? "Canvas" : "selected screen")}</p> : null}
           <label className="mt-3 block text-[10px] text-[#bbb]" htmlFor="canvas-note-title">Title</label>
-          <input aria-describedby={actionError ? "canvas-note-error" : undefined} className="mt-1 h-8 w-full rounded-[4px] border border-[#514831] bg-[#1b1a17] px-2 text-[11px] text-white outline-none focus:border-[#c3a65f]" id="canvas-note-title" maxLength={120} onChange={(event) => setTitle(event.target.value)} required value={title} />
+          <input aria-describedby={actionError ? "canvas-note-error" : undefined} autoFocus={!selected && Boolean(pendingPoint)} className="mt-1 h-8 w-full rounded-[4px] border border-[#514831] bg-[#1b1a17] px-2 text-[11px] text-white outline-none focus:border-[#c3a65f]" id="canvas-note-title" maxLength={120} onChange={(event) => setTitle(event.target.value)} required value={title} />
           <label className="mt-2 block text-[10px] text-[#bbb]" htmlFor="canvas-note-body">Annotation</label>
           <textarea aria-describedby={actionError ? "canvas-note-error" : undefined} className="mt-1 min-h-24 w-full resize-y rounded-[4px] border border-[#514831] bg-[#1b1a17] px-2 py-1.5 text-[11px] leading-5 text-white outline-none focus:border-[#c3a65f]" id="canvas-note-body" maxLength={2000} onChange={(event) => setBody(event.target.value)} required value={body} />
           <div className="mt-2 flex justify-end gap-1.5">

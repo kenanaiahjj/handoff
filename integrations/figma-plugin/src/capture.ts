@@ -4,20 +4,29 @@ import type {
   SnapshotFrame,
   SnapshotNode,
 } from "@asbir/snapshot-contract";
+import { MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES } from "../../../packages/snapshot-contract/src/limits.ts";
 import { encodeUtf8 } from "../../../packages/snapshot-contract/src/utf8.ts";
+import { jsonByteLength } from "./json-byte-length.ts";
 import type { CaptureAssetBytes, DraftSnapshot, LayerExportAssetBytes } from "./types";
 
 const allowedRootTypes = new Set(["FRAME", "COMPONENT", "INSTANCE", "COMPONENT_SET"]);
-const maxFrames = 120;
-const maxNodes = 20_000;
-const maxStructuredPayloadBytes = 16 * 1024 * 1024;
+const maxNodes = 50_000;
+const maxStructuredPayloadBytes = MAX_SNAPSHOT_JSON_BYTES;
 const metadataLookupBatchSize = 50;
 const maxLayerExportCount = 256;
 const maxLayerExportBytes = 20 * 1024 * 1024;
 const maxSingleLayerExportBytes = 5 * 1024 * 1024;
 const layerExportBatchSize = 4;
+const frameRenderBatchSize = 2;
 const vectorAssetNodeTypes = new Set(["VECTOR", "BOOLEAN_OPERATION", "RECTANGLE", "ELLIPSE", "LINE", "POLYGON", "STAR"]);
 const compositeAssetNodeTypes = new Set(["GROUP", "FRAME", "COMPONENT", "INSTANCE", "COMPONENT_SET"]);
+const mebibyte = 1024 * 1024;
+
+function renderTransferLimitError(totalBytes: number) {
+  const capturedMebibytes = (totalBytes / mebibyte).toFixed(1);
+  const limitMebibytes = (MAX_CAPTURE_ASSET_BYTES / mebibyte).toFixed(0);
+  return new Error(`The page’s Figma renders total ${capturedMebibytes} MiB, above Handoff’s ${limitMebibytes} MiB capture asset limit.`);
+}
 
 type Rect = { x: number; y: number; width: number; height: number };
 type AliasRef = { id: string; path: string };
@@ -29,12 +38,37 @@ type RootCapture = {
   root: SceneNode;
   rect: Rect;
   renderRect: Rect;
-  nodes: Array<{ node: SceneNode; parentId: string | null }>;
   key: string;
+  pageId: string;
+  pageName: string;
+  pageOffsetX: number;
+  pageOffsetY: number;
+};
+type LayerExportCandidate = {
+  entry: RootCapture;
+  item: { node: SceneNode; parentId: string | null };
+  order: number;
+  rect: Rect;
+  name: string;
+  sourceNodeId: string;
+  priority: number;
+};
+type PageCapture = {
+  page: PageNode;
+  roots: RootCapture[];
+  sourceBounds: Rect | null;
+  offsetX: number;
+  offsetY: number;
 };
 
 function recordOf(value: object): Record<string, unknown> {
   return value as unknown as Record<string, unknown>;
+}
+
+function structuredPayloadLimitError(byteLength: number) {
+  const size = (byteLength / (1024 * 1024)).toFixed(1);
+  const limit = Math.round(maxStructuredPayloadBytes / (1024 * 1024));
+  return new Error(`The structured layer data is ${size} MiB, above Handoff’s ${limit} MiB limit.`);
 }
 
 function nodeProperty(node: SceneNode, field: string) {
@@ -133,9 +167,6 @@ function findTopLevelArtboards(node: SceneNode, result: SceneNode[]) {
       }
       visited.add(current.node.id);
       if (isArtboard(current.node)) {
-        if (result.length >= maxFrames) {
-          throw new Error(`This canvas has more than ${maxFrames} frames. Capture up to ${maxFrames} frames at a time.`);
-        }
         result.push(current.node);
         stack.pop();
         continue;
@@ -194,7 +225,7 @@ function flattenNodes(root: SceneNode, nodeBudget: number): Array<{ node: SceneN
         continue;
       }
       if (output.length >= nodeBudget) {
-        throw new Error(`This capture has more than ${maxNodes.toLocaleString()} layers. Capture fewer frames at a time.`);
+        throw new Error(`This capture exceeds Handoff’s ${maxNodes.toLocaleString()} layer safety limit.`);
       }
       visited.add(current.node.id);
       output.push({ node: current.node, parentId: current.parentId });
@@ -232,6 +263,27 @@ function getAliasRefs(value: unknown, path: string, result: AliasRef[]) {
     for (const [key, entry] of Object.entries(object)) {
       stack.push({ value: entry, path: `${current.path}.${key}`, depth: current.depth + 1 });
     }
+  }
+}
+
+function getAliasIds(value: unknown, result: Set<string>) {
+  const stack = [value];
+  const visited = new WeakSet<object>();
+  while (stack.length) {
+    const current = stack.pop();
+    if (!current || typeof current !== "object") continue;
+    if (visited.has(current)) continue;
+    visited.add(current);
+    if (Array.isArray(current)) {
+      stack.push(...current);
+      continue;
+    }
+    const object = current as Record<string, unknown>;
+    if (object.type === "VARIABLE_ALIAS" && typeof object.id === "string") {
+      result.add(object.id);
+      continue;
+    }
+    stack.push(...Object.values(object));
   }
 }
 
@@ -427,7 +479,7 @@ function textTypography(node: SceneNode): SnapshotNode["typography"] {
   };
 }
 
-function nodeTokens(node: SceneNode, variables: Map<string, Variable>, collections: Map<string, VariableCollection>, textSegmentsCache: TextSegmentsCache) {
+function nodeTokens(node: SceneNode, variables: Map<string, Variable | null>, collections: Map<string, VariableCollection | null>, textSegmentsCache: TextSegmentsCache) {
   const refs: AliasRef[] = [];
   getAliasRefs(recordOf(node).boundVariables, "boundVariables", refs);
   getAliasRefs(nodeProperty(node, "layoutGrids"), "layoutGrids", refs);
@@ -489,8 +541,8 @@ function gridTrackSizes(node: SceneNode, field: "gridRowSizes" | "gridColumnSize
   }
 }
 
-async function mainComponentsByInstanceId(nodes: SceneNode[]) {
-  const instances = nodes.filter((node): node is InstanceNode => node.type === "INSTANCE");
+async function mainComponentsByInstanceId(nodes: readonly { node: SceneNode }[]) {
+  const instances = nodes.flatMap(({ node }) => node.type === "INSTANCE" ? [node as InstanceNode] : []);
   const components = new Map<string, { id: string; name: string }>();
   const batchSize = 50;
   for (let offset = 0; offset < instances.length; offset += batchSize) {
@@ -572,10 +624,10 @@ function makeNode(
   item: { node: SceneNode; parentId: string | null },
   frameId: string,
   frameRect: Rect,
-  variables: Map<string, Variable>,
+  variables: Map<string, Variable | null>,
   styles: Map<string, BaseStyle | null>,
   componentsByInstanceId: Map<string, { id: string; name: string }>,
-  collections: Map<string, VariableCollection>,
+  collections: Map<string, VariableCollection | null>,
   textSegmentsCache: TextSegmentsCache,
 ): SnapshotNode {
   const { node } = item;
@@ -716,11 +768,35 @@ function assetNameSlug(name: string) {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "").slice(0, 36) || "layer";
 }
 
+function compareLayerExportCandidates(left: LayerExportCandidate, right: LayerExportCandidate) {
+  return right.priority - left.priority || left.order - right.order;
+}
+
+function retainLayerExportCandidate(candidates: LayerExportCandidate[], candidate: LayerExportCandidate) {
+  if (candidates.length < maxLayerExportCount) {
+    candidates.push(candidate);
+    return;
+  }
+  let worstIndex = 0;
+  for (let index = 1; index < candidates.length; index += 1) {
+    if (compareLayerExportCandidates(candidates[worstIndex], candidates[index]) < 0) worstIndex = index;
+  }
+  if (compareLayerExportCandidates(candidate, candidates[worstIndex]) < 0) candidates[worstIndex] = candidate;
+}
+
 function pageCanvasBounds(roots: RootCapture[]): Bounds {
-  const minX = Math.min(...roots.map((entry) => entry.renderRect.x));
-  const minY = Math.min(...roots.map((entry) => entry.renderRect.y));
-  const maxX = Math.max(...roots.map((entry) => entry.renderRect.x + entry.renderRect.width));
-  const maxY = Math.max(...roots.map((entry) => entry.renderRect.y + entry.renderRect.height));
+  const first = roots[0].renderRect;
+  const { minX, minY, maxX, maxY } = roots.reduce((bounds, entry) => ({
+    minX: Math.min(bounds.minX, entry.renderRect.x),
+    minY: Math.min(bounds.minY, entry.renderRect.y),
+    maxX: Math.max(bounds.maxX, entry.renderRect.x + entry.renderRect.width),
+    maxY: Math.max(bounds.maxY, entry.renderRect.y + entry.renderRect.height),
+  }), {
+    minX: first.x,
+    minY: first.y,
+    maxX: first.x + first.width,
+    maxY: first.y + first.height,
+  });
   return {
     x: measurement(minX, "px", "capturedFrames.minimum.absoluteRenderBounds.x"),
     y: measurement(minY, "px", "capturedFrames.minimum.absoluteRenderBounds.y"),
@@ -729,113 +805,237 @@ function pageCanvasBounds(roots: RootCapture[]): Bounds {
   };
 }
 
-async function loadVariablesAndStyles(nodes: SceneNode[], textSegmentsCache: TextSegmentsCache) {
-  const [localVariables, collections] = await Promise.all([
-    figma.variables.getLocalVariablesAsync(),
-    figma.variables.getLocalVariableCollectionsAsync(),
-  ]);
-  const collectionsById = new Map(collections.map((item) => [item.id, item]));
-  const variables = new Map(localVariables.map((item) => [item.id, item]));
-  const aliasRefs: AliasRef[] = [];
+function layoutPageCaptures(pages: PageCapture[], arrangePages: boolean) {
+  const populatedPages = pages.filter((page) => page.sourceBounds);
+  if (arrangePages && populatedPages.length > 1) {
+    const columns = Math.ceil(Math.sqrt(populatedPages.length));
+    const rows = Math.ceil(populatedPages.length / columns);
+    const columnWidths = Array<number>(columns).fill(0);
+    const rowHeights = Array<number>(rows).fill(0);
+    populatedPages.forEach((page, index) => {
+      columnWidths[index % columns] = Math.max(columnWidths[index % columns], page.sourceBounds!.width);
+      const row = Math.floor(index / columns);
+      rowHeights[row] = Math.max(rowHeights[row], page.sourceBounds!.height);
+    });
+    const gap = 240;
+    const columnOffsets = columnWidths.map((_, column) =>
+      columnWidths.slice(0, column).reduce((sum, width) => sum + width + gap, 0),
+    );
+    const rowOffsets = rowHeights.map((_, row) =>
+      rowHeights.slice(0, row).reduce((sum, height) => sum + height + gap, 0),
+    );
+
+    populatedPages.forEach((page, index) => {
+      const column = index % columns;
+      const row = Math.floor(index / columns);
+      page.offsetX = columnOffsets[column] - page.sourceBounds!.x;
+      page.offsetY = rowOffsets[row] - page.sourceBounds!.y;
+    });
+  }
+
+  for (const page of pages) {
+    for (const root of page.roots) {
+      root.pageOffsetX = page.offsetX;
+      root.pageOffsetY = page.offsetY;
+      root.renderRect = {
+        ...root.renderRect,
+        x: root.renderRect.x + page.offsetX,
+        y: root.renderRect.y + page.offsetY,
+      };
+    }
+  }
+
+  return pages.map((page) => ({
+    sourcePageId: page.page.id,
+    sourcePageName: page.page.name || "Untitled page",
+    offsetX: page.offsetX,
+    offsetY: page.offsetY,
+    sourceBounds: page.sourceBounds,
+    frameCount: page.roots.length,
+  }));
+}
+
+function unionRects(rects: readonly Rect[]): Rect | null {
+  if (!rects.length) return null;
+  return rects.slice(1).reduce((current, rect) => {
+    const x = Math.min(current.x, rect.x);
+    const y = Math.min(current.y, rect.y);
+    return {
+      x,
+      y,
+      width: Math.max(current.x + current.width, rect.x + rect.width) - x,
+      height: Math.max(current.y + current.height, rect.y + rect.height) - y,
+    };
+  }, { ...rects[0] });
+}
+
+async function loadVariablesAndStyles(nodes: readonly { node: SceneNode }[], textSegmentsCache: TextSegmentsCache) {
+  const variables = new Map<string, Variable | null>();
+  const collectionsById = new Map<string, VariableCollection | null>();
+  const aliasIds = new Set<string>();
   const styleIds = new Set<string>();
-  for (const node of nodes) {
-    getAliasRefs(recordOf(node).boundVariables, "boundVariables", aliasRefs);
+  const warnings: string[] = [];
+  for (const { node } of nodes) {
+    getAliasIds(recordOf(node).boundVariables, aliasIds);
     for (const segment of textSegmentsFor(node, textSegmentsCache) ?? []) {
-      getAliasRefs(segment.boundVariables, `textSegments[${segment.start}:${segment.end}].boundVariables`, aliasRefs);
+      getAliasIds(segment.boundVariables, aliasIds);
     }
     for (const field of ["fillStyleId", "strokeStyleId", "textStyleId", "effectStyleId", "gridStyleId"]) {
       const id = styleIdFor(node, field);
       if (id) styleIds.add(id);
     }
   }
-  const missingVariables = [...new Set(aliasRefs.map((item) => item.id))].filter((id) => !variables.has(id));
+  const missingVariables = [...aliasIds];
   const resolvedVariables = await mapInBatches(missingVariables, (id) => figma.variables.getVariableByIdAsync(id).catch(() => null));
-  for (const variable of resolvedVariables) if (variable) variables.set(variable.id, variable);
-  const missingCollectionIds = [...new Set([...variables.values()].map((variable) => variable.variableCollectionId))]
-    .filter((id) => id && !collectionsById.has(id));
+  for (const [index, variable] of resolvedVariables.entries()) variables.set(missingVariables[index], variable);
+  const unresolvedVariableCount = resolvedVariables.filter((variable) => !variable).length;
+  if (unresolvedVariableCount) warnings.push(`${unresolvedVariableCount} Figma variable binding${unresolvedVariableCount === 1 ? " could" : "s could"} not be resolved. The capture retains all layers and other readable properties.`);
+  const missingCollectionIds = [...new Set(resolvedVariables.flatMap((variable) => variable?.variableCollectionId ? [variable.variableCollectionId] : []))];
   const resolvedCollections = await mapInBatches(missingCollectionIds, (id) => figma.variables.getVariableCollectionByIdAsync(id).catch(() => null));
-  for (const collection of resolvedCollections) if (collection) collectionsById.set(collection.id, collection);
+  for (const [index, collection] of resolvedCollections.entries()) collectionsById.set(missingCollectionIds[index], collection);
+  if (resolvedCollections.some((collection) => !collection)) warnings.push("Some Figma variable collections could not be resolved. The capture retains layer bindings and other readable properties.");
   const styleEntries = await mapInBatches([...styleIds], async (id) => [id, await figma.getStyleByIdAsync(id).catch(() => null)] as const);
-  return { variables, styles: new Map(styleEntries), collections: collectionsById };
+  if (styleEntries.some(([, style]) => !style)) warnings.push("Some Figma styles could not be resolved. The capture retains style references and other readable properties.");
+  return { variables, styles: new Map(styleEntries), collections: collectionsById, warnings };
 }
 
-export async function captureFigmaCanvas(scope: "selected" | "page", report: (message: string) => void) {
+export async function captureFigmaCanvas(scope: "selected" | "page" | "file", report: (message: string) => void) {
   const sourceFileId = figma.fileKey?.trim();
   if (!sourceFileId) {
     throw new Error("Figma did not provide a unique file key for this capture. Rebuild and reload the local development plugin, then try again.");
   }
 
-  const page = figma.currentPage;
-  try {
-    await page.loadAsync();
-  } catch (error) {
-    const detail = error instanceof Error ? ` ${error.message}` : "";
-    throw new Error(`Figma could not load the current page for capture.${detail}`);
+  const pages = scope === "file" ? [...figma.root.children] : [figma.currentPage];
+  const pageCaptures: PageCapture[] = [];
+  const seenRootIds = new Set<string>();
+  let rootIndex = 0;
+  for (const [pageIndex, page] of pages.entries()) {
+    const pageName = page.name || "Untitled page";
+    if (scope === "file" && (pageIndex === 0 || (pageIndex + 1) % 10 === 0 || pageIndex === pages.length - 1)) {
+      report(`Loading Figma page ${pageIndex + 1} of ${pages.length}: ${pageName}…`);
+    }
+    try {
+      await page.loadAsync();
+    } catch (error) {
+      const detail = error instanceof Error ? ` ${error.message}` : "";
+      const pageLabel = scope === "file" ? `page “${pageName}”` : "the current page";
+      throw new Error(`Figma could not load ${pageLabel} for capture.${detail}`);
+    }
+
+    let artboards: SceneNode[];
+    if (scope === "selected") {
+      artboards = selectedArtboards(page.selection);
+    } else {
+      artboards = [];
+      for (const child of page.children) findTopLevelArtboards(child, artboards);
+    }
+
+    const distinct = [...new Map(artboards.map((node) => [node.id, node])).values()]
+      .filter((node) => !seenRootIds.has(node.id));
+    const roots: RootCapture[] = [];
+    for (const root of distinct) {
+      seenRootIds.add(root.id);
+      const rect = rectOf(root);
+      if (!rect || rect.width <= 0 || rect.height <= 0) continue;
+      roots.push({
+        root,
+        rect,
+        renderRect: renderRectOf(root, rect),
+        key: rootKey(root, rootIndex++),
+        pageId: page.id,
+        pageName,
+        pageOffsetX: 0,
+        pageOffsetY: 0,
+      });
+    }
+    const sourceBounds = unionRects(roots.map((entry) => entry.renderRect));
+    pageCaptures.push({ page, roots, sourceBounds, offsetX: 0, offsetY: 0 });
   }
 
-  let artboards: SceneNode[];
-  if (scope === "selected") {
-    artboards = selectedArtboards(page.selection);
-  } else {
-    artboards = [];
-    for (const child of page.children) findTopLevelArtboards(child, artboards);
-  }
-  const distinct = [...new Map(artboards.map((node) => [node.id, node])).values()];
-  if (distinct.length === 0) {
+  const roots = pageCaptures.flatMap((page) => page.roots);
+  if (roots.length === 0) {
     throw new Error(scope === "selected"
       ? "Select one or more frames, components, or instances, then capture again."
-      : "This page has no top-level frames, components, or instances to capture.");
+      : scope === "file"
+        ? "This Figma file has no top-level frames, components, or instances to capture."
+        : "This page has no top-level frames, components, or instances to capture.");
   }
-  if (distinct.length > maxFrames) throw new Error(`This canvas has ${distinct.length} frames. Capture up to ${maxFrames} frames at a time.`);
+  const pageLayout = layoutPageCaptures(pageCaptures, scope === "file");
 
-  const roots: RootCapture[] = [];
-  const sourceNodes: SceneNode[] = [];
   let totalNodes = 0;
-  for (const [index, root] of distinct.entries()) {
-    const rect = rectOf(root);
-    if (!rect || rect.width <= 0 || rect.height <= 0) continue;
-    const renderRect = renderRectOf(root, rect);
-    const nodes = flattenNodes(root, maxNodes - totalNodes);
-    totalNodes += nodes.length;
-    for (const item of nodes) sourceNodes.push(item.node);
-    roots.push({ root, rect, renderRect, nodes, key: rootKey(root, index) });
-  }
-  if (roots.length === 0) throw new Error("The selected frames do not have exportable canvas bounds.");
-
-  report(`Reading exact layout, styles, and variable bindings from ${roots.length} frame${roots.length === 1 ? "" : "s"}…`);
   const warnings: string[] = [];
   let propertyFallbackNodeCount = 0;
-  const textSegmentsCache: TextSegmentsCache = new WeakMap();
-  const [{ variables, styles, collections }, componentsByInstanceId] = await Promise.all([
-    loadVariablesAndStyles(sourceNodes, textSegmentsCache).catch(() => {
-      warnings.push("Variable and style lookups were unavailable. The pixel renders, layer tree, geometry, and other readable properties were retained.");
-      return {
-        variables: new Map<string, Variable>(),
-        styles: new Map<string, BaseStyle | null>(),
-        collections: new Map<string, VariableCollection>(),
-      };
-    }),
-    mainComponentsByInstanceId(sourceNodes).catch(() => {
-      warnings.push("Some component source lookups were unavailable. The pixel renders and inspectable layers were retained.");
-      return new Map<string, { id: string; name: string }>();
-    }),
-  ]);
   const sourceFileName = figma.root.name || "Untitled Figma file";
-  const snapshotFrames: SnapshotFrame[] = roots.map(({ root, rect, nodes, key }) => ({
-    sourceFrameId: root.id,
-    sourcePageId: page.id,
-    name: root.name || "Untitled frame",
-    bounds: bounds(rect),
-    renderAssetKey: key,
-    nodes: nodes.map((item) => {
-      try {
-        return makeNode(item, root.id, rect, variables, styles, componentsByInstanceId, collections, textSegmentsCache);
-      } catch {
-        propertyFallbackNodeCount += 1;
-        return makeMinimalNode(item, root.id, rect);
-      }
-    }),
-  }));
+  const snapshotFrames: SnapshotFrame[] = [];
+  const layerCandidates: LayerExportCandidate[] = [];
+  let layerCandidateCount = 0;
+  let layerCandidateOrder = 0;
+  for (const [index, entry] of roots.entries()) {
+    if (index === 0 || (index + 1) % 10 === 0 || index === roots.length - 1) {
+      report(`Reading layers and properties from frame ${index + 1} of ${roots.length}: ${entry.root.name || "Untitled frame"}…`);
+    }
+    const frameNodes = flattenNodes(entry.root, maxNodes - totalNodes);
+    totalNodes += frameNodes.length;
+    const textSegmentsCache: TextSegmentsCache = new WeakMap();
+    const [{ variables, styles, collections, warnings: lookupWarnings }, componentsByInstanceId] = await Promise.all([
+      loadVariablesAndStyles(frameNodes, textSegmentsCache).catch(() => {
+        warnings.push("Variable and style lookups were unavailable. The pixel renders, layer tree, geometry, and other readable properties were retained.");
+        return {
+          variables: new Map<string, Variable | null>(),
+          styles: new Map<string, BaseStyle | null>(),
+          collections: new Map<string, VariableCollection | null>(),
+          warnings: [] as string[],
+        };
+      }),
+      mainComponentsByInstanceId(frameNodes).catch(() => {
+        warnings.push("Some component source lookups were unavailable. The pixel renders and inspectable layers were retained.");
+        return new Map<string, { id: string; name: string }>();
+      }),
+    ]);
+    warnings.push(...lookupWarnings);
+    const frameSnapshot: SnapshotFrame = {
+      sourceFrameId: entry.root.id,
+      sourcePageId: entry.pageId,
+      name: entry.root.name || "Untitled frame",
+      bounds: bounds(entry.rect),
+      renderBounds: bounds({
+        ...entry.renderRect,
+        x: entry.renderRect.x - entry.pageOffsetX,
+        y: entry.renderRect.y - entry.pageOffsetY,
+      }),
+      renderAssetKey: entry.key,
+      nodes: frameNodes.map((item) => {
+        try {
+          return makeNode(item, entry.root.id, entry.rect, variables, styles, componentsByInstanceId, collections, textSegmentsCache);
+        } catch {
+          propertyFallbackNodeCount += 1;
+          return makeMinimalNode(item, entry.root.id, entry.rect);
+        }
+      }),
+    };
+    snapshotFrames.push(frameSnapshot);
+
+    for (const item of frameNodes) {
+      const order = layerCandidateOrder++;
+      const sourceNodeId = nodeProperty(item.node, "id");
+      const name = nodeProperty(item.node, "name");
+      const rect = safeRectOf(item.node);
+      if (sourceNodeId === entry.root.id || typeof sourceNodeId !== "string" || !canExportLayer(item.node) || !rect || rect.width <= 0 || rect.height <= 0) continue;
+      layerCandidateCount += 1;
+      retainLayerExportCandidate(layerCandidates, {
+        entry,
+        item,
+        order,
+        rect,
+        name: typeof name === "string" ? name : "Unnamed layer",
+        sourceNodeId,
+        priority: layerExportPriority(item.node),
+      });
+    }
+    frameNodes.length = 0;
+  }
+
+  report(`Read ${totalNodes.toLocaleString()} layers across ${roots.length} frames. Validating the structured snapshot size…`);
 
   if (propertyFallbackNodeCount) {
     warnings.push(`${propertyFallbackNodeCount} layer${propertyFallbackNodeCount === 1 ? " keeps" : "s keep"} its ID, name, bounds, and hierarchy, but some Figma properties were unavailable.`);
@@ -847,9 +1047,14 @@ export async function captureFigmaCanvas(scope: "selected" | "page", report: (me
     sourceTool: "figma",
     sourceFileId,
     sourceRevisionId: null,
-    sourcePageId: page.id,
-    sourcePageName: page.name,
-    captureScope: scope === "page" ? "all top-level frames and components on current page" : "selected frames and components",
+    sourcePageId: scope === "file" ? null : pageCaptures[0]?.page.id ?? null,
+    sourcePageName: scope === "file" ? null : pageCaptures[0]?.page.name ?? null,
+    captureScope: scope === "file"
+      ? "all top-level frames and components across all pages"
+      : scope === "page"
+        ? "all top-level frames and components on current page"
+        : "selected frames and components",
+    pageLayout,
     adapter: "asbir-figma-plugin",
     adapterVersion: "0.2.0",
     renderFormat: "image/png",
@@ -872,113 +1077,129 @@ export async function captureFigmaCanvas(scope: "selected" | "page", report: (me
     frames: snapshotFrames,
     sourceMetadata,
   };
-  if (encodeUtf8(JSON.stringify(payload)).byteLength > maxStructuredPayloadBytes) {
-    throw new Error("The structured layer data exceeds Handoff’s 16 MiB limit. Capture fewer frames at a time.");
-  }
+  const initialPayloadBytes = jsonByteLength(payload);
+  if (initialPayloadBytes > maxStructuredPayloadBytes) throw structuredPayloadLimitError(initialPayloadBytes);
 
   const frameRenders: CaptureAssetBytes[] = [];
   const vectorRenders: CaptureAssetBytes[] = [];
   const vectorAssetKeys = new Set<string>();
-  const maxRenderBytes = 90 * 1024 * 1024;
+  const maxRenderBytes = MAX_CAPTURE_ASSET_BYTES;
   let totalRenderBytes = 0;
-  for (const [index, entry] of roots.entries()) {
-    const frameName = entry.root.name || "Untitled frame";
-    const preferredScale = entry.rect.width * entry.rect.height <= 3_000_000 ? 2 : 1;
-    if (preferredScale === 1) renderScaleFallbackFrameIds.push(entry.root.id);
-    report(`Rendering frame ${index + 1} of ${roots.length} at ${preferredScale}× with Figma…`);
-    let png: Uint8Array;
-    let actualRenderScale = preferredScale;
-    try {
-      png = await exportPng(entry.root, preferredScale);
-    } catch (error) {
-      if (preferredScale !== 2) {
-        const detail = error instanceof Error ? ` ${error.message}` : "";
-        throw new Error(`Figma could not render “${frameName}” or validate its layer image.${detail}`);
+  for (let offset = 0; offset < roots.length; offset += frameRenderBatchSize) {
+    const batch = roots.slice(offset, offset + frameRenderBatchSize);
+    for (const [batchIndex, entry] of batch.entries()) {
+      const index = offset + batchIndex;
+      const preferredScale = entry.rect.width * entry.rect.height <= 3_000_000 ? 2 : 1;
+      if (index === 0 || (index + 1) % 10 === 0 || index === roots.length - 1) {
+        report(`Rendering frame ${index + 1} of ${roots.length} at ${preferredScale}× with Figma…`);
       }
-      report(`The 2× render for “${frameName}” failed. Retrying at 1× while preserving its inspectable layer data…`);
+    }
+
+    const preparedPngs = await Promise.all(batch.map(async (entry) => {
+      const preferredScale = entry.rect.width * entry.rect.height <= 3_000_000 ? 2 : 1;
       try {
-        png = await exportPng(entry.root, 1);
+        return { entry, preferredScale, actualScale: preferredScale, png: await exportPng(entry.root, preferredScale), firstError: null, retryError: null };
+      } catch (firstError) {
+        if (preferredScale !== 2) {
+          return { entry, preferredScale, actualScale: preferredScale, png: null, firstError, retryError: null };
+        }
+        try {
+          return { entry, preferredScale, actualScale: 1, png: await exportPng(entry.root, 1), firstError, retryError: null };
+        } catch (retryError) {
+          return { entry, preferredScale, actualScale: 1, png: null, firstError, retryError };
+        }
+      }
+    }));
+
+    for (const prepared of preparedPngs) {
+      const { entry, preferredScale } = prepared;
+      const frameName = entry.root.name || "Untitled frame";
+      if (prepared.firstError) {
+        if (preferredScale !== 2) {
+          const detail = prepared.firstError instanceof Error ? ` ${prepared.firstError.message}` : "";
+          throw new Error(`Figma could not render “${frameName}” or validate its layer image.${detail}`);
+        }
+        if (!prepared.retryError && prepared.png) {
+          report(`The 2× render for “${frameName}” failed. Retrying at 1× while preserving its inspectable layer data…`);
+          renderScaleFallbackFrameIds.push(entry.root.id);
+        } else {
+          const firstDetail = prepared.firstError instanceof Error ? prepared.firstError.message : "The 2× export failed.";
+          const retryDetail = prepared.retryError instanceof Error ? prepared.retryError.message : "The 1× export failed.";
+          throw new Error(`Figma could not render “${frameName}” at 2× or 1×. ${firstDetail} ${retryDetail}`);
+        }
+      } else if (preferredScale === 1) {
+        renderScaleFallbackFrameIds.push(entry.root.id);
+      }
+
+      let png = prepared.png;
+      let actualRenderScale = prepared.actualScale;
+      if (!png) throw new Error(`Figma could not render “${frameName}” or validate its layer image.`);
+      if (totalRenderBytes + png.byteLength > maxRenderBytes && actualRenderScale === 2) {
+        report(`The 2× render for “${frameName}” exceeds the transfer budget. Retrying at 1×…`);
+        const reducedPng = await exportPng(entry.root, 1).catch((error: unknown) => {
+          const detail = error instanceof Error ? ` ${error.message}` : "";
+          throw new Error(`Figma could not make a smaller pixel render for “${frameName}”.${detail}`);
+        });
+        if (totalRenderBytes + reducedPng.byteLength > maxRenderBytes) {
+          throw renderTransferLimitError(totalRenderBytes + reducedPng.byteLength);
+        }
+        png = reducedPng;
         actualRenderScale = 1;
         renderScaleFallbackFrameIds.push(entry.root.id);
-      } catch (retryError) {
-        const firstDetail = error instanceof Error ? error.message : "The 2× export failed.";
-        const retryDetail = retryError instanceof Error ? retryError.message : "The 1× export failed.";
-        throw new Error(`Figma could not render “${frameName}” at 2× or 1×. ${firstDetail} ${retryDetail}`);
       }
-    }
-    if (totalRenderBytes + png.byteLength > maxRenderBytes && actualRenderScale === 2) {
-      report(`The 2× render for “${frameName}” exceeds the transfer budget. Retrying at 1×…`);
-      const reducedPng = await exportPng(entry.root, 1).catch((error: unknown) => {
-        const detail = error instanceof Error ? ` ${error.message}` : "";
-        throw new Error(`Figma could not make a smaller pixel render for “${frameName}”.${detail}`);
-      });
-      if (totalRenderBytes + reducedPng.byteLength > maxRenderBytes) {
-        throw new Error("The captured pixel renders exceed the transfer limit at both 2× and 1×. Capture fewer frames at a time.");
+      if (totalRenderBytes + png.byteLength > maxRenderBytes) {
+        throw renderTransferLimitError(totalRenderBytes + png.byteLength);
       }
-      png = reducedPng;
-      actualRenderScale = 1;
-      renderScaleFallbackFrameIds.push(entry.root.id);
-    }
-    if (totalRenderBytes + png.byteLength > maxRenderBytes) {
-      throw new Error("The captured pixel renders exceed the transfer limit. Capture fewer frames at a time.");
-    }
-    totalRenderBytes += png.byteLength;
-    frameRenders.push({
-      key: entry.key,
-      fileName: `${entry.key}.png`,
-      contentType: "image/png",
-      bytes: png,
-      sourceX: entry.rect.x,
-      sourceY: entry.rect.y,
-      sourceWidth: entry.rect.width,
-      sourceHeight: entry.rect.height,
-      renderBounds: entry.renderRect,
-    });
-    try {
-      const svg = await entry.root.exportAsync({
-        format: "SVG_STRING",
-        svgOutlineText: true,
-        svgIdAttribute: true,
+      totalRenderBytes += png.byteLength;
+      frameRenders.push({
+        key: entry.key,
+        fileName: `${entry.key}.png`,
+        contentType: "image/png",
+        bytes: png,
+        sourceX: entry.rect.x + entry.pageOffsetX,
+        sourceY: entry.rect.y + entry.pageOffsetY,
+        sourceWidth: entry.rect.width,
+        sourceHeight: entry.rect.height,
+        renderBounds: entry.renderRect,
       });
-      const vectorKey = `${entry.key}-vector`;
-      const vectorBytes = encodeUtf8(svg);
-      if (totalRenderBytes + vectorBytes.byteLength > maxRenderBytes) {
-        report(`Skipping the SVG companion for “${frameName}” to stay within the capture transfer limit.`);
-      } else {
-        vectorRenders.push({
-          key: vectorKey,
-          fileName: `${entry.key}.svg`,
-          contentType: "image/svg+xml",
-          bytes: vectorBytes,
-          sourceX: entry.rect.x,
-          sourceY: entry.rect.y,
-          sourceWidth: entry.rect.width,
-          sourceHeight: entry.rect.height,
+      try {
+        const svg = await entry.root.exportAsync({
+          format: "SVG_STRING",
+          svgOutlineText: true,
+          svgIdAttribute: true,
         });
-        vectorAssetKeys.add(vectorKey);
-        totalRenderBytes += vectorBytes.byteLength;
+        const vectorKey = `${entry.key}-vector`;
+        const vectorBytes = encodeUtf8(svg);
+        if (totalRenderBytes + vectorBytes.byteLength > maxRenderBytes) {
+          report(`Skipping the SVG companion for “${frameName}” to stay within the capture transfer limit.`);
+        } else {
+          vectorRenders.push({
+            key: vectorKey,
+            fileName: `${entry.key}.svg`,
+            contentType: "image/svg+xml",
+            bytes: vectorBytes,
+            sourceX: entry.rect.x + entry.pageOffsetX,
+            sourceY: entry.rect.y + entry.pageOffsetY,
+            sourceWidth: entry.rect.width,
+            sourceHeight: entry.rect.height,
+          });
+          vectorAssetKeys.add(vectorKey);
+          totalRenderBytes += vectorBytes.byteLength;
+        }
+      } catch {
+        report(`Figma's SVG source is unavailable for “${frameName}”; the pixel render and layer data are retained.`);
       }
-    } catch {
-      report(`Figma's SVG source is unavailable for “${frameName}”; the pixel render and layer data are retained.`);
-    }
-    if (totalRenderBytes > maxRenderBytes) {
-      throw new Error("The captured frame assets exceed the transfer limit. Capture fewer frames at a time.");
+      if (totalRenderBytes > maxRenderBytes) {
+        throw renderTransferLimitError(totalRenderBytes);
+      }
     }
   }
 
-  const layerCandidates = roots.flatMap((entry) => entry.nodes.flatMap((item, order) => {
-    const sourceNodeId = nodeProperty(item.node, "id");
-    const name = nodeProperty(item.node, "name");
-    const rect = safeRectOf(item.node);
-    if (sourceNodeId === entry.root.id || typeof sourceNodeId !== "string" || !canExportLayer(item.node) || !rect || rect.width <= 0 || rect.height <= 0) return [];
-    return [{ entry, item, order, rect, name: typeof name === "string" ? name : "Unnamed layer", sourceNodeId, priority: layerExportPriority(item.node) }];
-  }))
-    .sort((left, right) => right.priority - left.priority || left.order - right.order);
-  const selectedLayerCandidates = layerCandidates.slice(0, maxLayerExportCount);
+  const selectedLayerCandidates = layerCandidates.sort(compareLayerExportCandidates);
   const layerRenders: LayerExportAssetBytes[] = [];
   let layerExportBytes = 0;
   let layerExportFailures = 0;
-  let layerExportSizeSkips = Math.max(0, layerCandidates.length - selectedLayerCandidates.length);
+  let layerExportSizeSkips = Math.max(0, layerCandidateCount - selectedLayerCandidates.length);
   let transferBudgetReached = false;
 
   if (selectedLayerCandidates.length) report(`Preparing exports for up to ${selectedLayerCandidates.length} image and vector layers…`);
@@ -1070,8 +1291,7 @@ export async function captureFigmaCanvas(scope: "selected" | "page", report: (me
 
   sourceMetadata.vectorSourcePreserved = vectorRenders.length === roots.length;
   sourceMetadata.vectorSourceFrameCount = vectorRenders.length;
-  if (encodeUtf8(JSON.stringify(payload)).byteLength > maxStructuredPayloadBytes) {
-    throw new Error("The structured layer data exceeds Handoff’s 16 MiB limit. Capture fewer frames at a time.");
-  }
+  const finalPayloadBytes = jsonByteLength(payload);
+  if (finalPayloadBytes > maxStructuredPayloadBytes) throw structuredPayloadLimitError(finalPayloadBytes);
   return { payload, renders: frameRenders, vectorRenders, layerRenders, warnings };
 }

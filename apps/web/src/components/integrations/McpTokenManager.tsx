@@ -111,60 +111,60 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
 
   return (
     <div className="space-y-5">
-      <section className="rounded-panel border border-border bg-background p-4 sm:p-5" aria-labelledby="mcp-endpoint-title">
+      <section className="rounded-panel bg-surface p-4 sm:p-5" aria-labelledby="mcp-endpoint-title">
         <h2 id="mcp-endpoint-title" className="text-sm font-semibold text-foreground">MCP endpoint</h2>
         <p className="mt-1 text-xs leading-5 text-foreground-muted">Connect an MCP-compatible agent to read this workspace’s frozen handoffs. Writes require a token scope.</p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <label className="sr-only" htmlFor="mcp-endpoint-url">MCP endpoint URL</label>
-          <input id="mcp-endpoint-url" readOnly value={endpointUrl} className="min-h-10 min-w-0 flex-1 rounded-control border border-border bg-surface px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
-          <button type="button" onClick={() => void copy(endpointUrl, "Endpoint URL")} className="min-h-10 rounded-control border border-border px-3 text-xs font-medium text-foreground-muted hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Copy endpoint</button>
+          <input id="mcp-endpoint-url" readOnly value={endpointUrl} className="min-h-10 min-w-0 flex-1 rounded-control border border-border/70 bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+          <button type="button" onClick={() => void copy(endpointUrl, "Endpoint URL")} className="min-h-10 rounded-control bg-surface-raised px-3 text-xs font-medium text-foreground-muted hover:bg-border hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Copy endpoint</button>
         </div>
       </section>
 
-      <section className="rounded-panel border border-border bg-background p-4 sm:p-5" aria-labelledby="create-token-title">
+      <section className="rounded-panel bg-surface p-4 sm:p-5" aria-labelledby="create-token-title">
         <h2 id="create-token-title" className="text-sm font-semibold text-foreground">Create access token</h2>
         <p className="mt-1 text-xs leading-5 text-foreground-muted">Use a separate token for each of your agents. You can revoke your tokens at any time{canManageAll ? ", and workspace members can revoke any workspace token while flows are under review" : ""}.</p>
         <form className="mt-4 space-y-4" onSubmit={createToken}>
           <label className="block text-xs font-medium text-foreground-muted">
             Token name
-            <input autoComplete="off" maxLength={80} required value={name} onChange={(event) => setName(event.target.value)} placeholder="For example, QA agent" className="mt-1.5 min-h-10 w-full rounded-control border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+            <input autoComplete="off" maxLength={80} required value={name} onChange={(event) => setName(event.target.value)} placeholder="For example, QA agent" className="mt-1.5 min-h-10 w-full rounded-control border border-border/70 bg-surface-inset px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
           </label>
           <fieldset className="space-y-2">
             <legend className="text-xs font-medium text-foreground-muted">Access scopes</legend>
             {(Object.keys(scopeLabels) as McpScope[]).map((scope) => (
-              <label className="flex cursor-pointer items-start gap-2.5 rounded-control border border-border bg-surface px-3 py-2.5 text-xs leading-5 text-foreground-muted" key={scope}>
-                <input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)} className="mt-0.5 size-4 accent-[var(--color-primary)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-control bg-surface-raised/70 px-3 py-2.5 text-xs leading-5 text-foreground-muted transition-colors hover:bg-surface-raised" key={scope}>
+                <input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)} className="mt-0.5 size-4 accent-[var(--color-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
                 <span><span className="font-mono text-foreground">{scope}</span><span className="mt-0.5 block">{scopeLabels[scope]}</span></span>
               </label>
             ))}
           </fieldset>
           <label className="block text-xs font-medium text-foreground-muted">
             Expires after
-            <select value={expiresInDays} onChange={(event) => setExpiresInDays(Number(event.target.value))} className="mt-1.5 min-h-10 w-full rounded-control border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+            <select value={expiresInDays} onChange={(event) => setExpiresInDays(Number(event.target.value))} className="mt-1.5 min-h-10 w-full rounded-control border border-border/70 bg-surface-inset px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
               <option value={30}>30 days</option>
               <option value={90}>90 days</option>
               <option value={180}>180 days</option>
               <option value={365}>365 days</option>
             </select>
           </label>
-          <button disabled={saving || scopes.length === 0} className="min-h-10 rounded-control bg-primary px-4 text-xs font-semibold text-primary-foreground hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50" type="submit">{saving ? "Creating…" : "Create token"}</button>
+          <button disabled={saving || scopes.length === 0} className="min-h-10 rounded-control bg-primary px-4 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50" type="submit">{saving ? "Creating…" : "Create token"}</button>
         </form>
       </section>
 
       {oneTimeToken ? (
-        <section className="rounded-panel border border-primary/40 bg-primary/5 p-4 sm:p-5" aria-labelledby="new-token-title">
+        <section className="rounded-panel bg-surface p-4 sm:p-5" aria-labelledby="new-token-title">
           <h2 id="new-token-title" className="text-sm font-semibold text-foreground">Copy your new token</h2>
           <p className="mt-1 text-xs leading-5 text-foreground-muted">This is the only time the token is shown. Store it in your MCP client’s secret settings.</p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <label className="sr-only" htmlFor="new-mcp-token">New MCP token</label>
-            <input id="new-mcp-token" readOnly value={oneTimeToken} className="min-h-10 min-w-0 flex-1 rounded-control border border-border bg-surface px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
-            <button type="button" onClick={() => void copy(oneTimeToken, "Token")} className="min-h-10 rounded-control border border-border px-3 text-xs font-medium text-foreground hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Copy token</button>
-            <button type="button" onClick={() => setOneTimeToken(null)} className="min-h-10 rounded-control border border-border px-3 text-xs font-medium text-foreground-muted hover:bg-surface-raised focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Hide token</button>
+            <input id="new-mcp-token" readOnly value={oneTimeToken} className="min-h-10 min-w-0 flex-1 rounded-control border border-border/70 bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+            <button type="button" onClick={() => void copy(oneTimeToken, "Token")} className="min-h-10 rounded-control bg-surface-raised px-3 text-xs font-medium text-foreground hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Copy token</button>
+            <button type="button" onClick={() => setOneTimeToken(null)} className="min-h-10 rounded-control bg-surface-raised px-3 text-xs font-medium text-foreground-muted hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Hide token</button>
           </div>
         </section>
       ) : null}
 
-      <section className="rounded-panel border border-border bg-background p-4 sm:p-5" aria-labelledby="active-tokens-title">
+      <section className="rounded-panel bg-surface p-4 sm:p-5" aria-labelledby="active-tokens-title">
         <div className="flex items-center justify-between gap-3">
           <h2 id="active-tokens-title" className="text-sm font-semibold text-foreground">{canManageAll ? "Workspace tokens" : "Your tokens"}</h2>
           <span className="font-mono text-xs text-foreground-subtle">{tokens.length.toString().padStart(2, "0")}</span>
@@ -175,15 +175,15 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
           {tokens.map((token) => {
             const inactive = Boolean(token.revokedAt) || token.expired;
             return (
-              <li className="rounded-control border border-border bg-surface p-3" key={token.id}>
+              <li className="rounded-control bg-surface-raised/70 p-3" key={token.id}>
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <span className="text-sm font-medium text-foreground">{token.name}</span>
-                  <span className={`rounded-pill px-2 py-1 font-mono text-[10px] uppercase tracking-wide ${inactive ? "bg-surface-raised text-foreground-subtle" : "bg-primary/15 text-primary"}`}>{token.revokedAt ? "Revoked" : inactive ? "Expired" : "Active"}</span>
+                  <span className={`rounded-pill px-2 py-1 font-mono text-[10px] uppercase tracking-wide ${inactive ? "bg-surface text-foreground-subtle" : "bg-success/15 text-success"}`}>{token.revokedAt ? "Revoked" : inactive ? "Expired" : "Active"}</span>
                 </div>
                 <p className="mt-1 text-xs text-foreground-subtle">Expires {new Date(token.expiresAt).toLocaleDateString()}</p>
                 {canManageAll ? <p className="mt-1 text-xs text-foreground-subtle">Created by {token.createdByName}</p> : null}
                 <div className="mt-2 flex flex-wrap gap-1.5">{token.scopes.map((scope) => <span className="rounded-pill bg-surface-raised px-2 py-1 font-mono text-[10px] text-foreground-muted" key={scope}>{scope}</span>)}</div>
-                {!inactive ? <button type="button" className="mt-3 min-h-8 rounded-control border border-border px-2.5 text-xs text-foreground-muted hover:bg-surface-raised hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" onClick={() => void revokeToken(token.id)}>Revoke token</button> : null}
+                {!inactive ? <button type="button" className="mt-3 min-h-8 rounded-control px-2.5 text-xs text-danger hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger" onClick={() => void revokeToken(token.id)}>Revoke token</button> : null}
               </li>
             );
           })}
@@ -191,7 +191,7 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
       </section>
 
       {error ? <p className="rounded-control border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs leading-5 text-warning" role="alert">{error}</p> : null}
-      {notice ? <p className="text-xs text-primary" role="status">{notice}</p> : null}
+      {notice ? <p className="text-xs text-success" role="status">{notice}</p> : null}
     </div>
   );
 }

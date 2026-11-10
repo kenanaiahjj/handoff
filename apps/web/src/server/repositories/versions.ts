@@ -10,6 +10,10 @@ import {
 import { getDatabase } from "../db";
 import { objectStore } from "../storage/local-object-store";
 import {
+  assertReusableAssetReferences,
+  deleteHandoffVersionInDatabase,
+} from "../services/handoff-lifecycle";
+import {
   resolveFrameReplacementMatches,
   type ConfirmedFrameReplacement,
 } from "../services/frame-replacements";
@@ -28,26 +32,36 @@ export type StoredVersionAsset = {
   height: number | null;
 };
 
-export type VersionAssetInput = SnapshotAsset & {
-  bytes: Uint8Array;
-};
+export type VersionAssetInput = SnapshotAsset & (
+  | { bytes: Uint8Array; reuseObjectKey?: never }
+  | { bytes?: never; reuseObjectKey: string }
+);
 
 export type CreateHandoffVersionInput = {
   workspaceId: string;
   projectId: string;
   handoffId?: string;
+  expectedLatestVersionId?: string;
   handoffName?: string;
   versionLabel: string;
   releaseNote?: string | null;
   createdBy: string;
   snapshot: StoredSnapshot;
   assets: VersionAssetInput[];
+  reuseAssetsFromVersionId?: string;
   consumeCaptureSessionId?: string;
   frameReplacementMatches?: {
     baselineVersionId: string;
     matches: Array<{ beforeFrameId: string; afterFrameId: string }>;
   };
 };
+
+export class HandoffVersionConflictError extends Error {
+  constructor() {
+    super("The handoff changed while the capture was being stored. Preview the capture again against the latest version.");
+    this.name = "HandoffVersionConflictError";
+  }
+}
 
 function isVisualOnly(snapshot: StoredSnapshot): snapshot is VisualOnlySnapshot {
   return "visualOnly" in snapshot && snapshot.visualOnly;
@@ -81,12 +95,16 @@ function assertAssetBytes(snapshot: StoredSnapshot, assets: VersionAssetInput[])
     if (asset.fileName !== uploaded.fileName || asset.contentType !== uploaded.contentType) {
       throw new Error(`Asset metadata does not match for "${asset.key}".`);
     }
-    if (asset.sizeBytes !== uploaded.bytes.byteLength || asset.sizeBytes !== uploaded.sizeBytes) {
-      throw new Error(`Asset size does not match for "${asset.key}".`);
-    }
-    const digest = bytesSha256(uploaded.bytes);
-    if (asset.sha256 !== digest || uploaded.sha256 !== digest) {
-      throw new Error(`Asset checksum does not match for "${asset.key}".`);
+    if (uploaded.bytes) {
+      if (asset.sizeBytes !== uploaded.bytes.byteLength || asset.sizeBytes !== uploaded.sizeBytes) {
+        throw new Error(`Asset size does not match for "${asset.key}".`);
+      }
+      const digest = bytesSha256(uploaded.bytes);
+      if (asset.sha256 !== digest || uploaded.sha256 !== digest) {
+        throw new Error(`Asset checksum does not match for "${asset.key}".`);
+      }
+    } else if (!uploaded.reuseObjectKey || !/^[a-f0-9]{48}$/.test(uploaded.reuseObjectKey)) {
+      throw new Error(`Asset bytes are missing for "${asset.key}".`);
     }
   }
 }
@@ -119,20 +137,78 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
   const now = new Date().toISOString();
   const newHandoffId = input.handoffId ?? randomUUID();
   const versionId = randomUUID();
-  const storedAssets = input.assets.map((asset) => ({
-    asset,
-    id: randomUUID(),
-    objectKey: randomBytes(24).toString("hex"),
-  }));
+  const reusedVersion = input.reuseAssetsFromVersionId
+    ? database
+        .prepare("SELECT handoff_id AS handoffId FROM handoff_version WHERE id = ? AND workspace_id = ?")
+        .get(input.reuseAssetsFromVersionId, input.workspaceId) as { handoffId: string } | undefined
+    : undefined;
+  if (input.reuseAssetsFromVersionId && reusedVersion?.handoffId !== newHandoffId) {
+    throw new Error("Reusable assets must belong to an earlier version in this handoff.");
+  }
+  const storedAssets = input.assets.map((asset) => {
+    if (asset.bytes) {
+      return {
+        asset,
+        id: randomUUID(),
+        objectKey: randomBytes(24).toString("hex"),
+      };
+    }
+    if (!input.reuseAssetsFromVersionId) throw new Error("Reusable assets require a baseline handoff version.");
+    const source = database
+      .prepare(
+        `SELECT file_name AS fileName, content_type AS contentType,
+                size_bytes AS sizeBytes, sha256, width, height
+         FROM handoff_asset
+         WHERE workspace_id = ? AND handoff_version_id = ? AND object_key = ?`,
+      )
+      .get(input.workspaceId, input.reuseAssetsFromVersionId, asset.reuseObjectKey) as
+      | { fileName: string; contentType: string; sizeBytes: number; sha256: string; width: number | null; height: number | null }
+      | undefined;
+    if (!source || source.fileName !== asset.fileName || source.contentType !== asset.contentType ||
+        source.sizeBytes !== asset.sizeBytes || source.sha256 !== asset.sha256 ||
+        source.width !== (asset.width ?? null) || source.height !== (asset.height ?? null)) {
+      throw new Error(`Reusable asset metadata does not match for "${asset.key}".`);
+    }
+    return {
+      asset,
+      id: randomUUID(),
+      objectKey: asset.reuseObjectKey,
+    };
+  });
   const writtenObjectKeys: string[] = [];
 
   try {
     for (const { asset, objectKey } of storedAssets) {
+      if (!asset.bytes) continue;
       await objectStore.put(objectKey, asset.bytes, asset.contentType);
       writtenObjectKeys.push(objectKey);
     }
 
     const insertVersion = database.transaction(() => {
+      if (input.expectedLatestVersionId) {
+        const latest = input.handoffId
+          ? database
+              .prepare(
+                `SELECT id FROM handoff_version
+                 WHERE workspace_id = ? AND handoff_id = ?
+                 ORDER BY created_at DESC, id DESC LIMIT 1`,
+              )
+              .get(input.workspaceId, input.handoffId) as { id: string } | undefined
+          : undefined;
+        if (latest?.id !== input.expectedLatestVersionId) {
+          throw new HandoffVersionConflictError();
+        }
+      }
+
+      if (input.reuseAssetsFromVersionId) {
+        assertReusableAssetReferences(database, {
+          workspaceId: input.workspaceId,
+          handoffId: newHandoffId,
+          sourceVersionId: input.reuseAssetsFromVersionId,
+          objectKeys: input.assets.flatMap((asset) => asset.bytes ? [] : [asset.reuseObjectKey]),
+        });
+      }
+
       if (input.consumeCaptureSessionId) {
         const consumed = database
           .prepare(
@@ -238,7 +314,7 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
       }
     });
 
-    insertVersion();
+    insertVersion.immediate();
     return { handoffId: newHandoffId, versionId };
   } catch (error) {
     await Promise.all(writtenObjectKeys.map((key) => objectStore.delete(key)));
@@ -429,6 +505,15 @@ export function getVersion(input: { workspaceId: string; versionId: string }) {
   ).parse(snapshotValue);
 
   return { ...row, visualOnly: row.visualOnly === 1, snapshot, assets };
+}
+
+export function deleteHandoffVersion(input: {
+  workspaceId: string;
+  projectId: string;
+  handoffId: string;
+  versionId: string;
+}) {
+  return deleteHandoffVersionInDatabase(getDatabase(), input);
 }
 
 export function getAssetByObjectKey(objectKey: string) {

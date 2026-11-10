@@ -1,3 +1,33 @@
+export const PIXEL_DIFF_MAX_PIXELS = 6_000_000;
+
+export type PixelDiffPlan =
+  | { status: "ready"; width: number; height: number; pixelCount: number }
+  | { status: "too-large"; width: number; height: number; pixelCount: number }
+  | { status: "invalid" };
+
+export function getPixelDiffPlan(
+  beforeWidth: number,
+  beforeHeight: number,
+  afterWidth: number,
+  afterHeight: number,
+): PixelDiffPlan {
+  const dimensions = [beforeWidth, beforeHeight, afterWidth, afterHeight];
+  if (dimensions.some((dimension) => !Number.isFinite(dimension) || dimension <= 0)) {
+    return { status: "invalid" };
+  }
+
+  const width = Math.ceil(Math.max(beforeWidth, afterWidth) * 2);
+  const height = Math.ceil(Math.max(beforeHeight, afterHeight) * 2);
+  const pixelCount = width * height;
+  if (!Number.isSafeInteger(width) || !Number.isSafeInteger(height) || !Number.isSafeInteger(pixelCount)) {
+    return { status: "invalid" };
+  }
+
+  return pixelCount <= PIXEL_DIFF_MAX_PIXELS
+    ? { status: "ready", width, height, pixelCount }
+    : { status: "too-large", width, height, pixelCount };
+}
+
 export function compareRgbaPixels(
   before: ArrayLike<number>,
   after: ArrayLike<number>,

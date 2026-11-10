@@ -43,14 +43,14 @@ The plugin manifest grants access to the exact capture endpoint. Figma blocks pl
 ## Capture a version
 
 1. Sign in to Asbir Handoff and open the project where the snapshot belongs.
-2. Create a Figma capture session. Copy its one-time token before it expires in 10 minutes.
+2. Create a Figma capture session. Copy its one-time token before it expires in one hour.
 3. Open the Figma file and page that contain the frames.
 4. Run **Plugins → Development → Asbir Handoff Capture**.
 5. Confirm the Handoff server, then paste the capture token.
-6. Choose the selected frames or all supported top-level frames and components on the current page.
-7. Capture the canvas, review the overview image, and upload the immutable version.
+6. Choose selected frames, all top-level frames and components on the current page, or the entire Figma file across all pages.
+7. Capture the canvas, review the overview image, page count, and layer count, then upload the immutable version.
 
-The plugin does not change the Figma document. The upload creates a new version in Asbir Handoff.
+The plugin does not change the Figma document. Each upload creates a new immutable version in Asbir Handoff. For an existing handoff, selected-frame captures update only the captured frames and keep the other frames, layers, and assets. A page capture replaces that page’s frames and keeps the other pages. A full-file capture replaces the complete canvas. Confirm a suggested frame-name match when Figma gives a replacement frame a new ID.
 
 ## Troubleshooting
 

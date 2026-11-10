@@ -1,4 +1,4 @@
-import { compareRgbaPixels } from "./pixel-diff";
+import { compareRgbaPixels, getPixelDiffPlan } from "./pixel-diff";
 
 type PixelDiffMessage = {
   before: ImageBitmap;
@@ -17,8 +17,24 @@ type PixelDiffWorkerScope = {
 const workerScope = self as unknown as PixelDiffWorkerScope;
 
 workerScope.onmessage = async ({ data }) => {
-  const width = Math.max(1, Math.ceil(Math.max(data.beforeSourceWidth, data.afterSourceWidth) * 2));
-  const height = Math.max(1, Math.ceil(Math.max(data.beforeSourceHeight, data.afterSourceHeight) * 2));
+  const plan = getPixelDiffPlan(
+    data.beforeSourceWidth,
+    data.beforeSourceHeight,
+    data.afterSourceWidth,
+    data.afterSourceHeight,
+  );
+  if (plan.status !== "ready") {
+    data.before.close();
+    data.after.close();
+    workerScope.postMessage({
+      error: plan.status === "too-large"
+        ? "Pixel diff is unavailable for screens this large. Use side-by-side or overlay to compare them at full size."
+        : "The captured screen dimensions are invalid. Use side-by-side or overlay to compare these screens.",
+    });
+    return;
+  }
+
+  const { width, height } = plan;
   const canvas = new OffscreenCanvas(width, height);
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) {

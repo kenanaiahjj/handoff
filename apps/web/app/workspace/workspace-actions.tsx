@@ -64,7 +64,7 @@ export function CreateWorkspaceForm() {
     <form className="flex flex-col gap-3 sm:flex-row" onSubmit={createWorkspace}>
       <label className="sr-only" htmlFor="workspace-name">Workspace name</label>
       <input
-        className="h-9 min-w-0 flex-1 rounded-[5px] border border-[#383838] bg-[#171717] px-3 text-[12px] text-[#dedede] outline-none placeholder:text-[#a0a0a0] focus-visible:border-[#777] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#777]"
+        className="h-9 min-w-0 flex-1 rounded-control border border-border bg-surface-inset px-3 text-[12px] text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
         id="workspace-name"
         maxLength={80}
         onChange={(event) => setName(event.target.value)}
@@ -73,7 +73,7 @@ export function CreateWorkspaceForm() {
         value={name}
       />
       <button
-        className="h-9 rounded-[5px] bg-[#65a854] px-4 text-[12px] font-semibold text-[#111] transition-colors hover:bg-[#75b563] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aaa] disabled:opacity-60"
+        className="h-9 rounded-control bg-primary px-4 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
         disabled={pending}
         type="submit"
       >
@@ -119,7 +119,7 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
     <form className="flex flex-col gap-3 sm:flex-row" onSubmit={createProject}>
       <label className="sr-only" htmlFor="project-name">Project name</label>
       <input
-        className="h-9 min-w-0 flex-1 rounded-[5px] border border-[#383838] bg-[#171717] px-3 text-[12px] text-[#dedede] outline-none placeholder:text-[#a0a0a0] focus-visible:border-[#777] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#777]"
+        className="h-9 min-w-0 flex-1 rounded-control border border-border bg-surface-inset px-3 text-[12px] text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
         id="project-name"
         maxLength={80}
         onChange={(event) => setName(event.target.value)}
@@ -128,7 +128,7 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
         value={name}
       />
       <button
-        className="h-9 rounded-[5px] bg-[#65a854] px-4 text-[12px] font-semibold text-[#111] transition-colors hover:bg-[#75b563] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aaa] disabled:opacity-60"
+        className="h-9 rounded-control bg-primary px-4 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
         disabled={pending}
         type="submit"
       >
@@ -213,12 +213,12 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
 
   return (
     <div className="space-y-4">
-      <p className="max-w-[68ch] text-[12px] leading-5 text-[#a6a6a6]">Anyone with a link can join with this role. Links can be reused until they expire or you revoke them. Copy each link before leaving; you can’t retrieve it later.</p>
+      <p className="max-w-[68ch] text-[12px] leading-5 text-foreground-muted">Anyone with a link can join with this role. Links can be reused until they expire or you revoke them. Copy each link before leaving; you can’t retrieve it later.</p>
       <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_170px_auto]" onSubmit={createInvite}>
-        <label className="space-y-1.5 text-[12px] text-[#dedede]" htmlFor="invite-role">
+        <label className="space-y-1.5 text-[12px] text-foreground" htmlFor="invite-role">
           <span className="block font-medium">Team role</span>
           <select
-            className="h-9 w-full rounded-[5px] border border-[#383838] bg-[#171717] px-3 text-[12px] text-[#dedede] outline-none focus-visible:border-[#777] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#777]"
+            className="h-9 w-full rounded-control border border-border bg-surface-inset px-3 text-[12px] text-foreground outline-none focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
             id="invite-role"
             onChange={(event) => setRole(event.target.value)}
             value={role}
@@ -230,10 +230,10 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
             <option value="owner">Owner</option>
           </select>
         </label>
-        <label className="space-y-1.5 text-[12px] text-[#dedede]" htmlFor="invite-expiry">
+        <label className="space-y-1.5 text-[12px] text-foreground" htmlFor="invite-expiry">
           <span className="block font-medium">Link expires</span>
           <select
-            className="h-9 w-full rounded-[5px] border border-[#383838] bg-[#171717] px-3 text-[12px] text-[#dedede] outline-none focus-visible:border-[#777] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#777]"
+            className="h-9 w-full rounded-control border border-border bg-surface-inset px-3 text-[12px] text-foreground outline-none focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
             id="invite-expiry"
             onChange={(event) => setExpiresInDays(event.target.value)}
             value={expiresInDays}
@@ -248,7 +248,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
           </select>
         </label>
         <button
-          className="h-9 self-end rounded-[5px] bg-[#65a854] px-3 text-[12px] font-semibold text-[#111] transition-colors hover:bg-[#75b563] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aaa] disabled:opacity-60"
+          className="h-9 self-end rounded-control bg-primary px-3 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
           disabled={pending}
           type="submit"
         >
@@ -257,26 +257,26 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
       </form>
 
       {invites.length ? (
-        <section aria-labelledby="active-invites-title" className="border-t border-[#383838] pt-3">
+        <section aria-labelledby="active-invites-title" className="border-t border-border pt-3">
           <div className="flex items-center justify-between gap-3">
-            <h3 className="text-[12px] font-semibold text-[#dedede]" id="active-invites-title">Active invite links</h3>
-            <span className="font-mono text-[10px] text-[#999]">{invites.length.toString().padStart(2, "0")}</span>
+            <h3 className="text-[12px] font-semibold text-foreground" id="active-invites-title">Active invite links</h3>
+            <span className="font-mono text-[10px] text-foreground-subtle">{invites.length.toString().padStart(2, "0")}</span>
           </div>
-          <ul className="mt-2 divide-y divide-[#383838]">
+          <ul className="mt-2 divide-y divide-border">
             {invites.map((invite) => (
               <li className="flex flex-wrap items-center gap-2 py-2.5" key={invite.id}>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12px] font-medium capitalize text-[#dedede]">{invite.role}</span>
-                  <span className="mt-0.5 block text-[10px] text-[#999]">
+                  <span className="block truncate text-[12px] font-medium capitalize text-foreground">{invite.role}</span>
+                  <span className="mt-0.5 block text-[10px] text-foreground-subtle">
                     {invite.expiresAt ? `Expires ${new Date(invite.expiresAt).toLocaleDateString()}` : "Never expires"}
                     <span aria-hidden="true"> · </span>
                     Created {new Date(invite.createdAt).toLocaleDateString()}
                   </span>
                 </span>
                 {invite.inviteUrl ? (
-                  <button className="h-7 rounded-[5px] border border-[#464646] px-2.5 text-[10px] font-medium text-[#ccc] transition-colors hover:bg-[#303030] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" onClick={() => copyInvite(invite.inviteUrl!)} type="button">Copy link</button>
+                  <button className="h-7 rounded-control bg-surface-raised px-2.5 text-[10px] font-medium text-foreground-muted transition-colors hover:bg-border hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" onClick={() => copyInvite(invite.inviteUrl!)} type="button">Copy link</button>
                 ) : null}
-                <button className="h-7 rounded-[5px] border border-[#464646] px-2.5 text-[10px] font-medium text-[#ccc] transition-colors hover:border-[#7d4a46] hover:bg-[#3a2422] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] disabled:opacity-50" disabled={revokingId === invite.id} onClick={() => revokeInvite(invite.id)} type="button">
+                <button className="h-7 rounded-control px-2.5 text-[10px] font-medium text-danger transition-colors hover:bg-danger/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger disabled:opacity-50" disabled={revokingId === invite.id} onClick={() => revokeInvite(invite.id)} type="button">
                   {revokingId === invite.id ? "Revoking…" : "Revoke"}
                 </button>
               </li>
@@ -284,9 +284,9 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
           </ul>
         </section>
       ) : (
-        <p className="border-t border-[#383838] pt-3 text-[11px] text-[#999]">No active invite links.</p>
+        <p className="border-t border-border pt-3 text-[11px] text-foreground-subtle">No active invite links.</p>
       )}
-      {message && <p className="text-[11px] text-[#bdbdbd]" role="status">{message}</p>}
+      {message && <p className="text-[11px] text-foreground-muted" role="status">{message}</p>}
     </div>
   );
 }

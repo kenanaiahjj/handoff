@@ -133,6 +133,7 @@ export const snapshotFrameSchema = z.object({
   sourcePageId: z.string().nullable(),
   name: nonEmptyStringSchema,
   bounds: boundsSchema,
+  renderBounds: boundsSchema.optional(),
   renderAssetKey: nonEmptyStringSchema,
   vectorAssetKey: nonEmptyStringSchema.optional(),
   nodes: z.array(snapshotNodeSchema),

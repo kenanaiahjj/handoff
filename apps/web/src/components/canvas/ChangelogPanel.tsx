@@ -180,7 +180,7 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
     <section className="rounded-panel border border-border bg-surface p-3" aria-labelledby="changelog-title">
       <div className="flex flex-col justify-between gap-3">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-primary">AI-assisted · evidence linked</p>
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">AI-assisted · evidence linked</p>
           <h2 className="mt-1 text-base font-semibold text-foreground" id="changelog-title">Changelog</h2>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-foreground-muted">
             Drafts cite screen changes, layout findings, and team comments. Generate one here or save a draft from your connected AI through MCP; review every statement before approval.
@@ -230,14 +230,14 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
       ) : null}
       {loading ? <p className="mt-3 text-xs text-foreground-subtle" role="status">Loading changelogs…</p> : null}
       {error ? <p className="mt-3 rounded-control border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs leading-5 text-warning" role="alert">{error}</p> : null}
-      {notice ? <p className="mt-3 text-xs text-primary" role="status">{notice}</p> : null}
+      {notice ? <p className="mt-3 text-xs text-success" role="status">{notice}</p> : null}
 
       <div className="mt-4 space-y-3">
         {drafts.map((draft) => (
           <article className="rounded-control border border-border bg-background p-3" key={draft.id}>
             <div className="flex flex-wrap items-center justify-between gap-2">
               <div className="flex items-center gap-2">
-                <span className={`rounded-pill px-2 py-1 font-mono text-[10px] uppercase tracking-wide ${draft.status === "approved" ? "bg-primary/15 text-primary" : "bg-surface-raised text-foreground-subtle"}`}>
+                <span className={`rounded-pill px-2 py-1 font-mono text-[10px] uppercase tracking-wide ${draft.status === "approved" ? "bg-success/15 text-success" : "bg-surface-raised text-foreground-subtle"}`}>
                   {draft.status}
                 </span>
                 <span className="text-[10px] text-foreground-subtle">{versions.find((version) => version.id === draft.fromVersionId)?.versionLabel ?? "Before"} → {versions.find((version) => version.id === draft.toVersionId)?.versionLabel ?? "After"}</span>

@@ -16,6 +16,8 @@ type HandoffReviewProps = {
   handoffId: string;
   selectedVersionId: string;
   initialCompareRouteState: CompareRouteState | null;
+  compareEndpointBase: string;
+  canConfirmFrameMatches: boolean;
   visualOnly: boolean;
   metadata: ReviewMetadata;
   dockPanels?: ReviewDockPanels;
@@ -36,6 +38,8 @@ export function HandoffReview({
   handoffId,
   selectedVersionId,
   initialCompareRouteState,
+  compareEndpointBase,
+  canConfirmFrameMatches,
   metadata,
   dockPanels = {},
 }: HandoffReviewProps) {
@@ -95,7 +99,7 @@ export function HandoffReview({
     if (!previousVersion) return;
 
     const controller = new AbortController();
-    const endpoint = `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/compare?from=${encodeURIComponent(previousVersion.id)}&to=${encodeURIComponent(selectedVersionId)}`;
+    const endpoint = `${compareEndpointBase}?from=${encodeURIComponent(previousVersion.id)}&to=${encodeURIComponent(selectedVersionId)}`;
 
     fetch(endpoint, { cache: "no-store", signal: controller.signal })
       .then(async (response) => {
@@ -117,7 +121,7 @@ export function HandoffReview({
       });
 
     return () => controller.abort();
-  }, [handoffId, previousVersion, projectId, selectedVersionId, workspaceId]);
+  }, [compareEndpointBase, previousVersion, selectedVersionId]);
 
   const frameStatuses = useMemo<Record<string, CanvasFrameChangeStatus>>(() => Object.fromEntries(
     (visibleComparison?.toVersionId === selectedVersionId ? visibleComparison.diff.frames : []).map((frame) => [frame.frameId, frame.status]),
@@ -131,6 +135,8 @@ export function HandoffReview({
       changed: visibleComparison.diff.frames.filter((frame) => frame.status === "changed").length,
       added: visibleComparison.diff.frames.filter((frame) => frame.status === "added").length,
       removed: visibleComparison.diff.frames.filter((frame) => frame.status === "removed").length,
+      onlyInAfterCapture: visibleComparison.diff.frames.filter((frame) => frame.status === "only-in-after-capture").length,
+      onlyInBeforeCapture: visibleComparison.diff.frames.filter((frame) => frame.status === "only-in-before-capture").length,
       changeCount: visibleComparison.diff.changes.length,
       visualChangeCount: visibleComparison.diff.changes.filter((change) => change.category === "visual").length,
     };
@@ -175,10 +181,9 @@ export function HandoffReview({
         <VersionCompare
           key={selectedVersionId}
           versions={versions}
-          workspaceId={workspaceId}
-          projectId={projectId}
-          handoffId={handoffId}
           selectedVersionId={selectedVersionId}
+          compareEndpointBase={compareEndpointBase}
+          canConfirmFrameMatches={canConfirmFrameMatches}
           initialRouteState={compareRouteState}
           initialResult={visibleInitialCompareResult}
           compareScreenRequest={compareScreenRequest}

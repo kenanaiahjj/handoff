@@ -2,6 +2,7 @@ import { z } from "zod";
 import { isStructuredSnapshot } from "@/src/server/services/diff";
 import { createHandoffAnnotation, listHandoffAnnotations } from "@/src/server/repositories/annotations";
 import { getVersion } from "@/src/server/repositories/versions";
+import { canvasAnnotationAnchorError } from "@/src/server/services/canvas-annotation-anchor";
 import { requireProjectMember, requireWorkspaceRole, WorkspaceAccessError, workspaceRoles } from "@/src/server/workspace-access";
 
 type AnnotationsRoute = RouteContext<"/api/workspaces/[workspaceId]/projects/[projectId]/handoffs/[handoffId]/versions/[versionId]/annotations">;
@@ -45,16 +46,8 @@ export async function POST(request: Request, context: AnnotationsRoute) {
     }
     const parsed = createSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return Response.json({ error: "Enter a title and note, then choose a canvas point." }, { status: 400 });
-    const frame = version.snapshot.frames.find((candidate) => candidate.sourceFrameId === parsed.data.frameId);
-    if (!frame) return Response.json({ error: "Choose a screen in this version." }, { status: 400 });
-    const width = frame.bounds.width.value;
-    const height = frame.bounds.height.value;
-    if (width === null || height === null || parsed.data.x > width || parsed.data.y > height) {
-      return Response.json({ error: "The annotation point is outside the screen bounds." }, { status: 400 });
-    }
-    if (parsed.data.sourceNodeId && !frame.nodes.some((node) => node.sourceNodeId === parsed.data.sourceNodeId)) {
-      return Response.json({ error: "The selected layer is not in this screen." }, { status: 400 });
-    }
+    const anchorError = canvasAnnotationAnchorError(version.snapshot, parsed.data);
+    if (anchorError) return Response.json({ error: anchorError }, { status: 400 });
     const annotation = createHandoffAnnotation({
       workspaceId,
       versionId,

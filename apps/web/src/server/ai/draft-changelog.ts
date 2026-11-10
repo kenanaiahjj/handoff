@@ -12,6 +12,10 @@ type VersionInput = {
 };
 
 export type DraftEvidence = EvidenceRef & { content: string };
+type ChangelogDraftDependencies = {
+  listComments?: typeof listHandoffComments;
+  generateChangelog?: typeof generateChangelog;
+};
 
 function clipped(value: unknown, maxLength = 600) {
   const serialized = typeof value === "string" ? value : JSON.stringify(value);
@@ -29,32 +33,38 @@ export function collectChangelogEvidence(input: {
   from: VersionInput;
   to: VersionInput;
   rules: Parameters<typeof evaluateLayoutRules>[1];
-}) {
+}, listComments = listHandoffComments) {
   const diff = diffSnapshots(
     { versionId: input.from.id, snapshot: input.from.snapshot },
     { versionId: input.to.id, snapshot: input.to.snapshot },
   );
-  const evidence: DraftEvidence[] = [];
+  const frameEvidence: DraftEvidence[] = [];
+  const diffEvidence: DraftEvidence[] = [];
+  const findingEvidence: DraftEvidence[] = [];
+  const commentEvidence: DraftEvidence[] = [];
 
   for (const frame of diff.frames) {
+    if (frame.status === "unchanged" || frame.status === "only-in-before-capture" || frame.status === "only-in-after-capture") continue;
     const versionId = frame.status === "removed" ? input.from.id : input.to.id;
     const id = `frame:${encodeURIComponent(frame.sourceFileId)}:${encodeURIComponent(frame.frameId)}`;
-    evidence.push({
+    const statusLabel = frameStatus(frame.status);
+    frameEvidence.push({
       id,
       kind: "frame",
-      label: `${frameStatus(frame.status)} · ${frame.name}`,
-      details: `Frame ${frame.frameId} is ${frame.status} between versions ${input.from.versionLabel} and ${input.to.versionLabel}.`,
+      label: `${statusLabel} · ${frame.name}`,
+      details: `Frame ${frame.frameId} is ${statusLabel.toLowerCase()} between versions ${input.from.versionLabel} and ${input.to.versionLabel}.`,
       versionId,
       frameId: frame.frameId,
       sourceNodeId: null,
       path: null,
-      content: `Frame status: ${frame.status}. Name: ${frame.name}.`,
+      content: `Frame status: ${statusLabel}. Name: ${frame.name}.`,
     });
   }
 
   for (const [index, change] of diff.changes.slice(0, 160).entries()) {
+    if (change.path === "frame") continue;
     const id = `diff:${encodeURIComponent(change.sourceFileId)}:${encodeURIComponent(change.frameId)}:${encodeURIComponent(change.sourceNodeId ?? "frame")}:${encodeURIComponent(change.path)}`;
-    evidence.push({
+    diffEvidence.push({
       id,
       kind: "diff",
       label: `${frameName(input.to.snapshot, change.frameId)} · ${change.category} · ${change.path}`,
@@ -69,7 +79,7 @@ export function collectChangelogEvidence(input: {
 
   const evaluated = evaluateLayoutRules(input.to.snapshot, input.rules);
   for (const finding of evaluated.findings.slice(0, 50)) {
-    evidence.push({
+    findingEvidence.push({
       id: `finding:${finding.findingKey}`,
       kind: "finding",
       label: `${finding.frameName} · ${finding.ruleId}`,
@@ -82,7 +92,7 @@ export function collectChangelogEvidence(input: {
     });
   }
 
-  const commentRows = listHandoffComments({ workspaceId: input.workspaceId, versionId: input.to.id }) as Array<{
+  const commentRows = listComments({ workspaceId: input.workspaceId, versionId: input.to.id }) as Array<{
     id: string;
     frameId: string;
     sourceNodeId: string | null;
@@ -91,7 +101,7 @@ export function collectChangelogEvidence(input: {
     resolvedAt: string | null;
   }>;
   for (const comment of commentRows.slice(0, 20)) {
-    evidence.push({
+    commentEvidence.push({
       id: `comment:${comment.id}`,
       kind: "comment",
       label: `${frameName(input.to.snapshot, comment.frameId)} · team comment`,
@@ -104,7 +114,19 @@ export function collectChangelogEvidence(input: {
     });
   }
 
-  return evidence.slice(0, 200);
+  const prioritizedEvidence = [
+    ...diffEvidence.slice(0, 120),
+    ...frameEvidence.slice(0, 40),
+    ...findingEvidence.slice(0, 25),
+    ...commentEvidence.slice(0, 15),
+  ];
+  const remainingEvidence = [
+    ...diffEvidence.slice(120),
+    ...frameEvidence.slice(40),
+    ...findingEvidence.slice(25),
+    ...commentEvidence.slice(15),
+  ];
+  return [...prioritizedEvidence, ...remainingEvidence].slice(0, 200);
 }
 
 export async function createEvidenceLinkedDraft(input: {
@@ -114,9 +136,9 @@ export async function createEvidenceLinkedDraft(input: {
   from: VersionInput;
   to: VersionInput;
   rules: Parameters<typeof evaluateLayoutRules>[1];
-}) {
-  const usableEvidence = collectChangelogEvidence(input);
-  const generated = await generateChangelog({
+}, dependencies: ChangelogDraftDependencies = {}) {
+  const usableEvidence = collectChangelogEvidence(input, dependencies.listComments);
+  const generated = await (dependencies.generateChangelog ?? generateChangelog)({
     handoffName: input.handoffName,
     fromVersionLabel: input.from.versionLabel,
     toVersionLabel: input.to.versionLabel,
@@ -142,6 +164,8 @@ export async function createEvidenceLinkedDraft(input: {
   };
 }
 
-function frameStatus(status: "added" | "removed" | "changed" | "unchanged") {
-  return status.charAt(0).toUpperCase() + status.slice(1);
+function frameStatus(status: "added" | "removed" | "changed") {
+  if (status === "added") return "New";
+  if (status === "removed") return "Removed";
+  return "Changed";
 }

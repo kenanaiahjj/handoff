@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { publishHandoffVersion } from "@/src/server/repositories/handoffs";
-import { requireProjectMember, WorkspaceAccessError } from "@/src/server/workspace-access";
+import { requireWorkspaceRoleStrict, WorkspaceAccessError } from "@/src/server/workspace-access";
 
 type PublishRoute = RouteContext<"/api/workspaces/[workspaceId]/projects/[projectId]/handoffs/[handoffId]/publish">;
 
@@ -19,7 +19,7 @@ export async function POST(request: Request, context: PublishRoute) {
   if (!parsed.success) return Response.json({ error: "Select a valid version to publish." }, { status: 400 });
 
   try {
-    const access = await requireProjectMember(request, workspaceId, projectId);
+    const access = await requireWorkspaceRoleStrict(request, workspaceId, ["owner", "designer"]);
     const published = publishHandoffVersion({
       workspaceId,
       projectId,
