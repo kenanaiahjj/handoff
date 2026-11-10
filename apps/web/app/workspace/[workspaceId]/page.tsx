@@ -6,6 +6,7 @@ import { getDatabase } from "@/src/server/db";
 import { listProjects } from "@/src/server/repositories/projects";
 import { CreateInviteForm, CreateProjectForm } from "../workspace-actions";
 import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
+import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 
 export const instant = false;
 
@@ -69,19 +70,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
        ORDER BY workspace.created_at DESC`,
     )
     .all(session.user.id) as WorkspaceChoice[];
-  const navSections = [
-    {
-      label: "Workspace",
-      items: [
-        { label: "Overview", href: `/workspace/${workspaceId}`, icon: "home" as const, active: true },
-        { label: "Integrations", href: `/workspace/${workspaceId}/integrations`, icon: "settings" as const },
-      ],
-    },
-    ...(projects.length ? [{
-      label: "Projects",
-      items: projects.map((project) => ({ label: project.name, href: `/workspace/${workspaceId}/projects/${project.id}`, icon: "folder" as const })),
-    }] : []),
-  ];
+  const navSections = createWorkspaceNavigation({ workspaceId, projects, page: "overview" });
 
   return (
     <WorkspaceShell
@@ -117,7 +106,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
                         <span className="mt-0.5 block text-[11px] text-foreground-subtle">{project.handoffCount} handoffs <span aria-hidden="true">·</span> {project.versionCount} versions</span>
                       </span>
                     </Link>
-                    <Link className="shrink-0 rounded-control bg-primary px-2.5 py-1.5 text-[10px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover" href={`/workspace/${workspace.id}/projects/${project.id}#start-handoff`}>Start handoff</Link>
+                    <Link className="shrink-0 rounded-control bg-primary px-2.5 py-1.5 text-[10px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover" href={`/workspace/${workspace.id}/projects/${project.id}#setup-handoff-name`}>Start handoff</Link>
                   </li>
                 ))}
               </ul>

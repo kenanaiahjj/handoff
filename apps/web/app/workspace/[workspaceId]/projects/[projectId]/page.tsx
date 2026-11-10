@@ -12,6 +12,8 @@ import { ProjectRulesForm } from "@/src/components/ProjectRulesForm";
 import { DeleteHandoffButton } from "@/src/components/canvas/HandoffLifecycleActions";
 import { HandoffAccessDialog } from "@/src/components/canvas/HandoffAccessDialog";
 import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
+import { StartHandoffButton } from "./start-handoff-button";
+import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 
 export const instant = false;
 
@@ -50,24 +52,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     .prepare("SELECT workspace.id, workspace.name, workspace_membership.role FROM workspace JOIN workspace_membership ON workspace_membership.workspace_id = workspace.id WHERE workspace_membership.user_id = ? ORDER BY workspace.created_at DESC")
     .all(session.user.id) as WorkspaceChoice[];
   const projects = listProjects(workspaceId) as Array<{ id: string; name: string }>;
-  const navSections = [
-    {
-      label: "Workspace",
-      items: [
-        { label: "Overview", href: `/workspace/${workspaceId}`, icon: "home" as const },
-        { label: "Projects", href: `/workspace/${workspaceId}#projects`, icon: "grid" as const },
-      ],
-    },
-    {
-      label: "Projects",
-      items: projects.map((entry) => ({
-        label: entry.name,
-        href: `/workspace/${workspaceId}/projects/${entry.id}`,
-        icon: "folder" as const,
-        active: entry.id === projectId,
-      })),
-    },
-  ];
+  const navSections = createWorkspaceNavigation({ workspaceId, projects, page: "project", activeProjectId: projectId });
 
   return (
     <WorkspaceShell
@@ -82,7 +67,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
           <h1 className="text-2xl font-semibold tracking-tight text-foreground">{project.name}</h1>
           <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
             <p className="max-w-2xl text-sm leading-6 text-foreground-muted">Keep the app’s design canvas and every reviewed version in this project.</p>
-            <Link className="capture-primary-action inline-flex min-h-11 items-center rounded-control px-5 text-sm font-semibold" href="#start-handoff">Start handoff</Link>
+            <StartHandoffButton />
           </div>
         </header>
 

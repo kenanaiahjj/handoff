@@ -214,7 +214,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
   return (
     <div className="space-y-4">
       <p className="max-w-[68ch] text-[12px] leading-5 text-foreground-muted">Anyone with a link can join with this role. Links can be reused until they expire or you revoke them. Copy each link before leaving; you can’t retrieve it later.</p>
-      <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_170px_auto]" onSubmit={createInvite}>
+      <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,170px)]" onSubmit={createInvite}>
         <label className="space-y-1.5 text-[12px] text-foreground" htmlFor="invite-role">
           <span className="block font-medium">Team role</span>
           <select
@@ -248,7 +248,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
           </select>
         </label>
         <button
-          className="h-9 self-end rounded-control bg-primary px-3 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
+          className="h-9 self-end rounded-control bg-primary px-3 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60 sm:col-span-2"
           disabled={pending}
           type="submit"
         >
