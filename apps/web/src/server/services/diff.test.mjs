@@ -359,6 +359,31 @@ test("bounds duplicate screen suggestions while keeping every after screen match
   assert.equal(matched.unmatchedFrameCandidates.length, 209);
 });
 
+test("validates same-name screen matches beyond the ten-item suggestion cap", () => {
+  const before = snapshot("same-file", "before-000", styleIds("same"));
+  before.frames = Array.from({ length: 210 }, (_, index) => ({
+    ...structuredClone(before.frames[0]),
+    sourceFrameId: `before-${String(index).padStart(3, "0")}`,
+    name: "Screen",
+  }));
+  const after = structuredClone(before);
+  after.frames = Array.from({ length: 210 }, (_, index) => ({
+    ...structuredClone(before.frames[0]),
+    sourceFrameId: `after-${String(index).padStart(3, "0")}`,
+    name: "Screen",
+  }));
+  const result = compare(before, after);
+  const canConfirmFrameMatch = diffService.createUnmatchedFramePairValidator;
+
+  assert.equal(typeof canConfirmFrameMatch, "function");
+  if (typeof canConfirmFrameMatch !== "function") return;
+  const validate = canConfirmFrameMatch(result);
+  assert.equal(validate("before-000", "after-209"), true);
+  assert.equal(validate("missing-before", "after-209"), false);
+  assert.equal(validate("before-000", "missing-after"), false);
+  assert.equal(canConfirmFrameMatch(result, result.unmatchedFrameCandidates.slice(1))("before-000", "after-209"), false);
+});
+
 test("keeps unmatched frame change payloads compact instead of embedding their layer trees", () => {
   const before = snapshot("same-file", "review-before", styleIds("shared"));
   const after = snapshot("same-file", "review-after", styleIds("shared"));

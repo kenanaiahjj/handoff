@@ -1202,6 +1202,23 @@ export function searchUnmatchedNodeCandidates(
   };
 }
 
+export function createUnmatchedFramePairValidator(
+  diff: Pick<SnapshotDiff, "frames" | "unmatchedFrameCandidates">,
+  candidates = diff.unmatchedFrameCandidates,
+) {
+  const beforeNames = new Map(candidates.map((candidate) => [candidate.beforeFrameId, candidate.beforeName] as const));
+  const unmatchedAfterNames = new Map(
+    diff.frames.flatMap((frame) => frame.beforeFrameId === null && frame.afterFrameId
+      ? [[frame.afterFrameId, frame.name] as const]
+      : []),
+  );
+
+  return (beforeFrameId: string, afterFrameId: string) => {
+    const beforeName = beforeNames.get(beforeFrameId);
+    return beforeName !== undefined && unmatchedAfterNames.get(afterFrameId) === beforeName;
+  };
+}
+
 export function isStructuredSnapshot(snapshot: VersionSnapshot): snapshot is SnapshotEnvelope {
   return !isVisualOnly(snapshot);
 }

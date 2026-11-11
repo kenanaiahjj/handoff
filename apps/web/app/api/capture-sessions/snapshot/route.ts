@@ -3,7 +3,7 @@ import { z } from "zod";
 import { getCaptureSession } from "@/src/server/repositories/capture-sessions";
 import { createHandoffVersion, getVersion, HandoffVersionConflictError, type VersionAssetInput } from "@/src/server/repositories/versions";
 import { getDatabase } from "@/src/server/db";
-import { diffSnapshots } from "@/src/server/services/diff";
+import { createUnmatchedFramePairValidator, diffSnapshots } from "@/src/server/services/diff";
 import { parseUploadForm, SnapshotImportError, verifyRenderAssetBytes } from "@/src/server/services/import-snapshot";
 import { createSnapshotEnvelope, MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES, normalizeFigmaCaptureScope, snapshotEnvelopeSchema, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { mergeFigmaCaptureSnapshots } from "@/src/server/services/merge-figma-capture";
@@ -134,14 +134,11 @@ export async function POST(request: Request) {
           return Boolean(before?.sourcePageId && capturedPageIds.has(before.sourcePageId));
         })
       : candidateDiff.unmatchedFrameCandidates;
-    const allowedPairs = new Set(eligibleCandidates.flatMap((candidate) =>
-      candidate.afterCandidates.map((frame) => `${candidate.beforeFrameId}\u0000${frame.frameId}`),
-    ));
+    const isEligibleFrameMatch = createUnmatchedFramePairValidator(candidateDiff, eligibleCandidates);
     const beforeIds = new Set<string>();
     const afterIds = new Set<string>();
     for (const match of frameMatches) {
-      const pair = `${match.beforeFrameId}\u0000${match.afterFrameId}`;
-      if (!allowedPairs.has(pair) || beforeIds.has(match.beforeFrameId) || afterIds.has(match.afterFrameId)) {
+      if (!isEligibleFrameMatch(match.beforeFrameId, match.afterFrameId) || beforeIds.has(match.beforeFrameId) || afterIds.has(match.afterFrameId)) {
         return jsonResponse({ error: "Choose each suggested old and new frame once." }, { status: 400 });
       }
       beforeIds.add(match.beforeFrameId);

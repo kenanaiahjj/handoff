@@ -12,7 +12,12 @@ import {
   NodeReplacementConflictError,
 } from "@/src/server/repositories/versions";
 import type { StoredSnapshot } from "@/src/server/repositories/versions";
-import { diffSnapshots, isStructuredSnapshot, searchUnmatchedNodeCandidates } from "@/src/server/services/diff";
+import {
+  createUnmatchedFramePairValidator,
+  diffSnapshots,
+  isStructuredSnapshot,
+  searchUnmatchedNodeCandidates,
+} from "@/src/server/services/diff";
 import {
   requireWorkspaceRole,
   WorkspaceAccessError,
@@ -242,9 +247,9 @@ export async function POST(request: Request, context: CompareRoute) {
       return Response.json({ error: "Choose a valid pair of screens to match." }, { status: 400 });
     }
     const match = parsedFrameMatch.data;
-    const pairIsUnmatchedCandidate = currentComparison.diff.unmatchedFrameCandidates.some((candidate) =>
-      candidate.beforeFrameId === match.beforeFrameId &&
-      candidate.afterCandidates.some((frame) => frame.frameId === match.afterFrameId),
+    const pairIsUnmatchedCandidate = createUnmatchedFramePairValidator(currentComparison.diff)(
+      match.beforeFrameId,
+      match.afterFrameId,
     );
     const replacement = {
       workspaceId,
