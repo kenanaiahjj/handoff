@@ -6,8 +6,40 @@ type HandoffSharingDatabase = Pick<Database.Database, "prepare" | "transaction">
 
 export function updateHandoffSharingModeInDatabase(
   database: HandoffSharingDatabase,
-  input: { workspaceId: string; projectId: string; handoffId: string; mode: HandoffSharingMode },
+  input: {
+    workspaceId: string;
+    projectId: string;
+    handoffId: string;
+    mode: HandoffSharingMode;
+    revokePublicLink?: boolean;
+  },
 ) {
+  if (input.revokePublicLink) {
+    if (input.mode !== "workspace") return false;
+    const newShareId = randomUUID();
+    const revokedAt = new Date().toISOString();
+    const revoke = database.transaction(() => {
+      const result = database
+        .prepare(
+          `UPDATE handoff SET sharing_mode = 'workspace', review_share_id = ?
+           WHERE id = ? AND workspace_id = ? AND project_id = ?
+             AND sharing_mode = 'anyone' AND review_share_id IS NOT NULL
+             AND published_version_id IS NOT NULL`,
+        )
+        .run(newShareId, input.handoffId, input.workspaceId, input.projectId);
+      if (result.changes !== 1) return false;
+
+      database
+        .prepare(
+          `UPDATE handoff_invite SET revoked_at = ?
+           WHERE workspace_id = ? AND handoff_id = ? AND revoked_at IS NULL`,
+        )
+        .run(revokedAt, input.workspaceId, input.handoffId);
+      return true;
+    });
+    return revoke.immediate();
+  }
+
   const result = database
     .prepare(
       `UPDATE handoff SET sharing_mode = ?

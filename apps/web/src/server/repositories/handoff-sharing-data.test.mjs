@@ -135,3 +135,43 @@ test("sharing mode cannot update a handoff in another project", () => {
   }), false);
   database.close();
 });
+
+test("revoking the public link rotates its URL and revokes outstanding invitations", () => {
+  const database = createDatabase();
+  const input = {
+    workspaceId: "workspace-1",
+    projectId: "project-1",
+    handoffId: "handoff-1",
+  };
+  createHandoffInviteInDatabase(database, {
+    ...input,
+    id: "invite-before-revoke",
+    email: "qa@example.com",
+    token: "invite-before-revoke-token",
+    expiresAt: null,
+    invitedByUserId: "designer-1",
+    createdAt: "2026-11-09T12:00:00.000Z",
+  });
+  updateHandoffSharingModeInDatabase(database, { ...input, mode: "anyone" });
+  const oldShareId = database.prepare("SELECT review_share_id AS id FROM handoff WHERE id = ?").get("handoff-1").id;
+
+  const revoked = updateHandoffSharingModeInDatabase(database, {
+    ...input,
+    mode: "workspace",
+    revokePublicLink: true,
+  });
+  const afterRevoke = database.prepare("SELECT review_share_id AS id, sharing_mode AS mode FROM handoff WHERE id = ?").get("handoff-1");
+  const activeInvites = listHandoffInvitesInDatabase(database, { workspaceId: "workspace-1", handoffId: "handoff-1" });
+  const oldInviteLookup = getHandoffInviteByTokenInDatabase(database, oldShareId, "invite-before-revoke-token");
+
+  updateHandoffSharingModeInDatabase(database, { ...input, mode: "anyone" });
+  const afterPublicAccessReopens = database.prepare("SELECT review_share_id AS id FROM handoff WHERE id = ?").get("handoff-1").id;
+  database.close();
+
+  assert.equal(revoked, true);
+  assert.notEqual(afterRevoke.id, oldShareId);
+  assert.equal(afterRevoke.mode, "workspace");
+  assert.deepEqual(activeInvites, []);
+  assert.equal(oldInviteLookup, null);
+  assert.notEqual(afterPublicAccessReopens, oldShareId);
+});

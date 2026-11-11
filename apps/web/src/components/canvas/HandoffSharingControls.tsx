@@ -59,7 +59,7 @@ export function HandoffSharingControls({ endpoint, refreshKey = 0 }: { endpoint:
     };
   }, [endpoint, refreshKey]);
 
-  async function updateMode(nextMode: SharingMode) {
+  async function updateMode(nextMode: SharingMode, revokePublicLink = false) {
     setPending(true);
     setError("");
     setMessage("");
@@ -67,14 +67,26 @@ export function HandoffSharingControls({ endpoint, refreshKey = 0 }: { endpoint:
       const response = await fetch(`${endpoint}/sharing`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: nextMode }),
+        body: JSON.stringify({ mode: nextMode, ...(revokePublicLink ? { revokePublicLink: true } : {}) }),
       });
-      const payload = await response.json() as { mode?: SharingMode; error?: string };
+      const payload = await response.json() as {
+        mode?: SharingMode;
+        reviewUrl?: string;
+        invites?: HandoffInvite[];
+        error?: string;
+      };
       if (!response.ok || !payload.mode) throw new Error(payload.error ?? "Could not update sharing settings.");
       setMode(payload.mode);
-      setMessage(mode === "anyone" && payload.mode !== "anyone"
-        ? "Public access revoked. The canvas link now requires another access method."
-        : "Sharing settings updated.");
+      if (payload.reviewUrl) setReviewUrl(payload.reviewUrl);
+      if (revokePublicLink) {
+        setInvites(payload.invites ?? []);
+        setCreatedInviteUrl("");
+        setMessage("Public link revoked. Outstanding invitation links were also revoked. The new canvas link requires workspace sign-in.");
+      } else {
+        setMessage(mode === "anyone" && payload.mode !== "anyone"
+          ? "Public access is off. The canvas link now requires workspace access."
+          : "Sharing settings updated.");
+      }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not update sharing settings.");
     } finally {
@@ -158,7 +170,12 @@ export function HandoffSharingControls({ endpoint, refreshKey = 0 }: { endpoint:
       {loading ? <p className="text-[11px] text-[#888]" role="status">Loading access…</p> : null}
       {!loading && !reviewUrl ? <p className="rounded-[5px] bg-[#191919] px-3 py-2.5 text-[11px] leading-5 text-[#999]">This handoff has no published canvas link yet. Open the canvas to publish a version.</p> : null}
       {mode === "invited" ? <p className="text-[11px] leading-5 text-[#999]">Invite people by email, including people outside your workspace. The app creates a link for you to copy and send.</p> : null}
-      {mode === "anyone" && reviewUrl ? <button className="min-h-8 rounded-[5px] px-2 text-[11px] font-medium text-[#e69a90] hover:bg-[#432e2c] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e69a90] disabled:opacity-50" disabled={pending || loading} onClick={() => void updateMode("workspace")} type="button">Revoke public link</button> : null}
+      {mode === "anyone" && reviewUrl ? (
+        <div>
+          <p className="text-[10px] leading-4 text-[#888]">This also invalidates outstanding invitation links.</p>
+          <button className="mt-1 min-h-8 rounded-[5px] px-2 text-[11px] font-medium text-[#e69a90] hover:bg-[#432e2c] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e69a90] disabled:opacity-50" disabled={pending || loading} onClick={() => void updateMode("workspace", true)} type="button">Revoke public link</button>
+        </div>
+      ) : null}
 
       <section aria-labelledby="handoff-access-list-heading">
         <h4 className="text-[10px] font-semibold uppercase tracking-wide text-[#999]" id="handoff-access-list-heading">Who can open the published canvas?</h4>

@@ -104,6 +104,7 @@ export function setHandoffSharingMode(input: {
   projectId: string;
   handoffId: string;
   mode: "workspace" | "invited" | "anyone";
+  revokePublicLink?: boolean;
 }) {
   return updateHandoffSharingModeInDatabase(getDatabase(), input);
 }
