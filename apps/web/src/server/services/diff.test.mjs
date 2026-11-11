@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { diffSnapshots } from "./diff.ts";
+import * as diffService from "./diff.ts";
+
+const { diffSnapshots } = diffService;
 
 function styleIds(prefix) {
   return {
@@ -45,11 +47,11 @@ function snapshot(sourceFileId, frameId, { styleId, textStyleId, textFillStyleId
   };
 }
 
-function compare(before, after, frameMatches) {
+function compare(before, after, frameMatches, nodeMatches) {
   return diffSnapshots(
     { versionId: "before", snapshot: before },
     { versionId: "after", snapshot: after },
-    { frameMatches },
+    { frameMatches, nodeMatches },
   );
 }
 
@@ -576,6 +578,76 @@ function clonedFrameSnapshot(frameId, content, addedNode = false) {
   };
 }
 
+function regeneratedLayerSnapshot(frameId, layers) {
+  const measurement = (value, sourceProperty) => ({
+    value,
+    unit: "px",
+    provenance: "source",
+    sourceProperty,
+  });
+  const rootBounds = {
+    x: measurement(0, "absoluteBoundingBox.x"),
+    y: measurement(0, "absoluteBoundingBox.y"),
+    width: measurement(320, "absoluteBoundingBox.width"),
+    height: measurement(56, "absoluteBoundingBox.height"),
+  };
+  const nodes = [{
+    sourceNodeId: frameId,
+    sourceFrameId: frameId,
+    parentSourceNodeId: null,
+    name: "Review",
+    type: "FRAME",
+    visible: true,
+    bounds: rootBounds,
+    layout: {},
+    padding: {},
+    margins: {},
+    spacing: {},
+    fills: [],
+    strokes: [],
+    styleReferences: [],
+    typography: null,
+    tokens: [],
+    sourcePayload: {},
+  }, ...layers.map(({ sourceNodeId, name, type, x, text }) => ({
+    sourceNodeId,
+    sourceFrameId: frameId,
+    parentSourceNodeId: frameId,
+    name,
+    type,
+    visible: true,
+    bounds: {
+      x: measurement(x, "absoluteBoundingBox.x"),
+      y: measurement(0, "absoluteBoundingBox.y"),
+      width: measurement(120, "absoluteBoundingBox.width"),
+      height: measurement(40, "absoluteBoundingBox.height"),
+    },
+    layout: {},
+    padding: {},
+    margins: {},
+    spacing: {},
+    fills: [],
+    strokes: [],
+    styleReferences: [],
+    typography: null,
+    tokens: [],
+    sourcePayload: text === undefined ? {} : { textSegments: [{ characters: text }] },
+  }))];
+
+  return {
+    sourceFileId: "figma-file",
+    frames: [{
+      sourceFrameId: frameId,
+      sourcePageId: "page-1",
+      name: "Review",
+      bounds: rootBounds,
+      renderAssetKey: "render",
+      nodes,
+    }],
+    assets: [{ key: "render", sha256: "same-render" }],
+  };
+}
+
 test("matches cloned Figma layers by their hierarchy when source IDs regenerate", () => {
   const result = compare(
     clonedFrameSnapshot("frame-before", "Continue"),
@@ -604,13 +676,93 @@ test("reports content edits and added layers after matching cloned Figma IDs", (
   assert.equal(result.changes.filter((change) => change.path === "node" && change.before?.name === "Review").length, 0);
 });
 
-function tokenSnapshot(token) {
-  const result = snapshot("same-file", "frame", styleIds("same"));
+test("leaves duplicate regenerated layers unmatched instead of pairing by traversal order", () => {
+  const result = compare(
+    regeneratedLayerSnapshot("frame-before", [
+      { sourceNodeId: "before-a", name: "Action", type: "TEXT", x: 24, text: "Back" },
+      { sourceNodeId: "before-b", name: "Action", type: "TEXT", x: 180, text: "Next" },
+    ]),
+    regeneratedLayerSnapshot("frame-after", [
+      { sourceNodeId: "after-b", name: "Action", type: "TEXT", x: 180, text: "Next" },
+      { sourceNodeId: "after-a", name: "Action", type: "TEXT", x: 24, text: "Back" },
+    ]),
+    [{ beforeFrameId: "frame-before", afterFrameId: "frame-after" }],
+  );
+
+  assert.equal(result.changes.filter((change) => change.path === "node").length, 4);
+  assert.equal(result.changes.some((change) => change.category === "geometry" || change.category === "text"), false);
+  assert.equal(result.unmatchedNodeCandidates.length, 2);
+  assert.ok(result.unmatchedNodeCandidates.every((candidate) => candidate.afterCandidates.length === 2));
+});
+
+test("leaves renamed regenerated layers as candidates instead of matching by type alone", () => {
+  const result = compare(
+    regeneratedLayerSnapshot("frame-before", [
+      { sourceNodeId: "before-title", name: "Heading", type: "TEXT", x: 24, text: "Review" },
+    ]),
+    regeneratedLayerSnapshot("frame-after", [
+      { sourceNodeId: "after-title", name: "Page title", type: "TEXT", x: 24, text: "Review" },
+    ]),
+    [{ beforeFrameId: "frame-before", afterFrameId: "frame-after" }],
+  );
+
+  assert.equal(result.changes.filter((change) => change.path === "node").length, 2);
+  assert.equal(result.changes.some((change) => change.path === "name"), false);
+  assert.equal(result.unmatchedNodeCandidates.length, 1);
+  assert.equal(result.unmatchedNodeCandidates[0].afterCandidates[0].sourceNodeId, "after-title");
+});
+
+test("uses a reviewer-confirmed layer match to compare renamed regenerated IDs", () => {
+  const result = compare(
+    regeneratedLayerSnapshot("frame-before", [
+      { sourceNodeId: "before-title", name: "Heading", type: "TEXT", x: 24, text: "Review" },
+    ]),
+    regeneratedLayerSnapshot("frame-after", [
+      { sourceNodeId: "after-title", name: "Page title", type: "TEXT", x: 32, text: "Review" },
+    ]),
+    [{ beforeFrameId: "frame-before", afterFrameId: "frame-after" }],
+    [{
+      beforeFrameId: "frame-before",
+      afterFrameId: "frame-after",
+      beforeNodeId: "before-title",
+      afterNodeId: "after-title",
+    }],
+  );
+
+  assert.equal(result.changes.some((change) => change.path === "node"), false);
+  assert.equal(result.changes.some((change) => change.path === "name" && change.before === "Heading" && change.after === "Page title"), true);
+  assert.equal(result.changes.some((change) => change.path === "bounds.x.value" && change.before === 24 && change.after === 32), true);
+  assert.equal(result.unmatchedNodeCandidates.length, 0);
+});
+
+function tokenSnapshot(token, sourceFileId = "same-file") {
+  const result = snapshot(sourceFileId, "frame", styleIds("same"));
   result.frames[0].nodes[0].tokens = [token];
   return result;
 }
 
-test("ignores Figma variable ID churn when a token binding keeps the same meaning", () => {
+test("ignores variable and collection ID churn across copied files when a binding keeps the same meaning", () => {
+  const token = (sourceId, collectionId) => ({
+    sourceId,
+    bindingPath: "fills[0]",
+    category: "color",
+    name: "text/primary",
+    collectionId,
+    collectionName: "Semantic Colors",
+    mode: "Light",
+    value: "#222222",
+  });
+
+  const result = compare(
+    tokenSnapshot(token("VariableID:old", "Collection:old"), "file-copy-before"),
+    tokenSnapshot(token("VariableID:new", "Collection:new"), "file-copy-after"),
+    [{ beforeFrameId: "frame", afterFrameId: "frame" }],
+  );
+
+  assert.deepEqual(result.changes, []);
+});
+
+test("reports bound variable and collection ID changes within the same source file", () => {
   const token = (sourceId, collectionId) => ({
     sourceId,
     bindingPath: "fills[0]",
@@ -627,36 +779,44 @@ test("ignores Figma variable ID churn when a token binding keeps the same meanin
     tokenSnapshot(token("VariableID:new", "Collection:new")),
   );
 
-  assert.deepEqual(result.changes, []);
+  assert.deepEqual(
+    result.changes.map(({ path, category }) => [path, category]),
+    [
+      ['tokens["color:fills[0]"].collectionId', "token"],
+      ['tokens["color:fills[0]"].sourceId', "token"],
+    ],
+  );
 });
 
 test("reports semantic token edits under the stable property binding", () => {
   const result = compare(
     tokenSnapshot({
-      sourceId: "VariableID:old",
+      sourceId: "VariableID:shared",
       bindingPath: "fills[0]",
       category: "color",
       name: "text/primary",
-      collectionId: "Collection:old",
+      collectionId: "Collection:shared",
       collectionName: "Semantic Colors",
       mode: "Light",
-      value: "#222222",
+      value: { r: 0.13, g: 0.13, b: 0.13, a: 1 },
     }),
     tokenSnapshot({
-      sourceId: "VariableID:new",
+      sourceId: "VariableID:shared",
       bindingPath: "fills[0]",
       category: "color",
       name: "text/placeholder",
-      collectionId: "Collection:new",
-      collectionName: "Semantic Colors",
-      mode: "Light",
-      value: "#8e8e93",
+      collectionId: "Collection:shared",
+      collectionName: "Brand Colors",
+      mode: "Dark",
+      value: { r: 0.55, g: 0.55, b: 0.58, a: 1 },
     }),
   );
 
   assert.deepEqual(
     result.changes.map(({ path, category }) => [path, category]),
     [
+      ['tokens["color:fills[0]"].collectionName', "token"],
+      ['tokens["color:fills[0]"].mode', "token"],
       ['tokens["color:fills[0]"].name', "token"],
       ['tokens["color:fills[0]"].value', "token"],
     ],
@@ -936,6 +1096,35 @@ test("bounds a million ambiguous node pairs to ten suggestions per removed layer
   assert.equal(suggestion.candidatesTruncated, true);
   assert.ok(result.unmatchedNodeCandidates.every((item) =>
     item.afterCandidates.length === 10 && item.totalCandidates === 1000 && item.candidatesTruncated));
+});
+
+test("searches unmatched after layers beyond the first ten suggestions", () => {
+  const before = regeneratedLayerSnapshot("frame-before", [
+    { sourceNodeId: "before-title", name: "Heading", type: "TEXT", x: 24, text: "Review" },
+  ]);
+  const after = regeneratedLayerSnapshot("frame-after", Array.from({ length: 12 }, (_, index) => ({
+    sourceNodeId: `after-title-${index.toString().padStart(2, "0")}`,
+    name: "Heading",
+    type: "TEXT",
+    x: 24,
+    text: "Review",
+  })));
+  const result = compare(before, after, [{ beforeFrameId: "frame-before", afterFrameId: "frame-after" }]);
+  const initialCandidates = result.unmatchedNodeCandidates[0].afterCandidates;
+
+  assert.equal(typeof diffService.searchUnmatchedNodeCandidates, "function");
+  assert.equal(initialCandidates.some((candidate) => candidate.sourceNodeId === "after-title-11"), false);
+  assert.deepEqual(diffService.searchUnmatchedNodeCandidates(result, {
+    frameId: "frame-after",
+    sourceFileId: "figma-file",
+    beforeFrameId: "frame-before",
+    beforeNodeId: "before-title",
+    query: "after-title-11",
+  }), {
+    candidates: [{ sourceNodeId: "after-title-11", name: "Heading", type: "TEXT", score: 1 }],
+    totalCandidates: 1,
+    candidatesTruncated: false,
+  });
 });
 
 test("ignores Figma canvas movement while retaining screen size changes", () => {

@@ -42,6 +42,13 @@ export type FrameMatch = {
   afterFrameId: string;
 };
 
+export type NodeMatch = {
+  beforeFrameId: string;
+  afterFrameId: string;
+  beforeNodeId: string;
+  afterNodeId: string;
+};
+
 export type SnapshotSourceIdentity = "exact" | "inferred" | "different";
 
 export type CaptureScopeComparison =
@@ -82,6 +89,8 @@ export type SnapshotDiff = {
   unmatchedNodeCandidates: Array<{
     sourceFileId: string;
     frameId: string;
+    beforeFrameId: string;
+    afterFrameId: string;
     beforeNodeId: string;
     beforeName: string;
     afterCandidates: NodeCandidate[];
@@ -437,6 +446,7 @@ function matchFrameNodes(
   afterNodes: SnapshotNode[],
   beforeFrameId: string,
   afterFrameId: string,
+  explicitMatches: NodeMatch[],
 ) {
   const beforeById = nodeIndex(beforeNodes);
   const afterById = nodeIndex(afterNodes);
@@ -462,13 +472,27 @@ function matchFrameNodes(
   const afterRoot = afterById.get(afterFrameId);
   if (beforeRoot && afterRoot) pair(beforeRoot, afterRoot);
 
+  for (const match of explicitMatches) {
+    const before = beforeById.get(match.beforeNodeId);
+    const after = afterById.get(match.afterNodeId);
+    if (before && after) pair(before, after);
+  }
+
   function matchByMatchedParents() {
     for (let index = 0; index < pairs.length; index += 1) {
       const parentPair = pairs[index];
       const oldChildren = beforeChildren.get(parentPair.before.sourceNodeId) ?? [];
       const newChildren = afterChildren.get(parentPair.after.sourceNodeId) ?? [];
+      const oldChildrenByKey = new Map<string, SnapshotNode[]>();
       const newChildrenByKey = new Map<string, SnapshotNode[]>();
 
+      for (const child of oldChildren) {
+        if (matchedBeforeIds.has(child.sourceNodeId)) continue;
+        const key = nodeMatchKey(child);
+        const candidates = oldChildrenByKey.get(key) ?? [];
+        candidates.push(child);
+        oldChildrenByKey.set(key, candidates);
+      }
       for (const child of newChildren) {
         if (matchedAfterIds.has(child.sourceNodeId)) continue;
         const key = nodeMatchKey(child);
@@ -477,22 +501,29 @@ function matchFrameNodes(
         newChildrenByKey.set(key, candidates);
       }
 
-      for (const child of oldChildren) {
-        if (matchedBeforeIds.has(child.sourceNodeId)) continue;
-        const candidates = newChildrenByKey.get(nodeMatchKey(child));
-        const candidate = candidates?.shift();
-        if (candidate) pair(child, candidate);
+      for (const [key, oldCandidates] of oldChildrenByKey) {
+        const newCandidates = newChildrenByKey.get(key);
+        if (oldCandidates.length === 1 && newCandidates?.length === 1) {
+          pair(oldCandidates[0], newCandidates[0]);
+        }
       }
     }
   }
 
-  // Prefer exact node IDs, then preserve sibling hierarchy by matching type and name.
+  // Prefer exact node IDs, then match only unique type/name siblings beneath a matched parent.
   matchByMatchedParents();
 
-  // A copied or rebuilt Figma frame can regenerate every node ID and reparent layers.
-  // Match remaining identical layer labels in traversal order to avoid reporting the
-  // whole screen as deleted and re-added.
+  // Reparented layers can still be matched by type and name when that key is unique
+  // across the remaining nodes. Duplicate labels remain candidates for review.
+  const oldNodesByKey = new Map<string, SnapshotNode[]>();
   const newNodesByKey = new Map<string, SnapshotNode[]>();
+  for (const before of beforeNodes) {
+    if (matchedBeforeIds.has(before.sourceNodeId)) continue;
+    const key = nodeMatchKey(before);
+    const candidates = oldNodesByKey.get(key) ?? [];
+    candidates.push(before);
+    oldNodesByKey.set(key, candidates);
+  }
   for (const after of afterNodes) {
     if (matchedAfterIds.has(after.sourceNodeId)) continue;
     const key = nodeMatchKey(after);
@@ -500,37 +531,10 @@ function matchFrameNodes(
     candidates.push(after);
     newNodesByKey.set(key, candidates);
   }
-  for (const before of beforeNodes) {
-    if (matchedBeforeIds.has(before.sourceNodeId)) continue;
-    const candidate = newNodesByKey.get(nodeMatchKey(before))?.shift();
-    if (candidate) pair(before, candidate);
-  }
-  matchByMatchedParents();
-
-  // When the same parent keeps one layer of a type but renames it, retain the
-  // relationship so the diff can report the changed label or content.
-  for (let index = 0; index < pairs.length; index += 1) {
-    const parentPair = pairs[index];
-    const oldGroups = new Map<string, SnapshotNode[]>();
-    const newGroups = new Map<string, SnapshotNode[]>();
-    for (const child of beforeChildren.get(parentPair.before.sourceNodeId) ?? []) {
-      if (matchedBeforeIds.has(child.sourceNodeId)) continue;
-      const candidates = oldGroups.get(child.type) ?? [];
-      candidates.push(child);
-      oldGroups.set(child.type, candidates);
-    }
-    for (const child of afterChildren.get(parentPair.after.sourceNodeId) ?? []) {
-      if (matchedAfterIds.has(child.sourceNodeId)) continue;
-      const candidates = newGroups.get(child.type) ?? [];
-      candidates.push(child);
-      newGroups.set(child.type, candidates);
-    }
-    for (const [type, oldGroup] of oldGroups) {
-      const newGroup = newGroups.get(type);
-      if (!newGroup || oldGroup.length !== newGroup.length) continue;
-      for (let childIndex = 0; childIndex < oldGroup.length; childIndex += 1) {
-        pair(oldGroup[childIndex], newGroup[childIndex]);
-      }
+  for (const [key, oldCandidates] of oldNodesByKey) {
+    const newCandidates = newNodesByKey.get(key);
+    if (oldCandidates.length === 1 && newCandidates?.length === 1) {
+      pair(oldCandidates[0], newCandidates[0]);
     }
   }
   matchByMatchedParents();
@@ -642,6 +646,7 @@ function compareTokens(
   frameId: string,
   sourceFileId: string,
   sourceNodeId: string,
+  compareSourceIds: boolean,
   output: SnapshotDiffChange[],
 ) {
   type TokenBinding = SnapshotNode["tokens"][number];
@@ -675,11 +680,13 @@ function compareTokens(
         : `${token.category ?? "other"}:${token.name}`;
       const occurrence = index === 0 ? "" : `#${index + 1}`;
       const path = `tokens[${JSON.stringify(`${bindingLabel}${occurrence}`)}]`;
-      const comparable = (value: TokenBinding) => Object.fromEntries(
-        Object.entries(value).filter(([key]) => !["sourceId", "collectionId"].includes(key)),
-      );
 
       if (!beforeToken || !afterToken) {
+        const comparable = (value: TokenBinding) => compareSourceIds
+          ? value
+          : Object.fromEntries(
+              Object.entries(value).filter(([key]) => key !== "sourceId" && key !== "collectionId"),
+            );
         output.push({
           frameId,
           sourceFileId,
@@ -692,15 +699,22 @@ function compareTokens(
         continue;
       }
 
-      compareValue(
-        comparable(beforeToken),
-        comparable(afterToken),
-        path,
-        frameId,
-        sourceFileId,
-        sourceNodeId,
-        output,
-      );
+      const fields = ["sourceId", "collectionId", "category", "name", "collectionName", "mode", "value"] as const;
+      for (const field of fields) {
+        if (!compareSourceIds && (field === "sourceId" || field === "collectionId")) continue;
+        const beforeValue = beforeToken[field];
+        const afterValue = afterToken[field];
+        if (equalValue(beforeValue, afterValue)) continue;
+        output.push({
+          frameId,
+          sourceFileId,
+          sourceNodeId,
+          path: `${path}.${field}`,
+          before: beforeValue,
+          after: afterValue,
+          category: "token",
+        });
+      }
     }
   }
 }
@@ -710,6 +724,7 @@ function compareNode(
   after: SnapshotNode,
   frameId: string,
   sourceFileId: string,
+  compareTokenSourceIds: boolean,
   output: SnapshotDiffChange[],
   captureCoverage: CaptureCoverageCollector,
   isFrameRoot = false,
@@ -731,7 +746,7 @@ function compareNode(
     before.sourceNodeId,
     output,
   );
-  compareTokens(beforeTokens, afterTokens, frameId, sourceFileId, before.sourceNodeId, output);
+  compareTokens(beforeTokens, afterTokens, frameId, sourceFileId, before.sourceNodeId, compareTokenSourceIds, output);
   compareSourcePayloadValue(
     withoutFigmaStyleIds(withoutRedundantSourcePayloadFields(beforeSourcePayload), "sourcePayload"),
     withoutFigmaStyleIds(withoutRedundantSourcePayloadFields(afterSourcePayload), "sourcePayload"),
@@ -758,10 +773,20 @@ function compareFrame(
   output: SnapshotDiffChange[],
   unmatchedNodeCandidates: SnapshotDiff["unmatchedNodeCandidates"],
   captureCoverage: CaptureCoverageCollector,
+  nodeMatches: NodeMatch[],
 ) {
+  const compareTokenSourceIds = beforeSnapshot.sourceFileId === afterSnapshot.sourceFileId && beforeSnapshot.sourceFileId !== "0:0";
   const beforeNodes = frameNodes(before);
   const afterNodes = frameNodes(after);
-  const nodeMatches = matchFrameNodes(beforeNodes, afterNodes, before.sourceFrameId, after.sourceFrameId);
+  const frameNodeMatches = matchFrameNodes(
+    beforeNodes,
+    afterNodes,
+    before.sourceFrameId,
+    after.sourceFrameId,
+    nodeMatches.filter((match) =>
+      match.beforeFrameId === before.sourceFrameId && match.afterFrameId === after.sourceFrameId,
+    ),
+  );
   const beforeNodeMap = nodeIndex(beforeNodes);
   const afterNodeMap = nodeIndex(afterNodes);
 
@@ -799,15 +824,16 @@ function compareFrame(
   }
 
   const afterIdForBeforeId = new Map(
-    nodeMatches.pairs.map(({ before: oldNode, after: newNode }) => [oldNode.sourceNodeId, newNode.sourceNodeId]),
+    frameNodeMatches.pairs.map(({ before: oldNode, after: newNode }) => [oldNode.sourceNodeId, newNode.sourceNodeId]),
   );
-  for (const { before: beforeNode, after: afterNode } of nodeMatches.pairs) {
+  for (const { before: beforeNode, after: afterNode } of frameNodeMatches.pairs) {
     const isFrameRoot = beforeNode.sourceNodeId === before.sourceFrameId && afterNode.sourceNodeId === after.sourceFrameId;
     compareNode(
       beforeNode,
       afterNode,
       frameId,
       sourceFileId,
+      compareTokenSourceIds,
       output,
       captureCoverage,
       isFrameRoot,
@@ -832,8 +858,8 @@ function compareFrame(
     }
   }
 
-  const removedNodes = nodeMatches.removed;
-  const addedNodes = nodeMatches.added;
+  const removedNodes = frameNodeMatches.removed;
+  const addedNodes = frameNodeMatches.added;
   for (const node of removedNodes) {
     output.push({
       frameId,
@@ -865,6 +891,8 @@ function compareFrame(
       unmatchedNodeCandidates.push({
         sourceFileId,
         frameId,
+        beforeFrameId: before.sourceFrameId,
+        afterFrameId: after.sourceFrameId,
         beforeNodeId: removedNode.sourceNodeId,
         beforeName: removedNode.name,
         ...candidates,
@@ -911,7 +939,7 @@ function canInferFrameMembershipChanges(
 export function diffSnapshots(
   from: DiffInput,
   to: DiffInput,
-  options: { frameMatches?: FrameMatch[] } = {},
+  options: { frameMatches?: FrameMatch[]; nodeMatches?: NodeMatch[] } = {},
 ): SnapshotDiff {
   const fromFileId = from.snapshot.sourceFileId;
   const toFileId = to.snapshot.sourceFileId;
@@ -986,6 +1014,7 @@ export function diffSnapshots(
       changes,
       unmatchedNodeCandidates,
       captureCoverage,
+      options.nodeMatches ?? [],
     );
     frameDiffs.push({
       frameId: pair.after.sourceFrameId,
@@ -1041,6 +1070,7 @@ export function diffSnapshots(
       changes,
       unmatchedNodeCandidates,
       captureCoverage,
+      options.nodeMatches ?? [],
     );
     frameDiffs.push({
       frameId: frame.sourceFrameId,
@@ -1103,6 +1133,72 @@ export function diffSnapshots(
       ),
     unmatchedFrameCandidates,
     unmatchedNodeCandidates,
+  };
+}
+
+export function searchUnmatchedNodeCandidates(
+  diff: SnapshotDiff,
+  input: {
+    frameId: string;
+    sourceFileId: string;
+    beforeFrameId: string;
+    beforeNodeId: string;
+    query: string;
+    limit?: number;
+  },
+) {
+  const unmatchedLayer = diff.unmatchedNodeCandidates.find((candidate) =>
+    candidate.frameId === input.frameId &&
+    candidate.sourceFileId === input.sourceFileId &&
+    candidate.beforeFrameId === input.beforeFrameId &&
+    candidate.beforeNodeId === input.beforeNodeId,
+  );
+  if (!unmatchedLayer) return { candidates: [], totalCandidates: 0, candidatesTruncated: false };
+
+  const removedLayer = diff.changes.find((change) =>
+    change.frameId === input.frameId &&
+    change.sourceFileId === input.sourceFileId &&
+    change.path === "node" &&
+    isRecord(change.before) &&
+    change.before.sourceNodeId === input.beforeNodeId,
+  )?.before;
+  if (!isRecord(removedLayer) || typeof removedLayer.type !== "string") {
+    return { candidates: [], totalCandidates: 0, candidatesTruncated: false };
+  }
+
+  const query = input.query.trim().toLocaleLowerCase();
+  if (!query) return { candidates: [], totalCandidates: 0, candidatesTruncated: false };
+
+  const candidates = diff.changes.flatMap((change) => {
+    if (
+      change.frameId !== input.frameId ||
+      change.sourceFileId !== input.sourceFileId ||
+      change.path !== "node" ||
+      !isRecord(change.after) ||
+      change.after.type !== removedLayer.type ||
+      typeof change.after.sourceNodeId !== "string" ||
+      typeof change.after.name !== "string"
+    ) return [];
+
+    const name = change.after.name;
+    const sourceNodeId = change.after.sourceNodeId;
+    if (!name.toLocaleLowerCase().includes(query) && !sourceNodeId.toLocaleLowerCase().includes(query)) return [];
+
+    return [{
+      sourceNodeId,
+      name,
+      type: removedLayer.type,
+      score: name === removedLayer.name ? 1 : 0.5,
+    }];
+  }).sort((left, right) =>
+    right.score - left.score || left.name.localeCompare(right.name) || left.sourceNodeId.localeCompare(right.sourceNodeId),
+  );
+  const limit = Math.max(1, Math.min(100, Math.trunc(input.limit ?? 50)));
+
+  return {
+    candidates: candidates.slice(0, limit),
+    totalCandidates: candidates.length,
+    candidatesTruncated: candidates.length > limit,
   };
 }
 

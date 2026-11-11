@@ -1,4 +1,4 @@
-import { compareRgbaPixels, getPixelDiffPlan } from "./pixel-diff";
+import { compareRgbaPixels, getPixelDiffImageRect, getPixelDiffPlan } from "./pixel-diff";
 
 type PixelDiffMessage = {
   before: ImageBitmap;
@@ -35,6 +35,15 @@ workerScope.onmessage = async ({ data }) => {
   }
 
   const { width, height } = plan;
+  const beforeRect = getPixelDiffImageRect(data.beforeSourceWidth, data.beforeSourceHeight);
+  const afterRect = getPixelDiffImageRect(data.afterSourceWidth, data.afterSourceHeight);
+  if (!beforeRect || !afterRect) {
+    data.before.close();
+    data.after.close();
+    workerScope.postMessage({ error: "The captured screen dimensions are invalid. Use side-by-side or overlay to compare these screens." });
+    return;
+  }
+
   const canvas = new OffscreenCanvas(width, height);
   const context = canvas.getContext("2d", { willReadFrequently: true });
   if (!context) {
@@ -45,10 +54,10 @@ workerScope.onmessage = async ({ data }) => {
   }
 
   context.clearRect(0, 0, width, height);
-  context.drawImage(data.before, 0, 0, Math.ceil(data.beforeSourceWidth * 2), Math.ceil(data.beforeSourceHeight * 2));
+  context.drawImage(data.before, beforeRect.x, beforeRect.y, beforeRect.width, beforeRect.height);
   const beforePixels = context.getImageData(0, 0, width, height).data;
   context.clearRect(0, 0, width, height);
-  context.drawImage(data.after, 0, 0, Math.ceil(data.afterSourceWidth * 2), Math.ceil(data.afterSourceHeight * 2));
+  context.drawImage(data.after, afterRect.x, afterRect.y, afterRect.width, afterRect.height);
   const afterPixels = context.getImageData(0, 0, width, height).data;
   const { pixels, changedPixels } = compareRgbaPixels(beforePixels, afterPixels);
 

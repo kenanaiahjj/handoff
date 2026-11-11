@@ -17,6 +17,11 @@ import {
   resolveFrameReplacementMatches,
   type ConfirmedFrameReplacement,
 } from "../services/frame-replacements";
+import {
+  resolveNodeReplacementMatches,
+  type ConfirmedNodeReplacement,
+  type NodeMatch,
+} from "../services/node-replacements";
 
 export type StoredSnapshot = SnapshotEnvelope | VisualOnlySnapshot;
 
@@ -451,6 +456,141 @@ export function getConfirmedFrameMatchesBetweenVersions(input: {
     toFrameIds: input.to.snapshot.frames.map((frame) => frame.sourceFrameId),
     fromSourceFileId: input.from.snapshot.sourceFileId,
     toSourceFileId: input.to.snapshot.sourceFileId,
+    replacements,
+  });
+}
+
+export class NodeReplacementConflictError extends Error {
+  constructor() {
+    super("This layer is already matched to another layer in that version.");
+    this.name = "NodeReplacementConflictError";
+  }
+}
+
+type NodeReplacementMatchInput = ConfirmedNodeReplacement & {
+  workspaceId: string;
+  handoffId: string;
+  confirmedByUserId: string;
+};
+
+export function hasConfirmedNodeReplacementMatch(input: Omit<NodeReplacementMatchInput, "confirmedByUserId">) {
+  return Boolean(getDatabase()
+    .prepare(
+      `SELECT 1 FROM handoff_node_replacement
+       WHERE workspace_id = ? AND handoff_id = ?
+         AND baseline_version_id = ? AND new_version_id = ?
+         AND before_frame_id = ? AND after_frame_id = ?
+         AND before_node_id = ? AND after_node_id = ?`,
+    )
+    .get(
+      input.workspaceId,
+      input.handoffId,
+      input.baselineVersionId,
+      input.newVersionId,
+      input.beforeFrameId,
+      input.afterFrameId,
+      input.beforeNodeId,
+      input.afterNodeId,
+    ));
+}
+
+export function createConfirmedNodeReplacementMatch(input: NodeReplacementMatchInput) {
+  const database = getDatabase();
+  const confirmMatch = database.transaction(() => {
+    const versions = database
+      .prepare(
+        `SELECT id FROM handoff_version
+         WHERE workspace_id = ? AND handoff_id = ? AND id IN (?, ?)
+         ORDER BY created_at ASC, id ASC`,
+      )
+      .all(input.workspaceId, input.handoffId, input.baselineVersionId, input.newVersionId) as Array<{ id: string }>;
+    if (versions.length !== 2 || versions[0].id !== input.baselineVersionId) {
+      throw new Error("Choose two versions in the same handoff, with the earlier version as the baseline.");
+    }
+
+    const existing = database
+      .prepare(
+        `SELECT before_frame_id AS beforeFrameId, after_frame_id AS afterFrameId,
+                before_node_id AS beforeNodeId, after_node_id AS afterNodeId
+         FROM handoff_node_replacement
+         WHERE workspace_id = ? AND handoff_id = ?
+           AND baseline_version_id = ? AND new_version_id = ?
+           AND ((before_frame_id = ? AND before_node_id = ?)
+             OR (after_frame_id = ? AND after_node_id = ?))`,
+      )
+      .all(
+        input.workspaceId,
+        input.handoffId,
+        input.baselineVersionId,
+        input.newVersionId,
+        input.beforeFrameId,
+        input.beforeNodeId,
+        input.afterFrameId,
+        input.afterNodeId,
+      ) as Array<Pick<ConfirmedNodeReplacement, "beforeFrameId" | "afterFrameId" | "beforeNodeId" | "afterNodeId">>;
+
+    if (existing.some((match) =>
+      match.beforeFrameId === input.beforeFrameId &&
+      match.afterFrameId === input.afterFrameId &&
+      match.beforeNodeId === input.beforeNodeId &&
+      match.afterNodeId === input.afterNodeId,
+    )) return "already-confirmed" as const;
+    if (existing.length) throw new NodeReplacementConflictError();
+
+    database
+      .prepare(
+        `INSERT INTO handoff_node_replacement
+          (handoff_id, workspace_id, baseline_version_id, new_version_id,
+           before_frame_id, after_frame_id, before_node_id, after_node_id,
+           confirmed_by_user_id, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .run(
+        input.handoffId,
+        input.workspaceId,
+        input.baselineVersionId,
+        input.newVersionId,
+        input.beforeFrameId,
+        input.afterFrameId,
+        input.beforeNodeId,
+        input.afterNodeId,
+        input.confirmedByUserId,
+        new Date().toISOString(),
+      );
+    return "created" as const;
+  });
+
+  return confirmMatch.immediate();
+}
+
+export function getConfirmedNodeMatchesBetweenVersions(input: {
+  workspaceId: string;
+  handoffId: string;
+  from: { id: string };
+  to: { id: string };
+}): NodeMatch[] {
+  const database = getDatabase();
+  const versions = database
+    .prepare(
+      `SELECT id FROM handoff_version
+       WHERE workspace_id = ? AND handoff_id = ?
+       ORDER BY created_at ASC, id ASC`,
+    )
+    .all(input.workspaceId, input.handoffId) as Array<{ id: string }>;
+  const replacements = database
+    .prepare(
+      `SELECT baseline_version_id AS baselineVersionId, new_version_id AS newVersionId,
+              before_frame_id AS beforeFrameId, after_frame_id AS afterFrameId,
+              before_node_id AS beforeNodeId, after_node_id AS afterNodeId
+       FROM handoff_node_replacement
+       WHERE workspace_id = ? AND handoff_id = ?`,
+    )
+    .all(input.workspaceId, input.handoffId) as ConfirmedNodeReplacement[];
+
+  return resolveNodeReplacementMatches({
+    versionIds: versions.map((version) => version.id),
+    fromVersionId: input.from.id,
+    toVersionId: input.to.id,
     replacements,
   });
 }

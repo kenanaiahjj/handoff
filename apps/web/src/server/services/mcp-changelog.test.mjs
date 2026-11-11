@@ -122,6 +122,32 @@ test("links an AI-authored draft to evidence generated from its exact version pa
   ]);
 });
 
+test("uses reviewer-confirmed layer matches when building changelog evidence", () => {
+  const before = syntheticSnapshot("Review booking");
+  before.frames[0].nodes[0].sourceNodeId = "node-before";
+  const after = syntheticSnapshot("Review your booking");
+  after.frames[0].nodes[0].sourceNodeId = "node-after";
+  after.frames[0].nodes[0].name = "Page title";
+
+  const evidence = collectChangelogEvidence({
+    workspaceId: "workspace-synthetic",
+    handoffId: "handoff-synthetic",
+    from: { id: "version-before", versionLabel: "Before", snapshot: before },
+    to: { id: "version-after", versionLabel: "After", snapshot: after },
+    rules: noLayoutRules,
+    nodeMatches: [{
+      beforeFrameId: "frame-checkout",
+      afterFrameId: "frame-checkout",
+      beforeNodeId: "node-before",
+      afterNodeId: "node-after",
+    }],
+  }, () => []);
+
+  assert.equal(evidence.some((item) => item.kind === "diff" && item.path === "node"), false);
+  assert.equal(evidence.some((item) => item.kind === "diff" && item.path === "name"), true);
+  assert.equal(evidence.some((item) => item.kind === "diff" && item.path === "sourcePayload.textSegments[0].characters"), true);
+});
+
 test("rejects AI statements that cite evidence outside the supplied version pair", async () => {
   await assert.rejects(() => createEvidenceLinkedDraft({
     workspaceId: "workspace-synthetic",

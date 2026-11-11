@@ -246,6 +246,72 @@ test("captures exact auto-layout padding and wrap spacing with measured child ma
   });
 });
 
+test("captures grid counts, tracks, gaps, and child placement from Figma source fields", async () => {
+  const fixture = installCaptureFixture();
+  Object.assign(fixture.frame, {
+    layoutMode: "GRID",
+    gridRowCount: 2,
+    gridColumnCount: 3,
+    gridRowGap: 11.5,
+    gridColumnGap: 8.5,
+    gridRowSizes: [
+      { type: "FIXED", value: 120 },
+      { type: "FLEX", value: 1 },
+    ],
+    gridColumnSizes: [
+      { type: "FLEX", value: 1 },
+      { type: "FIXED", value: 240 },
+      { type: "FLEX", value: 2 },
+    ],
+  });
+  const child = {
+    id: "grid-child-1",
+    type: "RECTANGLE",
+    name: "Grid card",
+    visible: true,
+    absoluteBoundingBox: { x: 20, y: 30, width: 40, height: 50 },
+    gridRowAnchorIndex: 1,
+    gridColumnAnchorIndex: 2,
+    gridRowSpan: 1,
+    gridColumnSpan: 1,
+    gridChildHorizontalAlign: "CENTER",
+    gridChildVerticalAlign: "MIN",
+    fills: [],
+    strokes: [],
+    children: [],
+    parent: fixture.frame,
+    async exportAsync(settings) {
+      if (settings.format === "SVG_STRING") return '<svg xmlns="http://www.w3.org/2000/svg" width="40" height="50" />';
+      return fixture.png;
+    },
+  };
+  fixture.frame.children = [child];
+
+  const result = await captureFigmaCanvas("selected", () => {});
+  const [grid, capturedChild] = result.payload.frames[0].nodes;
+
+  assert.equal(grid.layout.mode, "GRID");
+  assert.equal(grid.layout.constraints.gridRowCount, 2);
+  assert.equal(grid.layout.constraints.gridColumnCount, 3);
+  assert.deepEqual(grid.spacing.rowGap, { value: 11.5, unit: "px", provenance: "source", sourceProperty: "gridRowGap" });
+  assert.deepEqual(grid.spacing.columnGap, { value: 8.5, unit: "px", provenance: "source", sourceProperty: "gridColumnGap" });
+  assert.deepEqual(grid.sourcePayload.gridRowSizes, [
+    { type: "FIXED", value: 120 },
+    { type: "FLEX", value: 1 },
+  ]);
+  assert.deepEqual(grid.sourcePayload.gridColumnSizes, [
+    { type: "FLEX", value: 1 },
+    { type: "FIXED", value: 240 },
+    { type: "FLEX", value: 2 },
+  ]);
+  assert.equal(capturedChild.sourcePayload.gridRowAnchorIndex, 1);
+  assert.equal(capturedChild.sourcePayload.gridColumnAnchorIndex, 2);
+  assert.equal(capturedChild.sourcePayload.gridRowSpan, 1);
+  assert.equal(capturedChild.sourcePayload.gridColumnSpan, 1);
+  assert.equal(capturedChild.sourcePayload.gridChildHorizontalAlign, "CENTER");
+  assert.equal(capturedChild.sourcePayload.gridChildVerticalAlign, "MIN");
+});
+
 test("preserves out-of-frame Figma render bounds for exact canvas placement", async () => {
   const fixture = installCaptureFixture();
   fixture.frame.absoluteRenderBounds = { x: 5, y: 10, width: 150, height: 125 };

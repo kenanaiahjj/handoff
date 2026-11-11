@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureScopeNotice, comparisonFrameStatusLabel } from "./compare-presentation.ts";
+import { captureScopeNotice, comparisonChangeLabel, comparisonFrameStatusLabel } from "./compare-presentation.ts";
 import * as comparePresentation from "./compare-presentation.ts";
 
 test("labels capture coverage with the snapshot side, not as a screen change", () => {
@@ -33,6 +33,19 @@ test("labels one-sided screens by the capture that has no matching screen", () =
   assert.equal(comparisonFrameStatusLabel("unchanged"), "No changes");
   assert.equal(comparisonFrameStatusLabel("removed"), "Removed");
   assert.equal(comparisonFrameStatusLabel("added"), "New");
+});
+
+test("labels token binding identity and meaning fields separately", () => {
+  const binding = 'tokens["color:fills[0]"]';
+
+  assert.equal(comparisonChangeLabel({ path: `${binding}.sourceId` }), "Bound token ID");
+  assert.equal(comparisonChangeLabel({ path: `${binding}.collectionId` }), "Collection ID");
+  assert.equal(comparisonChangeLabel({ path: `${binding}.collectionName` }), "Collection");
+  assert.equal(comparisonChangeLabel({ path: `${binding}.category` }), "Token type");
+  assert.equal(comparisonChangeLabel({ path: `${binding}.name` }), "Token name");
+  assert.equal(comparisonChangeLabel({ path: `${binding}.mode` }), "Mode");
+  assert.equal(comparisonChangeLabel({ path: `${binding}.value` }), "Resolved value");
+  assert.equal(comparisonChangeLabel({ path: `${binding}.value.r` }), "Resolved value");
 });
 
 test("explains one-sided frames when selected capture scopes have the same label", () => {

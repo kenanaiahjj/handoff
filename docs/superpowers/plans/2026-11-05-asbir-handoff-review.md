@@ -62,7 +62,7 @@ export function screenToFramePoint(
 - [ ] Return a `Measurement` for every numeric field with `value`, `unit`, `provenance`, and `sourceProperty` as required by `@asbir/snapshot-contract`.
 - [ ] For an element with no source margin property, calculate the distance from its bounds to a selected parent edge or sibling edge and label the row `Measured distance`.
 - [ ] Display unbound fills and styles with their raw value and the label `No token binding`; never infer a token by value equality.
-- [ ] Display `Unavailable` for missing source fields and suppress exactness badges for image-only snapshots.
+- [x] Display `Unavailable` for missing source fields and suppress exactness badges for image-only snapshots. Verified 2026-11-11 with inspector and Figma grid regression coverage.
 - [ ] Add inspector rows for width, height, x/y, each padding edge, row/column gap, measured margins, fills, typography, and token mode.
 - [ ] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`; manually inspect a fixture with explicit layout, one with manual positioning, and one visual-only upload.
 
@@ -91,9 +91,11 @@ export interface SnapshotDiff {
 - [ ] Match frames and nodes by source IDs and compare normalized properties field by field.
 - [ ] Emit added and removed records when IDs exist in only one version. Treat an ID collision across sources as a separate node by including the source file ID.
 - [ ] If source IDs changed, return unmatched candidates to the UI for explicit reviewer mapping; do not automatically merge candidate nodes.
-- [ ] Compare bound token ID, collection, mode, and value separately from raw fills.
-- [ ] Implement pixel diff in a Web Worker using decoded image bitmaps and `ImageData`; produce an overlay-ready difference bitmap at the canonical source dimensions.
-- [ ] Add before/after, overlay, and pixel-diff modes with a structured change list linked to frame and node IDs.
+- [x] Keep regenerated node IDs unmatched when type/name candidates are ambiguous or renamed; only auto-match unique type/name pairs. Added duplicate-label and rename regression cases; verified 2026-11-11.
+- [x] Show unmatched node candidates in the compare UI and persist reviewer-confirmed node matches for the selected version pair. Let reviewers search all unmatched same-type layers by name or source ID when the first ten suggestions do not include the intended match. Reuse confirmed mappings in canvas comparisons, published review, MCP diffs, and AI changelog evidence; do not reuse them for other version pairs. Verified by the 250-test suite, lint, and production build on 2026-11-11.
+- [x] Compare bound token ID, collection, mode, and value separately from raw fills. Compare source IDs only when both versions identify the same source file; keep semantic comparisons across copied files resilient to ID churn. Show field-level token labels in compare. Verified 2026-11-11.
+- [x] Implement pixel diff in a Web Worker using decoded image bitmaps and `ImageData`; produce an overlay-ready difference bitmap at the canonical source dimensions. Keep both image layers anchored to the same top-left source origin when screen dimensions differ. Verified 2026-11-11 with a 420 × 2073 before screen and a 393 × 2073 after screen.
+- [x] Add before/after, overlay, and pixel-diff modes with a structured change list linked to frame and node IDs. Verified in the running app with the four-screen resize fixture on 2026-11-11.
 - [x] Stress-test structured diffs across 210 screens and 31,500 nodes with five changed screens, and preserve 50,000 changes across five frames when layer IDs regenerate. Verified 2026-11-09.
 - [x] Cull inspect hit targets to visible, actionable elements and use ID-based lookup for selected and hovered nodes. A 31,500-node fixture renders only the 150 targets in its viewport. Verified 2026-11-09.
 - [x] Manually inspect a four-screen resize comparison in the running app: verify side-by-side, overlay opacity, pixel diff, and selection of another screen with its own recorded changes. Restored the browser to its original URL. Verified 2026-11-09.
@@ -106,8 +108,9 @@ export interface SnapshotDiff {
 - [ ] Add comment tables and API operations for create, list, resolve, and reply. Every comment stores workspace, version, frame ID, optional node ID, frame-relative point, author, and timestamp.
 - [ ] Render comments from saved frame-relative points and convert them through the same canvas transform used by pins.
 - [x] Test frame-relative pin placement in both overview and selected-screen coordinates, including reply and resolved-pin visibility. Verified 2026-11-09.
-- [ ] Add a project rules JSON shape for allowed spacing values, required token binding categories, and optional frame bounds.
-- [ ] Implement deterministic checks that return `ruleId`, `frameId`, `sourceNodeId`, actual value, expected values, and a human-readable explanation.
+- [x] Add a project rules JSON shape for allowed spacing values, required token binding categories, and optional frame bounds.
+- [x] Implement deterministic checks that return `ruleId`, `frameId`, `sourceNodeId`, actual value, expected values, and a human-readable explanation.
+  - Verified 2026-11-11: exact spacing, measured-margin provenance, missing color/spacing token bindings, and 31,500 elements across 210 screens; the fixture produced 63,000 unique findings in about 102 ms.
 - [x] Keep rule findings distinct from AI-generated notes. Allow assignee, open/resolved status, comment, and export.
 - [x] Export source frame images as PNG and JPEG at their stored dimensions. Offer the overview render and individual frame renders separately.
 - [ ] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`; manually verify comments remain pinned after zooming and saved findings remain tied to the same version.

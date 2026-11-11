@@ -1,5 +1,9 @@
 import type { SnapshotNode } from "@asbir/snapshot-contract";
 
+export function inspectionMeasurementEntries<T>(values: Record<string, T>) {
+  return Object.entries(values);
+}
+
 export function formatPixelValue(value: number) {
   if (!Number.isFinite(value)) return "—";
 
@@ -35,13 +39,14 @@ function roundMeasurementValues(value: unknown, forceMeasurement = false): unkno
     const unit = entries.find(([key]) => key === "unit")?.[1];
     const unitName = typeof unit === "string" ? unit.trim().toLowerCase() : "";
     const hasPixelUnit = unitName === "px" || unitName === "pixel" || unitName === "pixels";
+    const nestedMeasurement = unitName ? hasPixelUnit : forceMeasurement;
 
     return Object.fromEntries(
       entries.map(([key, item]) => [
         key,
         key === "value" && hasPixelUnit && typeof item === "number"
           ? roundMeasurementValues(item, true)
-          : roundMeasurementValues(item, forceMeasurement),
+          : roundMeasurementValues(item, nestedMeasurement),
       ]),
     );
   }

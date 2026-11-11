@@ -5,7 +5,7 @@ import type { SnapshotNode } from "@asbir/snapshot-contract";
 import type { HandoffComment } from "../comments/CommentPin";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import { MeasurementRow } from "./MeasurementRow";
-import { formatFrameSize, formatPixelValue, inspectionMargins } from "./format-captured-measurement";
+import { formatFrameSize, formatPixelValue, inspectionMargins, inspectionMeasurementEntries } from "./format-captured-measurement";
 import { capturedGridTracks, formatGridTrack, shouldShowGridLayout } from "./grid-layout";
 import { readPaintDetails, readTextStyleRuns, type TextStyleRun } from "./text-style-runs";
 
@@ -80,16 +80,14 @@ function MeasurementGroup({
   title: string;
   values: Record<string, { value: number | null; unit: string; provenance: "source" | "measured" | "unavailable"; sourceProperty: string | null }>;
 }) {
-  const available = Object.entries(values).filter(([, measurement]) =>
-    measurement.value !== null && measurement.provenance !== "unavailable",
-  );
-  if (!available.length) return null;
+  const entries = inspectionMeasurementEntries(values);
+  if (!entries.length) return null;
 
   return (
     <section className="border-t border-[#393939] pt-3">
       <h3 className="mb-1 text-[12px] font-semibold text-[#c8c8c8]">{title}</h3>
       <dl>
-        {available.map(([label, measurement]) => (
+        {entries.map(([label, measurement]) => (
           <MeasurementRow key={label} label={label} measurement={measurement} />
         ))}
       </dl>

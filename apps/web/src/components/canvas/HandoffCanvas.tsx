@@ -51,7 +51,7 @@ export type ReviewMetadata = {
   canUseLocalPreview: boolean;
 };
 
-export type ReviewDockPanels = Partial<Record<"version" | "qa" | "changelog", ReactNode>>;
+export type ReviewDockPanels = Partial<Record<"version", ReactNode>>;
 
 type HandoffCanvasProps = {
   frames: CanvasFrameOption[];
@@ -158,7 +158,7 @@ export function HandoffCanvas({
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [localSelectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [showResolvedPins, setShowResolvedPins] = useState(false);
-  const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "qa" | "changelog" | "agent" | "local" | "mcp">("inspect");
+  const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "agent" | "local" | "mcp">("inspect");
   const [canvasModeOverride, setCanvasModeOverride] = useState<"view" | "inspect" | null>(null);
   const [statesOpen, setStatesOpen] = useState(false);
   const [mobilePanelOpenOverride, setMobilePanelOpenOverride] = useState<boolean | null>(null);
@@ -1140,8 +1140,6 @@ export function HandoffCanvas({
               ["inspect", "Properties", true],
               ["compare", "Compare", canCompare],
               ["version", "Version", Boolean(dockPanels.version)],
-              ["changelog", "Changelog", Boolean(dockPanels.changelog)],
-              ["qa", "QA", Boolean(dockPanels.qa)],
               ["agent", "Agent", Boolean(metadata.canManageIntegrations && metadata.reviewHref && metadata.versionIsPublished)],
               ["local", "Local", metadata.canUseLocalPreview],
               ["mcp", "MCP", metadata.canManageIntegrations],
@@ -1200,10 +1198,6 @@ export function HandoffCanvas({
               onToggleResolvedPins={setShowResolvedPins}
             />
           </div>
-          ) : panelMode === "qa" && dockPanels.qa ? (
-            <div className="min-h-0 flex-1 overflow-y-auto p-3">{dockPanels.qa}</div>
-          ) : panelMode === "changelog" && dockPanels.changelog ? (
-            <div className="min-h-0 flex-1 overflow-y-auto">{dockPanels.changelog}</div>
           ) : panelMode === "version" && dockPanels.version ? (
             <div className="min-h-0 flex-1 overflow-y-auto p-3">{dockPanels.version}</div>
         ) : panelMode === "mcp" ? (

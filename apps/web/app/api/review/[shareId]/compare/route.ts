@@ -1,4 +1,8 @@
-import { getConfirmedFrameMatchesBetweenVersions, type StoredVersionAsset } from "@/src/server/repositories/versions";
+import {
+  getConfirmedFrameMatchesBetweenVersions,
+  getConfirmedNodeMatchesBetweenVersions,
+  type StoredVersionAsset,
+} from "@/src/server/repositories/versions";
 import { diffSnapshots, isStructuredSnapshot } from "@/src/server/services/diff";
 import { getVisiblePublishedReviewVersion, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
 
@@ -49,10 +53,16 @@ export async function GET(request: Request, context: ReviewCompareRoute) {
     from,
     to,
   });
+  const nodeMatches = getConfirmedNodeMatchesBetweenVersions({
+    workspaceId: access.handoff.workspaceId,
+    handoffId: access.handoff.id,
+    from,
+    to,
+  });
   const diff = diffSnapshots(
     { versionId: from.id, snapshot: from.snapshot },
     { versionId: to.id, snapshot: to.snapshot },
-    { frameMatches },
+    { frameMatches, nodeMatches },
   );
   const frames = diff.frames.map((frame) => ({
     ...frame,

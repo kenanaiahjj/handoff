@@ -2,6 +2,7 @@ import type { StoredSnapshot } from "../repositories/versions";
 import { listHandoffComments } from "../repositories/comments";
 import { evaluateLayoutRules } from "../services/layout-rules";
 import { diffSnapshots } from "../services/diff";
+import type { FrameMatch, NodeMatch } from "../services/diff";
 import { generateChangelog } from "./openai-provider";
 import type { EvidenceRef } from "./schema";
 
@@ -33,10 +34,13 @@ export function collectChangelogEvidence(input: {
   from: VersionInput;
   to: VersionInput;
   rules: Parameters<typeof evaluateLayoutRules>[1];
+  frameMatches?: FrameMatch[];
+  nodeMatches?: NodeMatch[];
 }, listComments = listHandoffComments) {
   const diff = diffSnapshots(
     { versionId: input.from.id, snapshot: input.from.snapshot },
     { versionId: input.to.id, snapshot: input.to.snapshot },
+    { frameMatches: input.frameMatches, nodeMatches: input.nodeMatches },
   );
   const frameEvidence: DraftEvidence[] = [];
   const diffEvidence: DraftEvidence[] = [];
@@ -136,6 +140,8 @@ export async function createEvidenceLinkedDraft(input: {
   from: VersionInput;
   to: VersionInput;
   rules: Parameters<typeof evaluateLayoutRules>[1];
+  frameMatches?: FrameMatch[];
+  nodeMatches?: NodeMatch[];
 }, dependencies: ChangelogDraftDependencies = {}) {
   const usableEvidence = collectChangelogEvidence(input, dependencies.listComments);
   const generated = await (dependencies.generateChangelog ?? generateChangelog)({

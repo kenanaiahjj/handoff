@@ -9,7 +9,11 @@ import { listHandoffVersions, listHandoffs } from "@/src/server/repositories/han
 import { listProjects, getProject } from "@/src/server/repositories/projects";
 import { resolveWorkspaceMcpToken, type McpScope } from "@/src/server/repositories/mcp-tokens";
 import { listLinkedExternalTasks } from "@/src/server/repositories/linked-external-tasks";
-import { getConfirmedFrameMatchesBetweenVersions, getVersion } from "@/src/server/repositories/versions";
+import {
+  getConfirmedFrameMatchesBetweenVersions,
+  getConfirmedNodeMatchesBetweenVersions,
+  getVersion,
+} from "@/src/server/repositories/versions";
 import { linkExternalTaskToHandoff } from "@/src/server/services/link-external-task";
 import { toMcpApprovedChangelog } from "@/src/server/services/mcp-changelog";
 import { loadHandoff, loadVersion } from "@/src/server/services/mcp-access";
@@ -333,10 +337,11 @@ function registerReadTools(server: McpServer, workspaceId: string) {
       const to = getVersion({ workspaceId, versionId: toVersionId });
       if (!from || !to || from.handoffId !== handoffId || to.handoffId !== handoffId) throw new Error("Both versions must belong to this handoff.");
       const frameMatches = getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to });
+      const nodeMatches = getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to });
       const diff = diffSnapshots(
         { versionId: from.id, snapshot: from.snapshot },
         { versionId: to.id, snapshot: to.snapshot },
-        { frameMatches },
+        { frameMatches, nodeMatches },
       );
       if (frameId === undefined && offset === undefined && limit === undefined) return textResult(diff);
       return textResult(pageVersionDiff(diff, { frameId, offset, limit }));
@@ -355,12 +360,16 @@ function registerReadTools(server: McpServer, workspaceId: string) {
       if (!project) throw new Error("Project not found in this workspace.");
       const from = loadVersion(workspaceId, { projectId, handoffId, versionId: fromVersionId });
       const to = loadVersion(workspaceId, { projectId, handoffId, versionId: toVersionId });
+      const frameMatches = getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to });
+      const nodeMatches = getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to });
       const evidence = collectChangelogEvidence({
         workspaceId,
         handoffId,
         from: { id: from.id, versionLabel: from.versionLabel, snapshot: from.snapshot },
         to: { id: to.id, versionLabel: to.versionLabel, snapshot: to.snapshot },
         rules: project.rules,
+        frameMatches,
+        nodeMatches,
       });
       return textResult({
         handoffId: handoff.id,

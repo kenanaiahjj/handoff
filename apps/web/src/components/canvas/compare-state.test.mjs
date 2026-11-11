@@ -55,6 +55,16 @@ test("selects the first changed screen as the comparison focus", () => {
   assert.equal(preferredCompareFrameId(null), "");
 });
 
+test("shows unmatched layer suggestions only for the selected screen", () => {
+  const candidates = [
+    { frameId: "screen-a", beforeNodeId: "node-a" },
+    { frameId: "screen-b", beforeNodeId: "node-b" },
+  ];
+  assert.equal(typeof compareState.unmatchedNodeCandidatesForFrame, "function");
+  assert.deepEqual(compareState.unmatchedNodeCandidatesForFrame(candidates, "screen-b"), [candidates[1]]);
+  assert.deepEqual(compareState.unmatchedNodeCandidatesForFrame(candidates, "missing"), []);
+});
+
 test("parses a direct comparison link with its selected screen and view", () => {
   assert.equal(typeof compareState.parseCompareRouteState, "function");
   assert.deepEqual(

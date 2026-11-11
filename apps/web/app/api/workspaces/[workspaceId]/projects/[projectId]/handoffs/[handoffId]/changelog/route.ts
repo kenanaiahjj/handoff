@@ -4,7 +4,11 @@ import { isAiConfigured } from "@/src/server/ai/openai-provider";
 import { createChangelogDraft, listChangelogDrafts } from "@/src/server/repositories/changelogs";
 import { getHandoff, listHandoffVersions } from "@/src/server/repositories/handoffs";
 import { getProject } from "@/src/server/repositories/projects";
-import { getVersion } from "@/src/server/repositories/versions";
+import {
+  getConfirmedFrameMatchesBetweenVersions,
+  getConfirmedNodeMatchesBetweenVersions,
+  getVersion,
+} from "@/src/server/repositories/versions";
 import {
   requireWorkspaceRole,
   WorkspaceAccessError,
@@ -58,6 +62,9 @@ export async function POST(request: Request, context: ChangelogRoute) {
       return Response.json({ error: "The selected versions were not found in this handoff." }, { status: 404 });
     }
 
+    const frameMatches = getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to });
+    const nodeMatches = getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to });
+
     const draft = await createEvidenceLinkedDraft({
       workspaceId,
       handoffId,
@@ -65,6 +72,8 @@ export async function POST(request: Request, context: ChangelogRoute) {
       from: { id: from.id, versionLabel: from.versionLabel, snapshot: from.snapshot },
       to: { id: to.id, versionLabel: to.versionLabel, snapshot: to.snapshot },
       rules: project.rules,
+      frameMatches,
+      nodeMatches,
     });
     const saved = createChangelogDraft({
       workspaceId,

@@ -5,8 +5,6 @@ import { hasPendingHandoffReviewInvite, listVisiblePublishedReviewVersions, reso
 import { getProject } from "@/src/server/repositories/projects";
 import { getVersion } from "@/src/server/repositories/versions";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
-import { LayoutFindings } from "@/src/components/canvas/LayoutFindings";
-import { PublishedChangelogPanel } from "@/src/components/canvas/PublishedChangelogPanel";
 import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
 
 export const instant = false;
@@ -90,17 +88,6 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
   const version = getVersion({ workspaceId: handoff.workspaceId, versionId: selectedVersion.id });
   if (!version || version.handoffId !== handoff.id) notFound();
 
-  const findingsEndpoint = `/api/review/${encodeURIComponent(shareId)}/versions/${encodeURIComponent(selectedVersion.id)}/findings`;
-  const dockPanels = {
-    qa: <LayoutFindings endpoint={findingsEndpoint} canEdit={Boolean(access.membershipRole) && access.decision.canWrite} canComment={access.decision.canWrite} />,
-    changelog: <PublishedChangelogPanel
-      endpoint={`/api/review/${encodeURIComponent(shareId)}/changelog`}
-      versionId={selectedVersion.id}
-      versionLabel={selectedVersion.versionLabel}
-      versionHrefPrefix={reviewPath}
-    />,
-  };
-
   return (
     <main className="h-dvh min-h-0 overflow-hidden bg-surface text-foreground">
       <HandoffReviewSurface
@@ -122,7 +109,6 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
         canAnnotate={access.decision.canWrite}
         canUseLocalPreview={false}
         canConfirmFrameMatches={false}
-        dockPanels={dockPanels}
       />
     </main>
   );

@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { compareRgbaPixels, getPixelDiffPlan } from "./pixel-diff.ts";
+import { compareRgbaPixels, getPixelDiffImageRect, getPixelDiffPlan } from "./pixel-diff.ts";
 
 test("keeps a standard tall mobile screen at exact 2x comparison resolution", () => {
   assert.deepEqual(getPixelDiffPlan(393, 2073, 393, 2073), {
@@ -33,6 +33,24 @@ test("rejects invalid source dimensions", () => {
   assert.deepEqual(getPixelDiffPlan(0, 100, 100, 100), {
     status: "invalid",
   });
+});
+
+test("keeps a smaller after image anchored to the canonical top-left origin", () => {
+  const plan = getPixelDiffPlan(420, 2073, 393, 2073);
+  const afterRect = getPixelDiffImageRect(393, 2073);
+
+  assert.equal(plan.status, "ready");
+  assert.deepEqual(afterRect, { x: 0, y: 0, width: 786, height: 4146 });
+  assert.equal(afterRect.width / plan.width, 786 / 840);
+  assert.equal(afterRect.height / plan.height, 1);
+});
+
+test("fills the canonical diff canvas when the after image is the larger screen", () => {
+  const plan = getPixelDiffPlan(393, 2073, 420, 2073);
+  const afterRect = getPixelDiffImageRect(420, 2073);
+
+  assert.equal(plan.status, "ready");
+  assert.deepEqual(afterRect, { x: 0, y: 0, width: plan.width, height: plan.height });
 });
 
 test("detects subtle color changes in captured screen pixels", () => {

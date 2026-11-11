@@ -102,7 +102,19 @@ export function comparisonChangeLabel(change: ChangeSummary) {
   if (path === "renderAsset") return "Screen render";
   if (path === "frame") return "Screen";
   if (path === "node") return "Layer";
-  if (path.startsWith("tokens[")) return "Token binding";
+  if (path.startsWith("tokens[")) {
+    const tokenFieldPath = path.slice(path.lastIndexOf("].") + 2);
+    const field = tokenFieldPath.match(/^(sourceId|collectionId|collectionName|category|name|mode|value)(?:\.|$)/)?.[1];
+    return ({
+      sourceId: "Bound token ID",
+      collectionId: "Collection ID",
+      collectionName: "Collection",
+      category: "Token type",
+      name: "Token name",
+      mode: "Mode",
+      value: "Resolved value",
+    } as const)[field as "sourceId" | "collectionId" | "collectionName" | "category" | "name" | "mode" | "value"] ?? "Token binding";
+  }
   if (/^bounds\.(x|y|width|height)$/.test(path)) {
     return ({
       "bounds.x": "Horizontal position",

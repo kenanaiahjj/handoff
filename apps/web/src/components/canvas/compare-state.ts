@@ -93,3 +93,10 @@ export function preferredCompareFrameId(result: Pick<CompareResultLike, "frames"
   const frames = result?.frames ?? [];
   return frames.find((frame) => frame.status !== "unchanged")?.frameId ?? frames[0]?.frameId ?? "";
 }
+
+export function unmatchedNodeCandidatesForFrame<Candidate extends { frameId: string }>(
+  candidates: Candidate[],
+  frameId: string,
+) {
+  return candidates.filter((candidate) => candidate.frameId === frameId);
+}

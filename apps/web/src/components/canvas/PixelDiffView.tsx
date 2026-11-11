@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { useEffect, useRef, useState } from "react";
-import { getPixelDiffPlan } from "../../workers/pixel-diff";
+import { getPixelDiffImageRect, getPixelDiffPlan } from "../../workers/pixel-diff";
 
 type PixelPreview = {
   name: string;
@@ -42,6 +42,9 @@ async function decodeScreenImage(imageUrl: string, signal: AbortSignal) {
 export function PixelDiffView({ before, after }: { before: PixelPreview; after: PixelPreview }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const plan = getPixelDiffPlan(before.sourceWidth, before.sourceHeight, after.sourceWidth, after.sourceHeight);
+  const afterImageRect = plan.status === "ready"
+    ? getPixelDiffImageRect(after.sourceWidth, after.sourceHeight)
+    : null;
   const plannedWidth = plan.status === "ready" ? plan.width : null;
   const plannedHeight = plan.status === "ready" ? plan.height : null;
   const [result, setResult] = useState<{ width: number; height: number; changedPixels: number } | null>(null);
@@ -102,20 +105,36 @@ export function PixelDiffView({ before, after }: { before: PixelPreview; after: 
 
   return (
     <div className="relative grid min-h-[min(68vh,760px)] place-items-center overflow-hidden rounded-surface border border-border bg-surface-inset p-3">
-      <Image
-        alt={`After screen, shown beneath pixel differences: ${after.name}`}
-        className="pointer-events-none absolute inset-3 m-auto max-h-[min(68vh,760px)] w-[calc(100%-24px)] object-contain opacity-50"
-        height={after.height ?? 900}
-        src={after.imageUrl}
-        unoptimized
-        width={after.width ?? 1280}
-      />
-      {plan.status === "ready" ? (
+      {plan.status === "ready" && afterImageRect ? (
+        <div className="relative max-h-[min(68vh,760px)] max-w-full">
+          <Image
+            alt={`After screen, shown beneath pixel differences: ${after.name}`}
+            className="pointer-events-none absolute left-0 top-0 object-fill opacity-50"
+            height={after.height ?? 900}
+            src={after.imageUrl}
+            style={{
+              height: `${(afterImageRect.height / plan.height) * 100}%`,
+              width: `${(afterImageRect.width / plan.width) * 100}%`,
+            }}
+            unoptimized
+            width={after.width ?? 1280}
+          />
         <canvas
           aria-label="Pixel difference overlay. Changed pixels are highlighted in pink."
-          className="relative z-10 max-h-[min(68vh,760px)] max-w-full object-contain"
+          className="relative z-10 block max-h-[min(68vh,760px)] max-w-full"
           ref={canvasRef}
           role="img"
+        />
+        </div>
+      ) : null}
+      {plan.status !== "ready" ? (
+        <Image
+          alt={`After screen, shown beneath pixel differences: ${after.name}`}
+          className="pointer-events-none absolute inset-3 m-auto max-h-[min(68vh,760px)] w-[calc(100%-24px)] object-contain opacity-50"
+          height={after.height ?? 900}
+          src={after.imageUrl}
+          unoptimized
+          width={after.width ?? 1280}
         />
       ) : null}
       {error ? <p aria-live="assertive" className="relative z-20 rounded-control bg-background/90 p-3 text-xs text-warning">{error}</p> : null}

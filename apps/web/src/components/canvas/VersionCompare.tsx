@@ -3,7 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
-import type { SnapshotDiff } from "@/src/server/services/diff";
+import type { NodeCandidate, SnapshotDiff } from "@/src/server/services/diff";
 import { formatComparisonValue, formatPixelValue } from "./format-captured-measurement";
 import {
   comparisonCategories,
@@ -24,6 +24,7 @@ import {
   compareResultForPair,
   defaultCompareViewMode,
   preferredCompareFrameId,
+  unmatchedNodeCandidatesForFrame as filterUnmatchedNodeCandidatesForFrame,
   type CompareRouteState,
   type CompareViewMode,
 } from "./compare-state";
@@ -75,9 +76,23 @@ type PairViewPreference = {
 };
 
 type UnmatchedFrameCandidate = SnapshotDiff["unmatchedFrameCandidates"][number];
+type UnmatchedNodeCandidate = SnapshotDiff["unmatchedNodeCandidates"][number];
+type NodeCandidateSearchResult = {
+  candidates: NodeCandidate[];
+  totalCandidates: number;
+  candidatesTruncated: boolean;
+};
 
 function frameMatchKey(beforeFrameId: string, afterFrameId: string) {
   return beforeFrameId + "\u0000" + afterFrameId;
+}
+
+function nodeCandidateKey(candidate: UnmatchedNodeCandidate) {
+  return `${candidate.sourceFileId}\u0000${candidate.frameId}\u0000${candidate.beforeNodeId}`;
+}
+
+function nodeMatchKey(candidate: UnmatchedNodeCandidate, afterNodeId: string) {
+  return `${nodeCandidateKey(candidate)}\u0000${afterNodeId}`;
 }
 
 function UnmatchedFrameCandidates({
@@ -172,6 +187,218 @@ function UnmatchedFrameCandidates({
           </li>
         ))}
       </ul>
+    </section>
+  );
+}
+
+function UnmatchedNodeCandidates({
+  candidates,
+  savingKey,
+  error,
+  onConfirm,
+  compareEndpointBase,
+  fromVersionId,
+  toVersionId,
+}: {
+  candidates: UnmatchedNodeCandidate[];
+  savingKey: string | null;
+  error: { key: string; message: string } | null;
+  onConfirm: (candidate: UnmatchedNodeCandidate, afterNodeId: string, afterName: string) => void;
+  compareEndpointBase: string;
+  fromVersionId: string;
+  toVersionId: string;
+}) {
+  const [reviewingKey, setReviewingKey] = useState<string | null>(null);
+  const [selectedAfterNodeId, setSelectedAfterNodeId] = useState("");
+  const [visibleCount, setVisibleCount] = useState(8);
+  const [query, setQuery] = useState("");
+  const [searchState, setSearchState] = useState<{
+    key: string;
+    query: string;
+    result: NodeCandidateSearchResult;
+  } | null>(null);
+  const [searchingKey, setSearchingKey] = useState<string | null>(null);
+  const [searchError, setSearchError] = useState<{ key: string; message: string } | null>(null);
+  const searchControllerRef = useRef<AbortController | null>(null);
+
+  useEffect(() => () => searchControllerRef.current?.abort(), []);
+
+  if (!candidates.length) return null;
+  const visibleCandidates = candidates.slice(0, visibleCount);
+  const remainingCount = candidates.length - visibleCandidates.length;
+
+  async function searchAfterLayers(candidate: UnmatchedNodeCandidate) {
+    const searchQuery = query.trim();
+    if (!searchQuery) return;
+    const key = nodeCandidateKey(candidate);
+    searchControllerRef.current?.abort();
+    const controller = new AbortController();
+    searchControllerRef.current = controller;
+    setSearchingKey(key);
+    setSearchError(null);
+    setSearchState(null);
+    try {
+      const params = new URLSearchParams({
+        from: fromVersionId,
+        to: toVersionId,
+        nodeSearch: searchQuery,
+        sourceFileId: candidate.sourceFileId,
+        beforeFrameId: candidate.beforeFrameId,
+        afterFrameId: candidate.afterFrameId,
+        beforeNodeId: candidate.beforeNodeId,
+        limit: "50",
+      });
+      const response = await fetch(`${compareEndpointBase}?${params}`, {
+        cache: "no-store",
+        signal: controller.signal,
+      });
+      const payload = await response.json() as NodeCandidateSearchResult | { error?: string };
+      if (!response.ok || !("candidates" in payload) || !Array.isArray(payload.candidates)) {
+        throw new Error("error" in payload ? payload.error ?? "Could not search matching layers." : "Could not search matching layers.");
+      }
+      if (controller.signal.aborted) return;
+      setSearchState({ key, query: searchQuery, result: payload });
+      setSelectedAfterNodeId(payload.candidates[0]?.sourceNodeId ?? "");
+    } catch (cause) {
+      if (controller.signal.aborted || (cause instanceof DOMException && cause.name === "AbortError")) return;
+      setSearchError({
+        key,
+        message: cause instanceof Error ? cause.message : "Could not search matching layers.",
+      });
+    } finally {
+      if (!controller.signal.aborted) setSearchingKey(null);
+    }
+  }
+
+  return (
+    <section aria-label="Confirm layer matches" className="mt-4 rounded-[6px] border border-[#51412a] bg-[#27231c] p-3">
+      <h3 className="text-[12px] font-semibold text-[#e1c58e]">Review possible layer matches</h3>
+      <p className="mt-1 text-[11px] leading-4 text-[#b6aa94]">These layers have different source IDs. Confirm a match before Handoff compares their properties.</p>
+      <ul className="mt-2 space-y-2">
+        {visibleCandidates.map((candidate) => {
+          const candidateKey = nodeCandidateKey(candidate);
+          const isOpen = reviewingKey === candidateKey;
+          const searchResult = searchState?.key === candidateKey && searchState.query === query.trim()
+            ? searchState.result
+            : null;
+          const afterOptions = searchResult?.candidates ?? candidate.afterCandidates;
+          const selectedAfter = afterOptions.find((node) => node.sourceNodeId === selectedAfterNodeId)
+            ?? afterOptions[0];
+          const matchKey = selectedAfter ? nodeMatchKey(candidate, selectedAfter.sourceNodeId) : null;
+
+          return (
+            <li className="rounded-[5px] bg-[#302b23] p-2" key={candidateKey}>
+              <p className="text-[9px] font-medium uppercase tracking-[0.06em] text-[#9e927d]">Before</p>
+              <p className="break-words text-[11px] leading-4 text-[#e7e2d8]">{candidate.beforeName}</p>
+              <code className="mt-0.5 block break-all text-[9px] text-[#9e927d]">{candidate.beforeNodeId}</code>
+              <button
+                aria-expanded={isOpen}
+                className="mt-2 min-h-7 w-full rounded-[4px] bg-[#49402f] px-2 text-left text-[10px] font-medium text-[#f0d5a0] hover:bg-[#5a4a31] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e1c58e]"
+                onClick={() => {
+                  if (isOpen) {
+                    searchControllerRef.current?.abort();
+                    setSearchingKey(null);
+                    setReviewingKey(null);
+                    setSearchState(null);
+                    setSearchError(null);
+                    return;
+                  }
+                  searchControllerRef.current?.abort();
+                  setSearchingKey(null);
+                  setReviewingKey(candidateKey);
+                  setSelectedAfterNodeId(candidate.afterCandidates[0]?.sourceNodeId ?? "");
+                  setQuery("");
+                  setSearchState(null);
+                  setSearchError(null);
+                }}
+                type="button"
+              >
+                {isOpen ? "Hide layer choices" : `Choose from ${candidate.totalCandidates} candidate layer${candidate.totalCandidates === 1 ? "" : "s"}`}
+              </button>
+              {isOpen ? (
+                <div className="mt-2 space-y-1.5">
+                  {candidate.candidatesTruncated ? (
+                    <p className="text-[10px] leading-4 text-[#b6aa94]">
+                      Showing {candidate.afterCandidates.length} of {candidate.totalCandidates} suggestions. Search to find another layer.
+                    </p>
+                  ) : null}
+                  <form
+                    className="flex gap-1.5"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      void searchAfterLayers(candidate);
+                    }}
+                  >
+                    <label className="sr-only" htmlFor={`layer-search-${encodeURIComponent(candidateKey)}`}>Search unmatched layers by name or source ID</label>
+                    <input
+                      className="min-h-8 min-w-0 flex-1 rounded-[4px] border border-[#514a3d] bg-[#211f1c] px-2 text-[11px] text-[#e7e2d8] placeholder:text-[#827b70] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e1c58e]"
+                      id={`layer-search-${encodeURIComponent(candidateKey)}`}
+                      onChange={(event) => setQuery(event.currentTarget.value)}
+                      placeholder="Layer name or Figma ID"
+                      type="search"
+                      value={query}
+                    />
+                    <button
+                      className="min-h-8 shrink-0 rounded-[4px] bg-[#49402f] px-2 text-[10px] font-medium text-[#f0d5a0] hover:bg-[#5a4a31] disabled:cursor-not-allowed disabled:opacity-50 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e1c58e]"
+                      disabled={!query.trim() || searchingKey !== null}
+                      type="submit"
+                    >
+                      {searchingKey === candidateKey ? "Searching…" : "Search"}
+                    </button>
+                  </form>
+                  <p className="text-[10px] leading-4 text-[#b6aa94]">Search checks unmatched layers with the same type in this screen.</p>
+                  {searchResult ? (
+                    <p className="text-[10px] leading-4 text-[#b6aa94]" role="status">
+                      {searchResult.candidatesTruncated
+                        ? `Showing ${searchResult.candidates.length} of ${searchResult.totalCandidates} results. Refine the search to narrow the list.`
+                        : `${searchResult.totalCandidates} matching ${searchResult.totalCandidates === 1 ? "layer" : "layers"}.`}
+                    </p>
+                  ) : null}
+                  {searchResult && !searchResult.candidates.length ? (
+                    <p className="text-[10px] leading-4 text-[#b6aa94]">No unmatched layers match this search.</p>
+                  ) : null}
+                  {searchError?.key === candidateKey ? <p className="text-[10px] leading-4 text-[#f0c77b]" role="alert">{searchError.message}</p> : null}
+                  <label className="block text-[9px] font-medium uppercase tracking-[0.06em] text-[#9e927d]">
+                    After layer
+                    <select
+                      aria-label={`After layer for ${candidate.beforeName}`}
+                      className="mt-1 min-h-8 w-full rounded-[4px] border border-[#514a3d] bg-[#211f1c] px-2 text-[11px] normal-case tracking-normal text-[#e7e2d8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e1c58e]"
+                      disabled={searchingKey === candidateKey || !afterOptions.length}
+                      onChange={(event) => setSelectedAfterNodeId(event.currentTarget.value)}
+                      value={selectedAfter?.sourceNodeId ?? ""}
+                    >
+                      {afterOptions.map((node) => (
+                        <option key={node.sourceNodeId} value={node.sourceNodeId}>
+                          {node.name} · {node.type} · {node.sourceNodeId}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <button
+                    aria-label={selectedAfter ? `Confirm that ${candidate.beforeName} matches ${selectedAfter.name} (${selectedAfter.sourceNodeId})` : "Choose a matching layer"}
+                    className="min-h-7 w-full rounded-[4px] bg-[#49402f] px-2 text-[10px] font-medium text-[#f0d5a0] hover:bg-[#5a4a31] disabled:cursor-wait disabled:opacity-60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e1c58e]"
+                    disabled={savingKey !== null || searchingKey === candidateKey || !selectedAfter || !matchKey}
+                    onClick={() => selectedAfter && onConfirm(candidate, selectedAfter.sourceNodeId, selectedAfter.name)}
+                    type="button"
+                  >
+                    {matchKey && savingKey === matchKey ? "Matching…" : "Confirm match"}
+                  </button>
+                </div>
+              ) : null}
+              {error?.key === candidateKey ? <p className="mt-2 text-[11px] leading-4 text-[#f0c77b]" role="alert">{error.message}</p> : null}
+            </li>
+          );
+        })}
+      </ul>
+      {remainingCount > 0 ? (
+        <button
+          className="mt-2 min-h-8 w-full rounded-[4px] px-2 text-[10px] font-medium text-[#d6c39c] hover:bg-[#302b23] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#e1c58e]"
+          onClick={() => setVisibleCount((count) => count + 8)}
+          type="button"
+        >
+          Show 8 more layers ({remainingCount} remaining)
+        </button>
+      ) : null}
     </section>
   );
 }
@@ -368,6 +595,9 @@ export function VersionCompare({
   const changeGroupsForFrame = groupComparisonChanges(changesForFrame, activeFrame?.name ?? "Screen");
   const captureCoverage = currentResult?.diff.captureCoverage ?? [];
   const captureCoverageForFrame = captureCoverage.filter((difference) => difference.frameId === focusedFrameId);
+  const unmatchedNodeCandidatesForFocusedFrame = currentResult
+    ? filterUnmatchedNodeCandidatesForFrame(currentResult.diff.unmatchedNodeCandidates, focusedFrameId)
+    : [];
   const captureCoverageFieldCount = new Set(captureCoverage.map((difference) => difference.path)).size;
   const captureCoverageFieldCountForFrame = new Set(captureCoverageForFrame.map((difference) => difference.path)).size;
   const selectedFrameCategoryCounts = currentResult
@@ -464,6 +694,44 @@ export function VersionCompare({
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Could not confirm this screen match.";
       setFrameMatchError({ key: candidate.beforeFrameId, message });
+      setFrameMatchStatus("");
+    } finally {
+      setFrameMatchSavingKey(null);
+    }
+  }
+
+  async function confirmNodeMatch(candidate: UnmatchedNodeCandidate, afterNodeId: string, afterName: string) {
+    if (!canConfirmFrameMatches) return;
+    const candidateKey = nodeCandidateKey(candidate);
+    const key = nodeMatchKey(candidate, afterNodeId);
+    setFrameMatchSavingKey(key);
+    setFrameMatchError(null);
+    setFrameMatchStatus(`Matching ${candidate.beforeName} with ${afterName}…`);
+    try {
+      const response = await fetch(compareEndpointBase, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          kind: "node",
+          fromVersionId,
+          toVersionId,
+          beforeFrameId: candidate.beforeFrameId,
+          afterFrameId: candidate.afterFrameId,
+          beforeNodeId: candidate.beforeNodeId,
+          afterNodeId,
+        }),
+      });
+      const payload = await response.json() as CompareResult | { error?: string };
+      if (!response.ok || !("diff" in payload)) {
+        throw new Error("error" in payload ? payload.error ?? "Could not confirm this layer match." : "Could not confirm this layer match.");
+      }
+
+      setPairResultState({ fromVersionId, toVersionId, result: payload, error: null });
+      onComparisonChange(payload.diff, fromVersionId, toVersionId);
+      setFrameMatchStatus(`Matched ${candidate.beforeName} with ${afterName}.`);
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : "Could not confirm this layer match.";
+      setFrameMatchError({ key: candidateKey, message });
       setFrameMatchStatus("");
     } finally {
       setFrameMatchSavingKey(null);
@@ -645,6 +913,19 @@ export function VersionCompare({
                     <VersionSelect disabled={frameMatchSavingKey !== null} side="Before" value={fromVersionId} versions={versions} onChange={updateFromVersion} />
                     <VersionSelect disabled={frameMatchSavingKey !== null} side="After" value={toVersionId} versions={versions} onChange={updateToVersion} />
                   </div>
+
+                  {canConfirmFrameMatches ? (
+                    <UnmatchedNodeCandidates
+                      key={`${fromVersionId}\u0000${toVersionId}\u0000${focusedFrameId}`}
+                      candidates={unmatchedNodeCandidatesForFocusedFrame}
+                      compareEndpointBase={compareEndpointBase}
+                      error={frameMatchError}
+                      fromVersionId={fromVersionId}
+                      onConfirm={confirmNodeMatch}
+                      savingKey={frameMatchSavingKey}
+                      toVersionId={toVersionId}
+                    />
+                  ) : null}
 
                   {viewMode === "side-by-side" ? (
                     <div className="grid items-start gap-3 md:grid-cols-2">

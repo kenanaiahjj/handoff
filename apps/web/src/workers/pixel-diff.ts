@@ -5,6 +5,13 @@ export type PixelDiffPlan =
   | { status: "too-large"; width: number; height: number; pixelCount: number }
   | { status: "invalid" };
 
+export type PixelDiffImageRect = {
+  x: 0;
+  y: 0;
+  width: number;
+  height: number;
+};
+
 export function getPixelDiffPlan(
   beforeWidth: number,
   beforeHeight: number,
@@ -26,6 +33,22 @@ export function getPixelDiffPlan(
   return pixelCount <= PIXEL_DIFF_MAX_PIXELS
     ? { status: "ready", width, height, pixelCount }
     : { status: "too-large", width, height, pixelCount };
+}
+
+export function getPixelDiffImageRect(sourceWidth: number, sourceHeight: number): PixelDiffImageRect | null {
+  if (
+    !Number.isFinite(sourceWidth) || sourceWidth <= 0 ||
+    !Number.isFinite(sourceHeight) || sourceHeight <= 0
+  ) {
+    return null;
+  }
+
+  return {
+    x: 0,
+    y: 0,
+    width: Math.ceil(sourceWidth * 2),
+    height: Math.ceil(sourceHeight * 2),
+  };
 }
 
 export function compareRgbaPixels(

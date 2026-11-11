@@ -12,8 +12,6 @@ import { getVersion } from "@/src/server/repositories/versions";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
 import { PublishCanvasLink } from "@/src/components/canvas/PublishCanvasLink";
 import { DeleteHandoffButton, DeleteHandoffVersionButton } from "@/src/components/canvas/HandoffLifecycleActions";
-import { ChangelogPanel } from "@/src/components/canvas/ChangelogPanel";
-import { LayoutFindings } from "@/src/components/canvas/LayoutFindings";
 import { HandoffSetupForm } from "../../handoff-setup-form";
 import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
 
@@ -96,11 +94,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
     : 0;
   const canCreateVersion = true;
   const routePath = `/workspace/${workspaceId}/projects/${projectId}/handoffs/${handoffId}`;
-  const changelogEndpoint = `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/changelog`;
-  const findingsEndpoint = `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/versions/${encodeURIComponent(selectedVersion.id)}/findings`;
   const dockPanels = {
-    qa: <LayoutFindings endpoint={findingsEndpoint} />,
-    changelog: <ChangelogPanel endpoint={changelogEndpoint} versions={versions} selectedVersionId={selectedVersion.id} versionHrefPrefix={routePath} />,
     version: canCreateVersion ? (
       <div className="space-y-3">
         <section aria-label="Release note and publish" className="rounded-control bg-surface p-3">
