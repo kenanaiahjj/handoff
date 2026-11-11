@@ -27,9 +27,9 @@ test("warns when one or both Figma capture scopes are missing", () => {
   );
 });
 
-test("labels one-sided screens by the capture that has no matching screen", () => {
-  assert.equal(comparisonFrameStatusLabel("only-in-before-capture"), "No match in after");
-  assert.equal(comparisonFrameStatusLabel("only-in-after-capture"), "No match in before");
+test("labels one-sided screens by the capture that contains them", () => {
+  assert.equal(comparisonFrameStatusLabel("only-in-before-capture"), "Only in before capture");
+  assert.equal(comparisonFrameStatusLabel("only-in-after-capture"), "Only in after capture");
   assert.equal(comparisonFrameStatusLabel("unchanged"), "No changes");
   assert.equal(comparisonFrameStatusLabel("removed"), "Removed");
   assert.equal(comparisonFrameStatusLabel("added"), "New");

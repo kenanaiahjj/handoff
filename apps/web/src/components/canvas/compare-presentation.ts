@@ -18,8 +18,8 @@ export function captureScopeNotice(
 export function comparisonFrameStatusLabel(
   status: SnapshotDiff["frames"][number]["status"],
 ) {
-  if (status === "only-in-before-capture") return "No match in after";
-  if (status === "only-in-after-capture") return "No match in before";
+  if (status === "only-in-before-capture") return "Only in before capture";
+  if (status === "only-in-after-capture") return "Only in after capture";
   if (status === "unchanged") return "No changes";
   if (status === "changed") return "Changed";
   if (status === "added") return "New";
