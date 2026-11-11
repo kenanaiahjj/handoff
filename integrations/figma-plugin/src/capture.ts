@@ -8,6 +8,7 @@ import { MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES } from "../../../packa
 import { encodeUtf8 } from "../../../packages/snapshot-contract/src/utf8.ts";
 import { jsonByteLength } from "./json-byte-length.ts";
 import type { CaptureAssetBytes, DraftSnapshot, LayerExportAssetBytes } from "./types";
+export { findDuplicateFrameNames } from "./frame-names.ts";
 
 const allowedRootTypes = new Set(["FRAME", "COMPONENT", "INSTANCE", "COMPONENT_SET"]);
 const maxNodes = 50_000;

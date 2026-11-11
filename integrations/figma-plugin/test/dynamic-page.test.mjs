@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import * as captureModule from "../src/capture.ts";
 import { captureFigmaCanvas } from "../src/capture.ts";
 import { frameRenderCrop } from "../src/render-crop.ts";
 
@@ -63,6 +64,32 @@ function installCaptureFixture({ failHighResolution = false, failPaintRead = fal
   };
   return { page, frame, png, exportSettings, isLoaded: () => loaded };
 }
+
+test("reports duplicate captured screen names with counts", () => {
+  const findDuplicateFrameNames = captureModule.findDuplicateFrameNames;
+
+  assert.equal(typeof findDuplicateFrameNames, "function");
+  if (typeof findDuplicateFrameNames !== "function") return;
+
+  assert.deepEqual(findDuplicateFrameNames([
+    { name: "Screen - Wallet - Profile" },
+    { name: "Screen - Store - Home" },
+    { name: "Screen - Wallet - Profile" },
+    { name: "Screen - Wallet - Profile" },
+  ]), [{ name: "Screen - Wallet - Profile", count: 3 }]);
+});
+
+test("does not report unique captured screen names", () => {
+  const findDuplicateFrameNames = captureModule.findDuplicateFrameNames;
+
+  assert.equal(typeof findDuplicateFrameNames, "function");
+  if (typeof findDuplicateFrameNames !== "function") return;
+
+  assert.deepEqual(findDuplicateFrameNames([
+    { name: "Screen - Wallet - Profile" },
+    { name: "Screen - Store - Home" },
+  ]), []);
+});
 
 test("page capture loads the active page before reading its children", async () => {
   let loaded = false;
