@@ -88,7 +88,7 @@ export function McpConnectionPanel({
       <section aria-labelledby="mcp-steps-title" className="rounded-panel bg-surface-raised p-3">
         <h3 className="text-[11px] font-semibold text-foreground" id="mcp-steps-title">Setup</h3>
         <ol className="mt-2 space-y-2 text-[10px] leading-4 text-foreground-muted">
-          <li className="flex gap-2"><span className="font-mono text-accent">1</span><span>Create a token with <code className="font-mono text-foreground">handoffs:read</code>. Add <code className="font-mono text-foreground">comments:write</code> if your agent should comment.</span></li>
+          <li className="flex gap-2"><span className="font-mono text-accent">1</span><span>Create a token with <code className="font-mono text-foreground">handoffs:read</code>. Add <code className="font-mono text-foreground">comments:write</code> for comments, <code className="font-mono text-foreground">changelog:write</code> for AI changelog drafts, or <code className="font-mono text-foreground">tasks:write</code> to link work created through the agent’s connected task tools.</span></li>
           <li className="flex gap-2"><span className="font-mono text-accent">2</span><span>Copy the matching config below into your MCP client.</span></li>
           <li className="flex gap-2"><span className="font-mono text-foreground">3</span><span>Set <code className="font-mono text-foreground">{tokenVariable}</code> in that client’s environment, then restart the client.</span></li>
         </ol>
