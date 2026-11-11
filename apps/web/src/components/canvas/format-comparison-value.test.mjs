@@ -16,8 +16,8 @@ test("keeps fractional geometry visible in comparison summaries", () => {
   assert.equal(format(-0.068777, "layout"), "-0.07");
 });
 
-test("preserves untyped geometry numbers, text, and style values", () => {
-  assert.equal(format({ padding: { left: 15.9845 } }, "layout"), '{"padding":{"left":15.9845}}');
+test("keeps comparison geometry to two decimals while preserving text and style values", () => {
+  assert.equal(format({ padding: { left: 15.9845 } }, "layout"), '{"padding":{"left":15.98}}');
   assert.equal(format("1 of 5", "structure"), "1 of 5");
   assert.equal(format(0.125, "style"), "0.125");
 });
