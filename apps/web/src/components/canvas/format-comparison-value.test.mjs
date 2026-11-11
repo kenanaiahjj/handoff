@@ -10,14 +10,14 @@ function format(value, category) {
   return formatComparisonValue(value, category);
 }
 
-test("rounds geometry and layout numbers to half-pixel increments", () => {
-  assert.equal(format(15.9845, "layout"), "16");
-  assert.equal(format(15.25, "geometry"), "15.5");
-  assert.equal(format(-0.068777, "layout"), "0");
+test("keeps fractional geometry visible in comparison summaries", () => {
+  assert.equal(format(15.9845, "layout"), "15.98");
+  assert.equal(format(15.25, "geometry"), "15.25");
+  assert.equal(format(-0.068777, "layout"), "-0.07");
 });
 
-test("rounds nested measurement values without changing text or style values", () => {
-  assert.equal(format({ padding: { left: 15.9845 } }, "layout"), '{"padding":{"left":16}}');
+test("preserves untyped geometry numbers, text, and style values", () => {
+  assert.equal(format({ padding: { left: 15.9845 } }, "layout"), '{"padding":{"left":15.9845}}');
   assert.equal(format("1 of 5", "structure"), "1 of 5");
   assert.equal(format(0.125, "style"), "0.125");
 });
@@ -28,14 +28,14 @@ test("rounds pixel values inside structured diffs while preserving non-pixel val
     fills: [{ opacity: { value: 0.125, unit: "ratio" } }],
   };
   const expected = {
-    bounds: { x: { value: 36, unit: "px" } },
+    bounds: { x: { value: 35.98, unit: "px" } },
     fills: [{ opacity: { value: 0.125, unit: "ratio" } }],
   };
   assert.equal(format(value, "structure"), JSON.stringify(expected));
 });
 
-test("shows direct pixel measurements as rounded values with units", () => {
-  assert.equal(format({ value: 35.9845, unit: "px", provenance: "source" }, "geometry"), "36 px");
+test("shows precise pixel measurements in comparisons", () => {
+  assert.equal(format({ value: 35.9845, unit: "px", provenance: "source" }, "geometry"), "35.98 px");
   assert.equal(format({ value: 0.125, unit: "ratio" }, "style"), "0.125 ratio");
 });
 
@@ -46,10 +46,10 @@ test("summarizes captured paint objects as a color and opacity", () => {
   );
 });
 
-test("rounds frame dimensions to the nearest half pixel and labels them in pixels", () => {
+test("rounds frame dimensions to the nearest whole pixel and labels them in pixels", () => {
   assert.equal(typeof comparisonFormatting?.formatFrameSize, "function", "frame size formatter must be available");
   assert.equal(comparisonFormatting.formatFrameSize(349.1485290527344, 253), "349 × 253 px");
-  assert.equal(comparisonFormatting.formatFrameSize(100.25, 99.74), "100.5 × 99.5 px");
+  assert.equal(comparisonFormatting.formatFrameSize(100.25, 99.74), "100 × 100 px");
 });
 
 test("preserves missing and unavailable values", () => {

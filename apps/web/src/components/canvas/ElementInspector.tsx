@@ -5,7 +5,7 @@ import type { SnapshotNode } from "@asbir/snapshot-contract";
 import type { HandoffComment } from "../comments/CommentPin";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import { MeasurementRow } from "./MeasurementRow";
-import { formatFrameSize, formatPixelValue, inspectionMargins, inspectionMeasurementEntries } from "./format-captured-measurement";
+import { formatFrameSize, formatPixelValue, formatPrecisePixelValue, inspectionMargins, inspectionMeasurementEntries } from "./format-captured-measurement";
 import { capturedGridTracks, formatGridTrack, shouldShowGridLayout } from "./grid-layout";
 import { readPaintDetails, readTextStyleRuns, type TextStyleRun } from "./text-style-runs";
 
@@ -98,14 +98,14 @@ function MeasurementGroup({
 function cssForNode(node: SnapshotNode) {
   const declarations: string[] = [];
   const addMeasurement = (name: string, value: number | null, unit: string) => {
-    if (value !== null) declarations.push(name + ": " + formatPixelValue(value) + unit + ";");
+    if (value !== null) declarations.push(name + ": " + formatPrecisePixelValue(value) + unit + ";");
   };
   addMeasurement("width", node.bounds.width.value, "px");
   addMeasurement("height", node.bounds.height.value, "px");
   if (node.layout.mode) declarations.push("display: " + (/auto.?layout|flex/i.test(node.layout.mode) ? "flex" : node.layout.mode.toLowerCase()) + ";");
   if (node.layout.direction) declarations.push("flex-direction: " + node.layout.direction.toLowerCase() + ";");
   if ([node.padding.top.value, node.padding.right.value, node.padding.bottom.value, node.padding.left.value].every((value) => value !== null)) {
-    declarations.push("padding: " + [node.padding.top, node.padding.right, node.padding.bottom, node.padding.left].map((item) => formatPixelValue(item.value!) + item.unit).join(" ") + ";");
+    declarations.push("padding: " + [node.padding.top, node.padding.right, node.padding.bottom, node.padding.left].map((item) => formatPrecisePixelValue(item.value!) + item.unit).join(" ") + ";");
   }
   const uniformRadius = finiteNumber(node.sourcePayload.cornerRadius);
   const radiusValues = [
@@ -116,7 +116,7 @@ function cssForNode(node: SnapshotNode) {
   ];
   if (radiusValues.every((value) => value !== null)) {
     const limit = cornerRadiusLimit(node.bounds.width.value, node.bounds.height.value);
-    const effectiveValues = radiusValues.map((value) => formatPixelValue(limit === null ? value! : Math.min(value!, limit)) + "px");
+    const effectiveValues = radiusValues.map((value) => formatPrecisePixelValue(limit === null ? value! : Math.min(value!, limit)) + "px");
     declarations.push("border-radius: " + effectiveValues.join(" ") + ";");
   }
   const gap = node.spacing.itemGap.value ?? node.spacing.rowGap.value ?? node.spacing.columnGap.value;

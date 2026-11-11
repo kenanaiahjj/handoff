@@ -7,6 +7,13 @@ export function inspectionMeasurementEntries<T>(values: Record<string, T>) {
 export function formatPixelValue(value: number) {
   if (!Number.isFinite(value)) return "—";
 
+  const rounded = Math.sign(value) * Math.round(Math.abs(value) + Number.EPSILON);
+  return String(Object.is(rounded, -0) ? 0 : rounded);
+}
+
+export function formatPrecisePixelValue(value: number) {
+  if (!Number.isFinite(value)) return "—";
+
   const rounded = Math.sign(value) * Math.round((Math.abs(value) + Number.EPSILON) * 100) / 100;
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }
@@ -26,7 +33,7 @@ function roundMeasurementValues(value: unknown, forceMeasurement = false): unkno
   if (typeof value === "number") {
     if (!forceMeasurement) return value;
 
-    const formatted = formatPixelValue(value);
+    const formatted = formatPrecisePixelValue(value);
     return formatted === "—" ? formatted : Number(formatted);
   }
 
@@ -62,7 +69,7 @@ export function formatComparisonValue(value: unknown, category: string) {
 
   const isMeasurement = category === "geometry" || category === "layout";
   if (typeof value === "number") {
-    return isMeasurement ? formatPixelValue(value) : String(value);
+    return isMeasurement ? formatPrecisePixelValue(value) : String(value);
   }
 
   if (

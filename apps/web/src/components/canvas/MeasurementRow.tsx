@@ -47,10 +47,10 @@ export function MeasurementRow({ label, measurement }: MeasurementRowProps) {
           {copied ? "Copied" : displayValue}
         </button>
       </dd>
-      <dd className="col-span-2 grid min-w-0 gap-y-1 text-[11px] leading-[1.45] text-[#b8b8b8]">
-        <span className="whitespace-nowrap">{provenanceLabels[measurement.provenance]}</span>
+      <dd className="col-span-2 flex min-w-0 flex-col gap-1 text-[12px] leading-4 text-[#bdbdbd]">
+        <span>{provenanceLabels[measurement.provenance]}</span>
         {measurement.sourceProperty ? (
-          <code className="block min-w-0 whitespace-normal text-left font-mono text-[11px] leading-[1.45] text-[#b0b0b0] [overflow-wrap:anywhere]">
+          <code className="block min-w-0 whitespace-normal text-left font-mono text-[12px] leading-4 text-[#bdbdbd] [overflow-wrap:anywhere]" title={measurement.sourceProperty}>
             {measurement.sourceProperty}
           </code>
         ) : null}

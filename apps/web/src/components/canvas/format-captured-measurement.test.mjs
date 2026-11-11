@@ -1,21 +1,22 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatComparisonValue, formatFrameSize, formatPixelValue, inspectionMeasurementEntries } from "./format-captured-measurement.ts";
+import { formatComparisonValue, formatFrameSize, formatPixelValue, formatPrecisePixelValue, inspectionMeasurementEntries } from "./format-captured-measurement.ts";
 
-test("matches Figma's compact two-decimal measurement display", () => {
+test("matches Figma's whole-pixel measurement display", () => {
   assert.equal(formatPixelValue(106.99979400634766), "107");
-  assert.equal(formatPixelValue(0.25695228576660156), "0.26");
-  assert.equal(formatPixelValue(40.975345611572266), "40.98");
-  assert.equal(formatPixelValue(18.9802188873291), "18.98");
-  assert.equal(formatPixelValue(35.9844970703125), "35.98");
-  assert.equal(formatPixelValue(321.15625), "321.16");
-  assert.equal(formatPixelValue(321.25), "321.25");
-  assert.equal(formatPixelValue(321.5), "321.5");
-  assert.equal(formatPixelValue(321.75), "321.75");
-  assert.equal(formatPixelValue(-0.1), "-0.1");
+  assert.equal(formatPixelValue(0.25695228576660156), "0");
+  assert.equal(formatPixelValue(40.975345611572266), "41");
+  assert.equal(formatPixelValue(18.9802188873291), "19");
+  assert.equal(formatPixelValue(35.9844970703125), "36");
+  assert.equal(formatPixelValue(321.15625), "321");
+  assert.equal(formatPixelValue(321.25), "321");
+  assert.equal(formatPixelValue(321.5), "322");
+  assert.equal(formatPixelValue(321.75), "322");
+  assert.equal(formatPixelValue(-0.1), "0");
   assert.equal(formatPixelValue(-0.004), "0");
-  assert.equal(formatPixelValue(-321.5), "-321.5");
-  assert.equal(formatFrameSize(393.25, 852.49), "393.25 × 852.49 px");
+  assert.equal(formatPixelValue(-321.5), "-322");
+  assert.equal(formatFrameSize(393.25, 852.49), "393 × 852 px");
+  assert.equal(formatPrecisePixelValue(35.9844970703125), "35.98");
 });
 
 test("rounds nested pixel measurements without changing ratios", () => {
