@@ -444,7 +444,7 @@ export function ElementInspector({
                   })}
                 </>
               ) : <div className="flex justify-between gap-3"><dt className="text-[#999]">Corner radius</dt><dd className="text-right text-[#999]">Unavailable</dd></div>}
-              {finiteNumber(selectedNode.sourcePayload.rotation) !== null ? <div className="flex justify-between gap-3"><dt className="text-[#999]">Rotation</dt><dd className="font-mono text-right text-[#ddd]">{formatPixelValue(finiteNumber(selectedNode.sourcePayload.rotation)!)}°</dd></div> : null}
+              {finiteNumber(selectedNode.sourcePayload.rotation) !== null ? <div className="flex justify-between gap-3"><dt className="text-[#999]">Rotation</dt><dd className="font-mono text-right text-[#ddd]">{String(finiteNumber(selectedNode.sourcePayload.rotation))}°</dd></div> : null}
               {finiteNumber(selectedNode.sourcePayload.opacity) !== null ? <div className="flex justify-between gap-3"><dt className="text-[#999]">Opacity</dt><dd className="font-mono text-right text-[#ddd]">{Math.round(finiteNumber(selectedNode.sourcePayload.opacity)! * 100)}%</dd></div> : null}
             </dl>
             <p className="mt-2 text-[10px] leading-4 text-[#888]">The aspect ratio is calculated from the captured source bounds.</p>
