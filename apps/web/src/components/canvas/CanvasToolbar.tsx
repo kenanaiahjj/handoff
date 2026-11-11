@@ -33,7 +33,7 @@ export function CanvasToolbar({ scale, exportTargets, onZoomOut, onFit, onZoomIn
         </button>
         <button
           aria-label={"Fit canvas to view. Current zoom " + zoomPercentage}
-          className="min-w-10 px-1 font-mono text-[11px] text-[#ddd] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+          className="min-h-6 min-w-10 px-1 font-mono text-[11px] text-[#ddd] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
           onClick={onFit}
           type="button"
         >

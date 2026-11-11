@@ -4,8 +4,31 @@ import test from "node:test";
 
 const source = readFileSync(new URL("./HandoffCanvas.tsx", import.meta.url), "utf8");
 const viewportSource = readFileSync(new URL("./CanvasViewport.tsx", import.meta.url), "utf8");
+const toolbarSource = readFileSync(new URL("./CanvasToolbar.tsx", import.meta.url), "utf8");
 const annotationSource = readFileSync(new URL("./CanvasAnnotationsPanel.tsx", import.meta.url), "utf8");
 const commentSource = readFileSync(new URL("../comments/CommentThread.tsx", import.meta.url), "utf8");
+
+test("review header project link meets the 24px pointer target minimum", () => {
+  const projectLink = source.match(/<Link className="([^"]+)" href={metadata\.projectHref}>/);
+  assert.ok(projectLink, "the project link must exist");
+  assert.match(projectLink[1], /\bmin-h-6\b/);
+});
+
+test("zoom percentage control meets the 24px pointer target minimum", () => {
+  assert.match(
+    toolbarSource,
+    /aria-label=\{"Fit canvas to view\. Current zoom "\s*\+\s*zoomPercentage\}\s+className="[^"]*\bmin-h-6\b/,
+  );
+});
+
+test("overview screen and compare controls keep 24px targets at every canvas zoom", () => {
+  const screenControl = viewportSource.match(/aria-label=\{"Select screen "[\s\S]*?style=\{\{([^}]+)\}\}/);
+  const compareControl = viewportSource.match(/aria-label=\{"Compare "[\s\S]*?style=\{\{([^}]+)\}\}/);
+  assert.ok(screenControl, "the screen selection control must exist");
+  assert.ok(compareControl, "the compare control must exist");
+  assert.match(screenControl[1], /minHeight:\s*24\s*\*\s*inverseScale/);
+  assert.match(compareControl[1], /minHeight:\s*24\s*\*\s*inverseScale/);
+});
 
 test("the comments panel toggle exposes its selected state as a pressed button", () => {
   const commentsButton = source.match(/<button\s+aria-pressed=\{panelMode === "comments"\}[\s\S]*?Comments\{commentCount[\s\S]*?<\/button>/);

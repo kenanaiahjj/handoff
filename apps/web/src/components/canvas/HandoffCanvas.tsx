@@ -762,7 +762,7 @@ export function HandoffCanvas({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#202020] text-[#e5e5e5]">
       <header className="relative z-20 flex h-12 min-w-0 items-center gap-3 border-b border-[#383838] bg-[#202020] px-3 text-[#c8c8c8]">
-        <Link className="max-w-[180px] shrink-0 truncate text-[13px] font-semibold text-[#ededed] hover:text-white" href={metadata.projectHref}>
+        <Link className="min-h-6 max-w-[180px] shrink-0 truncate text-[13px] font-semibold text-[#ededed] hover:text-white" href={metadata.projectHref}>
           Asbir <span className="font-normal text-[#929292]">Handoff</span>
         </Link>
         <span aria-hidden="true" className="h-6 w-px shrink-0 bg-[#3b3b3b]" />

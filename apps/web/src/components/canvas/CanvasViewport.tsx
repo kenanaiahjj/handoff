@@ -433,6 +433,7 @@ export function CanvasViewport({
                       className="flex max-w-none items-center gap-1.5 rounded-[4px] bg-[#202020]/95 text-left text-[#d7d7d7] shadow-sm hover:bg-[#303030] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
                       onClick={() => onSelectFrame(screen.id)}
                       style={{
+                        minHeight: 24 * inverseScale + "px",
                         padding: 3 * inverseScale + "px " + 5 * inverseScale + "px",
                         fontSize: 12 * inverseScale + "px",
                         lineHeight: 1.3,
@@ -464,7 +465,7 @@ export function CanvasViewport({
                         aria-label={"Compare " + screen.name + " before and after this version"}
                         className="rounded-[4px] border border-[#424242] bg-[#252525]/95 px-1.5 py-0.5 text-[#c6c6c6] shadow-sm hover:bg-[#363636] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
                         onClick={() => onCompareScreen(screen.id)}
-                        style={{ padding: 3 * inverseScale + "px " + 5 * inverseScale + "px", fontSize: 11 * inverseScale + "px" }}
+                        style={{ minHeight: 24 * inverseScale + "px", padding: 3 * inverseScale + "px " + 5 * inverseScale + "px", fontSize: 11 * inverseScale + "px" }}
                         type="button"
                       >
                         Compare
