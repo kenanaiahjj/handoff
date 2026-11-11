@@ -93,7 +93,7 @@ test("does not report a visual change when a render asset key changes but its by
 
   const result = compare(before, after);
 
-  assert.deepEqual(result.changes, []);
+  assert.equal(result.changes.length, 0);
   assert.equal(result.frames[0].status, "unchanged");
 });
 
@@ -146,6 +146,31 @@ test("treats regenerated Figma style IDs as unchanged across copied files", () =
 
   assert.deepEqual(result.changes, []);
   assert.equal(result.frames[0].status, "unchanged");
+});
+
+test("keeps colliding Figma node IDs separate across source files", () => {
+  const before = snapshot("file-a", "frame-a", styleIds("shared"));
+  const after = snapshot("file-b", "frame-b", styleIds("shared"));
+  before.frames[0].nodes[0] = {
+    ...before.frames[0].nodes[0],
+    sourceNodeId: "shared-node-id",
+    name: "Primary action",
+    type: "RECTANGLE",
+  };
+  after.frames[0].nodes[0] = {
+    ...after.frames[0].nodes[0],
+    sourceNodeId: "shared-node-id",
+    name: "Legal notice",
+    type: "TEXT",
+  };
+
+  const result = compare(before, after, [{ beforeFrameId: "frame-a", afterFrameId: "frame-b" }]);
+  const nodeChanges = result.changes.filter((change) => change.path === "node");
+
+  assert.equal(nodeChanges.length, 2);
+  assert.ok(nodeChanges.some((change) => change.before?.name === "Primary action" && change.after === undefined));
+  assert.ok(nodeChanges.some((change) => change.before === undefined && change.after?.name === "Legal notice"));
+  assert.equal(result.changes.some((change) => change.path === "name"), false);
 });
 
 test("keeps visible text and style-name changes across copied files", () => {
@@ -718,6 +743,77 @@ test("leaves duplicate regenerated layers unmatched instead of pairing by traver
   assert.equal(result.changes.some((change) => change.category === "geometry" || change.category === "text"), false);
   assert.equal(result.unmatchedNodeCandidates.length, 2);
   assert.ok(result.unmatchedNodeCandidates.every((candidate) => candidate.afterCandidates.length === 2));
+});
+
+test("keeps ambiguous legacy layer pairs out of confirmed changes", () => {
+  const before = regeneratedLayerSnapshot("shared-screen", [
+    { sourceNodeId: "before-a", name: "Action", type: "TEXT", x: 24, text: "Back" },
+    { sourceNodeId: "before-b", name: "Action", type: "TEXT", x: 180, text: "Next" },
+  ]);
+  const after = regeneratedLayerSnapshot("shared-screen", [
+    { sourceNodeId: "after-a", name: "Action", type: "TEXT", x: 24, text: "Back" },
+    { sourceNodeId: "after-b", name: "Action", type: "TEXT", x: 180, text: "Next" },
+  ]);
+  before.sourceFileId = "0:0";
+  after.sourceFileId = "0:0";
+
+  const result = compare(before, after);
+
+  assert.equal(result.sourceIdentity, "inferred");
+  assert.equal(result.frames[0].status, "unchanged");
+  assert.deepEqual(result.changes, []);
+  assert.equal(result.unmatchedNodeCandidates.length, 2);
+});
+
+test("keeps type-only legacy layer candidates as confirmed additions and removals", () => {
+  const before = regeneratedLayerSnapshot("shared-screen", [
+    { sourceNodeId: "before-action", name: "Primary action", type: "RECTANGLE", x: 24 },
+  ]);
+  const after = regeneratedLayerSnapshot("shared-screen", [
+    { sourceNodeId: "after-notice", name: "Legal notice", type: "RECTANGLE", x: 24 },
+  ]);
+  before.sourceFileId = "0:0";
+  after.sourceFileId = "0:0";
+
+  const result = compare(before, after);
+
+  assert.equal(result.changes.filter((change) => change.path === "node").length, 2);
+  assert.equal(result.unmatchedNodeCandidates.length, 1);
+  assert.equal(result.unmatchedNodeCandidates[0].afterCandidates[0].score, 0.5);
+});
+
+test("filters exact-name legacy candidates left unmatched after hierarchy matching", () => {
+  const makeSnapshot = (revision) => {
+    const frameId = "shared-screen";
+    const result = regeneratedLayerSnapshot(frameId, []);
+    result.sourceFileId = "0:0";
+    const root = result.frames[0].nodes[0];
+    const node = (sourceNodeId, parentSourceNodeId, name, type) => ({
+      ...root,
+      sourceNodeId,
+      parentSourceNodeId,
+      name,
+      type,
+    });
+    const sectionId = `${revision}-section`;
+    const cardId = `${revision}-card`;
+    const groupId = `${revision}-group`;
+    result.frames[0].nodes.push(
+      node(sectionId, frameId, revision === "before" ? "Old section" : "New section", "FRAME"),
+      node(cardId, sectionId, "Shared card", "FRAME"),
+      node(`${revision}-card-action`, cardId, "Action", "TEXT"),
+      node(groupId, frameId, revision === "before" ? "Old group" : "New group", "FRAME"),
+      node(`${revision}-loose-action`, groupId, "Action", "TEXT"),
+    );
+    return result;
+  };
+
+  const result = compare(makeSnapshot("before"), makeSnapshot("after"));
+
+  assert.equal(result.changes.some((change) => change.path === "node" && change.sourceNodeName === "Action"), false);
+  assert.ok(result.unmatchedNodeCandidates.some((candidate) =>
+    candidate.beforeNodeId === "before-loose-action" &&
+    candidate.afterCandidates.some((afterCandidate) => afterCandidate.sourceNodeId === "after-loose-action" && afterCandidate.score === 1)));
 });
 
 test("leaves renamed regenerated layers as candidates instead of matching by type alone", () => {

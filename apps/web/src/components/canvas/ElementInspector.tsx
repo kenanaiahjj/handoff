@@ -605,7 +605,7 @@ export function ElementInspector({
       ) : frame.kind === "overview" ? (
         <div className="mt-5 space-y-5 text-[13px] leading-6 text-[#a0a0a0]">
           <p>
-            Switch to Inspect in the top bar, then select a design element to see its size, spacing, colours and type. View keeps layer hit areas out of the way. Hold <kbd className="rounded-[4px] bg-[#333] px-1.5 py-0.5 font-mono text-[11px] text-[#ddd]">Alt</kbd> and point at another element for the distance between them. Click a value to copy it.
+            Switch to Inspect in the top bar, then select a design element to see its size, spacing, colours and type. View keeps layer hit areas out of the way. Hold <kbd className="rounded-[4px] bg-[#333] px-1.5 py-0.5 font-mono text-[11px] text-[#ddd]">Alt</kbd> and hover another element to see pixel distances in the canvas. Click a value to copy it.
           </p>
           <p><kbd className="rounded-[4px] bg-[#333] px-1.5 py-0.5 font-mono text-[11px] text-[#ddd]">⌘ F</kbd> searches text, colours and elements on every screen.</p>
           <dl className="space-y-2 border-t border-[#393939] pt-3 text-[11px]">

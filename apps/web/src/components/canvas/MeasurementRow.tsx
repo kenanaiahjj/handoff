@@ -33,12 +33,12 @@ export function MeasurementRow({ label, measurement }: MeasurementRowProps) {
   }
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 border-b border-[#3a3a3a]/70 py-2 last:border-b-0">
-      <dt className="text-[11px] text-[#999]">{label}</dt>
-      <dd>
+    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 border-b border-[#3a3a3a]/70 py-2.5 last:border-b-0">
+      <dt className="min-w-0 self-center text-[12px] leading-5 text-[#b8b8b8]">{label}</dt>
+      <dd className="min-w-0 self-center justify-self-end">
         <button
           aria-label={"Copy " + label + " value " + displayValue}
-          className="font-mono text-[11px] tabular-nums text-[#e1e1e1] hover:text-white hover:underline disabled:cursor-default disabled:hover:no-underline"
+          className="font-mono text-[14px] leading-5 tabular-nums text-[#ededed] hover:text-white hover:underline disabled:cursor-default disabled:hover:no-underline"
           disabled={measurement.value === null}
           onClick={copyValue}
           title={copied ? "Copied" : "Click to copy"}
@@ -47,9 +47,13 @@ export function MeasurementRow({ label, measurement }: MeasurementRowProps) {
           {copied ? "Copied" : displayValue}
         </button>
       </dd>
-      <dd className="col-span-2 flex items-center justify-between gap-3 text-[10px] text-[#888]">
-        <span>{provenanceLabels[measurement.provenance]}</span>
-        {measurement.sourceProperty ? <code className="truncate">{measurement.sourceProperty}</code> : null}
+      <dd className="col-span-2 grid min-w-0 gap-y-1 text-[11px] leading-[1.45] text-[#b8b8b8]">
+        <span className="whitespace-nowrap">{provenanceLabels[measurement.provenance]}</span>
+        {measurement.sourceProperty ? (
+          <code className="block min-w-0 whitespace-normal text-left font-mono text-[11px] leading-[1.45] text-[#b0b0b0] [overflow-wrap:anywhere]">
+            {measurement.sourceProperty}
+          </code>
+        ) : null}
       </dd>
     </div>
   );

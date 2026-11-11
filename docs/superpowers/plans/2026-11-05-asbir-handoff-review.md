@@ -88,9 +88,9 @@ export interface SnapshotDiff {
 }
 ```
 
-- [ ] Match frames and nodes by source IDs and compare normalized properties field by field.
-- [ ] Emit added and removed records when IDs exist in only one version. Treat an ID collision across sources as a separate node by including the source file ID.
-- [ ] If source IDs changed, return unmatched candidates to the UI for explicit reviewer mapping; do not automatically merge candidate nodes.
+- [x] Match frames and nodes by source IDs only when both snapshots identify the same source file, then compare normalized properties field by field. Verified 2026-11-11 with same-file, copied-file, and legacy-source diff cases.
+- [x] Emit added and removed records when IDs exist in only one version. Keep a reused node ID from a different source file separate from both records. Verified 2026-11-11 with the cross-file node-ID collision regression case.
+- [x] If source IDs changed, return unmatched candidates to the UI for explicit reviewer mapping; do not automatically merge candidate nodes. Verified 2026-11-11 with renamed, duplicate, and reviewer-confirmed layer cases.
 - [x] Keep regenerated node IDs unmatched when type/name candidates are ambiguous or renamed; only auto-match unique type/name pairs. Added duplicate-label and rename regression cases; verified 2026-11-11.
 - [x] Show unmatched node candidates in the compare UI and persist reviewer-confirmed node matches for the selected version pair. Let reviewers search all unmatched same-type layers by name or source ID when the first ten suggestions do not include the intended match. Reuse confirmed mappings in canvas comparisons, published review, MCP diffs, and AI changelog evidence; do not reuse them for other version pairs. Verified by the 250-test suite, lint, and production build on 2026-11-11.
 - [x] Compare bound token ID, collection, mode, and value separately from raw fills. Compare source IDs only when both versions identify the same source file; keep semantic comparisons across copied files resilient to ID churn. Show field-level token labels in compare. Verified 2026-11-11.
@@ -99,7 +99,8 @@ export interface SnapshotDiff {
 - [x] Stress-test structured diffs across 210 screens and 31,500 nodes with five changed screens, and preserve 50,000 changes across five frames when layer IDs regenerate. Verified 2026-11-09.
 - [x] Cull inspect hit targets to visible, actionable elements and use ID-based lookup for selected and hovered nodes. A 31,500-node fixture renders only the 150 targets in its viewport. Verified 2026-11-09.
 - [x] Manually inspect a four-screen resize comparison in the running app: verify side-by-side, overlay opacity, pixel diff, and selection of another screen with its own recorded changes. Restored the browser to its original URL. Verified 2026-11-09.
-- [ ] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`; manually compare two versions containing added, removed, moved, resized, and restyled elements.
+- [x] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`. Verified 2026-11-11.
+- [ ] Manually compare two versions containing added, removed, moved, resized, and restyled elements.
 
 ## Task 4: Add comments, layout rules, and exports
 

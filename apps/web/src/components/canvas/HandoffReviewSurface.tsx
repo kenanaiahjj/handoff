@@ -173,7 +173,6 @@ export function HandoffReviewSurface({
   reviewHref,
   reviewShareId,
   publicReviewShareId,
-  canConfirmFrameMatches,
   publishedVersionId,
   canManageIntegrations,
   canAnnotate,
@@ -193,7 +192,6 @@ export function HandoffReviewSurface({
   reviewHref: string | null;
   reviewShareId: string | null;
   publicReviewShareId?: string;
-  canConfirmFrameMatches?: boolean;
   publishedVersionId: string | null;
   canManageIntegrations: boolean;
   canAnnotate: boolean;
@@ -247,7 +245,6 @@ export function HandoffReviewSurface({
       compareEndpointBase={publicReviewShareId
         ? `/api/review/${encodeURIComponent(publicReviewShareId)}/compare`
         : `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/compare`}
-      canConfirmFrameMatches={publicReviewShareId ? false : canConfirmFrameMatches ?? true}
     />
   );
 }

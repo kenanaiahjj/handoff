@@ -446,6 +446,7 @@ function matchFrameNodes(
   afterNodes: SnapshotNode[],
   beforeFrameId: string,
   afterFrameId: string,
+  compareSourceNodeIds: boolean,
   explicitMatches: NodeMatch[],
 ) {
   const beforeById = nodeIndex(beforeNodes);
@@ -464,9 +465,11 @@ function matchFrameNodes(
     return true;
   }
 
-  for (const before of beforeNodes) {
-    const after = afterById.get(before.sourceNodeId);
-    if (after) pair(before, after);
+  if (compareSourceNodeIds) {
+    for (const before of beforeNodes) {
+      const after = afterById.get(before.sourceNodeId);
+      if (after) pair(before, after);
+    }
   }
   const beforeRoot = beforeById.get(beforeFrameId);
   const afterRoot = afterById.get(afterFrameId);
@@ -783,6 +786,7 @@ function compareFrame(
     afterNodes,
     before.sourceFrameId,
     after.sourceFrameId,
+    compareTokenSourceIds,
     nodeMatches.filter((match) =>
       match.beforeFrameId === before.sourceFrameId && match.afterFrameId === after.sourceFrameId,
     ),
@@ -860,7 +864,17 @@ function compareFrame(
 
   const removedNodes = frameNodeMatches.removed;
   const addedNodes = frameNodeMatches.added;
+    const removedKeys = new Set(removedNodes.map(nodeMatchKey));
+    const ambiguousUnmatchedKeys = new Set(
+      !compareTokenSourceIds
+        ? addedNodes.map(nodeMatchKey).filter((key) => removedKeys.has(key))
+        : [],
+    );
+
+    // Regenerated IDs cannot confirm whether same-name layers were replaced or added/removed.
+    // Keep those layers as MCP match candidates instead of inflating confirmed change totals.
   for (const node of removedNodes) {
+      if (ambiguousUnmatchedKeys.has(nodeMatchKey(node))) continue;
     output.push({
       frameId,
       sourceFileId,
@@ -873,6 +887,7 @@ function compareFrame(
     });
   }
   for (const node of addedNodes) {
+      if (ambiguousUnmatchedKeys.has(nodeMatchKey(node))) continue;
     output.push({
       frameId,
       sourceFileId,

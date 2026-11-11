@@ -108,7 +108,6 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
         canManageIntegrations={false}
         canAnnotate={access.decision.canWrite}
         canUseLocalPreview={false}
-        canConfirmFrameMatches={false}
       />
     </main>
   );

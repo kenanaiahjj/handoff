@@ -17,7 +17,6 @@ type HandoffReviewProps = {
   selectedVersionId: string;
   initialCompareRouteState: CompareRouteState | null;
   compareEndpointBase: string;
-  canConfirmFrameMatches: boolean;
   visualOnly: boolean;
   metadata: ReviewMetadata;
   dockPanels?: ReviewDockPanels;
@@ -39,7 +38,6 @@ export function HandoffReview({
   selectedVersionId,
   initialCompareRouteState,
   compareEndpointBase,
-  canConfirmFrameMatches,
   metadata,
   dockPanels = {},
 }: HandoffReviewProps) {
@@ -183,7 +181,6 @@ export function HandoffReview({
           versions={versions}
           selectedVersionId={selectedVersionId}
           compareEndpointBase={compareEndpointBase}
-          canConfirmFrameMatches={canConfirmFrameMatches}
           initialRouteState={compareRouteState}
           initialResult={visibleInitialCompareResult}
           compareScreenRequest={compareScreenRequest}

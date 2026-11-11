@@ -14,6 +14,7 @@ import { layoutCommentPins } from "../comments/comment-pin-layout";
 import { LayoutGridOverlay } from "./LayoutGridOverlay";
 import { comparisonFrameStatusLabel } from "./compare-presentation";
 import { getCanvasFrameLabelMaxWidth, shouldShowCanvasFrameLabel } from "./canvas-frame-label-visibility";
+import { getElementDistanceGuides, type ElementRect } from "./element-distance-guides";
 
 export type CanvasViewportControls = {
   scale: number;
@@ -56,6 +57,43 @@ function statusLabel(status: CanvasFrameChangeStatus | undefined) {
   return status && status !== "unchanged" ? comparisonFrameStatusLabel(status) : null;
 }
 
+type MeasuredRect = {
+  x: { value: number | null };
+  y: { value: number | null };
+  width: { value: number | null };
+  height: { value: number | null };
+};
+
+function elementRectInFrame(
+  bounds: MeasuredRect | undefined,
+  frame: Pick<CanvasFrameOption, "kind" | "sourceX" | "sourceY">,
+): ElementRect | null {
+  if (!bounds) return null;
+  const x = bounds.x.value;
+  const y = bounds.y.value;
+  const width = bounds.width.value;
+  const height = bounds.height.value;
+  if (
+    typeof x !== "number" || !Number.isFinite(x) ||
+    typeof y !== "number" || !Number.isFinite(y) ||
+    typeof width !== "number" || !Number.isFinite(width) ||
+    typeof height !== "number" || !Number.isFinite(height)
+  ) return null;
+  return {
+    x: x - (frame.kind === "overview" ? frame.sourceX : 0),
+    y: y - (frame.kind === "overview" ? frame.sourceY : 0),
+    width,
+    height,
+  };
+}
+
+function formatPixelDistance(distance: number) {
+  const value = Number.isInteger(distance) ? String(distance) : String(Number(distance.toFixed(1)));
+  return value;
+}
+
+const measurementGuideColor = "#f24e1e";
+
 export function CanvasViewport({
   frame,
   overviewOrigin,
@@ -89,7 +127,8 @@ export function CanvasViewport({
   const suppressClickRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
   const [altHeld, setAltHeld] = useState(false);
-  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null);
+  const [hoveredNode, setHoveredNode] = useState<{ nodeId: string; frameId: string } | null>(null);
+  const hoveredNodeId = hoveredNode?.frameId === frame.id ? hoveredNode.nodeId : null;
   const { containerRef, viewportSize, transform, fitToFrame, zoomBy, zoomAt, panBy } = useCanvasViewport(
     frame.sourceWidth,
     frame.sourceHeight,
@@ -308,14 +347,15 @@ export function CanvasViewport({
     viewportSize.height,
     viewportSize.width,
   ]);
-  const distance = altHeld && selectedNodeId && hoveredNodeId && selectedNodeId !== hoveredNodeId && selectedBounds && hoveredBounds &&
-    selectedBounds.x.value !== null && selectedBounds.y.value !== null && selectedBounds.width.value !== null && selectedBounds.height.value !== null &&
-    hoveredBounds.x.value !== null && hoveredBounds.y.value !== null && hoveredBounds.width.value !== null && hoveredBounds.height.value !== null
-    ? {
-        horizontal: Math.max(0, hoveredBounds.x.value - (selectedBounds.x.value + selectedBounds.width.value), selectedBounds.x.value - (hoveredBounds.x.value + hoveredBounds.width.value)),
-        vertical: Math.max(0, hoveredBounds.y.value - (selectedBounds.y.value + selectedBounds.height.value), selectedBounds.y.value - (hoveredBounds.y.value + hoveredBounds.height.value)),
-      }
-    : null;
+  const selectedRect = elementRectInFrame(selectedBounds, frame);
+  const hoveredRect = elementRectInFrame(hoveredBounds, frame);
+  const distanceGuides = interactionMode === "inspect" && altHeld && selectedNodeId && hoveredNodeId &&
+    selectedNodeId !== hoveredNodeId && selectedRect && hoveredRect
+    ? getElementDistanceGuides(selectedRect, hoveredRect)
+    : [];
+  const distanceAnnouncement = distanceGuides
+    .map((guide) => (guide.axis === "horizontal" ? "Horizontal" : "Vertical") + " gap " + formatPixelDistance(guide.distance) + " pixels")
+    .join(". ");
 
   return (
     <section aria-label="Design canvas" className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#1d1d1d]">
@@ -501,13 +541,71 @@ export function CanvasViewport({
                   }
                   if (!commentMode && !annotationMode) onSelectNode(node.sourceNodeId);
                 }}
-                onMouseEnter={() => { if (interactionMode === "inspect") setHoveredNodeId(node.sourceNodeId); }}
-                onMouseLeave={() => { if (interactionMode === "inspect") setHoveredNodeId(null); }}
+                onMouseEnter={() => { if (interactionMode === "inspect") setHoveredNode({ nodeId: node.sourceNodeId, frameId: frame.id }); }}
+                onMouseLeave={() => { if (interactionMode === "inspect") setHoveredNode(null); }}
                 style={{ left: x, top: y, width, height }}
                 type="button"
               />
             );
           })}
+
+          {distanceGuides.length ? (
+            <svg
+              aria-hidden="true"
+              className="pointer-events-none absolute left-0 top-0 z-10 overflow-visible"
+              height={frame.sourceHeight}
+              viewBox={`0 0 ${frame.sourceWidth} ${frame.sourceHeight}`}
+              width={frame.sourceWidth}
+            >
+              {distanceGuides.map((guide) => {
+                const segments = [guide.segment, ...guide.extensions];
+                const label = formatPixelDistance(guide.distance);
+                const badgeWidth = Math.max(26, label.length * 7.5 + 10) * inverseScale;
+                const badgeHeight = 18 * inverseScale;
+                const badgeX = guide.axis === "horizontal"
+                  ? guide.labelX - badgeWidth / 2
+                  : guide.labelX - 2 * inverseScale;
+                return (
+                  <g key={guide.axis}>
+                    {segments.map((segment, index) => (
+                      <line
+                        key={`${guide.axis}-segment-${index}`}
+                        stroke={measurementGuideColor}
+                        strokeLinecap="round"
+                        strokeOpacity={index === 0 ? 1 : 0.7}
+                        strokeWidth={1}
+                        vectorEffect="non-scaling-stroke"
+                        x1={segment.x1}
+                        x2={segment.x2}
+                        y1={segment.y1}
+                        y2={segment.y2}
+                      />
+                    ))}
+                    <rect
+                      fill={measurementGuideColor}
+                      height={badgeHeight}
+                      rx={2 * inverseScale}
+                      width={badgeWidth}
+                      x={badgeX}
+                      y={guide.labelY - badgeHeight / 2}
+                    />
+                    <text
+                      dominantBaseline="middle"
+                      fill="#fff"
+                      fontFamily="system-ui, sans-serif"
+                      fontSize={12 * inverseScale}
+                      fontWeight={600}
+                      textAnchor="middle"
+                      x={badgeX + badgeWidth / 2}
+                      y={guide.labelY}
+                    >
+                      {label}
+                    </text>
+                  </g>
+                );
+              })}
+            </svg>
+          ) : null}
 
           {annotationPins.map(({ annotation, x, y }) => (
             <button
@@ -543,11 +641,7 @@ export function CanvasViewport({
             </span>
           ))}
         </div>
-        {distance ? (
-          <div aria-live="polite" className="pointer-events-none absolute left-4 top-4 rounded-[5px] border border-[#515151] bg-[#202020]/95 px-2.5 py-1.5 font-mono text-[11px] text-[#e3e3e3] shadow-lg">
-            Δ x {Math.round(distance.horizontal)} · y {Math.round(distance.vertical)} px
-          </div>
-        ) : null}
+        <span aria-atomic="true" aria-live="polite" className="sr-only">{distanceAnnouncement}</span>
       </div>
     </section>
   );

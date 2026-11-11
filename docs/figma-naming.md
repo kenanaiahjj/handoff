@@ -42,7 +42,7 @@ Frame names are not labels in Asbir Handoff. They do three jobs that nothing els
 
 **They are the index for everyone downstream.** PMs, developers, and QA open a review canvas and navigate by frame name. They were not in the Figma file and have no other handle on what they're looking at.
 
-**They are the fallback identity across versions.** Asbir links frames between versions by their Figma node ID. When Figma assigns a replacement frame a *new* ID — which happens routinely when a frame is recreated, copied, or restored — the plugin falls back to **suggesting a frame-name match** for you to confirm. A clean, unique name makes that match obvious. A vague or duplicated one makes it a guess, and a wrong guess silently welds two surfaces' histories together.
+**They are the fallback identity across versions.** Asbir links frames between versions by their Figma node ID. When Figma assigns a replacement frame a *new* ID — which happens routinely when a frame is recreated, copied, or restored — Asbir suggests screens with the same name. A reviewer must confirm the match before Asbir compares them. A clean, unique name makes the suggestion clear; duplicate names can make it harder to choose the right screen.
 
 **They cannot be fixed afterwards.** Every captured version is immutable. A bad name is in that version permanently; the best you can do is name the next one better. There's no rename-and-tidy pass later.
 
@@ -137,7 +137,7 @@ The spaces around the separator are why `Flow - Wallet - First Top-Up` parses in
 
 ### Uniqueness
 
-**No two captured frames may share a name**, anywhere in the file. Duplicates are usually innocent — a duplicated page, or two designers naming the same surface in parallel — but they break the frame-name fallback precisely when you need it, because Asbir can't tell which frame the new ID belongs to.
+**No two captured frames may share a name**, anywhere in the file. When a frame gets a new Figma ID, duplicate names can leave several possible replacement screens. Asbir shows those candidates for manual confirmation; it does not match screens by name automatically. Keep names unique so the correct replacement is easy to identify.
 
 If two frames seem to need the same name, one of them isn't a separate surface. Merge them, or separate them with a variant (§8).
 
