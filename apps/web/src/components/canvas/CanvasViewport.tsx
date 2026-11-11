@@ -15,6 +15,7 @@ import { LayoutGridOverlay } from "./LayoutGridOverlay";
 import { comparisonFrameStatusLabel } from "./compare-presentation";
 import { getCanvasFrameLabelMaxWidth, shouldShowCanvasFrameLabel } from "./canvas-frame-label-visibility";
 import { getElementDistanceGuides, type ElementRect } from "./element-distance-guides";
+import { formatPixelValue } from "./format-captured-measurement";
 
 export type CanvasViewportControls = {
   scale: number;
@@ -85,11 +86,6 @@ function elementRectInFrame(
     width,
     height,
   };
-}
-
-function formatPixelDistance(distance: number) {
-  const value = Number.isInteger(distance) ? String(distance) : String(Number(distance.toFixed(1)));
-  return value;
 }
 
 const measurementGuideColor = "#f24e1e";
@@ -354,7 +350,7 @@ export function CanvasViewport({
     ? getElementDistanceGuides(selectedRect, hoveredRect)
     : [];
   const distanceAnnouncement = distanceGuides
-    .map((guide) => (guide.axis === "horizontal" ? "Horizontal" : "Vertical") + " gap " + formatPixelDistance(guide.distance) + " pixels")
+    .map((guide) => (guide.axis === "horizontal" ? "Horizontal" : "Vertical") + " gap " + formatPixelValue(guide.distance) + " pixels")
     .join(". ");
 
   return (
@@ -559,7 +555,7 @@ export function CanvasViewport({
             >
               {distanceGuides.map((guide) => {
                 const segments = [guide.segment, ...guide.extensions];
-                const label = formatPixelDistance(guide.distance);
+                const label = formatPixelValue(guide.distance);
                 const badgeWidth = Math.max(26, label.length * 7.5 + 10) * inverseScale;
                 const badgeHeight = 18 * inverseScale;
                 const badgeX = guide.axis === "horizontal"

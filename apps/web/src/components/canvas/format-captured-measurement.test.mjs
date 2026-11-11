@@ -2,13 +2,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { formatComparisonValue, formatFrameSize, formatPixelValue, inspectionMeasurementEntries } from "./format-captured-measurement.ts";
 
-test("rounds pixel values to whole or half pixels", () => {
+test("rounds pixel values to whole pixels", () => {
   assert.equal(formatPixelValue(35.9844970703125), "36");
   assert.equal(formatPixelValue(321.15625), "321");
-  assert.equal(formatPixelValue(321.25), "321.5");
+  assert.equal(formatPixelValue(321.25), "321");
+  assert.equal(formatPixelValue(321.5), "322");
   assert.equal(formatPixelValue(321.75), "322");
   assert.equal(formatPixelValue(-0.1), "0");
-  assert.equal(formatFrameSize(393.25, 852.49), "393.5 × 852.5 px");
+  assert.equal(formatPixelValue(-321.5), "-322");
+  assert.equal(formatFrameSize(393.25, 852.49), "393 × 852 px");
 });
 
 test("rounds nested pixel measurements without changing ratios", () => {
