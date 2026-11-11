@@ -7,7 +7,7 @@ export function inspectionMeasurementEntries<T>(values: Record<string, T>) {
 export function formatPixelValue(value: number) {
   if (!Number.isFinite(value)) return "—";
 
-  const rounded = Math.sign(value) * Math.round(Math.abs(value));
+  const rounded = Math.sign(value) * Math.round((Math.abs(value) + Number.EPSILON) * 100) / 100;
   return String(Object.is(rounded, -0) ? 0 : rounded);
 }
 

@@ -480,7 +480,7 @@ export function CanvasViewport({
                     >
                       <span className="max-w-[28ch] truncate">{screen.name}</span>
                         <span className="font-mono text-[#999]" style={{ fontSize: 10 * inverseScale + "px" }}>
-                        {Math.round(screen.sourceWidth)}×{Math.round(screen.sourceHeight)}
+                        {formatPixelValue(screen.sourceWidth)}×{formatPixelValue(screen.sourceHeight)}
                       </span>
                       {label ? (
                         <span
