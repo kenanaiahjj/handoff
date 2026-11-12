@@ -137,7 +137,7 @@ The spaces around the separator are why `Flow - Wallet - First Top-Up` parses in
 
 ### Uniqueness
 
-**No two captured frames may share a name**, anywhere in the file. When a frame gets a new Figma ID, duplicate names can leave several possible replacement screens. Asbir shows those candidates for manual confirmation; it does not match screens by name automatically. Keep names unique so the correct replacement is easy to identify.
+**No two captured frames may share a name**, anywhere in the file. When two versions have the same verified Figma file ID, Asbir automatically compares frames whose non-empty name is unique in both full captures, even if Figma generated a new frame ID. Name matching ignores surrounding whitespace but is case-sensitive. Keep a screen's name stable while it represents the same surface. Duplicate names remain unpaired because Asbir cannot identify the intended screen safely. Asbir does not auto-pair by name across different files or when a legacy snapshot's file identity cannot be verified; shared frame IDs can still match through the legacy identity path.
 
 If two frames seem to need the same name, one of them isn't a separate surface. Merge them, or separate them with a variant (§8).
 

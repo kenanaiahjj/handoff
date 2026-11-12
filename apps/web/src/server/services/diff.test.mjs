@@ -328,25 +328,53 @@ test("keeps text and style-name changes when IDs regenerate within the same file
   );
 });
 
-test("keeps a same-name screen separate until an explicit frame match is supplied", () => {
-  const before = snapshot("same-file", "review-before", styleIds("same"));
-  const after = snapshot("same-file", "review-after", styleIds("same"));
+test("automatically compares a uniquely named screen when its Figma frame ID changes", () => {
+  const before = snapshot("same-file", "review-before", styleIds("old"));
+  const after = snapshot("same-file", "review-after", {
+    ...styleIds("new"),
+    styleName: "Text/Heading",
+    text: "Review the payment",
+  });
 
-  const unmatched = compare(before, after);
-  assert.equal(unmatched.frames.filter((frame) => frame.status === "removed").length, 1);
-  assert.equal(unmatched.frames.filter((frame) => frame.status === "added").length, 1);
-  assert.equal(unmatched.unmatchedFrameCandidates.length, 1);
-  assert.equal(unmatched.unmatchedFrameCandidates[0].beforeFrameId, "review-before");
-  assert.equal(unmatched.unmatchedFrameCandidates[0].afterCandidates[0].frameId, "review-after");
+  const result = compare(before, after);
 
-  const matched = compare(before, after, [
-    { beforeFrameId: "review-before", afterFrameId: "review-after" },
-  ]);
-  assert.equal(matched.frames.length, 1);
-  assert.equal(matched.frames[0].status, "unchanged");
-  assert.equal(matched.frames[0].beforeFrameId, "review-before");
-  assert.equal(matched.frames[0].afterFrameId, "review-after");
-  assert.equal(matched.unmatchedFrameCandidates.length, 0);
+  assert.equal(result.frames.length, 1);
+  assert.equal(result.frames[0].status, "changed");
+  assert.equal(result.frames[0].beforeFrameId, "review-before");
+  assert.equal(result.frames[0].afterFrameId, "review-after");
+  assert.deepEqual(
+    result.changes.map((change) => change.path),
+    ["sourcePayload.textSegments[0].characters", "styleReferences[0].name"],
+  );
+  assert.equal(result.unmatchedFrameCandidates.length, 0);
+});
+
+test("does not automatically pair same-name screens from different source files", () => {
+  const before = snapshot("file-before", "review-before", styleIds("same"));
+  const after = snapshot("file-after", "review-after", styleIds("same"));
+
+  const result = compare(before, after);
+
+  assert.equal(result.sourceIdentity, "different");
+  assert.equal(result.frames.length, 2);
+  assert.ok(result.frames.every((frame) => frame.beforeFrameId === null || frame.afterFrameId === null));
+});
+
+test("does not automatically pair same-name screens when legacy file identity is only inferred", () => {
+  const before = {
+    ...snapshot("0:0", "review-before", styleIds("same")),
+    sourceFileName: "Tripket.ph",
+  };
+  const after = {
+    ...snapshot("nzHr6oM1X4eZj41Wg9cqQM", "review-after", styleIds("same")),
+    sourceFileName: "Tripket.ph",
+  };
+
+  const result = compare(before, after);
+
+  assert.equal(result.sourceIdentity, "inferred");
+  assert.equal(result.frames.length, 2);
+  assert.ok(result.frames.every((frame) => frame.beforeFrameId === null || frame.afterFrameId === null));
 });
 
 test("bounds duplicate screen suggestions while keeping every after screen matchable", () => {
@@ -412,6 +440,7 @@ test("validates same-name screen matches beyond the ten-item suggestion cap", ()
 test("keeps unmatched frame change payloads compact instead of embedding their layer trees", () => {
   const before = snapshot("same-file", "review-before", styleIds("shared"));
   const after = snapshot("same-file", "review-after", styleIds("shared"));
+  after.frames[0].name = "Rebuilt review";
   after.frames[0].nodes = Array.from({ length: 100 }, (_, index) => ({
     sourceNodeId: `node-${index}`,
     name: `Layer ${index}`,
@@ -426,7 +455,7 @@ test("keeps unmatched frame change payloads compact instead of embedding their l
   const result = compare(before, after);
   const addedFrameChange = result.changes.find((change) => change.path === "frame" && change.after !== undefined);
 
-  assert.deepEqual(addedFrameChange?.after, { name: "Review" });
+  assert.deepEqual(addedFrameChange?.after, { name: "Rebuilt review" });
   assert.equal(JSON.stringify(result).includes("large payload"), false);
 });
 

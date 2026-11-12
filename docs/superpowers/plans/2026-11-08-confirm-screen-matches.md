@@ -1,12 +1,16 @@
 # Confirm screen matches in version compare
 
+**Status: Superseded for version comparison.** This plan described manual confirmation in the compare canvas. Current comparison automatically pairs exact screen names that are unique in both captures when both versions have the same verified Figma file ID. Duplicate names remain unpaired, and Asbir does not auto-pair names across files or when legacy file identity cannot be verified. The canvas shows screens and changes without a screen-match confirmation prompt. The Figma plugin still asks designers to confirm a suggested replacement during a partial upload so it can merge the capture into the intended existing screen.
+
 **Goal:** Let a reviewer explicitly pair a removed Figma screen with its new-ID candidate so the compare view can show a true before-and-after render.
 
 **Architecture:** Keep version snapshots immutable. Persist a confirmed frame mapping in the existing `handoff_frame_replacement` table, scoped to the selected version pair and the confirming user. Validate every request against the diff's unmatched candidates, then return the recomputed comparison so the client can focus the newly paired screen.
 
 **Tech stack:** Next.js Route Handlers, TypeScript, SQLite, Zod, React, Node's test runner.
 
-## Constraints
+## Historical constraints
+
+These constraints applied to the superseded manual-confirmation design:
 
 - Never merge a candidate frame automatically.
 - Require an explicit user action for every frame match.

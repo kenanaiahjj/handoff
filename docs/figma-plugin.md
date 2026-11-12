@@ -50,7 +50,7 @@ The plugin manifest grants access to the exact capture endpoint. Figma blocks pl
 6. Choose selected frames, all top-level frames and components on the current page, or the entire Figma file across all pages.
 7. Capture the canvas, review the overview image, page count, and layer count, then upload the immutable version.
 
-The plugin does not change the Figma document. Each upload creates a new immutable version in Asbir Handoff. For an existing handoff, selected-frame captures update only the captured frames and keep the other frames, layers, and assets. A page capture replaces that page’s frames and keeps the other pages. A full-file capture replaces the complete canvas. Confirm a suggested frame-name match when Figma gives a replacement frame a new ID.
+The plugin does not change the Figma document. Each upload creates a new immutable version in Asbir Handoff. For an existing handoff, selected-frame captures update only the captured frames and keep the other frames, layers, and assets. A page capture replaces that page’s frames and keeps the other pages. A full-file capture replaces the complete canvas. When Figma gives a replacement frame a new ID, review and confirm its suggested frame-name match before upload so the partial capture replaces the intended frame. After upload, version comparison automatically pairs exact screen names that are unique in both captures when the verified Figma file ID matches.
 
 ## Troubleshooting
 

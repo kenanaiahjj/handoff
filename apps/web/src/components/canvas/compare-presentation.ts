@@ -42,7 +42,7 @@ export function sourceIdentityNotice(identity: SnapshotSourceIdentity) {
     return "At least one snapshot has a legacy Figma file ID. The source file identity cannot be verified.";
   }
   if (identity === "different") {
-    return "These versions have different Figma file IDs. Check screen matches before relying on this comparison.";
+    return "These versions have different Figma file IDs. Handoff does not auto-pair screens by name across files.";
   }
   return null;
 }

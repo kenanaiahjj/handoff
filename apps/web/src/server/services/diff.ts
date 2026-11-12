@@ -614,6 +614,22 @@ function indexFrameCandidates(added: Array<Pick<SnapshotFrame, "sourceFrameId" |
   return candidatesByName;
 }
 
+function indexUniqueFramesByName<T extends Pick<SnapshotFrame, "sourceFrameId" | "name">>(frames: T[]) {
+  const framesByName = new Map<string, T>();
+  const duplicateNames = new Set<string>();
+  for (const frame of frames) {
+    const name = frame.name.trim();
+    if (!name) continue;
+    if (framesByName.has(name)) {
+      framesByName.delete(name);
+      duplicateNames.add(name);
+    } else if (!duplicateNames.has(name)) {
+      framesByName.set(name, frame);
+    }
+  }
+  return framesByName;
+}
+
 function frameCandidates(
   removed: Pick<SnapshotFrame, "name">,
   candidatesByName: Map<string, Array<{ frameId: string; name: string; score: number }>>,
@@ -1014,10 +1030,33 @@ export function diffSnapshots(
     if (!before || !after || afterByKey.has(beforeKey) || beforeByKey.has(afterKey)) return [];
     return [{ before, after, beforeKey, afterKey }];
   });
-  const explicitlyMatchedBefore = new Set(explicitPairs.map((pair) => pair.beforeKey));
-  const explicitlyMatchedAfter = new Set(explicitPairs.map((pair) => pair.afterKey));
+  const matchedBeforeFrameKeys = new Set(explicitPairs.map((pair) => pair.beforeKey));
+  const matchedAfterFrameKeys = new Set(explicitPairs.map((pair) => pair.afterKey));
+  const framePairs = [...explicitPairs];
 
-  for (const pair of explicitPairs) {
+  if (exactSourceIdentity) {
+    const beforeFramesByName = indexUniqueFramesByName(beforeFrames);
+    const afterFramesByName = indexUniqueFramesByName(afterFrames);
+    for (const [name, before] of beforeFramesByName) {
+      const after = afterFramesByName.get(name);
+      if (!after) continue;
+
+      const beforeKey = frameIdentity(beforeIdentityFileId, before.sourceFrameId);
+      const afterKey = frameIdentity(afterIdentityFileId, after.sourceFrameId);
+      if (
+        afterByKey.has(beforeKey) ||
+        beforeByKey.has(afterKey) ||
+        matchedBeforeFrameKeys.has(beforeKey) ||
+        matchedAfterFrameKeys.has(afterKey)
+      ) continue;
+
+      framePairs.push({ before, after, beforeKey, afterKey });
+      matchedBeforeFrameKeys.add(beforeKey);
+      matchedAfterFrameKeys.add(afterKey);
+    }
+  }
+
+  for (const pair of framePairs) {
     const beforeChangeCount = changes.length;
     compareFrame(
       pair.before,
@@ -1042,7 +1081,7 @@ export function diffSnapshots(
   }
 
   for (const key of allKeys) {
-    if (explicitlyMatchedBefore.has(key) || explicitlyMatchedAfter.has(key)) continue;
+    if (matchedBeforeFrameKeys.has(key) || matchedAfterFrameKeys.has(key)) continue;
     const before = beforeByKey.get(key);
     const after = afterByKey.get(key);
     const frame = before ?? after!;
@@ -1099,11 +1138,11 @@ export function diffSnapshots(
 
   const removedFrames = beforeFrames.filter(
     (frame) => !afterByKey.has(frameIdentity(beforeIdentityFileId, frame.sourceFrameId)) &&
-      !explicitlyMatchedBefore.has(frameIdentity(beforeIdentityFileId, frame.sourceFrameId)),
+      !matchedBeforeFrameKeys.has(frameIdentity(beforeIdentityFileId, frame.sourceFrameId)),
   );
   const addedFrames = afterFrames.filter(
     (frame) => !beforeByKey.has(frameIdentity(afterIdentityFileId, frame.sourceFrameId)) &&
-      !explicitlyMatchedAfter.has(frameIdentity(afterIdentityFileId, frame.sourceFrameId)),
+      !matchedAfterFrameKeys.has(frameIdentity(afterIdentityFileId, frame.sourceFrameId)),
   );
   const addedFrameCandidatesByName = indexFrameCandidates(addedFrames);
   const unmatchedFrameCandidates = removedFrames.flatMap((frame) => {
