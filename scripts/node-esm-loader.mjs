@@ -1,6 +1,7 @@
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import typescript from "typescript";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const webRoot = path.join(repositoryRoot, "apps", "web");
@@ -23,6 +24,11 @@ function findModule(basePath) {
 }
 
 export async function resolve(specifier, context, nextResolve) {
+  if (specifier === "next/image") {
+    const imageMock = path.join(repositoryRoot, "scripts", "test-mocks", "next-image.mjs");
+    return { url: pathToFileURL(imageMock).href, shortCircuit: true };
+  }
+
   if (specifier.startsWith("@/")) {
     const target = findModule(path.resolve(webRoot, specifier.slice(2)));
     if (target) return { url: pathToFileURL(target).href, shortCircuit: true };
@@ -38,4 +44,22 @@ export async function resolve(specifier, context, nextResolve) {
     }
     throw error;
   }
+}
+
+export async function load(url, context, nextLoad) {
+  if (!url.endsWith(".tsx")) return nextLoad(url, context);
+
+  const fileName = fileURLToPath(url);
+  const source = readFileSync(fileName, "utf8");
+  const transpiled = typescript.transpileModule(source, {
+    fileName,
+    compilerOptions: {
+      jsx: typescript.JsxEmit.ReactJSX,
+      module: typescript.ModuleKind.ESNext,
+      target: typescript.ScriptTarget.ES2022,
+      esModuleInterop: true,
+    },
+  });
+
+  return { format: "module", shortCircuit: true, source: transpiled.outputText };
 }
