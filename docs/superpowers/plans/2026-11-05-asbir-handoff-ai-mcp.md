@@ -107,7 +107,8 @@ export interface HandoffMcpContext {
 - [x] Expose `link_task` under `tasks:write` and `list_linked_tasks` under `handoffs:read`.
 - [x] Store the version label, source revision, content hash, screen or element properties, and a deep link to the exact canvas location.
 - [x] Link a task from the review UI and attach returned agent-run or pull-request URLs.
-- [x] Migrate existing task links into the external-link table while preserving legacy tables for compatibility.
+- [x] Migrate existing task links into the external-link table before dropping legacy task MCP connections and credentials.
+- [x] Add a follow-up migration that removes the obsolete task-MCP connection and task-link tables after preserving their external references.
 - [ ] Connect an AI client to Handoff and its own task, repository, and QA MCP tools. Confirm that the client can create a task externally, call `link_task`, and retrieve that link with `list_linked_tasks`.
 
 ## Task 4: Support coding-agent handoff
