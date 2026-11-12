@@ -10,14 +10,22 @@ function format(value, category) {
   return formatComparisonValue(value, category);
 }
 
-test("keeps fractional geometry visible in comparison summaries", () => {
-  assert.equal(format(15.9845, "layout"), "15.98");
-  assert.equal(format(15.25, "geometry"), "15.25");
-  assert.equal(format(-0.068777, "layout"), "-0.07");
+test("matches Figma's whole-pixel display in comparison summaries", () => {
+  assert.equal(format(15.9845, "layout"), "16");
+  assert.equal(format(15.25, "geometry"), "15");
+  assert.equal(format(-0.068777, "layout"), "0");
 });
 
-test("keeps comparison geometry to two decimals while preserving text and style values", () => {
-  assert.equal(format({ padding: { left: 15.9845 } }, "layout"), '{"padding":{"left":15.98}}');
+test("rounds captured pixel measurements in comparison details without changing ratios", () => {
+  const value = {
+    bounds: { x: { value: 35.9845, unit: "px" }, width: { value: 15.25, unit: "px" } },
+    aspectRatio: { value: 0.3333, unit: "ratio" },
+  };
+  assert.equal(
+    format(value, "layout"),
+    '{"bounds":{"x":{"value":36,"unit":"px"},"width":{"value":15,"unit":"px"}},"aspectRatio":{"value":0.3333,"unit":"ratio"}}',
+  );
+  assert.equal(value.bounds.x.value, 35.9845, "formatting must not change the captured source value");
   assert.equal(format("1 of 5", "structure"), "1 of 5");
   assert.equal(format(0.125, "style"), "0.125");
 });
@@ -28,14 +36,14 @@ test("rounds pixel values inside structured diffs while preserving non-pixel val
     fills: [{ opacity: { value: 0.125, unit: "ratio" } }],
   };
   const expected = {
-    bounds: { x: { value: 35.98, unit: "px" } },
+    bounds: { x: { value: 36, unit: "px" } },
     fills: [{ opacity: { value: 0.125, unit: "ratio" } }],
   };
   assert.equal(format(value, "structure"), JSON.stringify(expected));
 });
 
-test("shows precise pixel measurements in comparisons", () => {
-  assert.equal(format({ value: 35.9845, unit: "px", provenance: "source" }, "geometry"), "35.98 px");
+test("matches Figma pixel display in direct measurements", () => {
+  assert.equal(format({ value: 35.9845, unit: "px", provenance: "source" }, "geometry"), "36 px");
   assert.equal(format({ value: 0.125, unit: "ratio" }, "style"), "0.125 ratio");
 });
 

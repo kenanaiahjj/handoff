@@ -19,7 +19,7 @@ test("matches Figma's whole-pixel measurement display", () => {
   assert.equal(formatPrecisePixelValue(35.9844970703125), "35.98");
 });
 
-test("rounds nested pixel measurements without changing ratios", () => {
+test("rounds nested pixel measurements to whole pixels without changing ratios", () => {
   const value = {
     bounds: { width: { value: 35.9844970703125, unit: "px" } },
     aspectRatio: { value: 0.3333, unit: "ratio" },
@@ -27,9 +27,9 @@ test("rounds nested pixel measurements without changing ratios", () => {
 
   assert.equal(
     formatComparisonValue(value, "layout"),
-    '{"bounds":{"width":{"value":35.98,"unit":"px"}},"aspectRatio":{"value":0.3333,"unit":"ratio"}}',
+    '{"bounds":{"width":{"value":36,"unit":"px"}},"aspectRatio":{"value":0.3333,"unit":"ratio"}}',
   );
-  assert.equal(formatComparisonValue({ value: 35.9844970703125, unit: "px" }, "geometry"), "35.98 px");
+  assert.equal(formatComparisonValue({ value: 35.9844970703125, unit: "px" }, "geometry"), "36 px");
 });
 
 test("keeps unavailable measurements in inspector groups", () => {

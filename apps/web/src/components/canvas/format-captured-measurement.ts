@@ -33,7 +33,7 @@ function roundMeasurementValues(value: unknown, forceMeasurement = false): unkno
   if (typeof value === "number") {
     if (!forceMeasurement) return value;
 
-    const formatted = formatPrecisePixelValue(value);
+    const formatted = formatPixelValue(value);
     return formatted === "—" ? formatted : Number(formatted);
   }
 
@@ -69,7 +69,7 @@ export function formatComparisonValue(value: unknown, category: string) {
 
   const isMeasurement = category === "geometry" || category === "layout";
   if (typeof value === "number") {
-    return isMeasurement ? formatPrecisePixelValue(value) : String(value);
+    return isMeasurement ? formatPixelValue(value) : String(value);
   }
 
   if (
