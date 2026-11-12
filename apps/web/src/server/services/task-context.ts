@@ -5,6 +5,7 @@ import type {
   SnapshotNode,
   VisualOnlySnapshot,
 } from "@asbir/snapshot-contract";
+import { formatPixelValue } from "../../lib/format-pixel-value";
 import { z } from "zod";
 
 function optionalText(maxLength: number) {
@@ -160,8 +161,8 @@ export function taskCanvasHref(handoffUrl: string | null, context: TaskDesignCon
 
 function formatMeasurement(measurement: Measurement | null | undefined) {
   if (!measurement || measurement.value === null) return "unavailable";
-  const rounded = Math.round(measurement.value * 2) / 2;
-  return `${Number(rounded.toFixed(1))} ${measurement.unit}`;
+  const value = measurement.unit === "px" ? formatPixelValue(measurement.value) : String(measurement.value);
+  return `${value} ${measurement.unit}`;
 }
 
 function formatSides(sides: SnapshotNode["padding"]) {

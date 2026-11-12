@@ -45,14 +45,15 @@ test("resolves a selected screen and element with captured layout and token evid
   });
 });
 
-test("formats a deep link and readable layout summary for a task description", () => {
+test("formats whole-pixel Figma measurements without changing captured values", () => {
   const context = resolveTaskDesignContext(structuredSnapshot, "welcome", "button-1");
   const href = taskCanvasHref("https://handoff.example/review/share?versionId=version-1", context);
   const description = formatTaskDesignContext(context, href);
 
   assert.equal(href, "https://handoff.example/review/share?versionId=version-1#screen=welcome&element=button-1");
   assert.match(description, /Screen: Welcome \(frame ID: welcome\)/);
-  assert.match(description, /Bounds: x 24 px, y 700 px, width 342\.5 px, height 48 px/);
+  assert.match(description, /Bounds: x 24 px, y 700 px, width 342 px, height 48 px/);
+  assert.equal(context.element.bounds.width.value, 342.25);
   assert.match(description, /Padding: top 12 px, right 16 px, bottom 12 px, left 16 px/);
   assert.match(description, /Tokens: color\/action\/primary = #315C46/);
   assert.match(description, /Canvas: https:\/\/handoff\.example\/review\/share\?versionId=version-1#screen=welcome&element=button-1/);

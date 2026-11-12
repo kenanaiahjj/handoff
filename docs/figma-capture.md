@@ -50,7 +50,7 @@ Handoff marks a property as `source` when Figma provides it directly, `measured`
 - Figma does not have CSS margins. Handoff labels the edge distance from a layer to its immediate parent as a measured margin. The distance can be negative when layers overlap or extend outside the parent.
 - The full raw paint data is retained in `sourcePayload`; the color summary shows a hex value for solid paints.
 - A project spacing rule checks measured margins along with padding and layout gaps when the team configures an allowed spacing scale.
-- The inspector and comparison summaries display pixels rounded to the nearest whole number, matching Figma's displayed measurements. The frozen snapshot and MCP measurement response keep the captured source values. Expanded comparison details show the raw before-and-after values, and copied CSS keeps up to two decimal places for fractional geometry.
+- The inspector, comparison summaries, and generated task-context descriptions display pixels rounded to the nearest whole number, matching the canvas. The frozen snapshot and structured MCP responses keep the captured source values. Expanded comparison details show the raw before-and-after values, and copied CSS keeps up to two decimal places for fractional geometry.
 
 ## Import validation and storage
 

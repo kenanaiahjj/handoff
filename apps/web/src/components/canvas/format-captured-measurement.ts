@@ -1,14 +1,10 @@
 import type { SnapshotNode } from "@asbir/snapshot-contract";
+import { formatPixelValue } from "../../lib/format-pixel-value";
+
+export { formatPixelValue } from "../../lib/format-pixel-value";
 
 export function inspectionMeasurementEntries<T>(values: Record<string, T>) {
   return Object.entries(values);
-}
-
-export function formatPixelValue(value: number) {
-  if (!Number.isFinite(value)) return "—";
-
-  const rounded = Math.sign(value) * Math.round(Math.abs(value) + Number.EPSILON);
-  return String(Object.is(rounded, -0) ? 0 : rounded);
 }
 
 export function formatPrecisePixelValue(value: number) {
