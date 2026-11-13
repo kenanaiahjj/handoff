@@ -49,27 +49,25 @@ export async function GET(request: Request, context: ReviewAccessRoute) {
     return redirectWithCookies(request, returnTo, [clearPendingCookie]);
   }
 
-  if (!access.session) {
-    if (access.handoff.sharingMode === "invited" && token && getHandoffInviteByToken(shareId, token)) {
-      const signInPath = `/sign-in?redirectTo=${encodeURIComponent(returnTo)}`;
-      return redirectWithCookies(request, signInPath, [makeCookie(pendingCookie, token, 1800)]);
-    }
-    if (access.handoff.sharingMode === "workspace") {
-      return Response.redirect(new URL(`/sign-in?redirectTo=${encodeURIComponent(returnTo)}`, request.url), 303);
-    }
-    return Response.json({ error: "An active invitation is required." }, { status: 403 });
-  }
-
-  if (!access.decision.allowed) {
-    return Response.json({ error: "This invitation is invalid or does not match the signed-in email." }, { status: 403 });
-  }
-
-  if (access.decision.reason === "invited-recipient" && token) {
+  if (access.decision.allowed && access.decision.reason === "invite-link" && token) {
     const invite = getHandoffInviteByToken(shareId, token);
-    const maxAge = invite?.expiresAt
+    if (!invite) return Response.json({ error: "This invitation link is invalid, expired, or revoked." }, { status: 403 });
+    const maxAge = invite.expiresAt
       ? Math.max(1, Math.floor((Date.parse(invite.expiresAt) - Date.now()) / 1000))
       : 31536000;
     return redirectWithCookies(request, returnTo, [makeCookie(accessCookie, token, maxAge), clearPendingCookie]);
+  }
+
+  if (!access.decision.allowed) {
+    if (!access.session && access.handoff.sharingMode === "workspace") {
+      return Response.redirect(new URL(`/sign-in?redirectTo=${encodeURIComponent(returnTo)}`, request.url), 303);
+    }
+    const message = access.decision.reason === "invite-required"
+      ? "An active invitation link is required."
+      : access.handoff.sharingMode === "invited"
+        ? "This invitation link is invalid, expired, or revoked."
+        : "This handoff is not available to this account.";
+    return Response.json({ error: message }, { status: 403 });
   }
 
   return redirectWithCookies(request, returnTo, [clearPendingCookie]);

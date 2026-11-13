@@ -63,6 +63,7 @@ function serializeNode(node: SnapshotNode) {
     name: node.name,
     type: node.type,
     visible: node.visible,
+    layoutBounds: node.layoutBounds,
     bounds: node.bounds,
     layout: node.layout,
     padding: node.padding,
@@ -346,8 +347,8 @@ export function AgentHandoffPanel({ input }: {
         },
       };
       const toolInstructions = [
-        `1. Call get_snapshot with projectId=${input.projectId}, handoffId=${input.handoffId}, versionId=${input.versionId} to verify the immutable source payload.`,
-        baseline ? `2. Call get_version_diff with fromVersionId=${baseline.id} and toVersionId=${input.versionId} to verify the included comparison.` : "2. This handoff has no earlier version to compare.",
+        `1. Call list_frames with projectId=${input.projectId}, handoffId=${input.handoffId}, versionId=${input.versionId}. Use list_elements with a selected frameId and page through its captured layers; get_snapshot returns the full JSON only when it is at most 1 MiB.`,
+        baseline ? `2. Call get_version_diff with fromVersionId=${baseline.id} and toVersionId=${input.versionId}. It returns up to 100 items per collection by default; follow each nextOffset while hasMore is true.` : "2. This handoff has no earlier version to compare.",
         selectedFrame ? `3. Call get_token_bindings with frameId=${selectedFrame.id}; call get_measurements for any sourceNodeId that needs closer inspection.` : "3. Use get_measurements and get_token_bindings for the target frame and elements before changing layout code.",
         `4. Call list_comments and list_findings for versionId=${input.versionId}; preserve unresolved review feedback and rule findings in the implementation plan.`,
         `5. Call list_approved_changelogs for versionId=${input.versionId}; use approved entries as accepted product intent. Keep measured distances distinct from authored margins and do not infer token bindings.`,

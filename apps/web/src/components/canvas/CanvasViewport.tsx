@@ -15,7 +15,7 @@ import { LayoutGridOverlay } from "./LayoutGridOverlay";
 import { comparisonFrameStatusLabel } from "./compare-presentation";
 import { getCanvasFrameLabelMaxWidth, shouldShowCanvasFrameLabel } from "./canvas-frame-label-visibility";
 import { getElementDistanceGuides, type ElementRect } from "./element-distance-guides";
-import { formatPixelValue } from "./format-captured-measurement";
+import { formatPrecisePixelValue } from "./format-captured-measurement";
 
 export type CanvasViewportControls = {
   scale: number;
@@ -350,7 +350,7 @@ export function CanvasViewport({
     ? getElementDistanceGuides(selectedRect, hoveredRect)
     : [];
   const distanceAnnouncement = distanceGuides
-    .map((guide) => (guide.axis === "horizontal" ? "Horizontal" : "Vertical") + " gap " + formatPixelValue(guide.distance) + " pixels")
+    .map((guide) => (guide.axis === "horizontal" ? "Horizontal" : "Vertical") + " gap " + formatPrecisePixelValue(guide.distance) + " pixels")
     .join(". ");
 
   return (
@@ -480,7 +480,7 @@ export function CanvasViewport({
                     >
                       <span className="max-w-[28ch] truncate">{screen.name}</span>
                         <span className="font-mono text-[#999]" style={{ fontSize: 10 * inverseScale + "px" }}>
-                        {formatPixelValue(screen.sourceWidth)}×{formatPixelValue(screen.sourceHeight)}
+                        {formatPrecisePixelValue(screen.sourceWidth)}×{formatPrecisePixelValue(screen.sourceHeight)}
                       </span>
                       {label ? (
                         <span
@@ -524,7 +524,7 @@ export function CanvasViewport({
             return (
               <button
                 aria-hidden="true"
-                aria-label={"Select " + node.name + ", " + node.type + ", " + Math.round(node.bounds.x.value ?? x) + ", " + Math.round(node.bounds.y.value ?? y)}
+                aria-label={"Select " + node.name + ", " + node.type + ", " + formatPrecisePixelValue(node.bounds.x.value ?? x) + ", " + formatPrecisePixelValue(node.bounds.y.value ?? y)}
                 tabIndex={-1}
                 className={"absolute rounded-[2px] outline-none transition-colors focus-visible:border-2 focus-visible:border-white " + (isSelected ? "border-2 border-[#e3a13a] bg-[#e3a13a]/20" : isHighlighted ? "border border-[#e3a13a] bg-[#e3a13a]/15" : outlinesVisible ? "border border-white/30 hover:border-white/80 hover:bg-white/10" : "border border-transparent hover:border-white/70 hover:bg-white/10")}
                 data-source-node-id={node.sourceNodeId}
@@ -555,7 +555,7 @@ export function CanvasViewport({
             >
               {distanceGuides.map((guide) => {
                 const segments = [guide.segment, ...guide.extensions];
-                const label = formatPixelValue(guide.distance);
+                const label = formatPrecisePixelValue(guide.distance);
                 const badgeWidth = Math.max(26, label.length * 7.5 + 10) * inverseScale;
                 const badgeHeight = 18 * inverseScale;
                 const badgeX = guide.axis === "horizontal"
@@ -613,16 +613,16 @@ export function CanvasViewport({
               style={{
                 left: x + 10 * inverseScale,
                 top: y + 10 * inverseScale,
-                width: 230 * inverseScale,
-                fontSize: 11 * inverseScale,
-                lineHeight: 1.4,
+                width: 230,
+                transform: `scale(${inverseScale})`,
+                transformOrigin: "top left",
               }}
               type="button"
             >
               <span aria-hidden="true" className="absolute -left-[5px] -top-[5px] size-2.5 rounded-full border border-[#423719] bg-[#f3bd5e]" />
               <span className="block font-semibold">{annotation.title}</span>
               <span className="mt-1 block whitespace-pre-wrap break-words">{annotation.body}</span>
-                <span className="mt-1.5 block border-t border-black/15 pt-1 text-[0.8em] text-[#685734]">{annotation.authorName}</span>
+              <span className="mt-1.5 block border-t border-black/15 pt-1 text-[0.8em] text-[#685734]">{annotation.authorName}</span>
             </button>
           ))}
 
@@ -631,6 +631,7 @@ export function CanvasViewport({
               <CommentPin
                 comment={comment}
                 index={index}
+                inverseScale={inverseScale}
                 selected={comment.id === selectedCommentId}
                 onSelect={onSelectComment}
               />

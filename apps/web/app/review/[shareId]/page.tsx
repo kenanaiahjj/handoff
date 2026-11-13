@@ -48,7 +48,7 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
   const access = await resolvePublishedReviewAccess(shareId, requestHeaders);
   if (!access) notFound();
   if (!access.decision.allowed) {
-    if (!session && access.handoff.sharingMode !== "anyone" && (access.handoff.sharingMode === "workspace" || hasPendingInvite)) {
+    if (!session && access.handoff.sharingMode === "workspace") {
       const signInQuery = new URLSearchParams(redirectQuery);
       if (inviteToken) signInQuery.set("invite", inviteToken);
       const signInPath = reviewPath + (signInQuery.toString() ? `?${signInQuery.toString()}` : "");
@@ -57,7 +57,7 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
     notFound();
   }
 
-  if (hasPendingInvite && access.decision.reason === "invited-recipient") {
+  if (hasPendingInvite && access.decision.reason === "invite-link") {
     redirect(`/api/review/${encodeURIComponent(shareId)}/access?returnTo=${encodeURIComponent(redirectPath)}`);
   }
 
@@ -107,6 +107,8 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
         publishedVersionId={handoff.publishedVersionId}
         canManageIntegrations={false}
         canAnnotate={access.decision.canWrite}
+        canComment={access.decision.canComment}
+        commentIdentity={access.invite ? { label: access.invite.email, role: access.invite.role } : null}
         canUseLocalPreview={false}
       />
     </main>

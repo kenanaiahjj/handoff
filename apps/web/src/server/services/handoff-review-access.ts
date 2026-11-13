@@ -4,7 +4,7 @@ import { getDatabase } from "../db";
 import { getHandoffInviteByToken, getPublishedHandoffByShareId, listHandoffVersions } from "../repositories/handoffs";
 import { getVersion } from "../repositories/versions";
 import { versionsVisibleToReview } from "./published-review";
-import { resolveHandoffReviewAccess, type HandoffReviewAccessDecision } from "./handoff-sharing";
+import { resolveHandoffReviewAccess, type HandoffInviteAccess, type HandoffReviewAccessDecision } from "./handoff-sharing";
 
 export type PublishedReviewHandoff = NonNullable<ReturnType<typeof getPublishedHandoffByShareId>>;
 
@@ -13,6 +13,7 @@ export type PublishedReviewAccess = {
   session: AuthSession | null;
   membershipRole: string | null;
   inviteToken: string | null;
+  invite: HandoffInviteAccess | null;
   decision: HandoffReviewAccessDecision;
 };
 
@@ -84,10 +85,12 @@ export async function resolvePublishedReviewAccess(
     session,
     membershipRole: role,
     inviteToken,
+    invite,
     decision: resolveHandoffReviewAccess({
       mode: handoff.sharingMode,
       isWorkspaceMember: Boolean(membership),
       isManager: role === "owner" || role === "designer",
+      isAuthenticated: Boolean(session),
       sessionEmail: session?.user.email,
       invite,
       inviteToken,

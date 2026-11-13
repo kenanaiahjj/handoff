@@ -1,13 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import type { SnapshotNode } from "@asbir/snapshot-contract";
+import { typographyFromTextSegments, type SnapshotNode } from "@asbir/snapshot-contract";
 import type { HandoffComment } from "../comments/CommentPin";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import { MeasurementRow } from "./MeasurementRow";
-import { formatFrameSize, formatPixelValue, formatPrecisePixelValue, inspectionMargins, inspectionMeasurementEntries } from "./format-captured-measurement";
+import { formatFrameSize, formatPrecisePixelValue, formatWholeNumber, inspectionBounds, inspectionGeometryNotice, inspectionMargins, inspectionMeasurementEntries } from "./format-captured-measurement";
 import { capturedGridTracks, formatGridTrack, shouldShowGridLayout } from "./grid-layout";
-import { readPaintDetails, readTextStyleRuns, type TextStyleRun } from "./text-style-runs";
+import { formatFigmaTextMetric, readPaintDetails, readTextStyleRuns, type TextStyleRun } from "./text-style-runs";
 
 type ElementInspectorProps = {
   frame: CanvasFrameOption;
@@ -30,8 +30,16 @@ function valueText(value: unknown) {
   return JSON.stringify(value);
 }
 
-function measurementText(value: unknown) {
-  return typeof value === "number" ? formatPixelValue(value) : valueText(value);
+function measurementText(value: unknown, unit = "px") {
+  if (typeof value !== "number") return valueText(value);
+  return ["px", "pixel", "pixels"].includes(unit.trim().toLowerCase())
+    ? formatPrecisePixelValue(value)
+    : formatWholeNumber(value);
+}
+
+function typographyMeasurementText(measurement: NonNullable<SnapshotNode["typography"]>["fontSize"]) {
+  if (measurement.value === null) return measurement.unit === "auto" ? "Auto" : "Unavailable";
+  return `${formatFigmaTextMetric(measurement.value)} ${measurement.unit}`;
 }
 
 function finiteNumber(value: unknown) {
@@ -76,9 +84,11 @@ function percentText(value: number | null) {
 function MeasurementGroup({
   title,
   values,
+  description,
 }: {
   title: string;
   values: Record<string, { value: number | null; unit: string; provenance: "source" | "measured" | "unavailable"; sourceProperty: string | null }>;
+  description?: string | null;
 }) {
   const entries = inspectionMeasurementEntries(values);
   if (!entries.length) return null;
@@ -86,6 +96,7 @@ function MeasurementGroup({
   return (
     <section className="border-t border-[#393939] pt-3">
       <h3 className="mb-1 text-[12px] font-semibold text-[#c8c8c8]">{title}</h3>
+      {description ? <p className="mb-1 text-[11px] leading-4 text-[#a0a0a0]">{description}</p> : null}
       <dl>
         {entries.map(([label, measurement]) => (
           <MeasurementRow key={label} label={label} measurement={measurement} />
@@ -96,12 +107,14 @@ function MeasurementGroup({
 }
 
 function cssForNode(node: SnapshotNode) {
+  const bounds = inspectionBounds(node);
+  const typography = typographyFromTextSegments(node.typography, node.sourcePayload);
   const declarations: string[] = [];
   const addMeasurement = (name: string, value: number | null, unit: string) => {
     if (value !== null) declarations.push(name + ": " + formatPrecisePixelValue(value) + unit + ";");
   };
-  addMeasurement("width", node.bounds.width.value, "px");
-  addMeasurement("height", node.bounds.height.value, "px");
+  addMeasurement("width", bounds.width.value, "px");
+  addMeasurement("height", bounds.height.value, "px");
   if (node.layout.mode) declarations.push("display: " + (/auto.?layout|flex/i.test(node.layout.mode) ? "flex" : node.layout.mode.toLowerCase()) + ";");
   if (node.layout.direction) declarations.push("flex-direction: " + node.layout.direction.toLowerCase() + ";");
   if ([node.padding.top.value, node.padding.right.value, node.padding.bottom.value, node.padding.left.value].every((value) => value !== null)) {
@@ -115,7 +128,7 @@ function cssForNode(node: SnapshotNode) {
     finiteNumber(node.sourcePayload.bottomLeftRadius) ?? uniformRadius,
   ];
   if (radiusValues.every((value) => value !== null)) {
-    const limit = cornerRadiusLimit(node.bounds.width.value, node.bounds.height.value);
+    const limit = cornerRadiusLimit(bounds.width.value, bounds.height.value);
     const effectiveValues = radiusValues.map((value) => formatPrecisePixelValue(limit === null ? value! : Math.min(value!, limit)) + "px");
     declarations.push("border-radius: " + effectiveValues.join(" ") + ";");
   }
@@ -123,9 +136,9 @@ function cssForNode(node: SnapshotNode) {
   addMeasurement("gap", gap, "px");
   const fill = node.fills.find((paint) => paint.color)?.color;
   if (fill) declarations.push("background-color: " + fill + ";");
-  if (node.typography?.fontFamily) declarations.push("font-family: " + JSON.stringify(node.typography.fontFamily) + ";");
-  addMeasurement("font-size", node.typography?.fontSize.value ?? null, "px");
-  if (node.typography?.fontWeight !== null && node.typography?.fontWeight !== undefined) declarations.push("font-weight: " + node.typography.fontWeight + ";");
+  if (typography?.fontFamily) declarations.push("font-family: " + JSON.stringify(typography.fontFamily) + ";");
+  addMeasurement("font-size", typography?.fontSize.value ?? null, "px");
+  if (typography?.fontWeight !== null && typography?.fontWeight !== undefined) declarations.push("font-weight: " + typography.fontWeight + ";");
   return declarations.join("\n");
 }
 
@@ -187,7 +200,7 @@ function TextStyleRuns({ runs }: { runs: TextStyleRun[] }) {
           const excerpt = run.characters.replace(/\s+/g, " ").trim() || "Empty text run";
           const properties = availableProperties([
             { label: "Font", value: [run.fontFamily, run.fontStyle].filter(Boolean).join(" · ") },
-            { label: "Size", value: run.fontSize === null ? null : formatPixelValue(run.fontSize) + "px" },
+            { label: "Size", value: run.fontSize === null ? null : formatPrecisePixelValue(run.fontSize) + "px" },
             { label: "Weight", value: run.fontWeight },
             { label: "Line height", value: measurementText(run.lineHeight) },
             { label: "Letter spacing", value: measurementText(run.letterSpacing) },
@@ -196,7 +209,7 @@ function TextStyleRuns({ runs }: { runs: TextStyleRun[] }) {
             <details className="rounded-[5px] bg-[#181818] px-2.5 py-2" key={`${run.start}:${run.end}`}>
               <summary className="flex cursor-pointer items-center justify-between gap-2 text-[10px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">
                 <span className="min-w-0 truncate text-[#d5d5d5]" title={run.characters}>{excerpt}</span>
-                <span className="shrink-0 font-mono text-[#999]">{run.fontSize === null ? `Run ${index + 1}` : `${formatPixelValue(run.fontSize)}px`}</span>
+                <span className="shrink-0 font-mono text-[#999]">{run.fontSize === null ? `Run ${index + 1}` : `${formatPrecisePixelValue(run.fontSize)}px`}</span>
               </summary>
               {properties.length ? (
                 <dl className="mt-2 space-y-1.5 text-[10px]">
@@ -295,14 +308,18 @@ export function ElementInspector({
         })),
       )
     : [];
+  const selectedTypography = selectedNode
+    ? typographyFromTextSegments(selectedNode.typography, selectedNode.sourcePayload)
+    : null;
     const appearancePaints = selectedNode
       ? [
           ...nodePaintDetails(selectedNode, "fillPaintDetails", selectedNode.fills).map((paint, index) => ({ ...paint, label: `Fill ${index + 1}` })),
           ...nodePaintDetails(selectedNode, "strokePaintDetails", selectedNode.strokes).map((paint, index) => ({ ...paint, label: `Stroke ${index + 1}` })),
         ]
       : [];
-  const selectedWidth = selectedNode?.bounds.width.value ?? null;
-  const selectedHeight = selectedNode?.bounds.height.value ?? null;
+  const selectedBounds = selectedNode ? inspectionBounds(selectedNode) : null;
+  const selectedWidth = selectedBounds?.width.value ?? null;
+  const selectedHeight = selectedBounds?.height.value ?? null;
   const layerExport = selectedNode ? frame.layerExports?.[selectedNode.sourceNodeId] ?? null : null;
   const aspectRatio = selectedWidth !== null && selectedHeight !== null && selectedHeight > 0
     ? Number((selectedWidth / selectedHeight).toFixed(2)) + ":1"
@@ -413,7 +430,7 @@ export function ElementInspector({
             {canComment ? <button className="min-h-8 rounded-[5px] bg-[#353535] px-2.5 text-[11px] text-[#e5e5e5] hover:bg-[#414141]" onClick={onAddComment} type="button">Comment</button> : null}
           </section>
 
-          <MeasurementGroup title="Layout" values={selectedNode.bounds} />
+            <MeasurementGroup title="Layout" values={selectedBounds ?? selectedNode.bounds} description={inspectionGeometryNotice(selectedNode)} />
           <section className="border-t border-[#393939] pt-3">
             <h3 className="mb-2 text-[12px] font-semibold text-[#c8c8c8]">Size and shape</h3>
             <dl className="space-y-2 text-[11px]">
@@ -421,20 +438,20 @@ export function ElementInspector({
               {hasCornerRadius ? (
                 <>
                   {radiusDisplayFields.map(({ label, value }) => {
-                    const effectiveValue = radiusLimit === null ? value : Math.min(value, radiusLimit);
+      const effectiveValue = radiusLimit === null ? value : Math.min(value, radiusLimit);
                     const isClamped = effectiveValue < value;
                     return (
                       <div className="grid grid-cols-[1fr_auto] items-start gap-x-3" key={label}>
                         <dt className="text-[#999]">{label}</dt>
-                        <dd className="text-right"><CopyValue label={`${label.toLowerCase()} radius`} value={`${formatPixelValue(effectiveValue)}px`} /></dd>
+                        <dd className="text-right"><CopyValue label={`${label.toLowerCase()} radius`} value={`${formatPrecisePixelValue(effectiveValue)}px`} /></dd>
                         {isClamped ? (
                           <dd className="col-span-2 mt-1 text-right text-[10px] text-[#888]">
                             Figma source: {" "}
                             <CopyValue
                               className="inline-block max-w-full break-all font-mono text-[10px] text-[#aaa] hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
-                              displayValue={`${value.toLocaleString("en-US", { maximumSignificantDigits: 21 })}px`}
+                              displayValue={`${formatPrecisePixelValue(value)}px`}
                               label={`${label.toLowerCase()} radius source value`}
-                              value={`${String(value)}px`}
+                              value={`${formatPrecisePixelValue(value)}px`}
                             />
                             {" · clamped to fit"}
                           </dd>
@@ -470,8 +487,8 @@ export function ElementInspector({
               <dl className="space-y-2 text-[11px]">
                 <div className="flex justify-between gap-3"><dt className="text-[#999]">Columns</dt><dd className="text-right text-[#ddd]">{valueText(selectedNode.layout.constraints.gridColumnCount)}</dd></div>
                 <div className="flex justify-between gap-3"><dt className="text-[#999]">Rows</dt><dd className="text-right text-[#ddd]">{valueText(selectedNode.layout.constraints.gridRowCount)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Column gap</dt><dd className="text-right text-[#ddd]">{measurementText(selectedNode.spacing.columnGap.value)} {selectedNode.spacing.columnGap.unit}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Row gap</dt><dd className="text-right text-[#ddd]">{measurementText(selectedNode.spacing.rowGap.value)} {selectedNode.spacing.rowGap.unit}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-[#999]">Column gap</dt><dd className="text-right text-[#ddd]">{measurementText(selectedNode.spacing.columnGap.value, selectedNode.spacing.columnGap.unit)} {selectedNode.spacing.columnGap.unit}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-[#999]">Row gap</dt><dd className="text-right text-[#ddd]">{measurementText(selectedNode.spacing.rowGap.value, selectedNode.spacing.rowGap.unit)} {selectedNode.spacing.rowGap.unit}</dd></div>
                 {selectedNode.sourcePayload.gridAutoTracks !== undefined ? <div className="flex justify-between gap-3"><dt className="text-[#999]">Automatic rows</dt><dd className="text-right text-[#ddd]">{valueText(selectedNode.sourcePayload.gridAutoTracks)}</dd></div> : null}
                 {selectedNode.sourcePayload.gridItemsPositioning !== undefined ? <div className="flex justify-between gap-3"><dt className="text-[#999]">Item placement</dt><dd className="text-right text-[#ddd]">{valueText(selectedNode.sourcePayload.gridItemsPositioning)}</dd></div> : null}
               </dl>
@@ -509,7 +526,7 @@ export function ElementInspector({
                     <p className="font-medium text-[#dedede]">{String(grid.pattern ?? "Grid").toLowerCase().replace(/^./, (letter) => letter.toUpperCase())}{typeof grid.visible === "boolean" && !grid.visible ? " · hidden" : ""}</p>
                     <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[#999]">
                       {(["count", "sectionSize", "gutterSize", "offset", "alignment"] as const).map((key) => grid[key] === undefined ? null : (
-                        <div className="contents" key={key}><dt>{key === "sectionSize" ? "Size" : key === "gutterSize" ? "Gutter" : key === "alignment" ? "Alignment" : key === "offset" ? "Offset" : "Count"}</dt><dd className="truncate text-right text-[#d0d0d0]">{measurementText(grid[key])}{["sectionSize", "gutterSize", "offset"].includes(key) && typeof grid[key] === "number" ? " px" : ""}</dd></div>
+                        <div className="contents" key={key}><dt>{key === "sectionSize" ? "Size" : key === "gutterSize" ? "Gutter" : key === "alignment" ? "Alignment" : key === "offset" ? "Offset" : "Count"}</dt><dd className="truncate text-right text-[#d0d0d0]">{measurementText(grid[key], ["sectionSize", "gutterSize", "offset"].includes(key) ? "px" : "")}{["sectionSize", "gutterSize", "offset"].includes(key) && typeof grid[key] === "number" ? " px" : ""}</dd></div>
                       ))}
                     </dl>
                   </li>
@@ -564,15 +581,15 @@ export function ElementInspector({
 
           <section className="border-t border-[#393939] pt-3">
             <h3 className="mb-2 text-[12px] font-semibold text-[#c8c8c8]">Typography</h3>
-            {selectedNode.typography ? (
+            {selectedTypography ? (
               <dl className="space-y-2 text-[11px]">
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Font</dt><dd className="max-w-40 truncate text-right text-[#ddd]">{selectedNode.typography.fontFamily ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Size</dt><dd className="text-right text-[#ddd]">{selectedNode.typography.fontSize.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : `${measurementText(selectedNode.typography.fontSize.value)} ${selectedNode.typography.fontSize.unit}`}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Weight</dt><dd className="text-right text-[#ddd]">{selectedNode.typography.fontWeight ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Line height</dt><dd className="text-right text-[#ddd]">{selectedNode.typography.lineHeight.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : `${measurementText(selectedNode.typography.lineHeight.value)} ${selectedNode.typography.lineHeight.unit}`}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Letter spacing</dt><dd className="text-right text-[#ddd]">{selectedNode.typography.letterSpacing.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : `${measurementText(selectedNode.typography.letterSpacing.value)} ${selectedNode.typography.letterSpacing.unit}`}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Alignment</dt><dd className="text-right text-[#ddd]">{selectedNode.typography.textAlign ?? "Unavailable"}</dd></div>
-                {selectedNode.typography.content !== null ? <div className="border-t border-[#393939] pt-2"><dt className="text-[#999]">Text content</dt><dd className="mt-1 break-words text-[#ddd]">{selectedNode.typography.content}</dd></div> : null}
+                <div className="flex justify-between gap-3"><dt className="text-[#999]">Font</dt><dd className="max-w-40 truncate text-right text-[#ddd]">{selectedTypography.fontFamily ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-[#999]">Size</dt><dd className="text-right text-[#ddd]">{selectedTypography.fontSize.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.fontSize)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-[#999]">Weight</dt><dd className="text-right text-[#ddd]">{selectedTypography.fontWeight ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-[#999]">Line height</dt><dd className="text-right text-[#ddd]">{selectedTypography.lineHeight.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.lineHeight)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-[#999]">Letter spacing</dt><dd className="text-right text-[#ddd]">{selectedTypography.letterSpacing.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.letterSpacing)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-[#999]">Alignment</dt><dd className="text-right text-[#ddd]">{selectedTypography.textAlign ?? "Unavailable"}</dd></div>
+                {selectedTypography.content !== null ? <div className="border-t border-[#393939] pt-2"><dt className="text-[#999]">Text content</dt><dd className="mt-1 break-words text-[#ddd]">{selectedTypography.content}</dd></div> : null}
               </dl>
             ) : textStyleRuns.length ? <p className="text-[11px] text-[#929292]">Typography is captured per text run.</p> : <p className="text-[11px] text-[#929292]">No typography data captured.</p>}
             <TextStyleRuns runs={textStyleRuns} />

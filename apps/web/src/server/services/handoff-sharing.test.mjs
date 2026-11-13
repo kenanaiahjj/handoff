@@ -18,11 +18,13 @@ test("workspace mode requires a workspace member", () => {
   assert.deepEqual(resolveHandoffReviewAccess({ mode: "workspace", isWorkspaceMember: false, now }), {
     allowed: false,
     canWrite: false,
+    canComment: false,
     reason: "workspace-membership-required",
   });
   assert.deepEqual(resolveHandoffReviewAccess({ mode: "workspace", isWorkspaceMember: true, now }), {
     allowed: true,
     canWrite: true,
+    canComment: true,
     reason: "workspace-member",
   });
 });
@@ -31,6 +33,7 @@ test("anyone mode allows an anonymous read-only review", () => {
   assert.deepEqual(resolveHandoffReviewAccess({ mode: "anyone", isWorkspaceMember: false, now }), {
     allowed: true,
     canWrite: false,
+    canComment: false,
     reason: "public-link",
   });
 });
@@ -39,13 +42,16 @@ test("workspace members retain review tools when a public link is enabled", () =
   assert.deepEqual(resolveHandoffReviewAccess({ mode: "anyone", isWorkspaceMember: true, now }), {
     allowed: true,
     canWrite: true,
+    canComment: true,
     reason: "workspace-member",
   });
 });
 
-test("invited mode requires a matching signed-in email and active invite token", () => {
+test("an active invite link allows anonymous comments without enabling other write tools", () => {
   const invite = {
+    id: "invite-1",
     email: "qa.person@example.com",
+    role: "qa",
     tokenHash: hashHandoffInviteToken("invite-token"),
     expiresAt: "2026-11-10T12:00:00.000Z",
     revokedAt: null,
@@ -53,14 +59,13 @@ test("invited mode requires a matching signed-in email and active invite token",
   assert.deepEqual(resolveHandoffReviewAccess({
     mode: "invited",
     isWorkspaceMember: false,
-    sessionEmail: " QA.Person@Example.com ",
     invite,
     inviteToken: "invite-token",
     now,
-  }), { allowed: true, canWrite: true, reason: "invited-recipient" });
+  }), { allowed: true, canWrite: false, canComment: true, reason: "invite-link" });
 });
 
-test("invited mode rejects a missing session, another email, a wrong token, revoked invites, and expired invites", () => {
+test("invited mode rejects a missing link, a wrong token, revoked invites, and expired invites", () => {
   const invite = {
     email: "qa.person@example.com",
     tokenHash: hashHandoffInviteToken("invite-token"),
@@ -69,15 +74,15 @@ test("invited mode rejects a missing session, another email, a wrong token, revo
   };
   const base = { mode: "invited", isWorkspaceMember: false, invite, inviteToken: "invite-token", now };
   for (const overrides of [
-    { sessionEmail: null },
-    { sessionEmail: "someone.else@example.com" },
-    { sessionEmail: "qa.person@example.com", inviteToken: "wrong-token" },
-    { sessionEmail: "qa.person@example.com", invite: { ...invite, revokedAt: now } },
-    { sessionEmail: "qa.person@example.com", invite: { ...invite, expiresAt: "2026-11-09T11:59:59.000Z" } },
+    { inviteToken: null },
+    { inviteToken: "wrong-token" },
+    { invite: { ...invite, revokedAt: now } },
+    { invite: { ...invite, expiresAt: "2026-11-09T11:59:59.000Z" } },
   ]) {
     const access = resolveHandoffReviewAccess({ ...base, ...overrides });
     assert.equal(access.allowed, false);
     assert.equal(access.canWrite, false);
+    assert.equal(access.canComment, false);
   }
 });
 
@@ -87,5 +92,5 @@ test("a workspace owner or designer retains management access in invited mode", 
     isWorkspaceMember: true,
     isManager: true,
     now,
-  }), { allowed: true, canWrite: true, reason: "handoff-manager" });
+  }), { allowed: true, canWrite: true, canComment: true, reason: "handoff-manager" });
 });

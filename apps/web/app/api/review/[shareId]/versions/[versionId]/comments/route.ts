@@ -76,7 +76,7 @@ export async function POST(request: Request, context: ReviewCommentsRoute) {
   const { shareId, versionId } = await context.params;
   const access = await resolvePublishedReviewAccess(shareId, request.headers);
   if (!access?.decision.allowed) return accessError(access);
-  if (!access.decision.canWrite || !access.session) return Response.json({ error: "Sign in with an invited work email to comment." }, { status: 403 });
+  if (!access.decision.canComment) return Response.json({ error: "This invitation does not allow comments." }, { status: 403 });
   const version = getVisiblePublishedReviewVersion(access.handoff, versionId);
   if (!version) return Response.json({ error: "Handoff version not found." }, { status: 404 });
   const parsed = createCommentSchema.safeParse(await request.json().catch(() => null));
@@ -99,13 +99,24 @@ export async function POST(request: Request, context: ReviewCommentsRoute) {
     if (!anchor) return Response.json({ error: "Choose a valid point on a frame before posting the comment." }, { status: 400 });
   }
 
+  const author = access.invite
+    ? {
+        createdByInviteId: access.invite.id,
+        authorLabel: access.invite.email,
+        authorRole: access.invite.role,
+      }
+    : access.session
+      ? { createdBy: access.session.user.id, authorRole: null }
+      : null;
+  if (!author) return Response.json({ error: "Open this handoff with a valid invite link to comment." }, { status: 403 });
+
   const created = createHandoffComment({
     workspaceId: access.handoff.workspaceId,
     versionId,
     ...anchor,
     parentCommentId,
     body: parsed.data.body,
-    createdBy: access.session.user.id,
+    ...author,
   });
   return Response.json(created, { status: 201 });
 }

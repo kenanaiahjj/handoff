@@ -20,7 +20,8 @@ database.exec(`
   CREATE TABLE handoff_asset (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_version_id TEXT NOT NULL, asset_key TEXT NOT NULL, object_key TEXT NOT NULL, file_name TEXT NOT NULL, content_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, width INTEGER, height INTEGER);
   CREATE TABLE linked_external_task (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_id TEXT NOT NULL, version_id TEXT NOT NULL, source_system TEXT NOT NULL, external_task_id TEXT, external_url TEXT, title TEXT NOT NULL, description TEXT NOT NULL, evidence_json TEXT NOT NULL, created_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL, agent_run_url TEXT, pull_request_url TEXT);
   CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT NOT NULL);
-  CREATE TABLE handoff_comment (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_version_id TEXT NOT NULL, frame_id TEXT NOT NULL, source_node_id TEXT, x REAL, y REAL, parent_comment_id TEXT, body TEXT NOT NULL, resolved_at TEXT, resolved_by_user_id TEXT, created_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE handoff_comment (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_version_id TEXT NOT NULL, frame_id TEXT NOT NULL, source_node_id TEXT, x REAL, y REAL, parent_comment_id TEXT, body TEXT NOT NULL, resolved_at TEXT, resolved_by_user_id TEXT, created_by_user_id TEXT NOT NULL, created_by_invite_id TEXT, author_label TEXT, author_role TEXT, created_at TEXT NOT NULL);
+  CREATE TABLE layout_finding_state (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_version_id TEXT NOT NULL, finding_key TEXT NOT NULL, status TEXT NOT NULL, assignee_user_id TEXT, note TEXT, updated_by_user_id TEXT NOT NULL, updated_at TEXT NOT NULL);
   CREATE TABLE changelog_draft (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_id TEXT NOT NULL, from_version_id TEXT NOT NULL, to_version_id TEXT NOT NULL, title TEXT NOT NULL, summary TEXT NOT NULL, statements_json TEXT NOT NULL, evidence_json TEXT NOT NULL, model_id TEXT NOT NULL, created_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft');
 `);
 
@@ -36,6 +37,11 @@ const versionB = "30000000-0000-4000-8000-000000000002";
 const versionC = "30000000-0000-4000-8000-000000000003";
 const versionD = "30000000-0000-4000-8000-000000000004";
 const versionE = "30000000-0000-4000-8000-000000000005";
+const versionF = "30000000-0000-4000-8000-000000000006";
+const versionG = "30000000-0000-4000-8000-000000000007";
+const versionH = "30000000-0000-4000-8000-000000000008";
+const versionI = "30000000-0000-4000-8000-000000000009";
+const versionJ = "30000000-0000-4000-8000-000000000010";
 const frameA = "frame-a";
 const measurement = (value, sourceProperty) => ({ value, unit: "px", provenance: "source", sourceProperty });
 const fourSidedMeasurements = (top, right, bottom, left) => ({
@@ -171,6 +177,57 @@ const snapshotE = {
     ],
   }],
 };
+const snapshotH = {
+  ...snapshot,
+  contentHash: "3".repeat(64),
+  frames: snapshot.frames.map((frame) => ({
+    ...frame,
+    nodes: frame.nodes.map((node) => ({
+      ...node,
+      layoutBounds: {
+        x: measurement(20.25, "x"),
+        y: measurement(30.5, "y"),
+        width: measurement(120.75, "width"),
+        height: measurement(48, "height"),
+      },
+    })),
+  })),
+};
+const largeNodes = Array.from({ length: 1_200 }, (_, index) => ({
+  ...nodeA,
+  sourceNodeId: `stress-${index}`,
+  name: `Stress element ${index}`,
+  layoutBounds: {
+    x: measurement(index + 0.25, "x"),
+    y: measurement(index + 0.5, "y"),
+    width: measurement(120.75, "width"),
+    height: measurement(48, "height"),
+  },
+  bounds: {
+    ...nodeA.bounds,
+    x: measurement(index * 2, "x"),
+    y: measurement(30, "y"),
+    width: measurement(120, "width"),
+  },
+  sourcePayload: { stressMarker: "x".repeat(1_000) },
+}));
+const snapshotF = {
+  ...snapshot,
+  contentHash: "1".repeat(64),
+  frames: [{ ...snapshot.frames[0], nodes: largeNodes }],
+};
+const snapshotG = {
+  ...snapshotF,
+  contentHash: "2".repeat(64),
+  frames: [{
+    ...snapshotF.frames[0],
+    nodes: snapshotF.frames[0].nodes.map((node) => ({
+      ...node,
+      layoutBounds: { ...node.layoutBounds, width: measurement(121.25, "width") },
+      bounds: { ...node.bounds, width: measurement(121, "width") },
+    })),
+  }],
+};
 
 const emptyRules = JSON.stringify({
   allowedSpacing: [],
@@ -219,6 +276,21 @@ database.prepare(`INSERT INTO handoff_version
    source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
   VALUES (?, ?, ?, 'Version 5', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
   .run(versionE, workspaceA, handoffA, now, snapshotE.contentHash, JSON.stringify(snapshotE), now);
+database.prepare(`INSERT INTO handoff_version
+  (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
+   source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
+  VALUES (?, ?, ?, 'Version 6', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+  .run(versionF, workspaceA, handoffA, now, snapshotF.contentHash, JSON.stringify(snapshotF), now);
+database.prepare(`INSERT INTO handoff_version
+  (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
+   source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
+  VALUES (?, ?, ?, 'Version 7', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+  .run(versionG, workspaceA, handoffA, now, snapshotG.contentHash, JSON.stringify(snapshotG), now);
+database.prepare(`INSERT INTO handoff_version
+  (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
+   source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
+  VALUES (?, ?, ?, 'Version 8', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+  .run(versionH, workspaceA, handoffA, now, snapshotH.contentHash, JSON.stringify(snapshotH), now);
 
 const issued = createWorkspaceMcpToken({
   workspaceId: workspaceA,
@@ -314,7 +386,7 @@ test("an MCP client can initialize, discover read-scoped tools, and read an immu
   });
   assert.equal(discovery.response.status, 200, JSON.stringify(discovery.body));
   const toolNames = discovery.body.result.tools.map((tool) => tool.name);
-  for (const name of ["list_handoffs", "list_frames", "get_snapshot", "get_measurements", "get_token_bindings", "get_version_diff", "list_comments"]) {
+  for (const name of ["list_handoffs", "list_frames", "list_elements", "get_snapshot", "get_measurements", "get_token_bindings", "get_version_diff", "list_comments"]) {
     assert.ok(toolNames.includes(name), `${name} should be discoverable with handoffs:read`);
   }
   assert.ok(!toolNames.includes("link_task"), "read-only clients must not discover task-link writes");
@@ -330,13 +402,53 @@ test("an MCP client can initialize, discover read-scoped tools, and read an immu
   assert.equal(snapshotResult.snapshot.frames[0].name, "Checkout");
   assert.equal(snapshotResult.snapshot.frames[0].bounds.width.value, 320);
 
+  const typographyVersionId = "30000000-0000-4000-8000-000000000011";
+  const typographySnapshot = structuredClone(snapshot);
+  typographySnapshot.frames[0].nodes[0] = {
+    ...nodeA,
+    type: "TEXT",
+    typography: {
+      fontFamily: "Inter",
+      fontSize: measurement(13, "fontSize"),
+      fontWeight: 600,
+      lineHeight: { ...measurement(20, "lineHeight"), unit: "pixels" },
+      letterSpacing: { ...measurement(0, "letterSpacing"), unit: "pixels" },
+      textAlign: "LEFT",
+      content: "Departures",
+    },
+    sourcePayload: {
+      textSegments: [{
+        characters: "Departures",
+        fontName: { family: "Inter", style: "Semi Bold" },
+        fontSize: 13,
+        fontWeight: 600,
+        lineHeight: { unit: "PIXELS", value: 19.5 },
+        letterSpacing: { unit: "PIXELS", value: 0.32499998807907104 },
+      }],
+    },
+  };
+  database.prepare(`INSERT INTO handoff_version
+    (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
+     source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
+    VALUES (?, ?, ?, 'Typography precision', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+    .run(typographyVersionId, workspaceA, handoffA, now, typographySnapshot.contentHash, JSON.stringify(typographySnapshot), now);
+  const textElements = parseToolText((await callRpc("tools/call", {
+    name: "list_elements",
+    arguments: { projectId: projectA, handoffId: handoffA, versionId: typographyVersionId, frameId: frameA },
+  }, { ...options, protocolVersion: initialized.body.result.protocolVersion })).body);
+  assert.equal(textElements.elements[0].typography.lineHeight.value, 19.5);
+  assert.equal(textElements.elements[0].typography.letterSpacing.value, 0.32499998807907104);
+  database.prepare("DELETE FROM handoff_version WHERE id = ?").run(typographyVersionId);
+
   const measurementsResponse = await callRpc("tools/call", {
     name: "get_measurements",
-    arguments: { projectId: projectA, handoffId: handoffA, versionId: versionA, frameId: frameA, sourceNodeId: nodeA.sourceNodeId },
+    arguments: { projectId: projectA, handoffId: handoffA, versionId: versionH, frameId: frameA, sourceNodeId: nodeA.sourceNodeId },
   }, { ...options, protocolVersion: initialized.body.result.protocolVersion });
   assert.equal(measurementsResponse.response.status, 200, JSON.stringify(measurementsResponse.body));
   const measurements = parseToolText(measurementsResponse.body);
   assert.equal(measurements.bounds.width.value, 120);
+  assert.equal(measurements.layoutBounds.x.value, 20.25);
+  assert.equal(measurements.layoutBounds.width.value, 120.75);
   assert.equal(measurements.padding.left.value, 16);
   assert.equal(measurements.margins.top.value, 4);
   assert.equal(measurements.spacing.itemGap.value, 8);
@@ -344,7 +456,7 @@ test("an MCP client can initialize, discover read-scoped tools, and read an immu
 
   const tokenBindingsResponse = await callRpc("tools/call", {
     name: "get_token_bindings",
-    arguments: { projectId: projectA, handoffId: handoffA, versionId: versionA, frameId: frameA, sourceNodeId: nodeA.sourceNodeId },
+    arguments: { projectId: projectA, handoffId: handoffA, versionId: versionH, frameId: frameA, sourceNodeId: nodeA.sourceNodeId },
   }, { ...options, protocolVersion: initialized.body.result.protocolVersion });
   assert.equal(tokenBindingsResponse.response.status, 200, JSON.stringify(tokenBindingsResponse.body));
   const bindings = parseToolText(tokenBindingsResponse.body).bindings;
@@ -353,14 +465,299 @@ test("an MCP client can initialize, discover read-scoped tools, and read an immu
   assert.equal(bindings[0].value, "#222222");
 });
 
-test("MCP version diffs can return a focused, paginated screen while preserving full responses", async () => {
+test("MCP returns oversized snapshots as bounded summaries and pages precise element data", async () => {
+  const oversized = parseToolText((await callTool("get_snapshot", {
+    projectId: projectA,
+    handoffId: handoffA,
+    versionId: versionF,
+  })).body);
+  assert.equal(oversized.snapshotOmitted, true);
+  assert.ok(oversized.snapshotSizeBytes > 1_048_576);
+  assert.equal(oversized.frameCount, 1);
+  assert.equal(oversized.elementCount, 1_200);
+  assert.match(oversized.readInstructions, /list_elements/);
+
+  const firstPage = parseToolText((await callTool("list_elements", {
+    projectId: projectA,
+    handoffId: handoffA,
+    versionId: versionF,
+    frameId: frameA,
+    offset: 0,
+    limit: 2,
+  })).body);
+  assert.equal(firstPage.elements.length, 2);
+  assert.equal(firstPage.elements[0].sourceNodeId, "stress-0");
+  assert.equal(firstPage.elements[0].layoutBounds.x.value, 0.25);
+  assert.equal(firstPage.elements[0].layoutBounds.width.value, 120.75);
+  assert.equal(firstPage.elements[0].sourcePayload.stressMarker.length, 1_000);
+  assert.ok(Buffer.byteLength(JSON.stringify(firstPage), "utf8") < 1_048_576);
+  assert.deepEqual(firstPage.page, { offset: 0, limit: 2, total: 1_200, hasMore: true, nextOffset: 2 });
+
+  const lastPage = parseToolText((await callTool("list_elements", {
+    projectId: projectA,
+    handoffId: handoffA,
+    versionId: versionF,
+    frameId: frameA,
+    offset: 1_199,
+    limit: 2,
+  })).body);
+  assert.equal(lastPage.elements.length, 1);
+  assert.equal(lastPage.elements[0].sourceNodeId, "stress-1199");
+  assert.equal(lastPage.page.hasMore, false);
+  assert.equal(lastPage.page.nextOffset, null);
+
+  const tokenPage = parseToolText((await callTool("get_token_bindings", {
+    projectId: projectA,
+    handoffId: handoffA,
+    versionId: versionF,
+    frameId: frameA,
+    offset: 0,
+    limit: 2,
+  })).body);
+  assert.equal(tokenPage.bindings.length, 2);
+  assert.equal(tokenPage.page.total, 1_200);
+  assert.equal(tokenPage.page.hasMore, true);
+  assert.equal(tokenPage.page.nextOffset, 2);
+});
+
+test("MCP version diffs default to bounded pages for large change sets", async () => {
+  const args = { projectId: projectA, handoffId: handoffA, fromVersionId: versionF, toVersionId: versionG };
+  const firstPage = parseToolText((await callTool("get_version_diff", args)).body);
+  assert.equal(firstPage.changes.length, 100);
+  assert.equal(firstPage.changePage.total, 1_200);
+  assert.equal(firstPage.changePage.hasMore, true);
+  assert.equal(firstPage.changePage.nextOffset, 100);
+  assert.ok(Buffer.byteLength(JSON.stringify(firstPage), "utf8") < 250_000);
+
+  const secondPage = parseToolText((await callTool("get_version_diff", { ...args, offset: 100 })).body);
+  assert.equal(secondPage.changes.length, 100);
+  assert.equal(secondPage.changePage.nextOffset, 200);
+  assert.notEqual(firstPage.changes[0].sourceNodeId, secondPage.changes[0].sourceNodeId);
+});
+
+test("MCP discovery tools page large project and handoff histories", async () => {
+  const extraProjects = 205;
+  const insertProject = database.prepare(
+    "INSERT INTO project (id, workspace_id, name, rules_json, created_at) VALUES (?, ?, ?, ?, ?)",
+  );
+  const insertHandoff = database.prepare(
+    "INSERT INTO handoff (id, workspace_id, project_id, name, created_at) VALUES (?, ?, ?, ?, ?)",
+  );
+  const insertVersion = database.prepare(`INSERT INTO handoff_version
+    (id, workspace_id, handoff_id, version_label, source, source_file_id, captured_at,
+     content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
+    VALUES (?, ?, ?, ?, 'figma', 'file-a', ?, ?, 0, '{}', 'designer-a', ?)`);
+
+  for (let index = 0; index < extraProjects; index += 1) {
+    const suffix = String(index + 1).padStart(12, "0");
+    const timestamp = new Date(Date.parse(now) + (index + 1) * 1_000).toISOString();
+    insertProject.run(`40000000-0000-4000-8000-${suffix}`, workspaceA, `Large workspace project ${index + 1}`, emptyRules, timestamp);
+    insertHandoff.run(`50000000-0000-4000-8000-${suffix}`, workspaceA, projectA, `Large handoff ${index + 1}`, timestamp);
+    insertVersion.run(`60000000-0000-4000-8000-${suffix}`, workspaceA, handoffA, `Large version ${index + 1}`, timestamp, `${String(index + 1).padStart(64, "0")}`, timestamp);
+  }
+
+  const pages = [
+    { name: "list_projects", args: {}, count: extraProjects + 1 },
+    { name: "list_handoffs", args: { projectId: projectA }, count: extraProjects + 1 },
+    { name: "list_versions", args: { projectId: projectA, handoffId: handoffA }, count: extraProjects + 8 },
+  ];
+
+  for (const { name, args, count } of pages) {
+    const first = parseToolText((await callTool(name, args)).body);
+    const second = parseToolText((await callTool(name, { ...args, offset: 100 })).body);
+    const third = parseToolText((await callTool(name, { ...args, offset: 200 })).body);
+
+    assert.equal(first.items.length, 100, `${name} should use a bounded default page`);
+    assert.deepEqual(first.page, { offset: 0, limit: 100, total: count, hasMore: true, nextOffset: 100 });
+    assert.equal(second.items.length, 100);
+    assert.deepEqual(second.page, { offset: 100, limit: 100, total: count, hasMore: true, nextOffset: 200 });
+    assert.equal(third.items.length, count - 200);
+    assert.deepEqual(third.page, { offset: 200, limit: 100, total: count, hasMore: false, nextOffset: null });
+    const ids = [...first.items, ...second.items, ...third.items].map((item) => item.id);
+    assert.equal(new Set(ids).size, count, `${name} pages should not duplicate records`);
+  }
+});
+
+test("MCP screens, comments, findings, and linked tasks page every record", async () => {
+  const recordCount = 205;
+  const manyFrames = Array.from({ length: recordCount }, (_, index) => ({
+    ...snapshot.frames[0],
+    sourceFrameId: `frame-${String(index).padStart(3, "0")}`,
+    name: `Screen ${String(index).padStart(3, "0")}`,
+    nodes: [{ ...nodeA, sourceNodeId: `node-${index}`, sourceFrameId: `frame-${String(index).padStart(3, "0")}` }],
+  }));
+  const pagedSnapshot = { ...snapshot, contentHash: "9".repeat(64), frames: manyFrames };
+  const changedFrames = manyFrames.map((frame, index) => ({
+    ...frame,
+    name: `Updated screen ${String(index).padStart(3, "0")}`,
+  }));
+  const changedSnapshot = { ...pagedSnapshot, contentHash: "8".repeat(64), frames: changedFrames };
+  database.prepare(`INSERT INTO handoff_version
+    (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
+     source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
+    VALUES (?, ?, ?, 'Version 9', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+    .run(versionI, workspaceA, handoffA, now, pagedSnapshot.contentHash, JSON.stringify(pagedSnapshot), now);
+  database.prepare(`INSERT INTO handoff_version
+    (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
+     source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
+    VALUES (?, ?, ?, 'Version 10', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+    .run(versionJ, workspaceA, handoffA, now, changedSnapshot.contentHash, JSON.stringify(changedSnapshot), now);
+  database.prepare("UPDATE project SET rules_json = ? WHERE id = ?")
+    .run(JSON.stringify({ allowedSpacing: [999], requireTokenCategories: [], frameBounds: null }), projectA);
+
+  const insertComment = database.prepare(`INSERT INTO handoff_comment
+    (id, workspace_id, handoff_version_id, frame_id, source_node_id, x, y,
+     parent_comment_id, body, resolved_at, resolved_by_user_id, created_by_user_id, created_at)
+    VALUES (?, ?, ?, 'frame-a', NULL, NULL, NULL, NULL, ?, NULL, NULL, 'designer-a', ?)`);
+  const insertTask = database.prepare(`INSERT INTO linked_external_task
+    (id, workspace_id, handoff_id, version_id, source_system, external_task_id, external_url,
+     title, description, evidence_json, created_by_user_id, created_at)
+    VALUES (?, ?, ?, ?, 'Asbir Teams', ?, NULL, ?, '', '{}', 'designer-a', ?)`);
+  database.prepare('INSERT OR IGNORE INTO "user" (id, name) VALUES (?, ?)').run("designer-a", "Designer A");
+  for (let index = 0; index < recordCount; index += 1) {
+    const suffix = String(index + 1).padStart(12, "0");
+    const timestamp = new Date(Date.parse(now) + (index + 1) * 1_000).toISOString();
+    insertComment.run(`70000000-0000-4000-8000-${suffix}`, workspaceA, versionA, `Comment ${index + 1}`, timestamp);
+    insertComment.run(`71000000-0000-4000-8000-${suffix}`, workspaceA, versionJ, `Latest version comment ${index + 1}`, timestamp);
+    insertTask.run(`80000000-0000-4000-8000-${suffix}`, workspaceA, handoffA, versionA, `asbir-${index + 1}`, `Task ${index + 1}`, timestamp);
+  }
+  database.prepare(`INSERT INTO layout_finding_state
+    (id, workspace_id, handoff_version_id, finding_key, status, note, updated_by_user_id, updated_at)
+    VALUES (?, ?, ?, ?, 'resolved', 'Reviewed', 'designer-a', ?)`)
+    .run(
+      "90000000-0000-4000-8000-000000000001",
+      workspaceA,
+      versionI,
+      "spacing.allowed-values:frame-000:node-0:padding.top",
+      now,
+    );
+
+  const firstFrames = parseToolText((await callTool("list_frames", {
+    projectId: projectA, handoffId: handoffA, versionId: versionI,
+  })).body);
+  const nextFrames = parseToolText((await callTool("list_frames", {
+    projectId: projectA, handoffId: handoffA, versionId: versionI, offset: 100,
+  })).body);
+  const lastFrames = parseToolText((await callTool("list_frames", {
+    projectId: projectA, handoffId: handoffA, versionId: versionI, offset: 200,
+  })).body);
+  assert.equal(firstFrames.frames.length, 100);
+  assert.equal(nextFrames.frames.length, 100);
+  assert.equal(lastFrames.frames.length, 5);
+  assert.deepEqual(firstFrames.page, { offset: 0, limit: 100, total: recordCount, hasMore: true, nextOffset: 100 });
+  assert.deepEqual(lastFrames.page, { offset: 200, limit: 100, total: recordCount, hasMore: false, nextOffset: null });
+
+  const firstComments = parseToolText((await callTool("list_comments", {
+    projectId: projectA, handoffId: handoffA, versionId: versionA,
+  })).body);
+  const secondComments = parseToolText((await callTool("list_comments", {
+    projectId: projectA, handoffId: handoffA, versionId: versionA, offset: 100,
+  })).body);
+  const lastComments = parseToolText((await callTool("list_comments", {
+    projectId: projectA, handoffId: handoffA, versionId: versionA, offset: 200,
+  })).body);
+  assert.equal(firstComments.comments.length, 100);
+  assert.equal(secondComments.comments.length, 100);
+  assert.equal(lastComments.comments.length, 5);
+  assert.equal(firstComments.page.total, recordCount);
+  assert.equal(lastComments.page.nextOffset, null);
+
+  const firstTasks = parseToolText((await callTool("list_linked_tasks", {
+    projectId: projectA, handoffId: handoffA,
+  })).body);
+  const secondTasks = parseToolText((await callTool("list_linked_tasks", {
+    projectId: projectA, handoffId: handoffA, offset: 100,
+  })).body);
+  const lastTasks = parseToolText((await callTool("list_linked_tasks", {
+    projectId: projectA, handoffId: handoffA, offset: 200,
+  })).body);
+  assert.equal(firstTasks.tasks.length, 100);
+  assert.equal(secondTasks.tasks.length, 100);
+  assert.equal(lastTasks.tasks.length, 5);
+  assert.equal(firstTasks.page.total, recordCount);
+  assert.equal(lastTasks.page.nextOffset, null);
+
+  const firstFindings = parseToolText((await callTool("list_findings", {
+    projectId: projectA, handoffId: handoffA, versionId: versionI,
+  })).body);
+  const secondFindings = parseToolText((await callTool("list_findings", {
+    projectId: projectA, handoffId: handoffA, versionId: versionI, offset: 100,
+  })).body);
+  assert.equal(firstFindings.findings.length, 100);
+  assert.equal(firstFindings.findingPage.total, recordCount * 11);
+  assert.equal(firstFindings.findingPage.nextOffset, 100);
+  assert.equal(firstFindings.findings[0].status, "resolved");
+  assert.equal(firstFindings.findings[0].note, "Reviewed");
+  assert.equal(secondFindings.findings.length, 100);
+  assert.equal(secondFindings.findingPage.offset, 100);
+
+  database.prepare("UPDATE project SET rules_json = ? WHERE id = ?").run(JSON.stringify({
+    allowedSpacing: [],
+    requireTokenCategories: [],
+    frameBounds: { minWidth: 321, maxWidth: null, minHeight: null, maxHeight: null },
+  }), projectA);
+  const diffArgs = { projectId: projectA, handoffId: handoffA, fromVersionId: versionI, toVersionId: versionJ };
+  const firstDiffPage = parseToolText((await callTool("get_version_diff", diffArgs)).body);
+  const secondDiffPage = parseToolText((await callTool("get_version_diff", {
+    ...diffArgs, frameOffset: 100, frameLimit: 100, offset: 100, limit: 50,
+  })).body);
+  const lastDiffPage = parseToolText((await callTool("get_version_diff", {
+    ...diffArgs, frameOffset: 200, frameLimit: 100,
+  })).body);
+  assert.equal(firstDiffPage.frames.length, 100);
+  assert.ok(Buffer.byteLength(JSON.stringify(firstDiffPage), "utf8") < 250_000);
+  assert.deepEqual(firstDiffPage.framePage, { offset: 0, limit: 100, total: recordCount, hasMore: true, nextOffset: 100 });
+  assert.equal(secondDiffPage.frames.length, 100);
+  assert.deepEqual(secondDiffPage.framePage, { offset: 100, limit: 100, total: recordCount, hasMore: true, nextOffset: 200 });
+  assert.equal(secondDiffPage.changePage.offset, 100);
+  assert.equal(secondDiffPage.changePage.limit, 50);
+  assert.equal(lastDiffPage.frames.length, 5);
+  assert.deepEqual(lastDiffPage.framePage, { offset: 200, limit: 100, total: recordCount, hasMore: false, nextOffset: null });
+
+  const evidenceArgs = { ...diffArgs, limit: 100 };
+  let evidencePage = parseToolText((await callTool("get_changelog_evidence", evidenceArgs)).body);
+  assert.equal(evidencePage.evidence.length, 100);
+  assert.ok(Buffer.byteLength(JSON.stringify(evidencePage), "utf8") < 250_000);
+  assert.equal(evidencePage.evidencePage.total > recordCount, true);
+  assert.equal(evidencePage.evidencePage.nextOffset, 100);
+  const evidence = [...evidencePage.evidence];
+  while (evidencePage.evidencePage.hasMore) {
+    evidencePage = parseToolText((await callTool("get_changelog_evidence", {
+      ...evidenceArgs,
+      offset: evidencePage.evidencePage.nextOffset,
+    })).body);
+    evidence.push(...evidencePage.evidence);
+  }
+  assert.equal(evidence.length, evidencePage.evidencePage.total);
+  assert.equal(new Set(evidence.map((item) => item.id)).size, evidence.length);
+  assert.equal(evidence.filter((item) => item.kind === "frame").length, recordCount);
+  assert.equal(evidence.filter((item) => item.kind === "comment").length, recordCount);
+  assert.equal(evidence.filter((item) => item.kind === "finding").length, recordCount);
+
+  database.prepare("DELETE FROM handoff_comment WHERE id LIKE '70000000-0000-4000-8000-%'").run();
+  database.prepare("DELETE FROM handoff_comment WHERE id LIKE '71000000-0000-4000-8000-%'").run();
+  database.prepare("DELETE FROM linked_external_task WHERE id LIKE '80000000-0000-4000-8000-%'").run();
+  database.prepare("DELETE FROM layout_finding_state WHERE id = ?").run("90000000-0000-4000-8000-000000000001");
+  database.prepare("DELETE FROM handoff_version WHERE id = ?").run(versionI);
+  database.prepare("DELETE FROM handoff_version WHERE id = ?").run(versionJ);
+  database.prepare("UPDATE project SET rules_json = ? WHERE id = ?").run(emptyRules, projectA);
+});
+
+test("MCP version diffs default to bounded results and can page a focused screen", async () => {
   const args = { projectId: projectA, handoffId: handoffA, fromVersionId: versionA, toVersionId: versionC };
   const fullResponse = await callTool("get_version_diff", args);
   assert.equal(fullResponse.response.status, 200);
   const full = parseToolText(fullResponse.body);
   assert.equal(full.frames.length, 2);
   assert.equal(full.changes.length, 5);
-  assert.equal(full.changePage, undefined);
+  assert.deepEqual(full.changePage, {
+    frameId: null,
+    offset: 0,
+    limit: 100,
+    total: 5,
+    hasMore: false,
+    nextOffset: null,
+  });
 
   const firstResponse = await callTool("get_version_diff", { ...args, frameId: frameA, offset: 0, limit: 2 });
   assert.equal(firstResponse.response.status, 200);
@@ -456,13 +853,14 @@ test("the MCP HTTP route links an external task to an exact version and enforces
   const listed = await callTool("list_linked_tasks", { projectId: projectA, handoffId: handoffA });
   assert.equal(listed.response.status, 200);
   const tasks = parseToolText(listed.body);
-  assert.equal(tasks.length, 2);
-  const listedClickUpTask = tasks.find((task) => task.id === linkedTask.id);
+  assert.equal(tasks.tasks.length, 2);
+  assert.equal(tasks.page.total, 2);
+  const listedClickUpTask = tasks.tasks.find((task) => task.id === linkedTask.id);
   assert.ok(listedClickUpTask);
   assert.equal(listedClickUpTask.sourceSystem, "ClickUp");
   assert.equal(listedClickUpTask.versionId, versionA);
   assert.equal(listedClickUpTask.evidence.contentHash, "c".repeat(64));
-  const listedAsbirTeamsTask = tasks.find((task) => task.id === asbirTeamsTask.id);
+  const listedAsbirTeamsTask = tasks.tasks.find((task) => task.id === asbirTeamsTask.id);
   assert.ok(listedAsbirTeamsTask);
   assert.equal(listedAsbirTeamsTask.sourceSystem, "Asbir Teams");
   assert.equal(listedAsbirTeamsTask.versionId, versionB);
@@ -525,4 +923,63 @@ test("a connected AI client can save a draft with current version-pair evidence 
   assert.equal(invalidResponse.body.result.isError, true);
   assert.match(invalidResponse.body.result.content[0].text, /evidence IDs that are not available/);
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM changelog_draft WHERE handoff_id = ?").get(handoffA).count, 1);
+});
+
+test("a connected AI client can save evidence from reviewer-confirmed screen and layer matches", async () => {
+  const beforeFrameId = "legacy-checkout-frame";
+  const afterFrameId = "renamed-checkout-frame";
+  const beforeSnapshot = {
+    ...snapshotD,
+    frames: snapshotD.frames.map((frame) => ({
+      ...frame,
+      sourceFrameId: beforeFrameId,
+      name: "Checkout · legacy",
+      nodes: frame.nodes.map((node) => ({ ...node, sourceFrameId: beforeFrameId })),
+    })),
+  };
+  const afterSnapshot = {
+    ...snapshotE,
+    frames: snapshotE.frames.map((frame) => ({
+      ...frame,
+      sourceFrameId: afterFrameId,
+      name: "Checkout · refreshed",
+      nodes: frame.nodes.map((node) => node.sourceNodeId === "new-layer-1"
+        ? { ...node, sourceFrameId: afterFrameId, bounds: { ...node.bounds, width: measurement(140, "width") } }
+        : { ...node, sourceFrameId: afterFrameId }),
+    })),
+  };
+  database.prepare("UPDATE handoff_version SET snapshot_json = ? WHERE id = ?")
+    .run(JSON.stringify(beforeSnapshot), versionD);
+  database.prepare("UPDATE handoff_version SET snapshot_json = ? WHERE id = ?")
+    .run(JSON.stringify(afterSnapshot), versionE);
+  database.prepare(`INSERT INTO handoff_frame_replacement
+    (handoff_id, workspace_id, baseline_version_id, new_version_id,
+     before_frame_id, after_frame_id, confirmed_by_user_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(handoffA, workspaceA, versionD, versionE, beforeFrameId, afterFrameId, "designer-a", now);
+  database.prepare(`INSERT INTO handoff_node_replacement
+    (handoff_id, workspace_id, baseline_version_id, new_version_id,
+     before_frame_id, after_frame_id, before_node_id, after_node_id,
+     confirmed_by_user_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(handoffA, workspaceA, versionD, versionE, beforeFrameId, afterFrameId, "old-layer-1", "new-layer-1", "designer-a", now);
+
+  const pair = { projectId: projectA, handoffId: handoffA, fromVersionId: versionD, toVersionId: versionE };
+  const evidenceResponse = await callTool("get_changelog_evidence", pair);
+  assert.equal(evidenceResponse.body.result.isError, undefined);
+  const evidenceItems = parseToolText(evidenceResponse.body).evidence;
+  const evidence = evidenceItems.find((item) =>
+    item.kind === "diff" && item.sourceNodeId === "old-layer-1" && item.path === "bounds.width.value",
+  );
+  assert.ok(evidence, "the confirmed screen and layer matches should produce citeable change evidence");
+
+  const savedResponse = await callTool("save_changelog_draft", {
+    ...pair,
+    title: "Updated layer dimensions",
+    summary: "A confirmed layer changed size.",
+    statements: [{ audience: "developer", text: "Update the matched layer width.", evidence: [evidence.id] }],
+  });
+  assert.equal(savedResponse.body.result.isError, undefined, savedResponse.body.result.content?.[0]?.text);
+  const saved = parseToolText(savedResponse.body);
+  assert.deepEqual(saved.evidence.map((item) => item.id), [evidence.id]);
 });

@@ -47,6 +47,10 @@ function numberOf(value: unknown): number | null {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
+export function formatFigmaTextMetric(value: number) {
+  return String(Number(value.toFixed(2)));
+}
+
 function colorHex(value: unknown): string | null {
   if (typeof value === "string" && /^#[\da-f]{6}$/i.test(value)) return value.toUpperCase();
   const color = recordOf(value);
@@ -67,9 +71,10 @@ function styleMeasure(value: unknown): string | null {
   if (unit === "AUTO") return "Auto";
   const amount = numberOf(measure.value);
   if (amount === null || !unit) return null;
-  if (unit === "PIXELS") return `${amount}px`;
-  if (unit === "PERCENT") return `${amount}%`;
-  return `${amount} ${unit}`;
+  const formattedAmount = formatFigmaTextMetric(amount);
+  if (unit === "PIXELS") return `${formattedAmount}px`;
+  if (unit === "PERCENT") return `${formattedAmount}%`;
+  return `${formattedAmount} ${unit}`;
 }
 
 export function readPaintDetails(value: unknown): TextRunFill[] {

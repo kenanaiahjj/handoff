@@ -46,6 +46,29 @@ export function listProjects(workspaceId: string) {
     .all(workspaceId);
 }
 
+export function listProjectsPage(workspaceId: string, input: { offset: number; limit: number }) {
+  const database = getDatabase();
+  const total = (database
+    .prepare("SELECT COUNT(*) AS total FROM project WHERE workspace_id = ?")
+    .get(workspaceId) as { total: number }).total;
+  const items = database
+    .prepare(
+      `SELECT project.id, project.name, project.created_at AS createdAt,
+              COUNT(DISTINCT handoff.id) AS handoffCount,
+              COUNT(handoff_version.id) AS versionCount
+       FROM project
+       LEFT JOIN handoff ON handoff.project_id = project.id
+       LEFT JOIN handoff_version ON handoff_version.handoff_id = handoff.id
+       WHERE project.workspace_id = ?
+       GROUP BY project.id
+       ORDER BY project.created_at DESC, project.id DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(workspaceId, input.limit, input.offset);
+
+  return { items, total };
+}
+
 export function getProject(input: { workspaceId: string; projectId: string }) {
   const project = getDatabase()
     .prepare(

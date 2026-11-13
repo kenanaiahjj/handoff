@@ -97,6 +97,73 @@ test("does not report a visual change when a render asset key changes but its by
   assert.equal(result.frames[0].status, "unchanged");
 });
 
+test("compares Figma-native node geometry without duplicating screen-space bounds changes", () => {
+  const before = snapshot("same-file", "frame", styleIds("shared"));
+  const after = snapshot("same-file", "frame", styleIds("shared"));
+  const screenBounds = { x: 35.9845, y: 322.957, width: 321.15625, height: 68.9812 };
+  const measurement = (value) => ({ value, unit: "px", provenance: "source", sourceProperty: "Figma" });
+  before.frames[0].nodes[0].bounds = screenBounds;
+  after.frames[0].nodes[0].bounds = { ...screenBounds, x: 36.25 };
+  before.frames[0].nodes[0].layoutBounds = {
+    x: measurement(24), y: measurement(700), width: measurement(342), height: measurement(48),
+  };
+  after.frames[0].nodes[0].layoutBounds = {
+    x: measurement(25), y: measurement(700), width: measurement(342), height: measurement(48),
+  };
+
+  const result = compare(before, after);
+
+  assert.ok(result.changes.some((change) =>
+    change.path === "layoutBounds.x.value" && change.category === "geometry" && change.before === 24 && change.after === 25));
+  assert.equal(result.changes.some((change) => change.path.startsWith("bounds.")), false);
+});
+
+test("does not report a corrected typography summary when captured text runs are unchanged", () => {
+  const before = snapshot("same-file", "frame", styleIds("shared"));
+  const after = snapshot("same-file", "frame", styleIds("shared"));
+  const textSegments = [{
+    characters: "Departures",
+    fontName: { family: "Inter", style: "Semi Bold" },
+    fontSize: 13,
+    fontWeight: 600,
+    lineHeight: { unit: "PIXELS", value: 19.5 },
+    letterSpacing: { unit: "PIXELS", value: 0.32499998807907104 },
+  }];
+  before.frames[0].nodes[0].sourcePayload.textSegments = textSegments;
+  after.frames[0].nodes[0].sourcePayload.textSegments = structuredClone(textSegments);
+  before.frames[0].nodes[0].typography = {
+    fontFamily: "Inter",
+    fontSize: { value: 13, unit: "px", provenance: "source", sourceProperty: "fontSize" },
+    fontWeight: 600,
+    lineHeight: { value: 20, unit: "pixels", provenance: "source", sourceProperty: "lineHeight" },
+    letterSpacing: { value: 0, unit: "pixels", provenance: "source", sourceProperty: "letterSpacing" },
+    textAlign: "LEFT",
+    content: "Departures",
+  };
+  after.frames[0].nodes[0].typography = structuredClone(before.frames[0].nodes[0].typography);
+  after.frames[0].nodes[0].typography.lineHeight.value = 19.5;
+  after.frames[0].nodes[0].typography.letterSpacing.value = 0.32499998807907104;
+
+  const result = compare(before, after);
+
+  assert.equal(result.changes.length, 0);
+});
+
+test("does not report a one-version layoutBounds upgrade as a design change", () => {
+  const before = snapshot("same-file", "frame", styleIds("shared"));
+  const after = snapshot("same-file", "frame", styleIds("shared"));
+  before.frames[0].nodes[0].bounds = { x: 24, y: 700, width: 342, height: 48 };
+  after.frames[0].nodes[0].bounds = { x: 24, y: 700, width: 342, height: 48 };
+  const measurement = (value) => ({ value, unit: "px", provenance: "source", sourceProperty: "Figma" });
+  after.frames[0].nodes[0].layoutBounds = {
+    x: measurement(24), y: measurement(700), width: measurement(342), height: measurement(48),
+  };
+
+  const result = compare(before, after);
+
+  assert.equal(result.changes.some((change) => change.path.startsWith("layoutBounds.")), false);
+});
+
 test("reports when Figma versions were captured with different scopes", () => {
   const result = compare(
     figmaSnapshot("all top-level frames and components on current page"),
@@ -657,7 +724,7 @@ function clonedFrameSnapshot(frameId, content, addedNode = false) {
   };
 }
 
-function regeneratedLayerSnapshot(frameId, layers) {
+function regeneratedLayerSnapshot(frameId, layers, frameSize = { width: 320, height: 56 }) {
   const measurement = (value, sourceProperty) => ({
     value,
     unit: "px",
@@ -667,8 +734,8 @@ function regeneratedLayerSnapshot(frameId, layers) {
   const rootBounds = {
     x: measurement(0, "absoluteBoundingBox.x"),
     y: measurement(0, "absoluteBoundingBox.y"),
-    width: measurement(320, "absoluteBoundingBox.width"),
-    height: measurement(56, "absoluteBoundingBox.height"),
+    width: measurement(frameSize.width, "absoluteBoundingBox.width"),
+    height: measurement(frameSize.height, "absoluteBoundingBox.height"),
   };
   const nodes = [{
     sourceNodeId: frameId,
@@ -688,7 +755,7 @@ function regeneratedLayerSnapshot(frameId, layers) {
     typography: null,
     tokens: [],
     sourcePayload: {},
-  }, ...layers.map(({ sourceNodeId, name, type, x, text }) => ({
+}, ...layers.map(({ sourceNodeId, name, type, x, y = 0, width = 120, height = 40, text }) => ({
     sourceNodeId,
     sourceFrameId: frameId,
     parentSourceNodeId: frameId,
@@ -697,9 +764,9 @@ function regeneratedLayerSnapshot(frameId, layers) {
     visible: true,
     bounds: {
       x: measurement(x, "absoluteBoundingBox.x"),
-      y: measurement(0, "absoluteBoundingBox.y"),
-      width: measurement(120, "absoluteBoundingBox.width"),
-      height: measurement(40, "absoluteBoundingBox.height"),
+      y: measurement(y, "absoluteBoundingBox.y"),
+      width: measurement(width, "absoluteBoundingBox.width"),
+      height: measurement(height, "absoluteBoundingBox.height"),
     },
     layout: {},
     padding: {},
@@ -755,7 +822,7 @@ test("reports content edits and added layers after matching cloned Figma IDs", (
   assert.equal(result.changes.filter((change) => change.path === "node" && change.before?.name === "Review").length, 0);
 });
 
-test("leaves duplicate regenerated layers unmatched instead of pairing by traversal order", () => {
+test("matches regenerated duplicate layers by distinct geometry when traversal order changes", () => {
   const result = compare(
     regeneratedLayerSnapshot("frame-before", [
       { sourceNodeId: "before-a", name: "Action", type: "TEXT", x: 24, text: "Back" },
@@ -768,10 +835,116 @@ test("leaves duplicate regenerated layers unmatched instead of pairing by traver
     [{ beforeFrameId: "frame-before", afterFrameId: "frame-after" }],
   );
 
+  assert.deepEqual(result.changes, []);
+  assert.deepEqual(result.unmatchedNodeCandidates, []);
+});
+
+test("keeps duplicate regenerated layers unmatched when their geometry overlaps", () => {
+  const result = compare(
+    regeneratedLayerSnapshot("frame-before", [
+      { sourceNodeId: "before-a", name: "Action", type: "TEXT", x: 24, text: "Back" },
+      { sourceNodeId: "before-b", name: "Action", type: "TEXT", x: 24, text: "Next" },
+    ]),
+    regeneratedLayerSnapshot("frame-after", [
+      { sourceNodeId: "after-a", name: "Action", type: "TEXT", x: 24, text: "Back" },
+      { sourceNodeId: "after-b", name: "Action", type: "TEXT", x: 24, text: "Next" },
+    ]),
+    [{ beforeFrameId: "frame-before", afterFrameId: "frame-after" }],
+  );
+
   assert.equal(result.changes.filter((change) => change.path === "node").length, 4);
-  assert.equal(result.changes.some((change) => change.category === "geometry" || change.category === "text"), false);
   assert.equal(result.unmatchedNodeCandidates.length, 2);
   assert.ok(result.unmatchedNodeCandidates.every((candidate) => candidate.afterCandidates.length === 2));
+});
+
+test("compares resized repeated layers and reports only the unmatched item", () => {
+  const beforeXs = [20, 90, 160, 230, 300];
+  const afterXs = [20, 110, 200, 290];
+  const frameSize = { width: 400, height: 100 };
+  const result = compare(
+    regeneratedLayerSnapshot("frame-before", beforeXs.map((x, index) => ({
+      sourceNodeId: `before-${index}`,
+      name: "Container",
+      type: "FRAME",
+      x,
+      width: 60,
+      height: 3,
+    })), frameSize),
+    regeneratedLayerSnapshot("frame-after", afterXs.map((x, index) => ({
+      sourceNodeId: `after-${index}`,
+      name: "Container",
+      type: "FRAME",
+      x,
+      width: 77,
+      height: 3,
+    })), frameSize),
+    [{ beforeFrameId: "frame-before", afterFrameId: "frame-after" }],
+  );
+
+  const nodeChanges = result.changes.filter((change) => change.path === "node");
+  assert.equal(nodeChanges.length, 1);
+  assert.equal(nodeChanges[0].before?.name, "Container");
+  assert.equal(nodeChanges[0].after, undefined);
+  assert.equal(result.changes.filter((change) => change.category === "geometry").length, 7);
+  assert.deepEqual(result.unmatchedNodeCandidates, []);
+});
+
+test("matches regenerated siblings in a consistent coordinate space when layout bounds are added", () => {
+  const before = regeneratedLayerSnapshot("frame-before", [
+    { sourceNodeId: "before-a", name: "Container", type: "FRAME", x: 120, width: 40, height: 20 },
+    { sourceNodeId: "before-b", name: "Container", type: "FRAME", x: 260, width: 40, height: 20 },
+  ], { width: 400, height: 100 });
+  const after = regeneratedLayerSnapshot("frame-after", [
+    { sourceNodeId: "after-a", name: "Container", type: "FRAME", x: 120, width: 40, height: 20 },
+    { sourceNodeId: "after-b", name: "Container", type: "FRAME", x: 260, width: 40, height: 20 },
+  ], { width: 400, height: 100 });
+  const measurement = (value) => ({ value, unit: "px", provenance: "source", sourceProperty: "x" });
+  after.frames[0].nodes[1].layoutBounds = {
+    x: measurement(0), y: measurement(0), width: measurement(40), height: measurement(20),
+  };
+  after.frames[0].nodes[2].layoutBounds = {
+    x: measurement(140), y: measurement(0), width: measurement(40), height: measurement(20),
+  };
+
+  const result = compare(before, after, [{ beforeFrameId: "frame-before", afterFrameId: "frame-after" }]);
+
+  assert.deepEqual(result.changes, []);
+  assert.deepEqual(result.unmatchedNodeCandidates, []);
+});
+
+test("recognizes auto-named text edits after Figma regenerates layer IDs", () => {
+  const result = compare(
+    regeneratedLayerSnapshot("frame-before", [
+      { sourceNodeId: "before-label", name: "2 of 5", type: "TEXT", x: 12, text: "2 of 5" },
+    ]),
+    regeneratedLayerSnapshot("frame-after", [
+      { sourceNodeId: "after-label", name: "2 of 4", type: "TEXT", x: 12, text: "2 of 4" },
+    ]),
+    [{ beforeFrameId: "frame-before", afterFrameId: "frame-after" }],
+  );
+
+  assert.equal(result.changes.length, 1);
+  assert.equal(result.changes[0].path, "sourcePayload.textSegments[0].characters");
+  assert.equal(result.changes[0].category, "text");
+  assert.equal(result.changes[0].before, "2 of 5");
+  assert.equal(result.changes[0].after, "2 of 4");
+});
+
+test("reports text edits once when typography content mirrors captured text segments", () => {
+  const before = regeneratedLayerSnapshot("frame-before", [
+    { sourceNodeId: "before-label", name: "2 of 5", type: "TEXT", x: 12, text: "2 of 5" },
+  ]);
+  const after = regeneratedLayerSnapshot("frame-after", [
+    { sourceNodeId: "after-label", name: "2 of 4", type: "TEXT", x: 12, text: "2 of 4" },
+  ]);
+  before.frames[0].nodes[1].typography = { fontFamily: "Inter", fontSize: 14, content: "2 of 5" };
+  after.frames[0].nodes[1].typography = { fontFamily: "Inter", fontSize: 14, content: "2 of 4" };
+
+  const result = compare(before, after, [{ beforeFrameId: "frame-before", afterFrameId: "frame-after" }]);
+
+  assert.equal(result.changes.filter((change) => change.category === "text").length, 1);
+  assert.equal(result.changes.some((change) => change.path === "typography.content"), false);
+  assert.ok(result.changes.some((change) => change.path === "sourcePayload.textSegments[0].characters"));
 });
 
 test("keeps ambiguous legacy layer pairs out of confirmed changes", () => {
@@ -1135,6 +1308,92 @@ function largeCanvasSnapshot() {
   };
 }
 
+test("matches 210 uniquely named Figma screens after frame and layer IDs regenerate", () => {
+  const before = largeCanvasSnapshot();
+  const after = structuredClone(before);
+  const measurement = (value, sourceProperty) => ({
+    value,
+    unit: "px",
+    provenance: "source",
+    sourceProperty,
+  });
+
+  for (const frame of before.frames) {
+    for (const node of frame.nodes) {
+      node.layoutBounds = Object.fromEntries(["x", "y", "width", "height"].map((key) => [
+        key,
+        measurement(node.bounds[key].value, key),
+      ]));
+    }
+  }
+  for (const frame of after.frames) {
+    const oldFrameId = frame.sourceFrameId;
+    const newFrameId = `revision-${oldFrameId}`;
+    frame.sourceFrameId = newFrameId;
+    frame.nodes = frame.nodes.map((node) => ({
+      ...node,
+      sourceNodeId: node.sourceNodeId.replace(oldFrameId, newFrameId),
+      parentSourceNodeId: node.parentSourceNodeId?.replace(oldFrameId, newFrameId) ?? null,
+      sourceFrameId: newFrameId,
+      layoutBounds: Object.fromEntries(["x", "y", "width", "height"].map((key) => [
+        key,
+        measurement(node.bounds[key].value, key),
+      ])),
+    }));
+  }
+
+  before.source = "figma";
+  after.source = "figma";
+  before.sourceMetadata = { captureScope: "all top-level frames and components across all pages" };
+  after.sourceMetadata = { captureScope: "all top-level frames and components across all pages" };
+
+  const colorToken = {
+    bindingPath: "fills[0]",
+    category: "color",
+    name: "Action",
+    collectionName: "Semantic",
+    mode: "Light",
+    value: "#ff6600",
+  };
+  before.frames[1].nodes[1].tokens = [colorToken];
+  after.frames[1].nodes[1].tokens = [structuredClone(colorToken)];
+  after.frames[0].nodes[1].layoutBounds.x.value += 3.25;
+  after.frames[1].nodes[1].fills[0].color = "#123456";
+  after.frames[1].nodes[1].tokens[0].value = "#123456";
+  after.frames[2].nodes[2].sourcePayload.textSegments[0].characters += " booking";
+  after.frames[3].nodes[4].padding.left.value += 4.5;
+  after.assets[4].sha256 = "updated-render-4";
+
+  const result = compare(before, after);
+  const changedFrameNames = result.frames.filter((frame) => frame.status === "changed").map((frame) => frame.name);
+  const changesByCategory = result.changes.reduce((counts, change) => {
+    counts[change.category] = (counts[change.category] ?? 0) + 1;
+    return counts;
+  }, {});
+
+  assert.equal(before.frames.length, 210);
+  assert.equal(before.frames.reduce((count, frame) => count + frame.nodes.length, 0), 31_500);
+  assert.equal(result.frames.length, 210);
+  assert.equal(result.frames.filter((frame) => frame.status === "changed").length, 5);
+  assert.equal(result.frames.filter((frame) => frame.status === "unchanged").length, 205);
+  assert.deepEqual(changedFrameNames, ["Screen 0", "Screen 1", "Screen 2", "Screen 3", "Screen 4"]);
+  assert.ok(result.frames.every((frame) =>
+    frame.afterFrameId === `revision-${frame.beforeFrameId}` &&
+    frame.name === `Screen ${frame.beforeFrameId?.replace("full-page-frame-", "")}`));
+  assert.equal(result.changes.length, 6);
+  assert.deepEqual(changesByCategory, {
+    geometry: 1,
+    style: 1,
+    token: 1,
+    text: 1,
+    layout: 1,
+    visual: 1,
+  });
+  assert.ok(result.changes.some((change) => change.path === "layoutBounds.x.value" && change.before === 2 && change.after === 5.25));
+  assert.equal(result.unmatchedFrameCandidates.length, 0);
+  assert.equal(result.unmatchedNodeCandidates.length, 0);
+});
+
 test("preserves 50,000 structured changes across five screens when every layer ID regenerates", () => {
   const result = compare(highVolumeSnapshot("before"), highVolumeSnapshot("after"));
   const categoryCounts = result.changes.reduce((counts, change) => {
@@ -1310,6 +1569,23 @@ test("ignores subpixel floating-point noise in captured measurements", () => {
   };
 
   const result = compare(withMeasurement(0), withMeasurement(0.00000762939453125));
+
+  assert.deepEqual(result.changes, []);
+});
+
+test("ignores sub-thousandth floating-point jitter in captured margins", () => {
+  const withRightMargin = (value) => {
+    const result = snapshot("same-file", "frame", styleIds("same"));
+    result.frames[0].nodes[0].margins = {
+      right: { value, unit: "px", provenance: "measured", sourceProperty: "absoluteBoundingBox.x - frame.absoluteBoundingBox.x" },
+    };
+    return result;
+  };
+
+  const result = compare(
+    withRightMargin(-0.00000762939453125),
+    withRightMargin(-0.0001373291015625),
+  );
 
   assert.deepEqual(result.changes, []);
 });

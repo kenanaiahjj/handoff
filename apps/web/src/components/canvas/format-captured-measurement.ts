@@ -1,21 +1,24 @@
 import type { SnapshotNode } from "@asbir/snapshot-contract";
-import { formatPixelValue } from "../../lib/format-pixel-value";
+import { formatPixelValue, formatPrecisePixelValue, formatWholeNumber } from "../../lib/format-pixel-value";
 
-export { formatPixelValue } from "../../lib/format-pixel-value";
+export { formatPixelValue, formatPrecisePixelValue, formatWholeNumber } from "../../lib/format-pixel-value";
 
 export function inspectionMeasurementEntries<T>(values: Record<string, T>) {
   return Object.entries(values);
 }
 
-export function formatPrecisePixelValue(value: number) {
-  if (!Number.isFinite(value)) return "—";
+export function inspectionBounds(node: Pick<SnapshotNode, "bounds" | "layoutBounds">) {
+  return node.layoutBounds ?? node.bounds;
+}
 
-  const rounded = Math.sign(value) * Math.round((Math.abs(value) + Number.EPSILON) * 100) / 100;
-  return String(Object.is(rounded, -0) ? 0 : rounded);
+export function inspectionGeometryNotice(node: Pick<SnapshotNode, "layoutBounds">) {
+  return node.layoutBounds
+    ? null
+    : "Figma-native layer geometry is unavailable in this snapshot. Position and size use screen bounds; recapture from Figma for layer-relative values.";
 }
 
 export function formatFrameSize(width: number, height: number) {
-  return `${formatPixelValue(width)} × ${formatPixelValue(height)} px`;
+  return `${formatPrecisePixelValue(width)} × ${formatPrecisePixelValue(height)} px`;
 }
 
 export function inspectionMargins(node: Pick<SnapshotNode, "sourceNodeId" | "sourceFrameId" | "margins">): SnapshotNode["margins"] {
@@ -25,16 +28,16 @@ export function inspectionMargins(node: Pick<SnapshotNode, "sourceNodeId" | "sou
   return { top: unavailable, right: unavailable, bottom: unavailable, left: unavailable };
 }
 
-function roundMeasurementValues(value: unknown, forceMeasurement = false): unknown {
+function normalizeMeasurementValues(value: unknown, forceMeasurement = false): unknown {
   if (typeof value === "number") {
     if (!forceMeasurement) return value;
 
-    const formatted = formatPixelValue(value);
+    const formatted = formatPrecisePixelValue(value);
     return formatted === "—" ? formatted : Number(formatted);
   }
 
   if (Array.isArray(value)) {
-    return value.map((item) => roundMeasurementValues(item, forceMeasurement));
+    return value.map((item) => normalizeMeasurementValues(item, forceMeasurement));
   }
 
   if (value !== null && typeof value === "object") {
@@ -48,8 +51,8 @@ function roundMeasurementValues(value: unknown, forceMeasurement = false): unkno
       entries.map(([key, item]) => [
         key,
         key === "value" && hasPixelUnit && typeof item === "number"
-          ? roundMeasurementValues(item, true)
-          : roundMeasurementValues(item, nestedMeasurement),
+          ? normalizeMeasurementValues(item, true)
+          : normalizeMeasurementValues(item, nestedMeasurement),
       ]),
     );
   }
@@ -65,7 +68,7 @@ export function formatComparisonValue(value: unknown, category: string) {
 
   const isMeasurement = category === "geometry" || category === "layout";
   if (typeof value === "number") {
-    return isMeasurement ? formatPixelValue(value) : String(value);
+    return isMeasurement ? formatPrecisePixelValue(value) : String(value);
   }
 
   if (
@@ -75,7 +78,7 @@ export function formatComparisonValue(value: unknown, category: string) {
     typeof (value as Record<string, unknown>).value === "number" &&
     typeof (value as Record<string, unknown>).unit === "string"
   ) {
-    const measurement = roundMeasurementValues(value) as Record<string, unknown>;
+    const measurement = normalizeMeasurementValues(value) as Record<string, unknown>;
     return `${measurement.value} ${measurement.unit}`;
   }
 
@@ -83,16 +86,16 @@ export function formatComparisonValue(value: unknown, category: string) {
     const paint = value as Record<string, unknown>;
     if (typeof paint.color === "string") {
       const opacity = paint.opacity;
-      if (typeof opacity === "number") return `${paint.color} · ${formatPixelValue(opacity * 100)}% opacity`;
+      if (typeof opacity === "number") return `${paint.color} · ${formatWholeNumber(opacity * 100)}% opacity`;
       if (opacity !== null && typeof opacity === "object" && typeof (opacity as Record<string, unknown>).value === "number") {
         const opacityValue = (opacity as Record<string, unknown>).value as number;
         const opacityUnit = (opacity as Record<string, unknown>).unit;
         const percentage = opacityUnit === "ratio" ? opacityValue * 100 : opacityValue;
-        return `${paint.color} · ${formatPixelValue(percentage)}% opacity`;
+        return `${paint.color} · ${formatWholeNumber(percentage)}% opacity`;
       }
       return paint.color;
     }
   }
 
-  return JSON.stringify(roundMeasurementValues(value, isMeasurement));
+  return JSON.stringify(normalizeMeasurementValues(value, isMeasurement));
 }

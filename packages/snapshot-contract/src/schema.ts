@@ -115,6 +115,8 @@ export const snapshotNodeSchema = z.object({
   name: z.string(),
   type: nonEmptyStringSchema,
   visible: z.boolean(),
+  // Figma's native x/y/width/height values; bounds remains screen-space geometry for canvas overlays.
+  layoutBounds: boundsSchema.optional(),
   bounds: boundsSchema,
   layout: layoutSchema,
   padding: fourSidedMeasurementsSchema,
@@ -131,7 +133,7 @@ export const snapshotNodeSchema = z.object({
 export const snapshotFrameSchema = z.object({
   sourceFrameId: nonEmptyStringSchema,
   sourcePageId: z.string().nullable(),
-  name: nonEmptyStringSchema,
+  name: z.string(),
   bounds: boundsSchema,
   renderBounds: boundsSchema.optional(),
   renderAssetKey: nonEmptyStringSchema,

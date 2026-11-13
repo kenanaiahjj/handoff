@@ -5,6 +5,7 @@ import type {
   SnapshotNode,
 } from "@asbir/snapshot-contract";
 import { MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES } from "../../../packages/snapshot-contract/src/limits.ts";
+import { typographyFromTextSegments } from "../../../packages/snapshot-contract/src/text-typography.ts";
 import { encodeUtf8 } from "../../../packages/snapshot-contract/src/utf8.ts";
 import { jsonByteLength } from "./json-byte-length.ts";
 import type { CaptureAssetBytes, DraftSnapshot, LayerExportAssetBytes } from "./types";
@@ -363,6 +364,15 @@ function rawMeasurement(node: SceneNode, field: string, sourceProperty = field) 
   return measurement(typeof value === "number" ? value : null, "px", sourceProperty);
 }
 
+export function figmaLayoutBounds(node: SceneNode): Bounds {
+  return {
+    x: rawMeasurement(node, "x"),
+    y: rawMeasurement(node, "y"),
+    width: rawMeasurement(node, "width"),
+    height: rawMeasurement(node, "height"),
+  };
+}
+
 function marginsFor(node: SceneNode, rect: Rect | null): ReturnType<typeof fourUnavailable> {
   const parent = node.parent;
   if (!parent || parent.type === "PAGE" || parent.type === "DOCUMENT") return fourUnavailable();
@@ -636,6 +646,7 @@ function makeNode(
   const { layout, padding, spacing } = layoutData(node);
   const fillBindings = paintsFor(node, "fills");
   const strokeBindings = paintsFor(node, "strokes");
+  const capturedSourcePayload = sourcePayload(node, componentsByInstanceId, textSegmentsCache);
   return {
     sourceNodeId: node.id,
     parentSourceNodeId: item.parentId,
@@ -643,6 +654,7 @@ function makeNode(
     name: node.name,
     type: node.type,
     visible: node.visible,
+    layoutBounds: figmaLayoutBounds(node),
     bounds: bounds(nodeRect, frameRect),
     layout,
     padding,
@@ -651,9 +663,9 @@ function makeNode(
     fills: fillBindings,
     strokes: strokeBindings,
     styleReferences: styleReferences(node, styles),
-    typography: textTypography(node),
+    typography: typographyFromTextSegments(textTypography(node), capturedSourcePayload),
     tokens: nodeTokens(node, variables, collections, textSegmentsCache),
-    sourcePayload: sourcePayload(node, componentsByInstanceId, textSegmentsCache),
+    sourcePayload: capturedSourcePayload,
   };
 }
 
@@ -678,6 +690,7 @@ function makeMinimalNode(item: { node: SceneNode; parentId: string | null }, fra
     name: node.name,
     type: node.type,
     visible: node.visible,
+    layoutBounds: figmaLayoutBounds(node),
     bounds: bounds(rectOf(node), frameRect),
     layout: {
       mode: null,
@@ -997,7 +1010,7 @@ export async function captureFigmaCanvas(scope: "selected" | "page" | "file", re
     const frameSnapshot: SnapshotFrame = {
       sourceFrameId: entry.root.id,
       sourcePageId: entry.pageId,
-      name: entry.root.name || "Untitled frame",
+      name: entry.root.name,
       bounds: bounds(entry.rect),
       renderBounds: bounds({
         ...entry.renderRect,

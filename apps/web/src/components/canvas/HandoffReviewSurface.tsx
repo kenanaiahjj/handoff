@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { SnapshotEnvelope, SnapshotNode, VisualOnlySnapshot } from "@asbir/snapshot-contract";
 import type { ReviewDockPanels, ReviewMetadata } from "./HandoffCanvas";
+import type { CommentIdentity } from "../comments/CommentPin";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import type { VersionOption } from "./VersionCompare";
 import type { CompareRouteState } from "./compare-state";
@@ -176,6 +177,8 @@ export function HandoffReviewSurface({
   publishedVersionId,
   canManageIntegrations,
   canAnnotate,
+  canComment,
+  commentIdentity,
   canUseLocalPreview,
   dockPanels,
 }: {
@@ -195,6 +198,8 @@ export function HandoffReviewSurface({
   publishedVersionId: string | null;
   canManageIntegrations: boolean;
   canAnnotate: boolean;
+  canComment?: boolean;
+  commentIdentity?: CommentIdentity | null;
   canUseLocalPreview: boolean;
   dockPanels?: ReviewDockPanels;
 }) {
@@ -226,6 +231,8 @@ export function HandoffReviewSurface({
     contentHash: selectedVersion.contentHash,
     canManageIntegrations,
     canAnnotate,
+    canComment: canComment ?? canAnnotate,
+    commentIdentity: commentIdentity ?? null,
     canUseLocalPreview,
   };
 

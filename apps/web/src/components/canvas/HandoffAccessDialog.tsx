@@ -28,7 +28,7 @@ export function HandoffAccessDialog({ endpoint, handoffName }: { endpoint: strin
       </button>
       <dialog
         aria-labelledby="handoff-access-dialog-title"
-        className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-hidden rounded-[8px] border border-border bg-surface p-0 text-foreground shadow-2xl backdrop:bg-black/70"
+          className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-hidden rounded-panel border border-border bg-surface p-0 text-foreground shadow-lg backdrop:bg-black/70"
         onClose={() => setOpen(false)}
         ref={dialogRef}
       >

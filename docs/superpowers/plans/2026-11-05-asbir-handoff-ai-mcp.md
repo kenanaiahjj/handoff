@@ -67,6 +67,7 @@ export interface ChangelogDraft {
 - [x] Add editable product, developer, and QA sections. Every statement links to its supporting frame or element.
 - [x] Show approved notes in the published canvas and link each citation to its source version, screen, or element. Keep unapproved drafts out of non-designer responses.
 - [x] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`.
+- [x] Connect Codex to the isolated Handoff MCP endpoint and generate a product, developer, and QA draft from a known two-version fixture. Verify that the saved draft cites only evidence returned for that version pair. Verified 2026-11-12; draft remains unapproved and isolated from user workspaces.
 - [ ] Manually generate and edit a draft from a two-version fixture with known changes.
 
 ## Task 2: Expose scoped Handoff MCP tools
@@ -96,7 +97,12 @@ export interface HandoffMcpContext {
 - [x] Compare all four adjacent version pairs in the local fixture through `get_version_diff`. The route returned changed and removed frame records plus visual/structural changes. Verified 2026-11-07.
 - [x] Exercise `POST /api/mcp` with an in-memory workspace token: verify cross-workspace handoff denial, workspace URL mismatch returns HTTP 403, and an external task reference round-trips through `link_task` and `list_linked_tasks` with its exact version and evidence hash.
 - [x] Exercise `get_changelog_evidence` and `save_changelog_draft` with a synthetic two-version fixture: verify added-screen evidence is attached to the exact version pair and fabricated evidence IDs are rejected without inserting a draft.
-- [ ] Connect a full AI client to Handoff and its Asbir Teams or ClickUp task tool, plus repository and QA MCP tools. Create an external task, link it through Handoff, and retrieve the exact version link with `list_linked_tasks`.
+- [x] Bound large MCP reads: `get_snapshot` summarizes payloads over 1 MiB, `get_frame` summarizes large layer trees, `list_elements` returns 100 captured elements per page, and token bindings and version diffs expose page metadata.
+- [x] Stress-test 1,200 changed elements through the MCP diff route and confirm 100-item pages stay below 250 KiB while Figma-native fractional measurements remain unchanged.
+- [x] Run a live local Streamable HTTP smoke with an isolated read-only fixture on 2026-11-12: initialize protocol `2025-11-25`, discover all 16 read tools while write tools remain hidden, retrieve exact fractional layout, spacing, and token values, and confirm a mismatched workspace returns HTTP 403.
+- [x] Connect the Codex CLI to the isolated read-only MCP endpoint and retrieve exact fractional measurements, spacing, and token bindings. Verified 2026-11-12 with a `handoffs:read` token and automatic approval in the temporary test environment.
+- [x] Run a disposable multi-MCP Codex workflow with local Asbir Teams, repository, and QA servers alongside a two-version Handoff fixture. Codex matched the captured width and padding, updated a temporary source file, passed QA, created a mock task, and linked it to Version 2 with exact screen, element, revision, and geometry evidence. Verified 2026-11-12; no external service or user workspace was changed.
+- [ ] Connect an AI client to the actual Asbir Teams task tool, repository MCP, and QA MCP. Create an external task, link it through Handoff, and retrieve the exact version link with `list_linked_tasks`. The local mock multi-MCP workflow passed; actual external services remain unverified.
 
 ## Task 3: Link tasks created through the AI client's own tools
 
@@ -109,7 +115,8 @@ export interface HandoffMcpContext {
 - [x] Link a task from the review UI and attach returned agent-run or pull-request URLs.
 - [x] Migrate existing task links into the external-link table before dropping legacy task MCP connections and credentials.
 - [x] Add a follow-up migration that removes the obsolete task-MCP connection and task-link tables after preserving their external references.
-- [ ] Connect an AI client to Handoff and its own task, repository, and QA MCP tools. Confirm that the client can create a task externally, call `link_task`, and retrieve that link with `list_linked_tasks`.
+- [x] Run a Codex round-trip with isolated local task, repository, and QA MCP servers: update the temporary source from Handoff measurements, pass QA, create a mock Asbir Teams task, then call `link_task` and `list_linked_tasks` with exact Version 2 evidence. Verified 2026-11-12; no real task or repository changed.
+- [ ] Repeat the task round-trip with the actual Asbir Teams MCP and team repository/QA MCP servers. No external task was created during local testing.
 
 ## Task 4: Support coding-agent handoff
 
@@ -121,7 +128,8 @@ export interface HandoffMcpContext {
 - [x] Explain that repository edits are performed by the connected agent under its repository permissions and that the Handoff version remains immutable.
 - [x] Store agent run links or repository pull request URLs on the task/handoff record when users return them.
 - [x] Run web `npm run lint` and `npm run build`.
-- [ ] Manually connect an MCP client alongside a repository MCP and verify the agent can fetch the source evidence needed for one task.
+- [x] Connect Codex alongside isolated repository and QA MCPs; verify it reads the Handoff diff and measurements, edits the temporary code, and receives a passing QA result before linking the mock task. Verified 2026-11-12.
+- [ ] Verify the agent workflow against the team's actual repository and QA MCP endpoints.
 
 ## Completion check
 

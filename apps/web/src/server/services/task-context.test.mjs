@@ -45,18 +45,61 @@ test("resolves a selected screen and element with captured layout and token evid
   });
 });
 
-test("formats whole-pixel Figma measurements without changing captured values", () => {
+test("formats Figma pixel measurements without rounding captured values", () => {
   const context = resolveTaskDesignContext(structuredSnapshot, "welcome", "button-1");
   const href = taskCanvasHref("https://handoff.example/review/share?versionId=version-1", context);
   const description = formatTaskDesignContext(context, href);
 
   assert.equal(href, "https://handoff.example/review/share?versionId=version-1#screen=welcome&element=button-1");
   assert.match(description, /Screen: Welcome \(frame ID: welcome\)/);
-  assert.match(description, /Bounds: x 24 px, y 700 px, width 342 px, height 48 px/);
+  assert.match(description, /Bounds: x 24 px, y 700 px, width 342\.25 px, height 48 px/);
   assert.equal(context.element.bounds.width.value, 342.25);
   assert.match(description, /Padding: top 12 px, right 16 px, bottom 12 px, left 16 px/);
   assert.match(description, /Tokens: color\/action\/primary = #315C46/);
   assert.match(description, /Canvas: https:\/\/handoff\.example\/review\/share\?versionId=version-1#screen=welcome&element=button-1/);
+});
+
+test("passes Figma-native node geometry through task context and keeps canvas bounds distinct", () => {
+  const snapshotWithFigmaGeometry = structuredClone(structuredSnapshot);
+  snapshotWithFigmaGeometry.frames[0].nodes[0].layoutBounds = {
+    x: measure(24),
+    y: measure(700),
+    width: measure(342),
+    height: measure(48),
+  };
+  snapshotWithFigmaGeometry.frames[0].nodes[0].bounds = {
+    x: measure(36),
+    y: measure(323),
+    width: measure(321),
+    height: measure(69),
+  };
+
+  const context = resolveTaskDesignContext(snapshotWithFigmaGeometry, "welcome", "button-1");
+  const description = formatTaskDesignContext(context);
+
+  assert.deepEqual(context.element.layoutBounds, snapshotWithFigmaGeometry.frames[0].nodes[0].layoutBounds);
+  assert.match(description, /Figma node geometry \(x\/y relative to parent\): x 24 px, y 700 px, width 342 px, height 48 px/);
+  assert.match(description, /Canvas bounds: x 36 px, y 323 px, width 321 px, height 69 px/);
+});
+
+test("resolves exact text metrics from the captured Figma style runs", () => {
+  const snapshotWithTextRuns = structuredClone(structuredSnapshot);
+  snapshotWithTextRuns.frames[0].nodes[0].typography.lineHeight = { ...measure(20), unit: "pixels" };
+  snapshotWithTextRuns.frames[0].nodes[0].typography.letterSpacing = { ...measure(0), unit: "pixels" };
+  snapshotWithTextRuns.frames[0].nodes[0].sourcePayload = {
+    textSegments: [{
+      fontName: { family: "Inter", style: "Semi Bold" },
+      fontSize: 13,
+      fontWeight: 600,
+      lineHeight: { unit: "PIXELS", value: 19.5 },
+      letterSpacing: { unit: "PIXELS", value: 0.32499998807907104 },
+    }],
+  };
+
+  const context = resolveTaskDesignContext(snapshotWithTextRuns, "welcome", "button-1");
+
+  assert.equal(context.element.typography.lineHeight.value, 19.5);
+  assert.equal(context.element.typography.letterSpacing.value, 0.32499998807907104);
 });
 
 test("rejects an element without a selected screen", () => {

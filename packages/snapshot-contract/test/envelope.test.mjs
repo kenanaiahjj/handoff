@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { createSnapshotEnvelope } from "../src/envelope.ts";
+import { countBlankFrameNames, findDuplicateFrameNames } from "../src/frame-names.ts";
 import { hashSnapshotPayload } from "../src/hash.ts";
 import { snapshotEnvelopeSchema } from "../src/schema.ts";
 
@@ -67,4 +68,44 @@ test("createSnapshotEnvelope hashes the validated snapshot that the server recei
   const serverParsed = snapshotEnvelopeSchema.parse(JSON.parse(JSON.stringify(result.data)));
   assert.equal(serverParsed.frames[0].sourceFrameId, "frame-id");
   assert.equal(serverParsed.contentHash, await hashSnapshotPayload(serverParsed));
+});
+
+test("accepts blank and duplicate Figma screen names so naming warnings do not block upload", async () => {
+  const payload = snapshotPayload();
+  const sourceFrame = payload.frames[0];
+  const blankFrame = structuredClone(sourceFrame);
+  blankFrame.sourceFrameId = "blank-frame-id";
+  blankFrame.name = "";
+  blankFrame.renderAssetKey = "blank-frame-render";
+  blankFrame.nodes = blankFrame.nodes.map((node) => ({
+    ...node,
+    sourceFrameId: blankFrame.sourceFrameId,
+    sourceNodeId: "blank-frame-node-id",
+  }));
+
+  const duplicateFrame = structuredClone(sourceFrame);
+  duplicateFrame.sourceFrameId = "duplicate-frame-id";
+  duplicateFrame.name = sourceFrame.name;
+  duplicateFrame.renderAssetKey = "duplicate-frame-render";
+  duplicateFrame.nodes = duplicateFrame.nodes.map((node) => ({
+    ...node,
+    sourceFrameId: duplicateFrame.sourceFrameId,
+    sourceNodeId: "duplicate-frame-node-id",
+  }));
+
+  payload.frames.push(blankFrame, duplicateFrame);
+  payload.assets.push(
+    { key: "blank-frame-render", fileName: "blank-frame.png", contentType: "image/png", sizeBytes: 1, sha256: "c".repeat(64), width: 1, height: 1 },
+    { key: "duplicate-frame-render", fileName: "duplicate-frame.png", contentType: "image/png", sizeBytes: 1, sha256: "d".repeat(64), width: 1, height: 1 },
+  );
+
+  const result = await createSnapshotEnvelope(payload);
+
+  assert.equal(result.success, true);
+  assert.equal(countBlankFrameNames(payload.frames), 1);
+  assert.deepEqual(findDuplicateFrameNames(payload.frames), [{ name: "Home", count: 2 }]);
+  if (result.success) {
+    assert.equal(result.data.frames[1].name, "");
+    assert.equal(result.data.frames[2].name, "Home");
+  }
 });

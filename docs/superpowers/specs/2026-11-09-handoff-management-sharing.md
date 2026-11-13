@@ -9,7 +9,7 @@ Let workspace owners and designers remove handoffs or versions, open handoffs in
 Each handoff has one access mode:
 
 - `workspace`: a signed-in workspace member can open the published canvas. This is the default and preserves current behavior.
-- `invited`: the recipient signs in with the work email added by an owner or designer and uses that recipient's unique invitation link. Invited recipients are not added to the workspace. Invitation links are copied and shared manually; they remain reusable until revoked or expired.
+- `invited`: anyone with an active invitation link can view and comment without signing in. PD, QA, DEV, and EXEC links have the same tools; the role and email are comment labels, not verified identities. Invitees are not added to the workspace. Invitation links are copied and shared manually; they remain reusable until revoked or expired.
 - `anyone`: anyone with the stable published canvas URL can open it without signing in. This mode is read-only.
 
 All modes expose only the published version and its earlier versions. New versions remain private until published. Changing the access mode applies to the existing stable review URL. Revoking an invitation only invalidates that recipient's link.
@@ -29,14 +29,14 @@ All modes expose only the published version and its earlier versions. New versio
 - The published review URL remains a separate canvas-only link for recipients.
 - The handoff's version panel shows its access mode, published URL, invite list, invite creation, and invite revocation. Only owners and designers can change sharing settings.
 - `anyone` mode permits reading the canvas, comparing visible versions, viewing comments, changelog, and QA findings. It does not permit comments, annotations, QA updates, task creation, or integration management.
-- `invited` and `workspace` recipients can use the existing signed-in review tools. Per-handoff invitations grant access to that handoff only.
+- `workspace` members can use the existing signed-in review tools. `invited` links give every role the same canvas and comment tools; a signed-in link holder can use the existing signed-in review tools. Per-handoff invitations grant access to that handoff only.
 
 ## Security boundaries
 
 - Add a strict role-checking helper for delete and sharing mutations. Do not change the existing relaxed role helper globally.
 - Scope anonymous reads to a valid published review URL and to assets and versions visible through that URL.
-- Scope invited reads and writes to an active invite token and a session whose email matches the invite's normalized email.
-- Treat invite URLs as bearer credentials. The app does not currently send email or verify email ownership, so the owner must deliver each copied invite link to its intended recipient. Anyone who obtains an active invite link can use it after signing in with the listed email.
+- Scope invited reads and comments to an active invite token. Other write actions still require a signed-in account; do not match its email against the recipient label.
+- Treat invite URLs as bearer credentials. The app does not currently send email or verify email ownership, so anyone who obtains an active invite link can view and comment until it expires or is revoked. Attribute anonymous comments to the invite's email label and role.
 - Keep public review requests uncached and do not place share tokens in referrers.
 
 ## Acceptance checks
@@ -46,7 +46,7 @@ All modes expose only the published version and its earlier versions. New versio
 - Deleting the last version leaves an openable handoff page with the capture form and no canvas selection.
 - Deleting a published version disables the published review URL. Deleting a handoff disables the review URL and cascades related rows.
 - A project handoff link has `target="_blank"`, a safe `rel` value, and a copy-link action.
-- `workspace` mode requires membership, `invited` mode requires a matching active invite and signed-in email, and `anyone` mode loads without a session.
+- `workspace` mode requires membership, `invited` mode allows views and comments through an active invite link without a session, and `anyone` mode loads without a session in read-only mode.
 - Anonymous requests cannot access an unpublished version, another handoff's asset, or a write endpoint.
 - Revoking or expiring an invite blocks that invite token without changing other recipients' access.
 - Switching away from `anyone` immediately blocks the old public link while preserving the stable URL for future publication.

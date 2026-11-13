@@ -28,8 +28,8 @@ test("warns when one or both Figma capture scopes are missing", () => {
 });
 
 test("labels one-sided screens by the capture that contains them", () => {
-  assert.equal(comparisonFrameStatusLabel("only-in-before-capture"), "Only in before capture");
-  assert.equal(comparisonFrameStatusLabel("only-in-after-capture"), "Only in after capture");
+  assert.equal(comparisonFrameStatusLabel("only-in-before-capture"), "Present only in before capture");
+  assert.equal(comparisonFrameStatusLabel("only-in-after-capture"), "Present only in after capture");
   assert.equal(comparisonFrameStatusLabel("unchanged"), "No changes");
   assert.equal(comparisonFrameStatusLabel("removed"), "Removed");
   assert.equal(comparisonFrameStatusLabel("added"), "New");
@@ -46,6 +46,13 @@ test("labels token binding identity and meaning fields separately", () => {
   assert.equal(comparisonChangeLabel({ path: `${binding}.mode` }), "Mode");
   assert.equal(comparisonChangeLabel({ path: `${binding}.value` }), "Resolved value");
   assert.equal(comparisonChangeLabel({ path: `${binding}.value.r` }), "Resolved value");
+});
+
+test("labels Figma-native geometry changes explicitly", () => {
+  assert.equal(comparisonChangeLabel({ path: "layoutBounds.x.value" }), "Figma X");
+  assert.equal(comparisonChangeLabel({ path: "layoutBounds.y.value" }), "Figma Y");
+  assert.equal(comparisonChangeLabel({ path: "layoutBounds.width.value" }), "Figma width");
+  assert.equal(comparisonChangeLabel({ path: "layoutBounds.height.value" }), "Figma height");
 });
 
 test("explains one-sided frames when selected capture scopes have the same label", () => {

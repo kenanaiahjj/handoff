@@ -1,5 +1,5 @@
 import type { StoredSnapshot } from "../repositories/versions";
-import { listHandoffComments } from "../repositories/comments";
+import { listHandoffComments, listHandoffCommentsPage } from "../repositories/comments";
 import { evaluateLayoutRules } from "../services/layout-rules";
 import { diffSnapshots } from "../services/diff";
 import type { FrameMatch, NodeMatch } from "../services/diff";
@@ -18,6 +18,17 @@ type ChangelogDraftDependencies = {
   generateChangelog?: typeof generateChangelog;
 };
 
+function addEvidenceCoverageNote(summary: string, coverage: { provided: number; total: number }) {
+  if (coverage.provided >= coverage.total) return summary;
+
+  const note = `Evidence coverage: this draft uses ${coverage.provided} of ${coverage.total} available evidence items. Review the full comparison for changes this draft might omit.`;
+  const summaryLimit = Math.max(0, 2_000 - note.length - 2);
+  const clippedSummary = summary.length > summaryLimit
+    ? `${summary.slice(0, Math.max(0, summaryLimit - 1)).trimEnd()}…`
+    : summary;
+  return `${clippedSummary}\n\n${note}`;
+}
+
 function clipped(value: unknown, maxLength = 600) {
   const serialized = typeof value === "string" ? value : JSON.stringify(value);
   const text = serialized ?? "Unavailable";
@@ -28,6 +39,22 @@ function frameName(snapshot: StoredSnapshot, frameId: string) {
   return snapshot.frames.find((frame) => frame.sourceFrameId === frameId)?.name ?? frameId;
 }
 
+function listAllHandoffComments(input: Parameters<typeof listHandoffComments>[0]) {
+  const pageSize = 100;
+  const comments: ReturnType<typeof listHandoffComments> = [];
+  let offset = 0;
+  let total = 0;
+
+  do {
+    const page = listHandoffCommentsPage({ ...input, offset, limit: pageSize });
+    comments.push(...page.items);
+    total = page.total;
+    offset += page.items.length;
+  } while (offset < total && offset > 0);
+
+  return comments;
+}
+
 export function collectChangelogEvidence(input: {
   workspaceId: string;
   handoffId: string;
@@ -36,7 +63,7 @@ export function collectChangelogEvidence(input: {
   rules: Parameters<typeof evaluateLayoutRules>[1];
   frameMatches?: FrameMatch[];
   nodeMatches?: NodeMatch[];
-}, listComments = listHandoffComments) {
+}, listComments = listAllHandoffComments) {
   const diff = diffSnapshots(
     { versionId: input.from.id, snapshot: input.from.snapshot },
     { versionId: input.to.id, snapshot: input.to.snapshot },
@@ -65,7 +92,7 @@ export function collectChangelogEvidence(input: {
     });
   }
 
-  for (const [index, change] of diff.changes.slice(0, 160).entries()) {
+  for (const [index, change] of diff.changes.entries()) {
     if (change.path === "frame") continue;
     const id = `diff:${encodeURIComponent(change.sourceFileId)}:${encodeURIComponent(change.frameId)}:${encodeURIComponent(change.sourceNodeId ?? "frame")}:${encodeURIComponent(change.path)}`;
     diffEvidence.push({
@@ -82,7 +109,7 @@ export function collectChangelogEvidence(input: {
   }
 
   const evaluated = evaluateLayoutRules(input.to.snapshot, input.rules);
-  for (const finding of evaluated.findings.slice(0, 50)) {
+  for (const finding of evaluated.findings) {
     findingEvidence.push({
       id: `finding:${finding.findingKey}`,
       kind: "finding",
@@ -104,7 +131,7 @@ export function collectChangelogEvidence(input: {
     body: string;
     resolvedAt: string | null;
   }>;
-  for (const comment of commentRows.slice(0, 20)) {
+  for (const comment of commentRows) {
     commentEvidence.push({
       id: `comment:${comment.id}`,
       kind: "comment",
@@ -130,7 +157,7 @@ export function collectChangelogEvidence(input: {
     ...findingEvidence.slice(25),
     ...commentEvidence.slice(15),
   ];
-  return [...prioritizedEvidence, ...remainingEvidence].slice(0, 200);
+  return [...prioritizedEvidence, ...remainingEvidence];
 }
 
 export async function createEvidenceLinkedDraft(input: {
@@ -143,24 +170,27 @@ export async function createEvidenceLinkedDraft(input: {
   frameMatches?: FrameMatch[];
   nodeMatches?: NodeMatch[];
 }, dependencies: ChangelogDraftDependencies = {}) {
-  const usableEvidence = collectChangelogEvidence(input, dependencies.listComments);
+  const evidence = collectChangelogEvidence(input, dependencies.listComments);
+  const modelEvidence = evidence.slice(0, 200);
+  const evidenceCoverage = { provided: modelEvidence.length, total: evidence.length };
   const generated = await (dependencies.generateChangelog ?? generateChangelog)({
     handoffName: input.handoffName,
     fromVersionLabel: input.from.versionLabel,
     toVersionLabel: input.to.versionLabel,
-    evidence: usableEvidence.map(({ id, kind, label, content }) => ({ id, kind, label, details: content })),
+    evidenceCoverage,
+    evidence: modelEvidence.map(({ id, kind, label, content }) => ({ id, kind, label, details: content })),
   });
-  const evidenceIds = new Set(usableEvidence.map((item) => item.id));
+  const evidenceIds = new Set(modelEvidence.map((item) => item.id));
   for (const statement of generated.content.statements) {
     if (statement.evidence.some((id) => !evidenceIds.has(id))) {
       throw new Error("The generated draft referenced evidence that was not part of this handoff.");
     }
   }
 
-  const evidenceMap = new Map(usableEvidence.map((item) => [item.id, item]));
+  const evidenceMap = new Map(evidence.map((item) => [item.id, item]));
   return {
     title: generated.content.title,
-    summary: generated.content.summary,
+    summary: addEvidenceCoverageNote(generated.content.summary, evidenceCoverage),
     statements: generated.content.statements,
     evidence: generated.content.statements.flatMap((statement) => statement.evidence)
       .map((id) => evidenceMap.get(id)!)

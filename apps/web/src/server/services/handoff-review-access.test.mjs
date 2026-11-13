@@ -73,6 +73,7 @@ database.exec(`
     workspace_id TEXT NOT NULL,
     handoff_id TEXT NOT NULL,
     email TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'exec',
     token_hash TEXT NOT NULL,
     expires_at TEXT,
     revoked_at TEXT,
@@ -91,7 +92,10 @@ database.exec(`
     body TEXT NOT NULL,
     resolved_at TEXT,
     resolved_by_user_id TEXT,
-    created_by_user_id TEXT NOT NULL,
+    created_by_user_id TEXT,
+    created_by_invite_id TEXT,
+    author_label TEXT,
+    author_role TEXT,
     created_at TEXT NOT NULL
   );
   CREATE TABLE "user" (
@@ -297,7 +301,7 @@ test("workspace-only review denies unauthenticated reads", async () => {
   assert.equal(response.status, 401);
 });
 
-test("invite access requires the invited email and keeps the token scoped to the published handoff", async () => {
+test("invite access is granted by the private link, regardless of signed-in email", async () => {
   database.prepare("UPDATE handoff SET sharing_mode = 'invited' WHERE id = ?").run(handoffId);
   database.prepare(`INSERT INTO handoff_invite
     (id, workspace_id, handoff_id, email, token_hash, expires_at, revoked_at, invited_by_user_id, created_at)
@@ -310,6 +314,60 @@ test("invite access requires the invited email and keeps the token scoped to the
   assert.equal(allowed.status, 200);
 
   currentSession = { user: { id: "different-user", email: "other@example.com" } };
-  const denied = await getLatest(reviewRequest("latest", { headers: { cookie: inviteCookie } }), { params: Promise.resolve({ shareId }) });
-  assert.equal(denied.status, 404);
+  const allowedForLinkHolder = await getLatest(reviewRequest("latest", { headers: { cookie: inviteCookie } }), { params: Promise.resolve({ shareId }) });
+  assert.equal(allowedForLinkHolder.status, 200);
+});
+
+test("PD, QA, DEV, and EXEC invite links allow comments with their assigned attribution", async () => {
+  database.prepare("UPDATE handoff SET sharing_mode = 'invited' WHERE id = ?").run(handoffId);
+  const roles = ["pd", "qa", "dev", "exec"];
+  const insertInvite = database.prepare(`INSERT INTO handoff_invite
+    (id, workspace_id, handoff_id, email, role, token_hash, expires_at, revoked_at, invited_by_user_id, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, NULL, NULL, 'owner-id', ?)`);
+  const postedComments = [];
+
+  for (const [index, role] of roles.entries()) {
+    const inviteId = `invite-${role}`;
+    const email = `${role}@example.com`;
+    const token = `review-token-${role}`;
+    insertInvite.run(inviteId, workspaceId, handoffId, email, role, hashHandoffInviteToken(token), now);
+    currentSession = index === roles.length - 1
+      ? { user: { id: "unrelated-user", email: "someone-else@example.com" } }
+      : null;
+
+    const response = await postComment(reviewRequest(`versions/${publishedVersionId}/comments`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        cookie: `${handoffReviewAccessCookieName(shareId)}=${encodeURIComponent(token)}`,
+      },
+      body: JSON.stringify({ body: `Comment from ${role}`, frameId, x: 10, y: 10 }),
+    }), reviewContext(publishedVersionId));
+    assert.equal(response.status, 201, `${role} invite should be able to comment`);
+    postedComments.push(await response.json());
+  }
+
+  const stored = database.prepare(`SELECT created_by_user_id AS createdBy,
+      created_by_invite_id AS inviteId, author_label AS authorLabel, author_role AS authorRole
+    FROM handoff_comment ORDER BY created_at ASC, id ASC`).all();
+  assert.equal(stored.length, roles.length);
+  const storedByRole = new Map(stored.map((comment) => [comment.authorRole, comment]));
+  for (const role of roles) {
+    const comment = storedByRole.get(role);
+    assert.equal(comment.createdBy, null);
+    assert.equal(comment.inviteId, `invite-${role}`);
+    assert.equal(comment.authorLabel, `${role}@example.com`);
+    assert.equal(comment.authorRole, role);
+  }
+
+  const comments = await getComments(reviewRequest(`versions/${publishedVersionId}/comments`, {
+    headers: { cookie: `${handoffReviewAccessCookieName(shareId)}=review-token-pd` },
+  }), reviewContext(publishedVersionId));
+  assert.equal(comments.status, 200);
+  const payload = await comments.json();
+  for (const [index, role] of roles.entries()) {
+    const comment = payload.comments.find((entry) => entry.id === postedComments[index].id);
+    assert.equal(comment.authorName, `${role}@example.com`);
+    assert.equal(comment.authorRole, role);
+  }
 });

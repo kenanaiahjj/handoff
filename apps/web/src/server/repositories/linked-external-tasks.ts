@@ -76,6 +76,35 @@ export function listLinkedExternalTasks(input: { workspaceId: string; handoffId:
     });
 }
 
+export function listLinkedExternalTasksPage(input: { workspaceId: string; handoffId: string; offset: number; limit: number }) {
+  const database = getDatabase();
+  const total = (database
+    .prepare("SELECT COUNT(*) AS total FROM linked_external_task WHERE workspace_id = ? AND handoff_id = ?")
+    .get(input.workspaceId, input.handoffId) as { total: number }).total;
+  const rows = database
+    .prepare(
+      `SELECT id, version_id AS versionId, source_system AS sourceSystem,
+              external_task_id AS externalTaskId, external_url AS externalUrl,
+              agent_run_url AS agentRunUrl, pull_request_url AS pullRequestUrl,
+              title, description, evidence_json AS evidenceJson, created_at AS createdAt
+       FROM linked_external_task
+       WHERE workspace_id = ? AND handoff_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(input.workspaceId, input.handoffId, input.limit, input.offset);
+  const items = rows.map((row) => {
+    const record = row as Record<string, unknown>;
+    return {
+      ...record,
+      evidence: JSON.parse(record.evidenceJson as string) as Record<string, unknown>,
+      evidenceJson: undefined,
+    };
+  });
+
+  return { items, total };
+}
+
 export function updateLinkedExternalTaskWorkLinks(input: {
   workspaceId: string;
   handoffId: string;

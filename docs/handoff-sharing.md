@@ -9,22 +9,26 @@ Each handoff has one sharing mode:
 | Mode | Access |
 | --- | --- |
 | Workspace members | A signed-in workspace member can view and use the review tools. |
-| Only invited people | A recipient must sign in with the email address on their active invitation. The invitee does not need workspace membership. |
+| Only invited people | Anyone with an active invitation link can view and comment without signing in. PD, QA, DEV, and EXEC links have the same tools; the role and email are comment labels, not verified identities. Invitees do not need workspace membership. |
 | Anyone with the link | Signed-in workspace members retain their review tools. Other viewers can use the stable canvas URL without signing in, but cannot comment, add notes, change QA status, or manage integrations. |
 
 Changing the mode applies to the same stable URL. The app scopes public assets and API reads to versions visible through that handoff. Review data is not cached publicly.
 
-Owners and designers can open **Access** from the project handoff list or manage sharing from the canvas version panel. Both places use the same access controls. The project list shows whether each handoff is unpublished, workspace-only, invite-only, or open to anyone with its link. In workspace mode, the access panel lists workspace members and their roles. In invite-only mode, it lists workspace owners and designers plus active invited email addresses and expiry dates. In public mode, it explains that link viewers cannot be identified. You can copy the canvas URL, revoke the public link, or revoke an invitation. Changing away from **Anyone with the link** blocks anonymous access; revoking an invitation disables only that invitation.
+Owners and designers can open **Access** from the project handoff list or manage sharing from the canvas version panel. Both places use the same access controls. The project list shows whether each handoff is unpublished, workspace-only, invite-only, or open to anyone with its link. In workspace mode, the access panel lists workspace members and their roles. In invite-only mode, it lists workspace owners and designers plus active invite links, recipient labels, roles, and expiry dates. In public mode, it explains that link viewers cannot be identified. You can copy the canvas URL, revoke the public link, or revoke an invitation. Changing away from **Anyone with the link** blocks anonymous access; revoking an invitation disables only that invitation.
 
-## Invite an external email
+## Create an invitation link
 
 1. Open the handoff's sharing settings.
 2. Select **Only invited people**.
-3. Enter the recipient's email and choose an expiry.
+3. Enter a recipient email label, choose a role, and choose an expiry.
 4. Select **Create invite**.
 5. Copy the invitation link and send it to the recipient.
 
-Invitations do not add recipients to the workspace, and the app does not send email. The invite URL is a bearer credential. The current sign-in flow checks that the signed-in account uses the invited email, but it does not verify ownership of that email address. Revoke an invitation to block its token. Expired and revoked invitations stop working.
+Invitations do not add recipients to the workspace, and the app does not send email. Each invite URL is a bearer credential: anyone who has the active URL can view and comment, so recipients can forward it. Comments use the invite's email and role as labels; the app does not verify who is using the link. Revoke an invitation to block its token. Expired and revoked invitations stop working.
+
+## Future authentication option
+
+Google single sign-on for company email addresses may replace or supplement link-only invites after the team agrees to the change. The current invite flow does not verify email ownership.
 
 ## Delete handoffs and versions
 

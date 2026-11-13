@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { getDatabase } from "../db";
 import { deleteHandoffInDatabase } from "../services/handoff-lifecycle";
+import type { HandoffInviteRole } from "../services/handoff-sharing";
 import {
   createHandoffInviteInDatabase,
   getHandoffInviteByTokenInDatabase,
@@ -24,6 +25,30 @@ export function listHandoffs(input: { workspaceId: string; projectId: string }) 
        ORDER BY COALESCE(MAX(handoff_version.created_at), handoff.created_at) DESC`,
     )
     .all(input.workspaceId, input.projectId);
+}
+
+export function listHandoffsPage(input: { workspaceId: string; projectId: string; offset: number; limit: number }) {
+  const database = getDatabase();
+  const total = (database
+    .prepare("SELECT COUNT(*) AS total FROM handoff WHERE workspace_id = ? AND project_id = ?")
+    .get(input.workspaceId, input.projectId) as { total: number }).total;
+  const items = database
+    .prepare(
+      `SELECT handoff.id, handoff.name, handoff.created_at AS createdAt,
+              handoff.published_version_id AS publishedVersionId,
+              handoff.sharing_mode AS sharingMode,
+              COUNT(handoff_version.id) AS versionCount,
+              MAX(handoff_version.created_at) AS latestVersionAt
+       FROM handoff
+       LEFT JOIN handoff_version ON handoff_version.handoff_id = handoff.id
+       WHERE handoff.workspace_id = ? AND handoff.project_id = ?
+       GROUP BY handoff.id
+       ORDER BY COALESCE(MAX(handoff_version.created_at), handoff.created_at) DESC, handoff.id DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(input.workspaceId, input.projectId, input.limit, input.offset);
+
+  return { items, total };
 }
 
 export function getHandoff(input: {
@@ -115,6 +140,7 @@ export function createHandoffInvite(input: {
   projectId: string;
   handoffId: string;
   email: string;
+  role?: HandoffInviteRole;
   token: string;
   expiresAt: string | null;
   invitedByUserId: string;
@@ -210,4 +236,25 @@ export function listHandoffVersions(input: { workspaceId: string; handoffId: str
        ORDER BY created_at DESC, id DESC`,
     )
     .all(input.workspaceId, input.handoffId);
+}
+
+export function listHandoffVersionsPage(input: { workspaceId: string; handoffId: string; offset: number; limit: number }) {
+  const database = getDatabase();
+  const total = (database
+    .prepare("SELECT COUNT(*) AS total FROM handoff_version WHERE workspace_id = ? AND handoff_id = ?")
+    .get(input.workspaceId, input.handoffId) as { total: number }).total;
+  const items = database
+    .prepare(
+      `SELECT id, version_label AS versionLabel, release_note AS releaseNote,
+              source, source_revision_id AS sourceRevisionId, captured_at AS capturedAt,
+              content_hash AS contentHash, visual_only AS visualOnly,
+              created_at AS createdAt, created_by_user_id AS createdBy
+       FROM handoff_version
+       WHERE workspace_id = ? AND handoff_id = ?
+       ORDER BY created_at DESC, id DESC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(input.workspaceId, input.handoffId, input.limit, input.offset);
+
+  return { items, total };
 }

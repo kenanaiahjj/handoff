@@ -19,6 +19,8 @@ npm run build --workspace @asbir/figma-plugin
 
 The default server is `http://localhost:3000`. The build creates `integrations/figma-plugin/manifest.json` and the bundled files in `integrations/figma-plugin/dist/`. These generated files are ignored by Git because the manifest is specific to the server URL used at build time.
 
+After changing plugin source files, run the build again. Figma loads the generated files from `dist/`, not the source files. Close the running plugin and launch **Plugins → Development → Asbir Handoff Capture** again to load the rebuilt bundle.
+
 In Figma Desktop, select **Plugins → Development → Import plugin from manifest…** and choose `integrations/figma-plugin/manifest.json`. The plugin appears under **Plugins → Development → Asbir Handoff Capture**.
 
 ## Build for a hosted server
@@ -50,7 +52,7 @@ The plugin manifest grants access to the exact capture endpoint. Figma blocks pl
 6. Choose selected frames, all top-level frames and components on the current page, or the entire Figma file across all pages.
 7. Capture the canvas, review the overview image, page count, and layer count, then upload the immutable version.
 
-The plugin does not change the Figma document. Each upload creates a new immutable version in Asbir Handoff. For an existing handoff, selected-frame captures update only the captured frames and keep the other frames, layers, and assets. A page capture replaces that page’s frames and keeps the other pages. A full-file capture replaces the complete canvas. When Figma gives a replacement frame a new ID, review and confirm its suggested frame-name match before upload so the partial capture replaces the intended frame. After upload, version comparison automatically pairs exact screen names that are unique in both captures when the verified Figma file ID matches.
+The plugin does not change the Figma document. Each upload creates a new immutable version in Asbir Handoff. Blank or duplicate screen names trigger a warning but do not block upload; those screens might not match by name across versions. For an existing handoff, selected-frame captures update only the captured frames and keep the other frames, layers, and assets. A page capture replaces that page’s frames and keeps the other pages. A full-file capture replaces the complete canvas. When Figma gives a replacement frame a new ID, review and confirm its suggested frame-name match before upload so the partial capture replaces the intended frame. After upload, version comparison automatically pairs exact screen names that are unique in both captures when the verified Figma file ID matches.
 
 ## Troubleshooting
 

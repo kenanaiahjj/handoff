@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore
 import type { ReactNode } from "react";
 import type { SnapshotNode } from "@asbir/snapshot-contract";
 import { CommentThread, type PendingCommentPoint } from "../comments/CommentThread";
-import type { HandoffComment } from "../comments/CommentPin";
+import type { CommentIdentity, HandoffComment } from "../comments/CommentPin";
 import { CanvasToolbar } from "./CanvasToolbar";
 import { CanvasViewport, type CanvasViewportControls } from "./CanvasViewport";
 import { InstallAppButton } from "@/src/components/shell/InstallAppButton";
@@ -48,6 +48,8 @@ export type ReviewMetadata = {
   contentHash: string;
   canManageIntegrations: boolean;
   canAnnotate: boolean;
+  canComment: boolean;
+  commentIdentity: CommentIdentity | null;
   canUseLocalPreview: boolean;
 };
 
@@ -761,30 +763,32 @@ export function HandoffCanvas({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#202020] text-[#e5e5e5]">
-      <header className="relative z-20 flex h-12 min-w-0 items-center gap-3 border-b border-[#383838] bg-[#202020] px-3 text-[#c8c8c8]">
-        <Link className="min-h-6 max-w-[180px] shrink-0 truncate text-[13px] font-semibold text-[#ededed] hover:text-white" href={metadata.projectHref}>
-          Asbir <span className="font-normal text-[#929292]">Handoff</span>
-        </Link>
-        <span aria-hidden="true" className="h-6 w-px shrink-0 bg-[#3b3b3b]" />
-        <label className="sr-only" htmlFor="review-version-select">Snapshot version</label>
-        <select
-          className="h-9 max-w-[340px] min-w-[210px] shrink-0 rounded-[8px] border border-transparent bg-[#303030] px-3 text-[13px] text-[#ececec] hover:bg-[#363636] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#b4b4b4]"
-          id="review-version-select"
-          onChange={(event) => window.location.assign(metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(event.target.value))}
-          value={metadata.selectedVersionId}
-        >
-          {metadata.versions.map((version) => (
-            <option key={version.id} value={version.id}>Version {version.versionLabel} · {metadata.handoffName}</option>
-          ))}
-        </select>
+      <header className="relative z-20 flex h-auto min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#383838] bg-[#202020] px-3 py-1 text-[#c8c8c8] lg:h-12 lg:flex-nowrap lg:gap-3 lg:py-0">
+        <div className="flex min-w-0 flex-1 items-center gap-3 lg:flex-none">
+          <Link className="min-h-6 max-w-[180px] shrink-0 truncate text-[13px] font-semibold text-[#ededed] hover:text-white" href={metadata.projectHref}>
+            Asbir <span className="font-normal text-[#929292]">Handoff</span>
+          </Link>
+          <span aria-hidden="true" className="h-6 w-px shrink-0 bg-[#3b3b3b]" />
+          <label className="sr-only" htmlFor="review-version-select">Snapshot version</label>
+          <select
+            className="h-11 min-w-0 max-w-none flex-1 rounded-[8px] border border-transparent bg-[#303030] px-3 text-[13px] text-[#ececec] hover:bg-[#363636] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#b4b4b4] lg:h-9 lg:max-w-[340px] lg:min-w-[210px] lg:flex-none"
+            id="review-version-select"
+            onChange={(event) => window.location.assign(metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(event.target.value))}
+            value={metadata.selectedVersionId}
+          >
+            {metadata.versions.map((version) => (
+              <option key={version.id} value={version.id}>Version {version.versionLabel} · {metadata.handoffName}</option>
+            ))}
+          </select>
+        </div>
         <p className="hidden min-w-0 flex-1 truncate text-[12px] text-[#999] xl:block" title={metaParts.join(" · ")}>
           {metaParts.join(" · ")}
         </p>
-        <nav aria-label="Handoff review tools" className="ml-auto flex shrink-0 items-center gap-1">
+        <nav aria-label="Handoff review tools" className="ml-0 flex w-full min-w-0 shrink-0 items-center gap-1 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:ml-auto lg:w-auto lg:overflow-visible lg:pb-0">
           <InstallAppButton compact />
           <button
             aria-pressed={statesOpen}
-            className={"h-8 shrink-0 rounded-[7px] px-2 text-[11px] font-medium transition-colors lg:hidden " + (statesOpen ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
+            className={"h-11 shrink-0 rounded-[7px] px-2 text-[11px] font-medium transition-colors lg:hidden " + (statesOpen ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
             id="canvas-mobile-screens-toggle"
             onClick={() => {
               setSearchOpen(false);
@@ -796,11 +800,11 @@ export function HandoffCanvas({
           >
             Screens {screens.length}
           </button>
-          <div aria-label="Canvas mode" className="flex h-8 shrink-0 items-center rounded-[7px] bg-[#292929] p-0.5" role="group">
+          <div aria-label="Canvas mode" className="flex h-12 shrink-0 items-center rounded-[7px] bg-[#292929] p-0.5 lg:h-8" role="group">
             {(["view", "inspect"] as const).map((mode) => (
               <button
                 aria-pressed={canvasMode === mode}
-                className={"h-7 rounded-[5px] px-2 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] " + (canvasMode === mode ? "bg-[#444] text-white" : "text-[#a9a9a9] hover:bg-[#363636] hover:text-white")}
+                className={"h-11 rounded-[5px] px-2 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] lg:h-7 " + (canvasMode === mode ? "bg-[#444] text-white" : "text-[#a9a9a9] hover:bg-[#363636] hover:text-white")}
                 key={mode}
                 onClick={() => {
                   setCanvasModeOverride(mode);
@@ -814,7 +818,7 @@ export function HandoffCanvas({
           </div>
           <button
             aria-pressed={panelMode === "comments"}
-            className={"h-9 rounded-[7px] px-3 text-[12px] transition-colors " + (panelMode === "comments" ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
+            className={"h-11 shrink-0 rounded-[7px] px-3 text-[12px] transition-colors lg:h-9 " + (panelMode === "comments" ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
             onClick={() => {
               setPanelMode("comments");
               setCommentMode(false);
@@ -831,7 +835,7 @@ export function HandoffCanvas({
           </button>
           <button
             aria-pressed={panelMode === "annotations"}
-            className={"h-9 rounded-[7px] px-3 text-[12px] transition-colors " + (panelMode === "annotations" ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
+            className={"h-11 shrink-0 rounded-[7px] px-3 text-[12px] transition-colors lg:h-9 " + (panelMode === "annotations" ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
             onClick={() => {
               setPanelMode("annotations");
               setCommentMode(false);
@@ -849,7 +853,7 @@ export function HandoffCanvas({
           </button>
           {metadata.canManageIntegrations ? <button
             aria-pressed={panelMode === "mcp"}
-            className={"h-9 rounded-[7px] px-3 text-[12px] transition-colors lg:hidden " + (panelMode === "mcp" ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
+            className={"h-11 shrink-0 rounded-[7px] px-3 text-[12px] transition-colors lg:hidden " + (panelMode === "mcp" ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
             onClick={() => {
               setPanelMode("mcp");
               setCommentMode(false);
@@ -890,7 +894,9 @@ export function HandoffCanvas({
           {viewportControls ? (
             <CanvasToolbar
               scale={viewportControls.scale}
-                exportTargets={exportTargets}
+              exportTargets={exportTargets}
+              shareUrl={metadata.reviewHref}
+              shareTitle={metadata.projectName + " · " + metadata.handoffName}
               onZoomOut={viewportControls.zoomOut}
               onFit={viewportControls.fitToFrame}
               onZoomIn={viewportControls.zoomIn}
@@ -1118,7 +1124,7 @@ export function HandoffCanvas({
         <aside
           aria-label="Handoff details"
           aria-modal={isMobile && mobilePanelOpen ? true : undefined}
-          className={"min-h-0 min-w-0 flex-col overflow-hidden border-l border-[#3a3a3a] bg-[#202020] " + (mobilePanelOpen ? "absolute inset-y-0 right-0 z-30 flex w-[min(340px,94vw)] shadow-2xl lg:static lg:z-auto lg:w-auto lg:shadow-none" : "hidden lg:static lg:flex")}
+          className={"min-h-0 min-w-0 flex-col overflow-hidden border-l border-[#3a3a3a] bg-[#202020] " + (mobilePanelOpen ? "absolute inset-0 z-30 flex w-full border-l-0 shadow-2xl lg:static lg:z-auto lg:w-auto lg:border-l lg:shadow-none" : "hidden lg:static lg:flex")}
           ref={detailsPanelRef}
           role={isMobile && mobilePanelOpen ? "dialog" : undefined}
           tabIndex={isMobile && mobilePanelOpen ? -1 : undefined}
@@ -1176,7 +1182,9 @@ export function HandoffCanvas({
               selectedCommentId={selectedCommentId}
               error={commentError}
               openCount={openCommentCount}
-              canWrite={metadata.canAnnotate}
+              canWrite={metadata.canComment}
+              canResolve={metadata.canAnnotate}
+              commentIdentity={metadata.commentIdentity}
               hasSelectedScreen={Boolean(selectedFrame)}
               showResolvedPins={showResolvedPins}
               commentMode={commentMode}
@@ -1237,7 +1245,7 @@ export function HandoffCanvas({
             frameCount={screens.length}
             totalNodeCount={screens.reduce((count, frame) => count + frame.nodes.length, 0)}
             comments={selectedNode ? comments.filter((comment) => comment.sourceNodeId === selectedNode.sourceNodeId) : []}
-            canComment={metadata.canAnnotate}
+            canComment={metadata.canComment}
             canCompare={canCompare}
             onCompare={compareSelectedFrame}
             onAddComment={commentOnSelectedElement}

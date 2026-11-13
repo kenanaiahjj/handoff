@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type Database from "better-sqlite3";
-import { hashHandoffInviteToken, normalizeInviteEmail, type HandoffSharingMode } from "./handoff-sharing.ts";
+import { hashHandoffInviteToken, normalizeInviteEmail, type HandoffInviteRole, type HandoffSharingMode } from "./handoff-sharing.ts";
 
 type HandoffSharingDatabase = Pick<Database.Database, "prepare" | "transaction">;
 
@@ -57,6 +57,7 @@ export function createHandoffInviteInDatabase(
     projectId: string;
     handoffId: string;
     email: string;
+    role?: HandoffInviteRole;
     token: string;
     expiresAt: string | null;
     invitedByUserId: string;
@@ -88,15 +89,16 @@ export function createHandoffInviteInDatabase(
     database
       .prepare(
         `INSERT INTO handoff_invite
-          (id, workspace_id, handoff_id, email, token_hash, expires_at,
+          (id, workspace_id, handoff_id, email, role, token_hash, expires_at,
            invited_by_user_id, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       )
       .run(
         id,
         input.workspaceId,
         input.handoffId,
         email,
+        input.role ?? "exec",
         hashHandoffInviteToken(input.token),
         input.expiresAt,
         input.invitedByUserId,
@@ -106,6 +108,7 @@ export function createHandoffInviteInDatabase(
     return {
       id,
       email,
+      role: input.role ?? "exec",
       reviewShareId: handoff.reviewShareId,
       expiresAt: input.expiresAt,
       createdAt: now,
@@ -121,7 +124,7 @@ export function listHandoffInvitesInDatabase(
 ) {
   return database
     .prepare(
-      `SELECT id, email, expires_at AS expiresAt, created_at AS createdAt
+      `SELECT id, email, role, expires_at AS expiresAt, created_at AS createdAt
        FROM handoff_invite
        WHERE workspace_id = ? AND handoff_id = ? AND revoked_at IS NULL
          AND (expires_at IS NULL OR expires_at > ?)
@@ -130,6 +133,7 @@ export function listHandoffInvitesInDatabase(
     .all(input.workspaceId, input.handoffId, input.now ?? new Date().toISOString()) as Array<{
       id: string;
       email: string;
+      role: HandoffInviteRole;
       expiresAt: string | null;
       createdAt: string;
     }>;
@@ -163,7 +167,7 @@ export function getHandoffInviteByTokenInDatabase(
   return database
     .prepare(
       `SELECT handoff_invite.id, handoff_invite.workspace_id AS workspaceId,
-              handoff_invite.handoff_id AS handoffId, handoff_invite.email,
+              handoff_invite.handoff_id AS handoffId, handoff_invite.email, handoff_invite.role,
               handoff_invite.token_hash AS tokenHash,
               handoff_invite.expires_at AS expiresAt,
               handoff_invite.revoked_at AS revokedAt
@@ -181,6 +185,7 @@ export function getHandoffInviteByTokenInDatabase(
       workspaceId: string;
       handoffId: string;
       email: string;
+      role: HandoffInviteRole;
       tokenHash: string;
       expiresAt: string | null;
       revokedAt: string | null;

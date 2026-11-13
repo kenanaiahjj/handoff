@@ -37,6 +37,7 @@ database.exec(`
     workspace_id TEXT NOT NULL,
     handoff_id TEXT NOT NULL,
     email TEXT NOT NULL,
+    role TEXT NOT NULL DEFAULT 'exec',
     token_hash TEXT NOT NULL,
     expires_at TEXT,
     revoked_at TEXT,

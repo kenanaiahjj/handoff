@@ -4,7 +4,7 @@ import type {
   SnapshotNode,
   VisualOnlySnapshot,
 } from "@asbir/snapshot-contract";
-import { formatFigmaCaptureScope, normalizeFigmaCaptureScope } from "@asbir/snapshot-contract";
+import { formatFigmaCaptureScope, normalizeFigmaCaptureScope, typographyFromTextSegments } from "@asbir/snapshot-contract";
 
 export type DiffCategory =
   | "geometry"
@@ -201,6 +201,8 @@ type DiffInput = {
   snapshot: VersionSnapshot;
 };
 
+const measurementDiffTolerance = 0.001;
+
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -224,7 +226,7 @@ function equalValue(left: unknown, right: unknown): boolean {
 
 function categoryForPath(path: string): DiffCategory {
   const root = path.split(/[.[]/, 1)[0];
-  if (root === "bounds") return "geometry";
+  if (root === "bounds" || root === "layoutBounds") return "geometry";
   if (["layout", "padding", "margins", "spacing"].includes(root)) return "layout";
   if (root === "sourcePayload") {
     const field = path.split(/[.[]/)[1];
@@ -258,8 +260,8 @@ function compareValue(
   if (
     typeof before === "number" &&
     typeof after === "number" &&
-    Math.abs(before - after) < 0.0001 &&
-    /^(?:bounds|padding|margins|spacing|typography)(?:\.|\[).+\.value$/.test(path)
+    Math.abs(before - after) < measurementDiffTolerance &&
+    /^(?:bounds|layoutBounds|padding|margins|spacing|typography)(?:\.|\[).+\.value$/.test(path)
   ) {
     return;
   }
@@ -430,6 +432,93 @@ function nodeMatchKey(node: SnapshotNode) {
   return `${node.type}\u0000${node.name}`;
 }
 
+type NodeGeometry = { x: number; y: number; width: number; height: number };
+
+const maxSiblingGeometryMatchDistance = 0.2;
+const siblingGeometryAmbiguityTolerance = 0.002;
+
+function measurementNumber(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (isRecord(value) && typeof value.value === "number" && Number.isFinite(value.value)) return value.value;
+  return null;
+}
+
+function nodeGeometry(node: SnapshotNode, field: "layoutBounds" | "bounds"): NodeGeometry | null {
+  const candidate = node[field];
+  if (!isRecord(candidate)) return null;
+  const x = measurementNumber(candidate.x);
+  const y = measurementNumber(candidate.y);
+  const width = measurementNumber(candidate.width);
+  const height = measurementNumber(candidate.height);
+  return x !== null && y !== null && width !== null && height !== null
+    ? { x, y, width, height }
+    : null;
+}
+
+function nodeTextContent(node: SnapshotNode) {
+  if (!isRecord(node.sourcePayload) || !Array.isArray(node.sourcePayload.textSegments)) return null;
+  const segments = node.sourcePayload.textSegments;
+  if (!segments.length || !segments.every((segment) => isRecord(segment) && typeof segment.characters === "string")) {
+    return null;
+  }
+  return segments.map((segment) => (segment as { characters: string }).characters).join("");
+}
+
+function mutuallyNearestGeometryPairs(
+  beforeNodes: SnapshotNode[],
+  afterNodes: SnapshotNode[],
+  beforeParent: SnapshotNode,
+  afterParent: SnapshotNode,
+) {
+  if (!beforeNodes.length || !afterNodes.length) return [];
+  const geometryField = [...beforeNodes, ...afterNodes].every((node) => nodeGeometry(node, "layoutBounds"))
+    ? "layoutBounds"
+    : "bounds";
+  const beforeParentGeometry = nodeGeometry(beforeParent, geometryField) ?? nodeGeometry(beforeParent, "bounds");
+  const afterParentGeometry = nodeGeometry(afterParent, geometryField) ?? nodeGeometry(afterParent, "bounds");
+  const scaleX = Math.max(1, beforeParentGeometry?.width ?? 0, afterParentGeometry?.width ?? 0);
+  const scaleY = Math.max(1, beforeParentGeometry?.height ?? 0, afterParentGeometry?.height ?? 0);
+  const beforeGeometry = beforeNodes.map((node) => nodeGeometry(node, geometryField));
+  const afterGeometry = afterNodes.map((node) => nodeGeometry(node, geometryField));
+  if (beforeGeometry.some((geometry) => !geometry) || afterGeometry.some((geometry) => !geometry)) return [];
+
+  const distances = beforeGeometry.map((before) => afterGeometry.map((after) => {
+    const beforeValue = before!;
+    const afterValue = after!;
+    const positionDistance = Math.hypot(
+      (beforeValue.x + beforeValue.width / 2 - afterValue.x - afterValue.width / 2) / scaleX,
+      (beforeValue.y + beforeValue.height / 2 - afterValue.y - afterValue.height / 2) / scaleY,
+    );
+    const sizeDistance = Math.hypot(
+      (beforeValue.width - afterValue.width) / scaleX,
+      (beforeValue.height - afterValue.height) / scaleY,
+    ) * 0.25;
+    return positionDistance + sizeDistance;
+  }));
+
+  function uniqueNearest(candidates: number[]) {
+    const ordered = candidates
+      .map((distance, index) => ({ distance, index }))
+      .sort((left, right) => left.distance - right.distance || left.index - right.index);
+    const nearest = ordered[0];
+    const runnerUp = ordered[1];
+    if (!nearest || nearest.distance > maxSiblingGeometryMatchDistance) return null;
+    if (runnerUp && runnerUp.distance - nearest.distance <= siblingGeometryAmbiguityTolerance) return null;
+    return nearest.index;
+  }
+
+  const afterForBefore = distances.map((candidates) => uniqueNearest(candidates));
+  const beforeForAfter = afterNodes.map((_, afterIndex) =>
+    uniqueNearest(distances.map((candidates) => candidates[afterIndex])),
+  );
+
+  return afterForBefore.flatMap((afterIndex, beforeIndex) =>
+    afterIndex !== null && beforeForAfter[afterIndex] === beforeIndex
+      ? [{ before: beforeNodes[beforeIndex], after: afterNodes[afterIndex] }]
+      : [],
+  );
+}
+
 function childrenByParent(nodes: SnapshotNode[]) {
   const result = new Map<string | null, SnapshotNode[]>();
   for (const node of nodes) {
@@ -508,6 +597,36 @@ function matchFrameNodes(
         const newCandidates = newChildrenByKey.get(key);
         if (oldCandidates.length === 1 && newCandidates?.length === 1) {
           pair(oldCandidates[0], newCandidates[0]);
+        } else if (compareSourceNodeIds && newCandidates?.length) {
+          for (const match of mutuallyNearestGeometryPairs(
+            oldCandidates,
+            newCandidates,
+            parentPair.before,
+            parentPair.after,
+          )) {
+            pair(match.before, match.after);
+          }
+        }
+      }
+
+      if (compareSourceNodeIds) {
+        const isAutoNamedText = (node: SnapshotNode) =>
+          node.type === "TEXT" && nodeTextContent(node) === node.name;
+        const oldTextNodes = oldChildren.filter((node) =>
+          isAutoNamedText(node) && !matchedBeforeIds.has(node.sourceNodeId));
+        const newTextNodes = newChildren.filter((node) =>
+          isAutoNamedText(node) && !matchedAfterIds.has(node.sourceNodeId));
+        if (oldTextNodes.length === 1 && newTextNodes.length === 1) {
+          pair(oldTextNodes[0], newTextNodes[0]);
+        } else {
+          for (const match of mutuallyNearestGeometryPairs(
+            oldTextNodes,
+            newTextNodes,
+            parentPair.before,
+            parentPair.after,
+          )) {
+            pair(match.before, match.after);
+          }
         }
       }
     }
@@ -752,10 +871,30 @@ function compareNode(
   const { tokens: beforeTokens, sourcePayload: beforeSourcePayload, ...beforeRest } = before;
   const { tokens: afterTokens, sourcePayload: afterSourcePayload, ...afterRest } = after;
   const identityFields = new Set(["sourceNodeId", "parentSourceNodeId", "sourceFrameId"]);
-  const beforeComparable = Object.fromEntries(Object.entries(beforeRest).filter(([key]) =>
-    !identityFields.has(key) && !(isFrameRoot && (key === "bounds" || key === "margins"))));
-  const afterComparable = Object.fromEntries(Object.entries(afterRest).filter(([key]) =>
-    !identityFields.has(key) && !(isFrameRoot && (key === "bounds" || key === "margins"))));
+  const hasCapturedTextContent = nodeTextContent(before) !== null && nodeTextContent(after) !== null;
+  const autoNamedTextChanged = before.type === "TEXT" && after.type === "TEXT" &&
+    nodeTextContent(before) === before.name && nodeTextContent(after) === after.name;
+  const hasNativeLayoutBounds = before.layoutBounds !== undefined && after.layoutBounds !== undefined;
+  const shouldCompareNodeField = (key: string) =>
+    !identityFields.has(key) &&
+    !(autoNamedTextChanged && key === "name") &&
+    !(isFrameRoot && (key === "bounds" || key === "layoutBounds" || key === "margins")) &&
+    (hasNativeLayoutBounds ? key !== "bounds" : key !== "layoutBounds");
+  const comparableFields = (node: typeof beforeRest, sourcePayload: SnapshotNode["sourcePayload"]) => {
+    const fields: Record<string, unknown> = Object.fromEntries(
+      Object.entries(node).filter(([key]) => shouldCompareNodeField(key)),
+    );
+    if (Object.prototype.hasOwnProperty.call(fields, "typography")) {
+      fields.typography = typographyFromTextSegments(fields.typography as SnapshotNode["typography"], sourcePayload);
+    }
+    if (hasCapturedTextContent && isRecord(fields.typography)) {
+      const { content: _content, ...typographyStyle } = fields.typography;
+      fields.typography = Object.keys(typographyStyle).length ? typographyStyle : null;
+    }
+    return fields;
+  };
+  const beforeComparable = comparableFields(beforeRest, beforeSourcePayload);
+  const afterComparable = comparableFields(afterRest, afterSourcePayload);
   compareValue(
     withoutFigmaStyleIds(beforeComparable),
     withoutFigmaStyleIds(afterComparable),

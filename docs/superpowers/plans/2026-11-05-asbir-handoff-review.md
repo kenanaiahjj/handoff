@@ -47,12 +47,15 @@ export function screenToFramePoint(
 ): { x: number; y: number };
 ```
 
-- [ ] Load one authorized handoff version and render its overview and frame thumbnails from private asset routes.
-- [ ] Render frames at their captured design dimensions. Keep CSS device pixel ratio separate from source coordinate units.
-- [ ] Implement pointer-based pan, wheel zoom, zoom-to-fit, and frame selection in `useCanvasViewport.ts`.
-- [ ] Add keyboard-focusable toolbar controls for zoom, fit, and comparison mode.
-- [ ] Keep annotation pins in a positioned HTML overlay so they remain accessible and independently interactive.
-- [ ] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`; manually check pan, zoom, fit, and frame selection at desktop and mobile widths.
+- [x] Load one authorized handoff version and render its overview and frame thumbnails from private asset routes. Verified 2026-11-12 in the local review app with a 13-screen Figma snapshot.
+- [x] Render frames at their captured design dimensions. Keep CSS device pixel ratio separate from source coordinate units. Verified 2026-11-12 with a 392 × 999 px screen in the inspector; canvas elements use design dimensions for CSS size and stored raster dimensions for intrinsic image size.
+- [x] Implement pointer-based pan, wheel zoom, zoom-to-fit, and frame selection in `useCanvasViewport.ts`. Verified 2026-11-12: dragging moved the board, wheel zoom changed 8% to 28%, Fit returned to 8%, and selecting a screen updated the active screen and dimensions.
+- [x] Add keyboard-focusable toolbar controls for zoom, fit, and comparison mode. Verified 2026-11-12: Tab focused the Zoom out control; Fit and Review changes are exposed as buttons with visible focus styles.
+- [x] Keep comment and canvas-note pins in a positioned HTML overlay so they remain accessible and independently interactive. Comment pins counter-scale with the canvas to preserve their 28 px target size. Verified 2026-11-12 on a saved comment at 20%, 17%, and 8% zoom; the pin stayed on its screen and opened the comment panel when selected. Canvas-note rendering uses the same counter-scale treatment; no saved note was available for live interaction verification.
+- [x] Run `npm run lint --workspace @asbir/web` and `npm run lint --workspace @asbir/figma-plugin`. Verified 2026-11-12.
+- [x] Run `npm run build --workspace @asbir/web`. Verified 2026-11-12 with `ASBIR_NEXT_DIST_DIR` pointing to `.next-codex-build.se1kh4`, isolated from the active dev server's `.next` output.
+- [x] Manually check pan, zoom, fit, and frame selection at desktop width. Verified 2026-11-12 in the local review app.
+- [x] Manually check pan, zoom, fit, and frame selection at mobile widths. Verified 2026-11-12 at a 390 × 844 emulated viewport: screen selection opened details; the toolbar scrolled to expose Fit, zoom, and export; Fit, zoom, and canvas drag worked; selecting a layer opened the full-width inspector without document scrolling. Physical-device behavior remains unverified.
 
 ## Task 2: Add the exact measurement inspector
 
@@ -96,11 +99,11 @@ export interface SnapshotDiff {
 - [x] Compare bound token ID, collection, mode, and value separately from raw fills. Compare source IDs only when both versions identify the same source file; keep semantic comparisons across copied files resilient to ID churn. Show field-level token labels in compare. Verified 2026-11-11.
 - [x] Implement pixel diff in a Web Worker using decoded image bitmaps and `ImageData`; produce an overlay-ready difference bitmap at the canonical source dimensions. Keep both image layers anchored to the same top-left source origin when screen dimensions differ. Verified 2026-11-11 with a 420 × 2073 before screen and a 393 × 2073 after screen.
 - [x] Add before/after, overlay, and pixel-diff modes with a structured change list linked to frame and node IDs. Verified in the running app with the four-screen resize fixture on 2026-11-11.
-- [x] Stress-test structured diffs across 210 screens and 31,500 nodes with five changed screens, and preserve 50,000 changes across five frames when layer IDs regenerate. Verified 2026-11-09.
+- [x] Stress-test structured diffs across 210 screens and 31,500 nodes with five changed screens, and preserve 50,000 changes across five frames when layer IDs regenerate. Verified 2026-11-09. On 2026-11-12, also verified unique screen-name pairing after frame and layer IDs regenerate: five screens produced six geometry, style, token, text, layout, and visual changes while 205 screens stayed unchanged.
 - [x] Cull inspect hit targets to visible, actionable elements and use ID-based lookup for selected and hovered nodes. A 31,500-node fixture renders only the 150 targets in its viewport. Verified 2026-11-09.
 - [x] Manually inspect a four-screen resize comparison in the running app: verify side-by-side, overlay opacity, pixel diff, and selection of another screen with its own recorded changes. Restored the browser to its original URL. Verified 2026-11-09.
 - [x] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`. Verified 2026-11-11.
-- [ ] Manually compare two versions containing added, removed, moved, resized, and restyled elements.
+- [x] Manually compare two versions containing added, removed, moved, resized, and restyled elements. Verified 2026-11-12 in the running app with `Before — original` and `After — controlled changes`: 4 changed screens and 57 total changes, including a removed/added layer, width and X changes, padding/margin changes, and fill-color changes. Side-by-side, overlay, pixel diff, and close-to-canvas behavior all worked. The fixture uses a legacy Figma file ID, so the UI correctly warns that source-file identity cannot be verified.
 
 ## Task 4: Add comments, layout rules, and exports
 

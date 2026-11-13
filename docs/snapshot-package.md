@@ -152,6 +152,8 @@ Each measurement includes a value, unit, provenance, and source property. Use `s
 
 Replace the example identifiers, byte sizes, dimensions, and hashes with values from the captured files. `contentHash` is the SHA-256 hash returned by `hashSnapshotPayload` for the snapshot payload before `contentHash` is added. The importer verifies it and each asset hash before storing the version.
 
+Use non-empty, unique frame names after surrounding whitespace is trimmed. The importer preserves blank or duplicate names, but those frames might not match safely by name across versions.
+
 `canvasBounds` maps the overview render to source-canvas coordinates. Include it when the source adapter can report the complete captured canvas bounds. Without it, Handoff still preserves the overview image and exact per-frame data, but it does not draw element hit areas over the overview because their positions cannot be aligned reliably.
 
 ## Image-only uploads

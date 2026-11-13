@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Measurement } from "@asbir/snapshot-contract";
-import { formatPixelValue } from "./format-captured-measurement";
+import { formatPrecisePixelValue } from "./format-captured-measurement";
 
 const provenanceLabels = {
   source: "Source value",
@@ -19,7 +19,7 @@ export function MeasurementRow({ label, measurement }: MeasurementRowProps) {
   const [copied, setCopied] = useState(false);
   const displayValue = measurement.value === null
     ? "—"
-    : (measurement.unit === "px" ? formatPixelValue(measurement.value) : String(measurement.value)) + " " + measurement.unit;
+    : (measurement.unit === "px" ? formatPrecisePixelValue(measurement.value) : String(measurement.value)) + " " + measurement.unit;
 
   async function copyValue() {
     if (measurement.value === null) return;

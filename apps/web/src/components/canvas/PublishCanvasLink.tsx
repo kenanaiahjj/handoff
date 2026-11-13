@@ -65,8 +65,8 @@ export function PublishCanvasLink({
     <section aria-labelledby="publish-canvas-title" className="rounded-panel bg-surface p-3">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h3 className="text-[12px] font-semibold text-[#e5e5e5]" id="publish-canvas-title">Team review link</h3>
-          <p className="mt-1 text-[11px] leading-5 text-[#999]">Publish a stable link to the frozen canvas for your team.</p>
+          <h3 className="text-xs font-semibold text-foreground" id="publish-canvas-title">Team review link</h3>
+          <p className="mt-1 text-xs leading-5 text-foreground-muted">Publish a stable link to the frozen canvas for your team.</p>
         </div>
         {canManage ? (
           <button className="h-8 rounded-control bg-primary px-3 text-[11px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={!isLatest || pending} onClick={() => void publish()} type="button">
@@ -75,14 +75,14 @@ export function PublishCanvasLink({
         ) : null}
       </div>
 
-      {!isLatest && canManage ? <p className="mt-2 text-[11px] text-[#888]">Select the latest version to publish an update.</p> : null}
+        {!isLatest && canManage ? <p className="mt-2 text-xs text-foreground-subtle">Select the latest version to publish an update.</p> : null}
       {canManage ? <HandoffSharingControls endpoint={endpoint} refreshKey={refreshKey} /> : (
-        <p className="mt-3 border-t border-[#393939] pt-3 text-[11px] leading-5 text-[#999]">Sharing controls are available to workspace owners and designers.</p>
+          <p className="mt-3 border-t border-border pt-3 text-xs leading-5 text-foreground-muted">Sharing controls are available to workspace owners and designers.</p>
       )}
-      {error ? <p className="mt-3 text-[11px] text-[#efaa4a]" role="alert">{error}</p> : null}
-      {message ? <p className="mt-3 text-[11px] text-[#aaa]" role="status">{message}</p> : null}
-      {publishedVersion ? <p className="mt-2 font-mono text-[9px] text-[#777]">Published version {publishedVersion}</p> : null}
-      {!hasPublishedCanvas && !canManage ? <p className="mt-2 text-[11px] text-[#888]">No canvas has been published yet.</p> : null}
+      {error ? <p className="mt-3 text-xs text-warning" role="alert">{error}</p> : null}
+      {message ? <p className="mt-3 text-xs text-foreground-muted" role="status">{message}</p> : null}
+      {publishedVersion ? <p className="mt-2 font-mono text-[10px] text-foreground-subtle">Published version {publishedVersion}</p> : null}
+      {!hasPublishedCanvas && !canManage ? <p className="mt-2 text-xs text-foreground-subtle">No canvas has been published yet.</p> : null}
     </section>
   );
 }

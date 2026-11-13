@@ -14,7 +14,7 @@
 - Do not change the global relaxed role behavior in `workspace-access.ts`.
 - Owners and designers are the only roles that can delete handoffs or versions or change sharing settings.
 - Anonymous links open without sign-in and remain read-only.
-- Invites are external-email, per-recipient bearer links that require a signed-in account with the same normalized email; owners copy and deliver the links manually.
+- Invites are per-recipient bearer links with a role label. Viewing and comments need no sign-in; the invite email and role label are not verified. Owners copy and deliver the links manually.
 - Shared object files are deleted only when no surviving version references them.
 - Keep the authenticated handoff route separate from the published canvas route.
 
@@ -35,7 +35,7 @@
 
 - [ ] **Step 1: Write failing policy tests**
 
-Test `workspace` access requires membership, `invited` access requires an active token plus a matching signed-in email, expired/revoked/mismatched invites are denied, and `anyone` access is allowed without a session but read-only.
+Test `workspace` access requires membership, `invited` access requires an active token and allows comments without sign-in, expired/revoked/mismatched tokens are denied, and `anyone` access is allowed without a session but read-only.
 
 - [ ] **Step 2: Run the policy tests and confirm the expected failures**
 
@@ -126,7 +126,7 @@ Expected: all focused tests pass.
 
 - [ ] **Step 1: Write failing published-access tests**
 
-Test that public reads allow only published/older versions and their assets, invite reads require an exact normalized email and active token, and unpublished versions or unrelated assets return no access.
+Test that public reads allow only published/older versions and their assets, invite reads and comments require an active token without requiring a sign-in, and unpublished versions or unrelated assets return no access.
 
 - [ ] **Step 2: Run the access tests and confirm expected failures**
 
@@ -136,7 +136,7 @@ Expected: tests fail because the published access resolver is missing.
 
 - [ ] **Step 3: Implement a server-only access resolver**
 
-Use the handoff's saved sharing mode. For `anyone`, allow unauthenticated GET requests only. For `workspace`, require a workspace session. For `invited`, require an active invite token, a signed-in session, and a matching normalized email. Never use an invite token to authorize an unrelated handoff.
+Use the handoff's saved sharing mode. For `anyone`, allow unauthenticated GET requests only. For `workspace`, require a workspace session. For `invited`, allow unauthenticated reads and comments with an active invite token; other writes require a signed-in session. Treat the email and role as labels, not identity checks. Never use an invite token to authorize an unrelated handoff.
 
 - [ ] **Step 4: Connect the review page and read endpoints**
 
@@ -144,7 +144,7 @@ Pass only visible versions to the review surface. Allow unauthenticated reads in
 
 - [ ] **Step 5: Add review tokens to client requests and make public mode read-only**
 
-Include the review share id in asset and compare requests, and the invite token only on invite links. Hide comment creation, annotation, finding updates, task creation, integration controls, and local-preview actions from anonymous public viewers while keeping canvas inspection and comparison available.
+Include the review share id in asset and compare requests, and the invite token only on invite links. Hide comment creation, annotation, finding updates, task creation, integration controls, and local-preview actions from anonymous public viewers. Allow comment creation through active invite links, and keep other writes behind signed-in access.
 
 - [ ] **Step 6: Run access tests and app type checking**
 
@@ -211,7 +211,7 @@ Expected: focused UI checks pass and no new TypeScript errors appear.
 
 - [ ] **Step 1: Document link semantics and privacy limits**
 
-Explain workspace access, invite-token access, anonymous read-only links, manual delivery of invitations, revocation, expiry, and deletion effects. State that anyone who obtains an active invitation link can use it with the matching sign-in email.
+Explain workspace access, invite-token access, anonymous read-only links, manual delivery of invitations, revocation, expiry, and deletion effects. State that anyone who obtains an active invitation link can view and comment without signing in; the invite email and role are attribution labels only.
 
 - [ ] **Step 2: Run the focused suite and build**
 

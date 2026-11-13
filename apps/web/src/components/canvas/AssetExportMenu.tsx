@@ -80,7 +80,7 @@ export function AssetExportMenu({ targets }: { targets: AssetExportTarget[] }) {
 
   return (
     <details className="relative">
-      <summary className="grid size-8 cursor-pointer list-none place-items-center rounded-control text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" aria-label="Export image" title="Export image">
+      <summary className="grid size-11 shrink-0 cursor-pointer list-none place-items-center rounded-control text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:size-8" aria-label="Export image" title="Export image">
         <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 16 16">
           <path d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 10.5v2h10v-2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.3" />
         </svg>

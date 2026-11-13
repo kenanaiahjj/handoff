@@ -115,6 +115,21 @@ test("ignores malformed or incomplete text style runs", () => {
   assert.deepEqual(readTextStyleRuns({ textSegments: null }), []);
 });
 
+test("formats fractional Figma text metrics like the Figma inspector", () => {
+  const [run] = readTextStyleRuns({
+    textSegments: [{
+      start: 0,
+      end: 10,
+      characters: "Departures",
+      lineHeight: { unit: "PIXELS", value: 19.5 },
+      letterSpacing: { unit: "PIXELS", value: 0.32499998807907104 },
+    }],
+  });
+
+  assert.equal(run.lineHeight, "19.5px");
+  assert.equal(run.letterSpacing, "0.32px");
+});
+
 test("preserves paint type, opacity, and gradient stop details", () => {
   const paints = readPaintDetails([
     {

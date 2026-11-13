@@ -18,8 +18,8 @@ export function captureScopeNotice(
 export function comparisonFrameStatusLabel(
   status: SnapshotDiff["frames"][number]["status"],
 ) {
-  if (status === "only-in-before-capture") return "Only in before capture";
-  if (status === "only-in-after-capture") return "Only in after capture";
+  if (status === "only-in-before-capture") return "Present only in before capture";
+  if (status === "only-in-after-capture") return "Present only in after capture";
   if (status === "unchanged") return "No changes";
   if (status === "changed") return "Changed";
   if (status === "added") return "New";
@@ -122,6 +122,15 @@ export function comparisonChangeLabel(change: ChangeSummary) {
       "bounds.width": "Width",
       "bounds.height": "Height",
     } as const)[path as "bounds.x" | "bounds.y" | "bounds.width" | "bounds.height"];
+  }
+  const layoutBoundsField = path.match(/^layoutBounds\.(x|y|width|height)(?:\.value)?$/)?.[1];
+  if (layoutBoundsField) {
+    return ({
+      x: "Figma X",
+      y: "Figma Y",
+      width: "Figma width",
+      height: "Figma height",
+    } as const)[layoutBoundsField as "x" | "y" | "width" | "height"];
   }
 
   const side = path.match(/^(padding|margins)\.(top|right|bottom|left)$/);

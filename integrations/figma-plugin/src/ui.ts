@@ -19,7 +19,7 @@ import type {
 import { isRejectedSvgAssetResponse, makeRasterOnlyFallback } from "./raster-fallback";
 import { frameRenderCrop } from "./render-crop";
 import { availableOverviewBudget } from "./transfer-budget";
-import { findDuplicateFrameNames } from "./frame-names";
+import { countBlankFrameNames, findDuplicateFrameNames } from "./frame-names";
 import { formatFigmaCaptureScope } from "@asbir/snapshot-contract";
 
 declare const __ASBIR_HANDOFF_ORIGIN__: string;
@@ -754,6 +754,7 @@ window.onmessage = (event: MessageEvent) => {
         ? `${renderScale} Figma render · ${fallbackFrameIds.length} frame${fallbackFrameIds.length === 1 ? "" : "s"} rendered at 1×`
         : `${renderScale} Figma render`;
     const duplicateFrameNames = findDuplicateFrameNames(capture.payload.frames);
+    const blankFrameNameCount = countBlankFrameNames(capture.payload.frames);
     const warningSummary = capture.warnings.length ? ` · ${capture.warnings.length} capture warning${capture.warnings.length === 1 ? "" : "s"}` : "";
     const duplicateNameSummary = duplicateFrameNames.length
       ? ` · ${duplicateFrameNames.length} duplicate screen name${duplicateFrameNames.length === 1 ? "" : "s"}`
@@ -764,14 +765,21 @@ window.onmessage = (event: MessageEvent) => {
     const scopeSummary = captureScopeSummary ? `Capture scope: ${captureScopeSummary} · ` : "";
     summary.textContent = `${scopeSummary}${frameCount} frame${frameCount === 1 ? "" : "s"}${pageSummary} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary} · ${vectorSummary}${layerExportSummary}${warningSummary}${duplicateNameSummary}`;
     const duplicateNameMessage = duplicateFrameNames.length
-      ? `This capture contains duplicate screen names: ${duplicateFrameNames.slice(0, 4).map(({ name, count }) => `${name} (${count})`).join(", ")}${duplicateFrameNames.length > 4 ? `, and ${duplicateFrameNames.length - 4} more` : ""}. Rename them in Figma to make version matching clear. Upload remains available.`
+      ? `This capture contains duplicate screen names: ${duplicateFrameNames.slice(0, 4).map(({ name, count }) => `${name} (${count})`).join(", ")}${duplicateFrameNames.length > 4 ? `, and ${duplicateFrameNames.length - 4} more` : ""}. Matching these screens by name may be ambiguous.`
+      : "";
+    const blankNameMessage = blankFrameNameCount
+      ? `${blankFrameNameCount} screen${blankFrameNameCount === 1 ? " has" : "s have"} no name. Handoff may not match these screens by name across versions.`
       : "";
     const captureWarningMessage = capture.warnings.length
       ? `Capture warnings: ${capture.warnings.join(" ")} Review the Figma-rendered preview and layer data before uploading.`
       : "";
-    const statusMessage = [duplicateNameMessage, captureWarningMessage].filter(Boolean).join(" ")
+    const nameWarningMessage = [blankNameMessage, duplicateNameMessage].filter(Boolean).join(" ");
+    const statusMessage = [
+      nameWarningMessage ? `${nameWarningMessage} You can still upload.` : "",
+      captureWarningMessage,
+    ].filter(Boolean).join(" ")
       || "Review the Figma-rendered preview and layer count, then upload this snapshot.";
-    setStatus(statusMessage, duplicateFrameNames.length || capture.warnings.length ? "warning" : "plain");
+    setStatus(statusMessage, duplicateFrameNames.length || blankFrameNameCount || capture.warnings.length ? "warning" : "plain");
     setBusy(false);
   }).catch((error: unknown) => {
     currentCapture = null;

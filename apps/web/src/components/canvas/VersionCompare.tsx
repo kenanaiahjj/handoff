@@ -4,7 +4,7 @@ import Image from "next/image";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { CSSProperties } from "react";
 import type { SnapshotDiff } from "@/src/server/services/diff";
-import { formatComparisonValue, formatPixelValue } from "./format-captured-measurement";
+import { formatComparisonValue, formatPrecisePixelValue } from "./format-captured-measurement";
 import {
   comparisonCategories,
   comparisonCategoryLabel,
@@ -634,7 +634,7 @@ function PreviewPanel({ label, preview }: { label: string; preview: Preview }) {
         <span>{label}</span>
         {preview ? (
           <span className="flex flex-col items-end font-mono text-[10px] leading-4 text-[#888]">
-            <span>{formatPixelValue(preview.sourceWidth)} × {formatPixelValue(preview.sourceHeight)} {preview.dimensionsSource === "design" ? "design px" : "image px"}</span>
+            <span>{formatPrecisePixelValue(preview.sourceWidth)} × {formatPrecisePixelValue(preview.sourceHeight)} {preview.dimensionsSource === "design" ? "design px" : "image px"}</span>
             {preview.dimensionsSource === "design" && rasterSizeDiffers ? (
               <span>Raster export {preview.width} × {preview.height} px</span>
             ) : null}

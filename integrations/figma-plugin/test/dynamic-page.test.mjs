@@ -218,6 +218,10 @@ test("captures visible Figma layout grids on the root screen and preserves autom
 test("captures exact auto-layout padding and wrap spacing with measured child margins", async () => {
   const fixture = installCaptureFixture();
   Object.assign(fixture.frame, {
+    x: 3,
+    y: 4,
+    width: 100,
+    height: 100,
     layoutMode: "VERTICAL",
     layoutDirection: "VERTICAL",
     layoutWrap: "WRAP",
@@ -233,6 +237,10 @@ test("captures exact auto-layout padding and wrap spacing with measured child ma
     type: "RECTANGLE",
     name: "Card",
     visible: true,
+    x: 14.25,
+    y: 18.125,
+    width: 50.75,
+    height: 42.25,
     absoluteBoundingBox: { x: 24.5, y: 38.25, width: 50.5, height: 41.5 },
     fills: [],
     strokes: [],
@@ -248,6 +256,18 @@ test("captures exact auto-layout padding and wrap spacing with measured child ma
   const result = await captureFigmaCanvas("selected", () => {});
   const [root, capturedChild] = result.payload.frames[0].nodes;
 
+  assert.deepEqual(root.layoutBounds, {
+    x: { value: 3, unit: "px", provenance: "source", sourceProperty: "x" },
+    y: { value: 4, unit: "px", provenance: "source", sourceProperty: "y" },
+    width: { value: 100, unit: "px", provenance: "source", sourceProperty: "width" },
+    height: { value: 100, unit: "px", provenance: "source", sourceProperty: "height" },
+  });
+  assert.deepEqual(capturedChild.layoutBounds, {
+    x: { value: 14.25, unit: "px", provenance: "source", sourceProperty: "x" },
+    y: { value: 18.125, unit: "px", provenance: "source", sourceProperty: "y" },
+    width: { value: 50.75, unit: "px", provenance: "source", sourceProperty: "width" },
+    height: { value: 42.25, unit: "px", provenance: "source", sourceProperty: "height" },
+  });
   assert.deepEqual(root.padding, {
     top: { value: 8.5, unit: "px", provenance: "source", sourceProperty: "paddingTop" },
     right: { value: 12, unit: "px", provenance: "source", sourceProperty: "paddingRight" },
@@ -988,4 +1008,79 @@ test("reads text style segments once and preserves the captured typography", asy
   assert.equal(result.payload.frames[0].nodes[1].typography.fontFamily, "Inter");
   assert.equal(result.payload.frames[0].nodes[1].typography.fontSize.value, 24);
   assert.equal(result.payload.frames[0].nodes[1].typography.content, "A clear heading");
+});
+
+test("uses exact styled text segment metrics for the typography summary", async () => {
+  const fixture = installCaptureFixture();
+  let segmentReadCount = 0;
+  const text = {
+    id: "text-exact-metrics",
+    type: "TEXT",
+    name: "Departures",
+    visible: true,
+    characters: "Departures",
+    fontName: { family: "Inter", style: "Semi Bold" },
+    fontSize: 13,
+    fontWeight: 600,
+    lineHeight: { unit: "PIXELS", value: 20 },
+    letterSpacing: { unit: "PIXELS", value: 0 },
+    textAlignHorizontal: "LEFT",
+    children: [],
+    parent: fixture.frame,
+    getStyledTextSegments() {
+      segmentReadCount += 1;
+      return [{
+        start: 0,
+        end: 10,
+        characters: "Departures",
+        fontName: { family: "Inter", style: "Semi Bold" },
+        fontSize: 13,
+        fontWeight: 600,
+        lineHeight: { unit: "PIXELS", value: 19.5 },
+        letterSpacing: { unit: "PIXELS", value: 0.32499998807907104 },
+      }];
+    },
+  };
+  fixture.frame.children = [text];
+
+  const result = await captureFigmaCanvas("selected", () => {});
+  const typography = result.payload.frames[0].nodes[1].typography;
+
+  assert.equal(segmentReadCount, 1);
+  assert.equal(typography.lineHeight.value, 19.5);
+  assert.equal(typography.lineHeight.unit, "pixels");
+  assert.equal(typography.letterSpacing.value, 0.32499998807907104);
+  assert.equal(typography.letterSpacing.unit, "pixels");
+});
+
+test("marks mixed text-run metrics as mixed instead of using one node-level value", async () => {
+  const fixture = installCaptureFixture();
+  const text = {
+    id: "text-mixed-metrics",
+    type: "TEXT",
+    name: "Mixed headline",
+    visible: true,
+    characters: "Mixed headline",
+    fontName: { family: "Inter", style: "Regular" },
+    fontSize: 16,
+    fontWeight: 400,
+    lineHeight: { unit: "PIXELS", value: 20 },
+    letterSpacing: { unit: "PIXELS", value: 0 },
+    textAlignHorizontal: "LEFT",
+    children: [],
+    parent: fixture.frame,
+    getStyledTextSegments() {
+      return [
+        { start: 0, end: 5, characters: "Mixed", lineHeight: { unit: "PIXELS", value: 19.5 }, letterSpacing: { unit: "PIXELS", value: 0.25 } },
+        { start: 5, end: 14, characters: " headline", lineHeight: { unit: "PIXELS", value: 22 }, letterSpacing: { unit: "PIXELS", value: 0.5 } },
+      ];
+    },
+  };
+  fixture.frame.children = [text];
+
+  const result = await captureFigmaCanvas("selected", () => {});
+  const typography = result.payload.frames[0].nodes[1].typography;
+
+  assert.equal(typography.lineHeight.value, null);
+  assert.equal(typography.letterSpacing.value, null);
 });

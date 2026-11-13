@@ -393,7 +393,6 @@ export async function importSnapshotPackage(bytes: Uint8Array) {
   if (originalSnapshot.source !== "bundle") {
     throw new SnapshotImportError("Package snapshots must use source bundle.", 400);
   }
-
   const originalHash = await hashSnapshotPayload(originalSnapshot);
   if (originalHash !== originalSnapshot.contentHash) {
     throw new SnapshotImportError("snapshot.json content hash does not match its content.", 400);

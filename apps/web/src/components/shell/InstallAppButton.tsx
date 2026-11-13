@@ -109,7 +109,7 @@ export function InstallAppButton({ compact = false }: InstallAppButtonProps) {
     <>
       <button
         aria-label="Install Asbir Handoff"
-        className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-control border border-border px-2.5 text-[11px] text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+        className={"inline-flex shrink-0 items-center gap-1.5 rounded-control border border-border px-2.5 text-[11px] text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + (compact ? "h-11 lg:h-8" : "h-8")}
         onClick={() => void installApp()}
         title="Install Asbir Handoff as an app"
         type="button"

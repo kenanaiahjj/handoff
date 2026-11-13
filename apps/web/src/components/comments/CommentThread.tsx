@@ -3,7 +3,7 @@
 import { useId, useState, type FormEvent } from "react";
 import type { CanvasFrameOption } from "../canvas/FrameNavigator";
 import { overviewCanvasFrameId } from "../canvas/canvas-anchor";
-import type { HandoffComment } from "./CommentPin";
+import type { CommentIdentity, HandoffComment } from "./CommentPin";
 
 export type PendingCommentPoint = {
   frameId: string;
@@ -20,6 +20,8 @@ type CommentThreadProps = {
   error: string | null;
   openCount: number;
   canWrite: boolean;
+  canResolve: boolean;
+  commentIdentity: CommentIdentity | null;
   hasSelectedScreen: boolean;
   showResolvedPins: boolean;
   commentMode: boolean;
@@ -96,6 +98,8 @@ export function CommentThread({
   error,
   openCount,
   canWrite,
+  canResolve,
+  commentIdentity,
   hasSelectedScreen,
   showResolvedPins,
   commentMode,
@@ -126,6 +130,7 @@ export function CommentThread({
         </button> : null}
       </div>
       <p className="mt-1 text-[11px] text-[#969696]">{openCount} open · {roots.length} total</p>
+      {commentIdentity ? <p className="mt-2 rounded-[5px] bg-[#303030] px-2.5 py-2 text-[10px] leading-4 text-[#bcbcbc]">Comments will appear as {commentIdentity.label} · {commentIdentity.role.toUpperCase()}. Anyone with this invite link can post using that label.</p> : null}
 
       <div aria-label="Comment status" className="mt-4 flex gap-1 border-b border-[#3b3b3b]" role="group">
         {(["open", "resolved"] as const).map((tab) => (
@@ -188,7 +193,7 @@ export function CommentThread({
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <button className="flex min-w-0 items-center gap-2 text-left" onClick={() => onSelect(comment.id)} type="button">
                       <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[#414141] font-mono text-[10px] text-white">{index + 1}</span>
-                      <span className="truncate text-[11px] font-medium text-[#e3e3e3]">{comment.authorName}</span>
+                    <span className="truncate text-[11px] font-medium text-[#e3e3e3]">{comment.authorName}{comment.authorRole ? <span className="ml-1 rounded bg-[#3a3a3a] px-1 py-0.5 text-[9px] uppercase tracking-wide text-[#aaa]">{comment.authorRole}</span> : null}</span>
                     </button>
                     <span className="text-[10px] text-[#8c8c8c]">{new Date(comment.createdAt).toLocaleString()}</span>
                   </div>
@@ -197,14 +202,14 @@ export function CommentThread({
                   </button>
                   <p className="ml-7 mt-1.5 text-[10px] text-[#8e8e8e]">{frameName(comment.frameId)}{comment.sourceNodeId ? " · element linked" : ""}</p>
                   <div className="ml-7 mt-2 flex flex-wrap gap-3">
-                    {canWrite ? <button className="min-h-7 text-[10px] text-[#aaa] hover:text-white hover:underline" onClick={() => onResolve(comment.id, !comment.resolvedAt)} type="button">{comment.resolvedAt ? "Reopen" : "Resolve"}</button> : null}
+                    {canResolve ? <button className="min-h-7 text-[10px] text-[#aaa] hover:text-white hover:underline" onClick={() => onResolve(comment.id, !comment.resolvedAt)} type="button">{comment.resolvedAt ? "Reopen" : "Resolve"}</button> : null}
                     <button className="min-h-7 text-[10px] text-[#aaa] hover:text-white hover:underline" onClick={() => onSelect(comment.id)} type="button">Show pin</button>
                   </div>
                   {replies.length ? (
                     <ol className="ml-7 mt-3 space-y-2 border-l border-[#444] pl-3">
                       {replies.map((reply) => (
                         <li key={reply.id}>
-                          <p className="text-[10px] text-[#8e8e8e]"><span className="font-medium text-[#c7c7c7]">{reply.authorName}</span> · {new Date(reply.createdAt).toLocaleString()}</p>
+                          <p className="text-[10px] text-[#8e8e8e]"><span className="font-medium text-[#c7c7c7]">{reply.authorName}{reply.authorRole ? <span className="ml-1 uppercase tracking-wide">{reply.authorRole}</span> : null}</span> · {new Date(reply.createdAt).toLocaleString()}</p>
                           <p className="mt-1 text-[11px] leading-5 text-[#b9b9b9]">{reply.body}</p>
                         </li>
                       ))}

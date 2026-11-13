@@ -19,6 +19,9 @@ export {
   normalizeFigmaCaptureScope,
 } from "./capture-merge";
 export { formatFigmaCaptureScope } from "./figma-capture-scope";
+export { countBlankFrameNames, findDuplicateFrameNames } from "./frame-names";
+export type { DuplicateFrameName } from "./frame-names";
+export { typographyFromTextSegments } from "./text-typography";
 export { MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES } from "./limits";
 export type {
   Bounds,

@@ -6,7 +6,7 @@
   "scripts": {
     "build": "node build.mjs",
     "lint": "tsc --noEmit -p tsconfig.json",
-    "test": "node --experimental-transform-types --test test/*.test.mjs"
+    "test": "node --experimental-transform-types --loader ../../scripts/node-esm-loader.mjs --test test/*.test.mjs"
   },
   "dependencies": {
     "@asbir/snapshot-contract": "0.1.0"

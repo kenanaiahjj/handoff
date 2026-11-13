@@ -192,7 +192,7 @@ test("does not present one-sided selected screens to AI as design additions or r
   assert.deepEqual(evidence.filter((item) => item.kind === "frame"), []);
 });
 
-test("keeps exact diff evidence in the AI input for a 210-screen comparison", () => {
+test("collects complete diff evidence for a 210-screen comparison", () => {
   const evidence = collectChangelogEvidence({
     workspaceId: "workspace-synthetic",
     handoffId: "handoff-synthetic",
@@ -201,6 +201,36 @@ test("keeps exact diff evidence in the AI input for a 210-screen comparison", ()
     rules: noLayoutRules,
   }, () => []);
 
-  assert.ok(evidence.length <= 200);
-  assert.ok(evidence.some((item) => item.kind === "diff" && item.path === "sourcePayload.textSegments[0].characters"));
+  const textChanges = evidence.filter((item) => item.kind === "diff" && item.path === "sourcePayload.textSegments[0].characters");
+  assert.equal(textChanges.length, 210);
+  assert.ok(evidence.length > 200);
+});
+
+test("limits the AI changelog prompt to 200 prioritized evidence items", async () => {
+  let modelEvidence = [];
+  let evidenceCoverage;
+  const draft = await createEvidenceLinkedDraft({
+    workspaceId: "workspace-synthetic",
+    handoffId: "handoff-synthetic",
+    handoffName: "Synthetic checkout",
+    from: { id: "version-before", versionLabel: "Before", snapshot: manyScreenSnapshot("Review") },
+    to: { id: "version-after", versionLabel: "After", snapshot: manyScreenSnapshot("Review your booking") },
+    rules: noLayoutRules,
+  }, {
+    listComments: () => [],
+    generateChangelog: async (input) => {
+      modelEvidence = input.evidence;
+      evidenceCoverage = input.evidenceCoverage;
+      return {
+        model: "Synthetic test model",
+        content: { title: "Updated checkout", summary: "Updated checkout copy.", statements: [] },
+      };
+    },
+  });
+
+  assert.equal(modelEvidence.length, 200);
+  assert.equal(modelEvidence.filter((item) => item.kind === "diff").length, 160);
+  assert.deepEqual(evidenceCoverage, { provided: 200, total: 420 });
+  assert.match(draft.summary, /Evidence coverage: this draft uses 200 of 420 available evidence items/);
+  assert.ok(draft.summary.length <= 2_000);
 });

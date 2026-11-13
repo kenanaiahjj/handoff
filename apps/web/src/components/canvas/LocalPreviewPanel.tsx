@@ -3,6 +3,7 @@
 import Image from "next/image";
 import { useEffect, useMemo, useRef, useState, type FormEvent } from "react";
 import type { CanvasFrameOption } from "./FrameNavigator";
+import { formatPrecisePixelValue } from "./format-captured-measurement";
 
 type PreviewMode = "side-by-side" | "overlay";
 
@@ -176,7 +177,7 @@ export function LocalPreviewPanel({
 
       {frame ? (
         <div className="flex shrink-0 items-center justify-between gap-2">
-          <p className="font-mono text-[9px] text-[#888]">{Math.round(frame.sourceWidth)} × {Math.round(frame.sourceHeight)} px</p>
+          <p className="font-mono text-[9px] text-[#888]">{formatPrecisePixelValue(frame.sourceWidth)} × {formatPrecisePixelValue(frame.sourceHeight)} px</p>
           <button className="min-h-8 rounded-[5px] bg-[#353535] px-2.5 text-[10px] font-medium text-[#eee] hover:bg-[#454545]" onClick={() => onCommentOnScreen(frame.id)} type="button">Comment on this screen</button>
         </div>
       ) : null}

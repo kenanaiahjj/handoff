@@ -1,4 +1,4 @@
-import { formatPixelValue } from "./format-captured-measurement.ts";
+import { formatPrecisePixelValue } from "./format-captured-measurement.ts";
 
 type GridLayoutVisibilityInput = {
   mode: string | null;
@@ -32,8 +32,8 @@ export function capturedGridTracks(value: unknown): CapturedGridTrack[] {
 export function formatGridTrack(track: CapturedGridTrack) {
   if (track.type === "FLEX") return track.value === null ? "Flex" : `${String(track.value)}fr`;
   if (track.type === "HUG") return "Hug";
-  if (track.type === "FIXED") return track.value === null ? "Fixed" : `${formatPixelValue(track.value)}px`;
-  return track.value === null ? track.type : `${formatPixelValue(track.value)}px`;
+  if (track.type === "FIXED") return track.value === null ? "Fixed" : `${formatPrecisePixelValue(track.value)}px`;
+  return track.value === null ? track.type : `${formatPrecisePixelValue(track.value)}px`;
 }
 
 function hasPositiveCount(value: unknown) {

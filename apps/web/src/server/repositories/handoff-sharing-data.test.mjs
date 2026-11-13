@@ -25,9 +25,30 @@ function createDatabase() {
       UNIQUE (id, workspace_id),
       FOREIGN KEY (project_id, workspace_id) REFERENCES project (id, workspace_id) ON DELETE CASCADE
     );
+    CREATE TABLE handoff_version (
+      id TEXT NOT NULL,
+      workspace_id TEXT NOT NULL,
+      UNIQUE (id, workspace_id)
+    );
+    CREATE TABLE handoff_comment (
+      id TEXT PRIMARY KEY,
+      workspace_id TEXT NOT NULL,
+      handoff_version_id TEXT NOT NULL,
+      frame_id TEXT NOT NULL,
+      source_node_id TEXT,
+      x REAL,
+      y REAL,
+      parent_comment_id TEXT,
+      body TEXT NOT NULL,
+      resolved_at TEXT,
+      resolved_by_user_id TEXT,
+      created_by_user_id TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
     CREATE TABLE workspace_membership (workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, PRIMARY KEY (workspace_id, user_id));
   `);
   database.exec(readFileSync(new URL("../migrations/0012_handoff_sharing.sql", import.meta.url), "utf8"));
+  database.exec(readFileSync(new URL("../migrations/0013_invite_roles_and_link_comments.sql", import.meta.url), "utf8"));
   database.prepare('INSERT INTO "user" (id) VALUES (?)').run("designer-1");
   database.prepare("INSERT INTO project (id, workspace_id) VALUES (?, ?)").run("project-1", "workspace-1");
   database.prepare(`INSERT INTO handoff
@@ -46,6 +67,7 @@ test("external invite links are stored by token hash and require no workspace me
     projectId: "project-1",
     handoffId: "handoff-1",
     email: "  QA.Person@Example.com ",
+    role: "qa",
     token: "secret-invite-token",
     expiresAt: "2026-11-16T12:00:00.000Z",
     invitedByUserId: "designer-1",
@@ -55,6 +77,7 @@ test("external invite links are stored by token hash and require no workspace me
   assert.deepEqual(created, {
     id: "invite-1",
     email: "qa.person@example.com",
+    role: "qa",
     reviewShareId: "share-1",
     expiresAt: "2026-11-16T12:00:00.000Z",
     createdAt: "2026-11-09T12:00:00.000Z",
@@ -63,6 +86,7 @@ test("external invite links are stored by token hash and require no workspace me
   assert.notEqual(stored.tokenHash, "secret-invite-token");
   assert.equal(database.prepare("SELECT COUNT(*) AS count FROM workspace_membership").get().count, 0);
   assert.equal(getHandoffInviteByTokenInDatabase(database, "share-1", "secret-invite-token").email, "qa.person@example.com");
+  assert.equal(getHandoffInviteByTokenInDatabase(database, "share-1", "secret-invite-token").role, "qa");
   assert.equal(getHandoffInviteByTokenInDatabase(database, "another-share", "secret-invite-token"), null);
 
   database.close();

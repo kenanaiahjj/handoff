@@ -5,7 +5,8 @@ import type {
   SnapshotNode,
   VisualOnlySnapshot,
 } from "@asbir/snapshot-contract";
-import { formatPixelValue } from "../../lib/format-pixel-value";
+import { typographyFromTextSegments } from "@asbir/snapshot-contract";
+import { formatPrecisePixelValue } from "../../lib/format-pixel-value";
 import { z } from "zod";
 
 function optionalText(maxLength: number) {
@@ -68,6 +69,7 @@ type TaskDesignElement = Pick<
   | "name"
   | "type"
   | "bounds"
+  | "layoutBounds"
   | "layout"
   | "padding"
   | "margins"
@@ -137,6 +139,7 @@ export function resolveTaskDesignContext(
       name: node.name,
       type: node.type,
       bounds: node.bounds,
+      ...(node.layoutBounds ? { layoutBounds: node.layoutBounds } : {}),
       layout: node.layout,
       padding: node.padding,
       margins: node.margins,
@@ -144,7 +147,7 @@ export function resolveTaskDesignContext(
       fills: node.fills,
       strokes: node.strokes,
       styleReferences: node.styleReferences,
-      typography: node.typography,
+      typography: typographyFromTextSegments(node.typography, node.sourcePayload),
       tokens: node.tokens,
     },
   };
@@ -161,7 +164,7 @@ export function taskCanvasHref(handoffUrl: string | null, context: TaskDesignCon
 
 function formatMeasurement(measurement: Measurement | null | undefined) {
   if (!measurement || measurement.value === null) return "unavailable";
-  const value = measurement.unit === "px" ? formatPixelValue(measurement.value) : String(measurement.value);
+  const value = measurement.unit === "px" ? formatPrecisePixelValue(measurement.value) : String(measurement.value);
   return `${value} ${measurement.unit}`;
 }
 
@@ -192,9 +195,16 @@ export function formatTaskDesignContext(
   if (!context.element) return lines.join("\n");
 
   const element = context.element;
+  lines.push(`Element: ${element.name || element.type} (${element.type}; node ID: ${element.sourceNodeId})`);
+  if (element.layoutBounds) {
+    lines.push(
+      `Figma node geometry (x/y relative to parent): x ${formatMeasurement(element.layoutBounds.x)}, y ${formatMeasurement(element.layoutBounds.y)}, width ${formatMeasurement(element.layoutBounds.width)}, height ${formatMeasurement(element.layoutBounds.height)}`,
+      `Canvas bounds: x ${formatMeasurement(element.bounds.x)}, y ${formatMeasurement(element.bounds.y)}, width ${formatMeasurement(element.bounds.width)}, height ${formatMeasurement(element.bounds.height)}`,
+    );
+  } else {
+    lines.push(`Bounds: x ${formatMeasurement(element.bounds.x)}, y ${formatMeasurement(element.bounds.y)}, width ${formatMeasurement(element.bounds.width)}, height ${formatMeasurement(element.bounds.height)}`);
+  }
   lines.push(
-    `Element: ${element.name || element.type} (${element.type}; node ID: ${element.sourceNodeId})`,
-    `Bounds: x ${formatMeasurement(element.bounds.x)}, y ${formatMeasurement(element.bounds.y)}, width ${formatMeasurement(element.bounds.width)}, height ${formatMeasurement(element.bounds.height)}`,
     `Padding: ${formatSides(element.padding)}`,
     `Margins: ${formatSides(element.margins)}`,
     `Spacing: row ${formatMeasurement(element.spacing.rowGap)}, column ${formatMeasurement(element.spacing.columnGap)}, item ${formatMeasurement(element.spacing.itemGap)}`,

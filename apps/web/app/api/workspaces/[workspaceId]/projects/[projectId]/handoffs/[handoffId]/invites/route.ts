@@ -6,6 +6,7 @@ import { requireWorkspaceRoleStrict, WorkspaceAccessError } from "@/src/server/w
 type InvitesRoute = { params: Promise<{ workspaceId: string; projectId: string; handoffId: string }> };
 const inviteSchema = z.object({
   email: z.string().trim().email().max(320),
+  role: z.enum(["pd", "qa", "dev", "exec"]).default("exec"),
   expiresInDays: z.union([
     z.number().int().refine((days) => [1, 7, 15, 30, 90, 365].includes(days)),
     z.null(),
@@ -47,6 +48,7 @@ export async function POST(request: Request, context: InvitesRoute) {
       projectId,
       handoffId,
       email: parsed.data.email,
+      role: parsed.data.role,
       token,
       expiresAt,
       invitedByUserId: access.userId,
