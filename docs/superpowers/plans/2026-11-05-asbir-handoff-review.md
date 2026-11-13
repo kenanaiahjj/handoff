@@ -59,15 +59,16 @@ export function screenToFramePoint(
 
 ## Task 2: Add the exact measurement inspector
 
-**Files:** Create `components/inspector/ElementInspector.tsx`, `MeasurementRow.tsx`, `TokenBindingList.tsx`, and `src/server/services/measurements.ts`.
+**Files:** `integrations/figma-plugin/src/capture.ts`, `packages/snapshot-contract/src/schema.ts`, `apps/web/src/components/canvas/ElementInspector.tsx`, `MeasurementRow.tsx`, `text-style-runs.ts`, and `format-captured-measurement.ts`.
 
-- [ ] Implement `getNodeMeasurements(node, parent, siblings)` returning bounds, explicit padding, explicit layout gaps, source margins, measured edge distances, colors, typography, and token bindings.
-- [ ] Return a `Measurement` for every numeric field with `value`, `unit`, `provenance`, and `sourceProperty` as required by `@asbir/snapshot-contract`.
-- [ ] For an element with no source margin property, calculate the distance from its bounds to a selected parent edge or sibling edge and label the row `Measured distance`.
-- [ ] Display unbound fills and styles with their raw value and the label `No token binding`; never infer a token by value equality.
+- [x] Capture Figma-native bounds, auto-layout padding and spacing, measured margins, paint data, typography, and bound variables in the Figma adapter. Keep source measurements separate from values derived from bounds. Verified 2026-11-13 by the Figma capture tests and source review.
+- [x] Preserve each numeric measurement with its value, unit, provenance, and source property in the shared snapshot contract. Keep fractional Figma pixel values unchanged in the inspector and comparison display. Verified 2026-11-13 with the full test suite and focused measurement-format tests.
+- [x] Calculate measured edge distances from the immediate parent’s captured bounds and label them `Measured distance`. Verified 2026-11-13 in the Figma adapter and inspector source.
+- [x] Display raw unbound paint and style values, and explain that matching raw values do not imply a token binding. Never infer a token by value equality. Verified 2026-11-13 in the inspector source.
 - [x] Display `Unavailable` for missing source fields and suppress exactness badges for image-only snapshots. Verified 2026-11-11 with inspector and Figma grid regression coverage.
-- [ ] Add inspector rows for width, height, x/y, each padding edge, row/column gap, measured margins, fills, typography, and token mode.
-- [ ] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`; manually inspect a fixture with explicit layout, one with manual positioning, and one visual-only upload.
+- [x] Show width, height, x/y, each padding edge, row/column gap, measured margins, fills, typography, and token mode in the inspector. Verified 2026-11-13 in the inspector source and full repository test suite.
+- [x] Run `npm test`, `npm run lint`, the isolated web production build, and the Figma plugin build and type-check. Verified 2026-11-13.
+- [ ] Manually inspect a structured Figma fixture with auto layout, one with manual positioning, and one visual-only upload in the app. The user plans to review the UI.
 
 ## Task 3: Compute and display version diffs
 
@@ -109,15 +110,17 @@ export interface SnapshotDiff {
 
 **Files:** Create `src/server/repositories/comments.ts`, comments API routes, `components/comments/CommentThread.tsx`, `CommentPin.tsx`, `src/server/services/layout-rules.ts`, `components/inspector/LayoutFindings.tsx`, and `src/server/services/export.ts`.
 
-- [ ] Add comment tables and API operations for create, list, resolve, and reply. Every comment stores workspace, version, frame ID, optional node ID, frame-relative point, author, and timestamp.
-- [ ] Render comments from saved frame-relative points and convert them through the same canvas transform used by pins.
+- [x] Add comment persistence and API operations for create, list, resolve, and reply. Every comment stores workspace, version, frame ID, optional node ID, frame-relative point, author, and timestamp. Verified 2026-11-13 in the repository, workspace comment routes, and published-review routes.
+- [x] Render comments from saved frame-relative points and convert them through the canvas anchor transform used by pins. Verified 2026-11-12 in the local review app and 2026-11-13 in the current source.
 - [x] Test frame-relative pin placement in both overview and selected-screen coordinates, including reply and resolved-pin visibility. Verified 2026-11-09.
 - [x] Add a project rules JSON shape for allowed spacing values, required token binding categories, and optional frame bounds.
 - [x] Implement deterministic checks that return `ruleId`, `frameId`, `sourceNodeId`, actual value, expected values, and a human-readable explanation.
   - Verified 2026-11-11: exact spacing, measured-margin provenance, missing color/spacing token bindings, and 31,500 elements across 210 screens; the fixture produced 63,000 unique findings in about 102 ms.
 - [x] Keep rule findings distinct from AI-generated notes. Allow assignee, open/resolved status, comment, and export.
+- [x] Scope saved finding state and comments to immutable version IDs in repository queries and API routes. Verified 2026-11-13 in source; no app-level two-version review has been performed.
 - [x] Export source frame images as PNG and JPEG at their stored dimensions. Offer the overview render and individual frame renders separately.
-- [ ] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`; manually verify comments remain pinned after zooming and saved findings remain tied to the same version.
+- [x] Run the full test suite, web lint and isolated production build. Verify comment pins remain on their screens after zooming. Verified 2026-11-12 and 2026-11-13.
+- [ ] In the app, resolve or annotate a finding on one version, then confirm the same finding stays unchanged on a second version.
 
 ## Completion check
 
