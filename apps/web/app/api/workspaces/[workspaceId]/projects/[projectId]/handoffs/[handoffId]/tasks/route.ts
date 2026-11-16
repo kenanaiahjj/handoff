@@ -5,7 +5,7 @@ import { getProject as getProjectWithRules } from "@/src/server/repositories/pro
 import { getVersion } from "@/src/server/repositories/versions";
 import { linkExternalTaskToHandoff } from "@/src/server/services/link-external-task";
 import { TaskDesignContextError, taskLinkRequestSchema } from "@/src/server/services/task-context";
-import { requireWorkspaceRole, WorkspaceAccessError, workspaceRoles } from "@/src/server/workspace-access";
+import { requireWorkspaceRole, WorkspaceAccessError, workspaceRoles, requireHandoffAccess, } from "@/src/server/workspace-access";
 
 type TasksRoute = { params: Promise<{ workspaceId: string; projectId: string; handoffId: string }> };
 
@@ -36,7 +36,7 @@ const updateAgentLinksSchema = z.object({
 export async function GET(request: Request, context: TasksRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
   try {
-    await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    await requireHandoffAccess(request, { workspaceId, handoffId });
     if (!getHandoff({ workspaceId, projectId, handoffId }) || !getProjectWithRules({ workspaceId, projectId })) {
       return Response.json({ error: "Handoff not found." }, { status: 404 });
     }
@@ -50,7 +50,7 @@ export async function GET(request: Request, context: TasksRoute) {
 export async function POST(request: Request, context: TasksRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
   try {
-    const actor = await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    const actor = await requireHandoffAccess(request, { workspaceId, handoffId });
     const handoff = getHandoff({ workspaceId, projectId, handoffId });
     const projectWithRules = getProjectWithRules({ workspaceId, projectId });
     if (!handoff || !projectWithRules) return Response.json({ error: "Handoff not found." }, { status: 404 });
@@ -82,7 +82,7 @@ export async function POST(request: Request, context: TasksRoute) {
 export async function PATCH(request: Request, context: TasksRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
   try {
-    await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    await requireHandoffAccess(request, { workspaceId, handoffId });
     if (!getHandoff({ workspaceId, projectId, handoffId })) {
       return Response.json({ error: "Handoff not found." }, { status: 404 });
     }

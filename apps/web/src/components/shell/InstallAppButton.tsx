@@ -66,9 +66,6 @@ export function InstallAppButton({ compact = false }: InstallAppButtonProps) {
     window.addEventListener("beforeinstallprompt", onBeforeInstallPrompt as EventListener);
     window.addEventListener("appinstalled", onAppInstalled as EventListener);
     standaloneDisplay.addEventListener("change", updateInstalledState);
-    if ("serviceWorker" in navigator && window.isSecureContext) {
-      void navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => undefined);
-    }
     updateInstalledState();
 
     return () => {

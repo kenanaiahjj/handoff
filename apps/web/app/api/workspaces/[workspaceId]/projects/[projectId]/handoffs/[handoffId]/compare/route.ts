@@ -22,6 +22,7 @@ import {
   requireWorkspaceRole,
   WorkspaceAccessError,
   workspaceRoles,
+  requireHandoffAccess,
 } from "@/src/server/workspace-access";
 
 type CompareRoute = {
@@ -140,7 +141,7 @@ export async function GET(request: Request, context: CompareRoute) {
   }
 
   try {
-    await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    await requireHandoffAccess(request, { workspaceId, handoffId });
     const handoff = getHandoff({ workspaceId, projectId, handoffId });
     if (!handoff) return Response.json({ error: "Handoff not found." }, { status: 404 });
     const fromRow = getVersion({ workspaceId, versionId: fromVersionId });
@@ -182,7 +183,7 @@ export async function POST(request: Request, context: CompareRoute) {
   }
 
   try {
-    const access = await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    const access = await requireHandoffAccess(request, { workspaceId, handoffId, manage: true });
     const handoff = getHandoff({ workspaceId, projectId, handoffId });
     if (!handoff) return Response.json({ error: "Handoff not found." }, { status: 404 });
 

@@ -4,23 +4,26 @@ import { type FormEvent, useState } from "react";
 import { useConfirm } from "@/src/components/ConfirmDialog";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/src/client/auth-client";
+import { clearDeviceCache } from "@/src/client/device-cache";
 
-export function SignOutButton({ hidden = false }: { hidden?: boolean }) {
-  const router = useRouter();
+export function SignOutButton({ devBypass = false }: { devBypass?: boolean }) {
   const [pending, setPending] = useState(false);
-
-  if (hidden) return null;
 
   async function signOut() {
     setPending(true);
-    await authClient.signOut();
-    router.replace("/sign-in");
-    router.refresh();
+    await clearDeviceCache();
+    if (devBypass) {
+      // Development: leave the local bypass for this browser so the real sign-in page shows.
+      await fetch("/api/dev/bypass", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: false }) }).catch(() => undefined);
+    }
+    await authClient.signOut().catch(() => undefined);
+    // A full load drops every cached render from the signed-in session.
+    window.location.replace("/sign-in");
   }
 
   return (
     <button
-      className="h-9 rounded-control border border-border px-3 text-sm text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:opacity-60"
+      className="h-8 shrink-0 rounded-control px-2.5 text-[12px] text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground disabled:opacity-60"
       disabled={pending}
       onClick={signOut}
       type="button"

@@ -6,6 +6,7 @@ import {
   requireWorkspaceRole,
   WorkspaceAccessError,
   workspaceRoles,
+  requireHandoffAccess,
 } from "@/src/server/workspace-access";
 
 type CommentRoute = {
@@ -17,7 +18,7 @@ const resolutionSchema = z.object({ resolved: z.boolean() });
 export async function PATCH(request: Request, context: CommentRoute) {
   const { workspaceId, projectId, handoffId, versionId, commentId } = await context.params;
   try {
-    const access = await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    const access = await requireHandoffAccess(request, { workspaceId, handoffId });
     const handoff = getHandoff({ workspaceId, projectId, handoffId });
     const version = getVersion({ workspaceId, versionId });
     if (!handoff || !version || version.handoffId !== handoffId) {

@@ -7,7 +7,7 @@ import {
   getConfirmedNodeMatchesBetweenVersions,
   getVersion,
 } from "@/src/server/repositories/versions";
-import { requireWorkspaceRole, WorkspaceAccessError, workspaceRoles } from "@/src/server/workspace-access";
+import { requireHandoffAccess, WorkspaceAccessError } from "@/src/server/workspace-access";
 
 const generateSchema = z.object({
   fromVersionId: z.string().uuid(),
@@ -32,7 +32,7 @@ export async function resolveChangelogRequest(
   params: { workspaceId: string; projectId: string; handoffId: string },
 ): Promise<ChangelogRequestResult> {
   const { workspaceId, projectId, handoffId } = params;
-  const actor = await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+  const actor = await requireHandoffAccess(request, { workspaceId, handoffId });
   const handoff = getHandoff({ workspaceId, projectId, handoffId });
   const project = getProject({ workspaceId, projectId });
   if (!handoff || !project) return { ok: false, response: Response.json({ error: "Handoff not found." }, { status: 404 }) };

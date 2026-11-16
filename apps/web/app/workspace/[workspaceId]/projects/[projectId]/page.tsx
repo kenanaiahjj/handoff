@@ -8,7 +8,6 @@ import { listHandoffs } from "@/src/server/repositories/handoffs";
 import { listProjects } from "@/src/server/repositories/projects";
 import { ProjectPdInChargeForm } from "./project-actions";
 import { HandoffSetupForm } from "./handoff-setup-form";
-import { ProjectRulesForm } from "@/src/components/ProjectRulesForm";
 import { DeleteHandoffButton, RenameHandoffButton } from "@/src/components/canvas/HandoffLifecycleActions";
 import { HandoffAccessDialog } from "@/src/components/canvas/HandoffAccessDialog";
 import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
@@ -142,11 +141,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
           ) : null}
         </div>
 
-        {canManageHandoffs ? <details className="workspace-settings-disclosure mt-6 px-4 py-4">
-          <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden"><svg aria-hidden="true" className="size-3.5 shrink-0 text-foreground-subtle transition-transform [[open]>summary>&]:rotate-90" fill="none" viewBox="0 0 16 16"><path d="m6 4 4 4-4 4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>Layout QA rules</summary>
-          <p className="mb-5 mt-2 max-w-2xl text-xs leading-5 text-foreground-muted">Set this project’s spacing scale, token requirements, and frame limits. Handoff applies these rules to each structured snapshot.</p>
-          <ProjectRulesForm workspaceId={workspaceId} projectId={projectId} initialRules={project.rules} />
-        </details> : null}
+        {/* Layout QA rules are hidden for now; ProjectRulesForm and the rules API remain. */}
       </main>
     </WorkspaceShell>
   );

@@ -659,3 +659,230 @@ html[data-splash="seen"] .app-splash {
     animation: none;
   }
 }
+
+/* Sign-in and onboarding: drifting warm light, a faint dot grid that fades out, grain, and a gentle entrance. */
+.auth-shell-glow {
+  overflow: hidden;
+}
+.auth-shell-orb {
+  position: absolute;
+  border-radius: 9999px;
+  will-change: transform, opacity;
+}
+/* One light source at the top center, shining down to the middle of the page. */
+.auth-shell-glow {
+  mask-image: linear-gradient(to bottom, black 0%, black 35%, transparent 80%);
+}
+/* Broad glow spilling from the top edge. */
+.auth-shell-orb-a {
+  left: 50%; top: -45vh;
+  width: 130vw; height: 110vh;
+  margin-left: -65vw;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(255 120 45 / 0.3), rgb(255 110 40 / 0.1) 50%, transparent);
+  transform-origin: 50% 0%;
+}
+/* Light rays fanning down from the source; two layers sway against each other. */
+.auth-shell-orb-b,
+.auth-shell-orb-c {
+  left: 50%; top: -10vh;
+  width: 160vw; height: 120vh;
+  margin-left: -80vw;
+  border-radius: 0;
+  transform-origin: 50% 0%;
+  mask-image: radial-gradient(ellipse 50% 85% at 50% 0%, black, transparent 80%);
+}
+.auth-shell-orb-b {
+  background: conic-gradient(from 180deg at 50% 0%,
+    transparent 150deg, rgb(255 150 70 / 0.1) 160deg, transparent 166deg,
+    rgb(255 130 60 / 0.08) 172deg, transparent 178deg,
+    rgb(255 150 70 / 0.12) 184deg, transparent 190deg,
+    rgb(255 130 60 / 0.07) 197deg, transparent 205deg);
+  filter: blur(14px);
+}
+.auth-shell-orb-c {
+  background: conic-gradient(from 180deg at 50% 0%,
+    transparent 155deg, rgb(255 90 40 / 0.08) 163deg, transparent 170deg,
+    rgb(255 170 90 / 0.08) 180deg, transparent 187deg,
+    rgb(255 90 40 / 0.07) 194deg, transparent 202deg);
+  filter: blur(20px);
+}
+/* Hot core right at the top edge. */
+.auth-shell-orb-d {
+  left: 50%; top: -18vh;
+  width: 50vw; height: 32vh;
+  margin-left: -25vw;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(255 170 90 / 0.35), rgb(255 120 45 / 0.12) 55%, transparent);
+}
+.auth-shell-grid {
+  background-image: radial-gradient(rgb(255 255 255 / 0.07) 1px, transparent 1px);
+  background-size: 22px 22px;
+  mask-image: radial-gradient(ellipse 80% 70% at 50% 45%, black 20%, transparent 85%);
+}
+/* Fine noise breaks up gradient banding. */
+.auth-shell-grain {
+  opacity: 0.05;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+.auth-shell-icon {
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.1),
+    0 8px 24px -6px rgb(255 122 48 / 0.45),
+    0 2px 6px rgb(0 0 0 / 0.4);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .auth-shell-enter {
+    animation: auth-shell-enter 500ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+  .auth-shell-orb-a { animation: auth-light-breathe 9s ease-in-out infinite; }
+  .auth-shell-orb-b { animation: auth-light-sway 16s ease-in-out infinite alternate; }
+  .auth-shell-orb-c { animation: auth-light-sway-reverse 21s ease-in-out infinite alternate; }
+  .auth-shell-orb-d { animation: auth-light-flicker 6s ease-in-out infinite; }
+}
+@keyframes auth-shell-enter {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes auth-light-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.8; }
+  50% { transform: scale(1.08, 1.15); opacity: 1; }
+}
+@keyframes auth-light-sway {
+  0% { transform: rotate(-7deg); opacity: 0.6; }
+  50% { opacity: 1; }
+  100% { transform: rotate(7deg); opacity: 0.75; }
+}
+@keyframes auth-light-sway-reverse {
+  0% { transform: rotate(6deg) scaleY(1.05); opacity: 0.9; }
+  100% { transform: rotate(-8deg) scaleY(0.95); opacity: 0.55; }
+}
+@keyframes auth-light-flicker {
+  0%, 100% { opacity: 0.75; transform: scale(1); }
+  40% { opacity: 1; transform: scale(1.06); }
+  70% { opacity: 0.85; transform: scale(0.98); }
+}
+
+/* Onboarding: a frosted DialKit panel with selectable rows. */
+.onboarding-panel {
+  box-shadow:
+    0 0 0 1px rgb(255 255 255 / 0.04) inset,
+    0 24px 60px -20px rgb(0 0 0 / 0.7),
+    0 2px 8px rgb(0 0 0 / 0.35);
+}
+.onboarding-row {
+  background: transparent;
+  transition: background-color 140ms ease, box-shadow 140ms ease;
+}
+.onboarding-row:hover {
+  background: var(--surface-inset);
+}
+.onboarding-row[data-selected] {
+  background: var(--surface-muted);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
+}
+.onboarding-kbd {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  border-radius: 5px;
+  border: 1px solid var(--border);
+  background: var(--surface-inset);
+  padding: 0 4px;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 10px;
+  color: var(--foreground-subtle);
+}
+.onboarding-row-key {
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.onboarding-row:hover .onboarding-row-key,
+.onboarding-row:focus-visible .onboarding-row-key {
+  opacity: 1;
+}
+.onboarding-row[data-selected] .onboarding-row-key {
+  display: none;
+}
+.onboarding-check {
+  border: 1px solid var(--border-strong);
+  color: transparent;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.onboarding-row[data-selected] .onboarding-check {
+  border-color: var(--foreground);
+  background: var(--foreground);
+  color: var(--background);
+  transform: scale(1.08);
+}
+.onboarding-continue {
+  background: var(--surface-inset);
+  color: var(--foreground-subtle);
+  border: 1px solid var(--border);
+  transition: background-color 200ms ease, color 200ms ease, transform 120ms ease, box-shadow 200ms ease;
+}
+.onboarding-continue[data-ready] {
+  background: #f4f4f4;
+  color: #161616;
+  border-color: transparent;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -8px rgb(255 255 255 / 0.25);
+}
+.onboarding-continue[data-ready]:hover:not(:disabled) {
+  background: #fff;
+}
+.onboarding-continue[data-ready]:active:not(:disabled) {
+  transform: scale(0.985);
+}
+.onboarding-continue:disabled:not([data-ready]) {
+  cursor: not-allowed;
+}
+
+/* Viewer home: app-like list for reviewers. */
+.viewer-home-bar {
+  background: color-mix(in srgb, var(--background) 82%, transparent);
+  backdrop-filter: blur(16px) saturate(1.4);
+  -webkit-backdrop-filter: blur(16px) saturate(1.4);
+}
+.viewer-dot {
+  position: relative;
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 9999px;
+  background: #ff8a3d;
+  box-shadow: 0 0 0 3px rgb(255 138 61 / 0.18);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .viewer-dot::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    animation: viewer-dot-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+  }
+}
+@keyframes viewer-dot-ping {
+  70%, 100% { transform: scale(2.6); opacity: 0; }
+}
+.viewer-count {
+  border-radius: 9999px;
+  background: rgb(255 138 61 / 0.14);
+  padding: 1px 7px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #ffa264;
+}
+.viewer-tile {
+  transition: border-color 160ms ease, transform 160ms ease, box-shadow 200ms ease;
+}
+.viewer-tile:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 12px 32px -16px rgb(0 0 0 / 0.8);
+}
+.viewer-tile:active {
+  transform: scale(0.99);
+}

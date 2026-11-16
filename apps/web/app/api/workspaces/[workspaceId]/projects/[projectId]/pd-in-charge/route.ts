@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { assignProjectPdInCharge, getProject, listProjectPdCandidates } from "@/src/server/repositories/projects";
-import { requireWorkspaceRole, WorkspaceAccessError, workspaceRoles } from "@/src/server/workspace-access";
+import { managerRoles, requireWorkspaceRole, WorkspaceAccessError } from "@/src/server/workspace-access";
 
 type ProjectPdInChargeRoute = RouteContext<"/api/workspaces/[workspaceId]/projects/[projectId]/pd-in-charge">;
 
@@ -9,7 +9,7 @@ const assignmentSchema = z.object({ pdInChargeUserId: z.string().uuid().nullable
 export async function PATCH(request: Request, context: ProjectPdInChargeRoute) {
   const { workspaceId, projectId } = await context.params;
   try {
-    await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    await requireWorkspaceRole(request, workspaceId, managerRoles);
     if (!getProject({ workspaceId, projectId })) {
       return Response.json({ error: "Project not found." }, { status: 404 });
     }

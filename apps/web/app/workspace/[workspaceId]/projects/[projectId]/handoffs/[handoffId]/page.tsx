@@ -187,7 +187,8 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
         publishedVersionId={handoff.publishedVersionId}
         canManageIntegrations={true}
         canManageSharing={canManageHandoffs}
-        canAnnotate={true}
+        canAnnotate={canManageHandoffs}
+        canComment
         canUseLocalPreview={true}
         dockPanels={dockPanels}
       />

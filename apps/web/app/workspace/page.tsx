@@ -3,7 +3,14 @@ import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { getSessionForHeaders } from "@/src/server/auth-session";
 import { getDatabase } from "@/src/server/db";
+import { needsOnboarding } from "@/src/server/services/onboarding";
+import { listViewerHomeAcrossWorkspaces } from "@/src/server/services/review-visibility";
+import { ViewerHome } from "@/src/components/shell/ViewerHome";
+import { ViewAsSwitcher } from "@/src/components/shell/ViewAsSwitcher";
+import { isDevelopmentAuthBypassActive, localReviewerUser } from "@/src/server/auth-session";
+import { listSuperadmins, syncSuperadminAccess } from "@/src/server/services/superadmins";
 import { CreateWorkspaceForm } from "./workspace-actions";
+import { SuperadminsPanel } from "./superadmins-panel";
 import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
 
 export const instant = false;
@@ -18,6 +25,8 @@ type WorkspaceRow = {
 export default async function WorkspaceHomePage() {
   const session = await getSessionForHeaders(await headers());
   if (!session) redirect("/sign-in");
+  const superadmin = syncSuperadminAccess(session.user);
+  if (needsOnboarding(session.user.id)) redirect("/onboarding");
 
   const workspaces = getDatabase()
     .prepare(
@@ -29,6 +38,22 @@ export default async function WorkspaceHomePage() {
        ORDER BY workspace.created_at DESC`,
     )
     .all(session.user.id) as WorkspaceRow[];
+
+  // People who only review get one app-like home across all their workspaces; the workspace list is a manager's tool.
+  if (workspaces.length && !workspaces.some((workspace) => workspace.role === "owner" || workspace.role === "designer")) {
+    const devBypass = await isDevelopmentAuthBypassActive();
+    return (
+      <ViewerHome
+        devTools={devBypass ? <ViewAsSwitcher current={session.user.email === localReviewerUser.email ? "reviewer" : "owner"} workspaceId={workspaces[0].id} /> : null}
+        homeHref="/workspace"
+        projects={listViewerHomeAcrossWorkspaces(session.user, workspaces)}
+        devBypass={devBypass}
+        showWorkspaceNames={workspaces.length > 1}
+        title={workspaces.length === 1 ? workspaces[0].name : "Asbir Handoff"}
+        user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
+      />
+    );
+  }
 
   const workspaceChoices = workspaces as WorkspaceChoice[];
 
@@ -84,6 +109,15 @@ export default async function WorkspaceHomePage() {
             <p className="mb-4 mt-4 text-[12px] leading-5 text-foreground-muted">Start a team space for a product or project, then invite the people who review and build it.</p>
             <CreateWorkspaceForm />
           </section>
+
+          {superadmin ? (
+            <section aria-labelledby="superadmins-title" className="workspace-pane p-5 sm:p-6 xl:col-start-2">
+              <div className="workspace-pane-heading">
+                <h2 className="text-[14px] font-semibold text-foreground" id="superadmins-title">Super admins</h2>
+              </div>
+              <div className="mt-4"><SuperadminsPanel currentEmail={session.user.email} initial={listSuperadmins()} /></div>
+            </section>
+          ) : null}
         </div>
       </main>
     </WorkspaceShell>

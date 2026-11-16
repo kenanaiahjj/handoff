@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { visibleHandoffIds } from "@/src/server/services/review-visibility";
 import { getDatabase } from "@/src/server/db";
 import { listHandoffs } from "@/src/server/repositories/handoffs";
 import { createHandoffVersion } from "@/src/server/repositories/versions";
@@ -55,12 +56,10 @@ async function parseVersionUpload(request: Request) {
 export async function GET(request: Request, context: HandoffRoute) {
   const { workspaceId, projectId } = await context.params;
   try {
-    await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
-    const project = getDatabase()
-      .prepare("SELECT 1 FROM project WHERE id = ? AND workspace_id = ?")
-      .get(projectId, workspaceId);
-    if (!project) return Response.json({ error: "Project not found." }, { status: 404 });
-    return Response.json({ handoffs: listHandoffs({ workspaceId, projectId }) });
+    const access = await requireProjectMember(request, workspaceId, projectId);
+    const visible = visibleHandoffIds(workspaceId, { id: access.userId, email: access.email, role: access.role });
+    const handoffs = listHandoffs({ workspaceId, projectId }) as Array<{ id: string }>;
+    return Response.json({ handoffs: visible ? handoffs.filter((handoff) => visible.has(handoff.id)) : handoffs });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       return Response.json({ error: error.message }, { status: error.status });
@@ -73,7 +72,7 @@ export async function POST(request: Request, context: HandoffRoute) {
   const { workspaceId, projectId } = await context.params;
 
   try {
-    const access = await requireProjectMember(request, workspaceId, projectId);
+    const access = await requireProjectMember(request, workspaceId, projectId, { manage: true });
     const project = getDatabase()
       .prepare("SELECT 1 FROM project WHERE id = ? AND workspace_id = ?")
       .get(projectId, workspaceId);

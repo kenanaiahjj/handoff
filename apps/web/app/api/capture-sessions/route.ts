@@ -2,7 +2,7 @@ import { z } from "zod";
 import { createCaptureSession } from "@/src/server/repositories/capture-sessions";
 import { getHandoff } from "@/src/server/repositories/handoffs";
 import { getDatabase } from "@/src/server/db";
-import { requireWorkspaceRole, WorkspaceAccessError, workspaceRoles } from "@/src/server/workspace-access";
+import { managerRoles, requireWorkspaceRole, WorkspaceAccessError } from "@/src/server/workspace-access";
 
 const sessionSchema = z.object({
   workspaceId: z.string().uuid(),
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
   const parsed = sessionSchema.safeParse(body);
   if (!parsed.success) return Response.json({ error: "Check the handoff name, version, and project." }, { status: 400 });
   try {
-    access = await requireWorkspaceRole(request, parsed.data.workspaceId, [...workspaceRoles]);
+    access = await requireWorkspaceRole(request, parsed.data.workspaceId, managerRoles);
     const project = getDatabase()
       .prepare("SELECT 1 FROM project WHERE id = ? AND workspace_id = ?")
       .get(parsed.data.projectId, parsed.data.workspaceId);

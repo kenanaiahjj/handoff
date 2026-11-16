@@ -7,7 +7,10 @@ import { CreateInviteForm } from "../workspace-actions";
 import { ProjectsPane, type ProjectCard } from "./projects-pane";
 import Link from "next/link";
 import { NewVersionBadge } from "@/src/components/shell/NewVersionBadge";
-import { canSeeWholeWorkspace, countUpdatesByProject, filterProjectsForViewer, listViewerUpdates } from "@/src/server/services/review-visibility";
+import { canSeeWholeWorkspace, countUpdatesByProject, filterProjectsForViewer, listViewerHome, listViewerUpdates } from "@/src/server/services/review-visibility";
+import { ViewerHome } from "@/src/components/shell/ViewerHome";
+import { ViewAsSwitcher } from "@/src/components/shell/ViewAsSwitcher";
+import { isDevelopmentAuthBypassActive, localReviewerUser } from "@/src/server/auth-session";
 import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 
@@ -48,6 +51,21 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
 
   const viewer = { id: session.user.id, email: session.user.email, role: workspace.role };
   const canManage = canSeeWholeWorkspace(workspace.role);
+
+  // People who review rather than manage get a calm, app-like home instead of the dashboard.
+  if (!canManage) {
+    const devBypass = await isDevelopmentAuthBypassActive();
+    return (
+      <ViewerHome
+        devTools={devBypass ? <ViewAsSwitcher current={session.user.email === localReviewerUser.email ? "reviewer" : "owner"} workspaceId={workspace.id} /> : null}
+        projects={listViewerHome(workspace.id, viewer)}
+        devBypass={devBypass}
+        user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
+        homeHref={`/workspace/${workspace.id}`}
+        title={workspace.name}
+      />
+    );
+  }
   const projects = filterProjectsForViewer(workspace.id, viewer, listProjects(workspace.id) as ProjectCard[]);
   const updates = listViewerUpdates(workspace.id, viewer);
   const invites = getDatabase()

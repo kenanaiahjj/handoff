@@ -2,8 +2,7 @@ import { z } from "zod";
 import { createSnapshotEnvelope, removeFramesFromSnapshot, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { getHandoff, listHandoffVersions } from "@/src/server/repositories/handoffs";
 import { createHandoffVersion, getVersion, HandoffVersionConflictError, type VersionAssetInput } from "@/src/server/repositories/versions";
-import { canSeeWholeWorkspace } from "@/src/server/services/review-visibility";
-import { requireWorkspaceRole, WorkspaceAccessError, workspaceRoles } from "@/src/server/workspace-access";
+import { requireHandoffAccess, WorkspaceAccessError } from "@/src/server/workspace-access";
 
 type RemoveScreensRoute = {
   params: Promise<{ workspaceId: string; projectId: string; handoffId: string }>;
@@ -29,10 +28,7 @@ function defaultReleaseNote(names: string[]) {
 export async function POST(request: Request, context: RemoveScreensRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
   try {
-    const actor = await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
-    if (!canSeeWholeWorkspace(actor.role)) {
-      return Response.json({ error: "Only owners and designers can remove screens." }, { status: 403 });
-    }
+    const actor = await requireHandoffAccess(request, { workspaceId, handoffId, manage: true });
     const handoff = getHandoff({ workspaceId, projectId, handoffId });
     if (!handoff) return Response.json({ error: "Handoff not found." }, { status: 404 });
 

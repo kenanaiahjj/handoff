@@ -12,7 +12,7 @@ type ProjectRulesRoute = {
 export async function PATCH(request: Request, context: ProjectRulesRoute) {
   const { workspaceId, projectId } = await context.params;
   try {
-    await requireProjectMember(request, workspaceId, projectId);
+    await requireProjectMember(request, workspaceId, projectId, { manage: true });
     if (!getProject({ workspaceId, projectId })) {
       return Response.json({ error: "Project not found." }, { status: 404 });
     }

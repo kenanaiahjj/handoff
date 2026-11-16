@@ -1,6 +1,8 @@
 import { z } from "zod";
+import { filterProjectsForViewer } from "@/src/server/services/review-visibility";
 import { createProject, listProjects } from "@/src/server/repositories/projects";
 import {
+  managerRoles,
   requireWorkspaceRole,
   WorkspaceAccessError,
   workspaceRoles,
@@ -17,8 +19,13 @@ export async function GET(
   const { workspaceId } = await context.params;
 
   try {
-    await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
-    return Response.json({ projects: listProjects(workspaceId) });
+    const access = await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    const projects = filterProjectsForViewer(
+      workspaceId,
+      { id: access.userId, email: access.email, role: access.role },
+      listProjects(workspaceId) as Array<{ id: string; handoffCount: number; versionCount: number }>,
+    );
+    return Response.json({ projects });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       return Response.json({ error: error.message }, { status: error.status });
@@ -34,7 +41,7 @@ export async function POST(
   const { workspaceId } = await context.params;
 
   try {
-    const access = await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    const access = await requireWorkspaceRole(request, workspaceId, managerRoles);
     const parsed = createProjectSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       return Response.json({ error: "Enter a project name under 80 characters." }, { status: 400 });

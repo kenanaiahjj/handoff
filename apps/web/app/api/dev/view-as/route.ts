@@ -12,7 +12,7 @@ const bodySchema = z.object({
  * seeded reviewer, so both views can be checked without real sign-in. Disabled in production.
  */
 export async function POST(request: Request) {
-  if (!isDevelopmentAuthBypassEnabled()) return Response.json({ error: "Not found." }, { status: 404 });
+  if (!isDevelopmentAuthBypassEnabled(request.headers)) return Response.json({ error: "Not found." }, { status: 404 });
 
   const parsed = bodySchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Choose a view and workspace." }, { status: 400 });

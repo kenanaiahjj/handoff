@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { getAssetByObjectKey } from "@/src/server/repositories/versions";
 import { objectStore } from "@/src/server/storage/local-object-store";
+import { assetEtag, immutableAssetCacheControl, notModifiedResponse } from "@/src/server/services/asset-caching";
 import { getVisiblePublishedReviewVersion, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
 
 type ReviewAssetRoute = { params: Promise<{ shareId: string; assetKey: string }> };
@@ -22,6 +23,9 @@ export async function GET(request: Request, context: ReviewAssetRoute) {
     return Response.json({ error: "Asset not found." }, { status: 404 });
   }
 
+  const unchanged = notModifiedResponse(request, asset.sha256);
+  if (unchanged) return unchanged;
+
   const stored = await objectStore.get(asset.objectKey);
   if (!stored) return Response.json({ error: "Asset not found." }, { status: 404 });
   const checksum = createHash("sha256").update(stored.bytes).digest("hex");
@@ -34,7 +38,8 @@ export async function GET(request: Request, context: ReviewAssetRoute) {
   const safeFileName = encodeURIComponent(asset.fileName.replace(/[\r\n"\\]/g, "_"));
   return new Response(stored.bytes, {
     headers: {
-      "Cache-Control": "private, no-store",
+      "Cache-Control": immutableAssetCacheControl,
+      ETag: assetEtag(asset.sha256),
       "Content-Disposition": `${isImage && !download ? "inline" : "attachment"}; filename*=UTF-8''${safeFileName}`,
       "Content-Length": String(asset.sizeBytes),
       "Content-Type": asset.contentType,

@@ -13,8 +13,32 @@ type DatabaseUser = {
   updatedAt: string;
 };
 
-export function isDevelopmentAuthBypassEnabled() {
+/** Set by "Sign out" in development so this browser uses real sign-in while the bypass is on. */
+export const bypassOffCookieName = "asbir_bypass_off";
+
+function hasBypassOffCookie(cookieHeader: string | null) {
+  return (cookieHeader ?? "").split(/;\s*/).includes(`${bypassOffCookieName}=1`);
+}
+
+/** Whether ASBIR_AUTH_BYPASS is configured at all (development only). */
+export function isDevelopmentAuthBypassConfigured() {
   return process.env.NODE_ENV === "development" && process.env.ASBIR_AUTH_BYPASS === "1";
+}
+
+/**
+ * Whether this request uses the local bypass account. Pass the request headers; without them only
+ * the configuration is checked. A browser that signed out has opted back into real sign-in.
+ */
+export function isDevelopmentAuthBypassEnabled(headers?: Headers) {
+  if (!isDevelopmentAuthBypassConfigured()) return false;
+  return !headers || !hasBypassOffCookie(headers.get("cookie"));
+}
+
+/** For server components: reads this request's cookies. */
+export async function isDevelopmentAuthBypassActive() {
+  if (!isDevelopmentAuthBypassConfigured()) return false;
+  const { headers } = await import("next/headers");
+  return isDevelopmentAuthBypassEnabled(await headers());
 }
 
 export const viewAsCookieName = "asbir_view_as";
@@ -78,7 +102,7 @@ function getLocalTestSession(headers: Headers): AuthSession {
 }
 
 export async function getSessionForHeaders(headers: Headers) {
-  if (isDevelopmentAuthBypassEnabled()) {
+  if (isDevelopmentAuthBypassEnabled(headers)) {
     // The bypass session is built from the clock, so mark the render as request-time.
     await connection();
     return getLocalTestSession(headers);

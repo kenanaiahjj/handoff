@@ -35,7 +35,7 @@ export async function POST(request: Request, context: VersionRoute) {
       )
       .get(handoffId, workspaceId) as { projectId: string } | undefined;
     if (!handoff) return Response.json({ error: "Handoff not found." }, { status: 404 });
-    const access = await requireProjectMember(request, workspaceId, handoff.projectId);
+    const access = await requireProjectMember(request, workspaceId, handoff.projectId, { manage: true });
 
     const form = await parseUploadForm(request);
     const parsedDetails = versionDetailsSchema.safeParse({

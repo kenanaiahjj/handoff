@@ -7,6 +7,7 @@ import {
   requireWorkspaceRole,
   WorkspaceAccessError,
   workspaceRoles,
+  requireHandoffAccess,
 } from "@/src/server/workspace-access";
 
 type ChangelogRoute = {
@@ -16,7 +17,7 @@ type ChangelogRoute = {
 export async function GET(request: Request, context: ChangelogRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
   try {
-    await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    await requireHandoffAccess(request, { workspaceId, handoffId });
     const handoff = getHandoff({ workspaceId, projectId, handoffId });
     if (!handoff) return Response.json({ error: "Handoff not found." }, { status: 404 });
 

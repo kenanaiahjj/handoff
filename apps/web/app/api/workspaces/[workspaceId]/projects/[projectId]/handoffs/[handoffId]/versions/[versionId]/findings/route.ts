@@ -14,6 +14,7 @@ import {
   requireWorkspaceRole,
   WorkspaceAccessError,
   workspaceRoles,
+  requireHandoffAccess,
 } from "@/src/server/workspace-access";
 
 type FindingsRoute = {
@@ -32,7 +33,7 @@ const createFindingCommentSchema = z.object({
 
 async function loadFindingContext(request: Request, context: FindingsRoute) {
   const ids = await context.params;
-  const access = await requireWorkspaceRole(request, ids.workspaceId, [...workspaceRoles]);
+  const access = await requireHandoffAccess(request, { workspaceId: ids.workspaceId, handoffId: ids.handoffId });
   const handoff = getHandoff({ workspaceId: ids.workspaceId, projectId: ids.projectId, handoffId: ids.handoffId });
   const project = getProject({ workspaceId: ids.workspaceId, projectId: ids.projectId });
   const version = getVersion({ workspaceId: ids.workspaceId, versionId: ids.versionId });

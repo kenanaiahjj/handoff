@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { SignOutButton } from "@/app/workspace/workspace-actions";
-import { isDevelopmentAuthBypassEnabled, localReviewerUser } from "@/src/server/auth-session";
+import { isDevelopmentAuthBypassActive, localReviewerUser } from "@/src/server/auth-session";
 import { ViewAsSwitcher } from "./ViewAsSwitcher";
 import { InstallAppButton } from "./InstallAppButton";
 import { BrandMark } from "./BrandMark";
@@ -128,7 +128,8 @@ function WorkspacePicker({ workspace, workspaces = [] }: { workspace?: Workspace
   );
 }
 
-function SidebarContents({ user, workspace, workspaces, navSections }: Omit<WorkspaceShellProps, "breadcrumbs" | "children" | "headerActions" | "contentClassName">) {
+async function SidebarContents({ user, workspace, workspaces, navSections }: Omit<WorkspaceShellProps, "breadcrumbs" | "children" | "headerActions" | "contentClassName">) {
+  const devBypass = await isDevelopmentAuthBypassActive();
   return (
     <>
       <Link aria-label="Asbir Handoff home" className="flex h-12 items-center gap-2 border-b border-border px-4" href="/workspace">
@@ -140,7 +141,7 @@ function SidebarContents({ user, workspace, workspaces, navSections }: Omit<Work
       <nav aria-label="Workspace navigation" className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         <NavigationSections sections={navSections} />
       </nav>
-      {isDevelopmentAuthBypassEnabled() && (workspace?.id ?? workspaces?.[0]?.id) ? (
+      {devBypass && (workspace?.id ?? workspaces?.[0]?.id) ? (
         <ViewAsSwitcher
           current={user.email === localReviewerUser.email ? "reviewer" : "owner"}
           workspaceId={(workspace?.id ?? workspaces?.[0]?.id)!}
@@ -153,7 +154,7 @@ function SidebarContents({ user, workspace, workspaces, navSections }: Omit<Work
             <span className="block truncate text-xs font-medium text-foreground">{user.name}</span>
             <span className="block truncate text-[10px] text-foreground-subtle">{user.email}</span>
           </span>
-          <SignOutButton hidden={isDevelopmentAuthBypassEnabled()} />
+          <SignOutButton devBypass={devBypass} />
         </div>
       </div>
     </>

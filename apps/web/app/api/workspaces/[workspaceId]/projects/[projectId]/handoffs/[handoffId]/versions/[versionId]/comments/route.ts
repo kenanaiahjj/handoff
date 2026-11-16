@@ -9,6 +9,7 @@ import {
   requireWorkspaceRole,
   WorkspaceAccessError,
   workspaceRoles,
+  requireHandoffAccess,
 } from "@/src/server/workspace-access";
 
 type CommentsRoute = {
@@ -83,7 +84,7 @@ function snapshotAnchor(snapshot: StoredSnapshot, input: {
 export async function GET(request: Request, context: CommentsRoute) {
   const { workspaceId, projectId, handoffId, versionId } = await context.params;
   try {
-    await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    await requireHandoffAccess(request, { workspaceId, handoffId });
     const handoff = getHandoff({ workspaceId, projectId, handoffId });
     const version = getVersion({ workspaceId, versionId });
     if (!handoff || !version || version.handoffId !== handoffId) {
@@ -99,7 +100,7 @@ export async function GET(request: Request, context: CommentsRoute) {
 export async function POST(request: Request, context: CommentsRoute) {
   const { workspaceId, projectId, handoffId, versionId } = await context.params;
   try {
-    const access = await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    const access = await requireHandoffAccess(request, { workspaceId, handoffId });
     const handoff = getHandoff({ workspaceId, projectId, handoffId });
     const version = getVersion({ workspaceId, versionId });
     if (!handoff || !version || version.handoffId !== handoffId) {

@@ -6,6 +6,7 @@ import {
   requireWorkspaceRole,
   WorkspaceAccessError,
   workspaceRoles,
+  requireHandoffAccess,
 } from "@/src/server/workspace-access";
 import { requireProjectMember } from "@/src/server/workspace-access";
 
@@ -23,7 +24,7 @@ const updateSchema = z.object({
 export async function PATCH(request: Request, context: DraftRoute) {
   const { workspaceId, projectId, handoffId, draftId } = await context.params;
   try {
-    await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    await requireHandoffAccess(request, { workspaceId, handoffId });
     if (!getHandoff({ workspaceId, projectId, handoffId })) {
       return Response.json({ error: "Handoff not found." }, { status: 404 });
     }

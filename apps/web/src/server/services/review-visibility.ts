@@ -151,3 +151,105 @@ export function countUpdatesByProject(updates: ViewerUpdate[]) {
   for (const update of updates) counts[update.projectId] = (counts[update.projectId] ?? 0) + 1;
   return counts;
 }
+
+export type ViewerHandoff = {
+  handoffId: string;
+  handoffName: string;
+  versionLabel: string | null;
+  updatedAt: string;
+  isNew: boolean;
+  previewUrl: string | null;
+};
+
+export type ViewerProject = {
+  workspaceId: string;
+  workspaceName: string;
+  projectId: string;
+  projectName: string;
+  handoffs: ViewerHandoff[];
+  newCount: number;
+  updatedAt: string;
+};
+
+/**
+ * Everything a reviewer can open, grouped by project: each handoff's newest version, whether it is
+ * news to them, and a preview (the first regular screen in that version).
+ * Projects with news come first, then the most recently updated.
+ */
+export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProject[] {
+  const visible = visibleHandoffIds(workspaceId, viewer);
+  const rows = getDatabase()
+    .prepare(
+      `SELECT workspace.name AS workspaceName, project.id AS projectId, project.name AS projectName,
+              handoff.id AS handoffId, handoff.name AS handoffName, handoff.created_at AS handoffCreatedAt,
+              latest.id AS versionId, latest.version_label AS versionLabel, latest.created_at AS versionCreatedAt,
+              latest.created_by_user_id AS createdBy,
+              handoff_view.last_seen_version_id AS seenVersionId,
+              (SELECT object_key FROM handoff_asset
+                 WHERE handoff_asset.handoff_version_id = latest.id AND handoff_asset.content_type LIKE 'image/%'
+                 ORDER BY
+                   -- Screen renders ("…frame-NNN-…") first, then the canvas overview as a fallback.
+                   instr(handoff_asset.asset_key, 'frame-') = 0,
+                   -- Skip very long scrolling screens; they make poor thumbnails.
+                   COALESCE(handoff_asset.height, 0) > COALESCE(handoff_asset.width, 1) * 2.4,
+                   -- The earliest screen in the file.
+                   CAST(substr(handoff_asset.asset_key, instr(handoff_asset.asset_key, 'frame-') + 6, 4) AS INTEGER),
+                   COALESCE(handoff_asset.width, 0) * COALESCE(handoff_asset.height, 0) DESC
+                 LIMIT 1) AS previewKey
+       FROM handoff
+       JOIN project ON project.id = handoff.project_id AND project.workspace_id = handoff.workspace_id
+       JOIN workspace ON workspace.id = handoff.workspace_id
+       LEFT JOIN handoff_version AS latest ON latest.id = (
+         SELECT id FROM handoff_version
+         WHERE handoff_version.handoff_id = handoff.id
+         ORDER BY created_at DESC, id DESC LIMIT 1
+       )
+       LEFT JOIN handoff_view ON handoff_view.handoff_id = handoff.id AND handoff_view.user_id = ?
+       WHERE handoff.workspace_id = ?`,
+    )
+    .all(viewer.id, workspaceId) as Array<{
+      workspaceName: string;
+      projectId: string;
+      projectName: string;
+      handoffId: string;
+      handoffName: string;
+      handoffCreatedAt: string;
+      versionId: string | null;
+      versionLabel: string | null;
+      versionCreatedAt: string | null;
+      createdBy: string | null;
+      seenVersionId: string | null;
+      previewKey: string | null;
+    }>;
+
+  const projects = new Map<string, ViewerProject>();
+  for (const row of rows) {
+    if (visible && !visible.has(row.handoffId)) continue;
+    const handoff: ViewerHandoff = {
+      handoffId: row.handoffId,
+      handoffName: row.handoffName,
+      versionLabel: row.versionLabel,
+      updatedAt: row.versionCreatedAt ?? row.handoffCreatedAt,
+      isNew: Boolean(row.versionId) && row.versionId !== row.seenVersionId && row.createdBy !== viewer.id,
+      previewUrl: row.previewKey ? `/api/assets/${encodeURIComponent(row.previewKey)}` : null,
+    };
+    const project = projects.get(row.projectId) ?? { workspaceId, workspaceName: row.workspaceName, projectId: row.projectId, projectName: row.projectName, handoffs: [], newCount: 0, updatedAt: handoff.updatedAt };
+    project.handoffs.push(handoff);
+    if (handoff.isNew) project.newCount += 1;
+    if (handoff.updatedAt > project.updatedAt) project.updatedAt = handoff.updatedAt;
+    projects.set(row.projectId, project);
+  }
+
+  const byNewsThenRecent = <T extends { updatedAt: string }>(news: (item: T) => number) => (a: T, b: T) =>
+    news(b) - news(a) || b.updatedAt.localeCompare(a.updatedAt);
+  return [...projects.values()]
+    .map((project) => ({ ...project, handoffs: project.handoffs.sort(byNewsThenRecent((handoff) => Number(handoff.isNew))) }))
+    .sort(byNewsThenRecent((project) => Math.min(project.newCount, 1)));
+}
+
+/** One combined home across every workspace this person belongs to, projects with news first. */
+export function listViewerHomeAcrossWorkspaces(viewer: { id: string; email: string }, memberships: Array<{ id: string; role: string }>) {
+  return memberships
+    .flatMap((membership) => listViewerHome(membership.id, { ...viewer, role: membership.role }))
+    .sort((a, b) => Math.min(b.newCount, 1) - Math.min(a.newCount, 1) || b.updatedAt.localeCompare(a.updatedAt));
+}

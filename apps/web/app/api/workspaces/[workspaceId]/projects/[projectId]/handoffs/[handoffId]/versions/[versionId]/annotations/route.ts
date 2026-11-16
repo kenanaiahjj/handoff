@@ -3,7 +3,7 @@ import { isStructuredSnapshot } from "@/src/server/services/diff";
 import { createHandoffAnnotation, listHandoffAnnotations } from "@/src/server/repositories/annotations";
 import { getVersion } from "@/src/server/repositories/versions";
 import { canvasAnnotationAnchorError } from "@/src/server/services/canvas-annotation-anchor";
-import { requireProjectMember, requireWorkspaceRole, WorkspaceAccessError, workspaceRoles } from "@/src/server/workspace-access";
+import { requireProjectMember, requireWorkspaceRole, WorkspaceAccessError, workspaceRoles, requireHandoffAccess, } from "@/src/server/workspace-access";
 
 type AnnotationsRoute = RouteContext<"/api/workspaces/[workspaceId]/projects/[projectId]/handoffs/[handoffId]/versions/[versionId]/annotations">;
 
@@ -24,7 +24,7 @@ function belongsToHandoff(input: { workspaceId: string; handoffId: string; versi
 export async function GET(request: Request, context: AnnotationsRoute) {
   const { workspaceId, handoffId, versionId } = await context.params;
   try {
-    await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
+    await requireHandoffAccess(request, { workspaceId, handoffId });
     if (!belongsToHandoff({ workspaceId, handoffId, versionId })) {
       return Response.json({ error: "Handoff version not found." }, { status: 404 });
     }
@@ -36,9 +36,9 @@ export async function GET(request: Request, context: AnnotationsRoute) {
 }
 
 export async function POST(request: Request, context: AnnotationsRoute) {
-  const { workspaceId, projectId, handoffId, versionId } = await context.params;
+  const { workspaceId, handoffId, versionId } = await context.params;
   try {
-    const access = await requireProjectMember(request, workspaceId, projectId);
+    const access = await requireHandoffAccess(request, { workspaceId, handoffId, manage: true });
     const version = belongsToHandoff({ workspaceId, handoffId, versionId });
     if (!version) return Response.json({ error: "Handoff version not found." }, { status: 404 });
     if (!isStructuredSnapshot(version.snapshot)) {

@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getDatabase } from "@/src/server/db";
+import { addSuperadminsToWorkspace } from "@/src/server/services/superadmins";
 import { getSessionForRequest } from "@/src/server/workspace-access";
 
 const createWorkspaceSchema = z.object({
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
         "INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)",
       )
       .run(workspace.id, session.user.id, "owner", createdAt);
+    addSuperadminsToWorkspace(workspace.id);
   });
 
   createWorkspace();
