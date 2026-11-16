@@ -33,10 +33,12 @@ function contrastRatio(foreground, background) {
 }
 
 test("changed-screen labels meet WCAG AA on selected screen rows", () => {
-  const foreground = colorFrom(/uppercase text-(?:\[#([\da-f]{6})\]|(foreground(?:-muted|-subtle)?))/i, "changed-screen label");
   const background = themeColor("surface-strong");
-
-  assert.ok(contrastRatio(foreground, background) >= 4.5, `${foreground} does not meet 4.5:1 on ${background}`);
+  for (const status of ["changed", "added", "removed"]) {
+    const match = themeSource.match(new RegExp(`\\.compare-status\\[data-status="${status}"\\][^}]*color: (#[\\da-f]{6})`, "i"));
+    assert.ok(match, `Could not find the ${status} screen label color`);
+    assert.ok(contrastRatio(match[1], background) >= 4.5, `${status}: ${match[1]} does not meet 4.5:1 on ${background}`);
+  }
 });
 
 test("version-size metadata meets WCAG AA on the canvas", () => {

@@ -128,6 +128,9 @@ export function VersionCompare({
     : null;
   const [toVersionId, setToVersionId] = useState(validInitialRouteState?.toVersionId ?? defaultToVersionId);
   const [fromVersionId, setFromVersionId] = useState(validInitialRouteState?.fromVersionId ?? defaultFromVersionId);
+  // Screens list: search by name and optionally show only screens that changed.
+  const [screenQuery, setScreenQuery] = useState("");
+  const [changedOnly, setChangedOnly] = useState(false);
   const [pairResultState, setPairResultState] = useState<PairResultState | null>(null);
   const [pairFrameSelection, setPairFrameSelection] = useState<PairFrameSelection | null>(null);
   const [pairViewPreference, setPairViewPreference] = useState<PairViewPreference | null>(() =>
@@ -322,6 +325,41 @@ export function VersionCompare({
     currentResult.diff.frames.some((frame) => frame.status === "only-in-before-capture" || frame.status === "only-in-after-capture"),
   ) : null;
 
+  const allFrames = currentResult?.frames ?? [];
+  const changedFrameCount = allFrames.filter((frame) => frame.status !== "unchanged").length;
+  const queryWords = screenQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const listedFrames = allFrames.filter(
+    (frame) =>
+      (!changedOnly || frame.status !== "unchanged") &&
+      queryWords.every((word) => frame.name.toLowerCase().includes(word)),
+  );
+  const screensFilter = (
+    <div className="space-y-2">
+      <label className="relative block">
+        <span className="sr-only">Search screens</span>
+        <svg aria-hidden="true" className="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-foreground-subtle" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16">
+          <circle cx="7" cy="7" r="4.5" />
+          <path d="m10.5 10.5 3 3" />
+        </svg>
+        <input
+          className="h-8 w-full rounded-control border border-border bg-surface-inset pl-8 pr-2.5 text-[12px] text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-foreground/30"
+          onChange={(event) => setScreenQuery(event.target.value)}
+          placeholder="Search screens"
+          type="search"
+          value={screenQuery}
+        />
+      </label>
+      <div aria-label="Which screens" className="dial-segmented grid grid-cols-2" role="group">
+        <button aria-pressed={!changedOnly} className="min-h-7 px-2 text-[11px]" onClick={() => setChangedOnly(false)} type="button">
+          All <span className="font-mono text-foreground-subtle">{allFrames.length}</span>
+        </button>
+        <button aria-pressed={changedOnly} className="min-h-7 px-2 text-[11px]" onClick={() => setChangedOnly(true)} type="button">
+          Changed <span className="font-mono text-foreground-subtle">{changedFrameCount}</span>
+        </button>
+      </div>
+    </div>
+  );
+
   return (
     <div className="fixed inset-0 z-[70] bg-surface-inset/90 backdrop-blur-[2px]">
       <section
@@ -333,8 +371,8 @@ export function VersionCompare({
         tabIndex={-1}
       >
         <header className="flex min-h-[68px] shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border bg-surface px-4 py-2.5 sm:px-6">
-          <div className="min-w-0 flex-1">
-            <p className="text-[12px] font-medium text-foreground-muted" id="compare-title">{fromLabel} <span aria-hidden="true" className="px-1 text-foreground-subtle">→</span> {toLabel}</p>
+          <div className="min-w-[12rem] flex-1 basis-[16rem]">
+            <p className="truncate text-[12px] font-medium text-foreground-muted" id="compare-title" title={`${fromLabel} → ${toLabel}`}>{fromLabel} <span aria-hidden="true" className="px-1 text-foreground-subtle">→</span> {toLabel}</p>
             <p aria-live="polite" className="mt-1 truncate text-[12px] text-foreground-subtle">
               {loading ? "Calculating the version diff…" : comparisonSummary}
             </p>
@@ -375,14 +413,18 @@ export function VersionCompare({
         {error || selectionError ? <p aria-live="assertive" className="mx-4 mt-3 rounded-control border border-warning/30 bg-warning/10 p-3 text-[12px] text-warning sm:mx-6">{error ?? selectionError}</p> : null}
 
         {currentResult ? (
-          <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[210px_minmax(0,1fr)_300px]">
-            <nav aria-label="Compared screens" className="hidden min-h-0 overflow-y-auto border-r border-border bg-surface px-2 py-3 lg:block">
-              <div className="flex items-center justify-between px-2 pb-2">
-                <h3 className="text-[12px] font-semibold text-foreground-muted">Screens</h3>
-                <span className="font-mono text-[11px] text-foreground-subtle">{currentResult.frames.length}</span>
+          <div className="grid min-h-0 flex-1 grid-cols-1 md:grid-cols-[230px_minmax(0,1fr)] lg:grid-cols-[230px_minmax(0,1fr)_300px]">
+            <nav aria-label="Compared screens" className="hidden min-h-0 flex-col border-r border-border bg-surface md:flex">
+              <div className="shrink-0 space-y-2 border-b border-border px-3 pb-3 pt-3">
+                <div className="flex items-center justify-between px-0.5">
+                  <h3 className="text-[12px] font-semibold text-foreground-muted">Screens</h3>
+                  <span className="font-mono text-[11px] text-foreground-subtle">{listedFrames.length}/{allFrames.length}</span>
+                </div>
+                {screensFilter}
               </div>
-              <ul className="space-y-0.5">
-                {currentResult.frames.map((frame) => (
+              {!listedFrames.length ? <p className="px-4 py-6 text-center text-[12px] text-foreground-subtle">No screens match.</p> : null}
+              <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 py-2">
+                {listedFrames.map((frame) => (
                   <li key={frame.sourceFileId + frame.frameId}>
                     <button
                       aria-pressed={frame.frameId === focusedFrameId}
@@ -392,8 +434,12 @@ export function VersionCompare({
                       type="button"
                     >
                       <span className="flex items-center justify-between gap-2 text-[12px]">
-                        <span className="truncate">{frame.name}</span>
-                        <span className="shrink-0 font-mono text-[10px] uppercase text-foreground-muted">{comparisonFrameStatusLabel(frame.status)}</span>
+                        <span className="truncate" title={frame.name}>{frame.name}</span>
+                        {frame.status === "unchanged" ? null : (
+                          <span className={"compare-status shrink-0 rounded-[5px] px-1.5 py-0.5 text-[10px] font-medium"} data-status={frame.status} title={comparisonFrameStatusLabel(frame.status)}>
+                            {frame.status === "changed" ? "Changed" : frame.status === "added" ? "New" : frame.status === "removed" ? "Removed" : "Partial"}
+                          </span>
+                        )}
                       </span>
                     </button>
                   </li>
@@ -438,8 +484,9 @@ export function VersionCompare({
                     </div>
                   </details>
                 ) : null}
-                <div className="mt-3 flex gap-2 overflow-x-auto pb-0.5 lg:hidden" aria-label="Compared screens" role="group">
-                  {currentResult.frames.map((frame) => (
+                <div className="mt-3 md:hidden">{screensFilter}</div>
+                <div className="mt-2 flex gap-2 overflow-x-auto pb-0.5 md:hidden" aria-label="Compared screens" role="group">
+                  {listedFrames.map((frame) => (
                     <button
                       aria-label={`${frame.name}, ${comparisonFrameStatusLabel(frame.status)}`}
                       aria-pressed={frame.frameId === focusedFrameId}

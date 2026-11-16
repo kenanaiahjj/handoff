@@ -1014,3 +1014,9 @@ html[data-splash="seen"] .app-splash {
   scroll-snap-align: center;
   scroll-snap-stop: always;
 }
+
+/* Screen status tags in the comparison list. */
+.compare-status { background: var(--surface-inset); color: var(--foreground-muted); }
+.compare-status[data-status="changed"] { background: rgb(255 176 64 / 0.14); color: #ffbf66; }
+.compare-status[data-status="added"] { background: rgb(110 217 160 / 0.14); color: #7ee0aa; }
+.compare-status[data-status="removed"] { background: rgb(255 110 100 / 0.14); color: #ffa39b; }
