@@ -14,6 +14,8 @@ import { CanvasPublicationStatus } from "@/src/components/canvas/CanvasPublicati
 import { DeleteHandoffButton, DeleteHandoffVersionButton } from "@/src/components/canvas/HandoffLifecycleActions";
 import { HandoffSetupForm } from "../../handoff-setup-form";
 import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
+import { ChangelogPanel } from "@/src/components/canvas/ChangelogPanel";
+import { markHandoffSeen, visibleHandoffIds } from "@/src/server/services/review-visibility";
 
 export const instant = false;
 
@@ -45,6 +47,8 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
   const handoff = getHandoff({ workspaceId, projectId, handoffId });
   if (!membership || !handoff) notFound();
   const canManageHandoffs = membership.role === "owner" || membership.role === "designer";
+  const visible = visibleHandoffIds(workspaceId, { id: session.user.id, email: session.user.email, role: membership.role });
+  if (visible && !visible.has(handoffId)) notFound();
   const project = getProject({ workspaceId, projectId });
   if (!project) notFound();
   const versions = listHandoffVersions({ workspaceId, handoffId }) as ReviewVersionSummary[];
@@ -57,7 +61,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
           <p className="mt-2 text-sm leading-6 text-foreground-muted">No versions remain in this handoff. Capture a new Figma snapshot to continue.</p>
           <div className="mt-5"><HandoffSetupForm mode="handoff" input={{ workspaceId, projectId, handoffs: [{ id: handoffId, name: handoff.name }], initialHandoffId: handoffId }} /></div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
-            <Link className="min-h-9 rounded-control px-3 py-2 text-xs text-foreground-muted hover:bg-surface-raised hover:text-foreground" href={projectHref}>Back to project</Link>
+            <Link className="dial-button min-h-9 px-3 py-2 text-xs" href={projectHref}>Back to project</Link>
             {canManageHandoffs ? <DeleteHandoffButton
               endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`}
               handoffName={handoff.name}
@@ -93,12 +97,16 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
     ? (version.snapshot as SnapshotEnvelope).frames.reduce((count, frame) => count + frame.nodes.length, 0)
     : 0;
   const canCreateVersion = true;
+  // Opening the newest version clears this person's "New version" badge for the handoff.
+  if (versions[0] && selectedVersion.id === versions[0].id) {
+    markHandoffSeen({ userId: session.user.id, workspaceId, handoffId, latestVersionId: versions[0].id });
+  }
   const routePath = `/workspace/${workspaceId}/projects/${projectId}/handoffs/${handoffId}`;
   const dockPanels = {
     version: canCreateVersion ? (
       <div className="space-y-3">
         <section aria-label="Version details" className="rounded-control bg-surface p-3">
-          <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-foreground-subtle">Release note</p>
+          <p className="text-[12px] font-medium text-foreground-subtle">Release note</p>
           <p className="mt-2 text-[12px] leading-5 text-foreground">{version.releaseNote || "No release note was provided for this snapshot."}</p>
           <p className="mt-2 font-mono text-[9px] text-foreground-subtle">{visualOnly ? "Visual-only snapshot" : `${nodeCount} captured elements`} · {version.source}</p>
           {captureScope ? <p className="mt-1 text-[10px] leading-4 text-foreground-muted">Capture scope · {captureScope}</p> : null}
@@ -149,7 +157,13 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
             <dt className="text-foreground-subtle">Content hash</dt><dd className="truncate text-right font-mono text-foreground-muted" title={version.contentHash}>{version.contentHash.slice(0, 12)}…</dd>
           </dl>
         </details>
-        <HandoffSetupForm mode="handoff" input={{ workspaceId, projectId, handoffs: [{ id: handoffId, name: handoff.name }], initialHandoffId: handoffId }} />
+        <ChangelogPanel
+          endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/changelog`}
+          versions={versions.map(({ id, versionLabel }) => ({ id, versionLabel }))}
+          selectedVersionId={selectedVersion.id}
+          versionHrefPrefix={routePath}
+        />
+        {canManageHandoffs ? <HandoffSetupForm mode="handoff" input={{ workspaceId, projectId, handoffs: [{ id: handoffId, name: handoff.name }], initialHandoffId: handoffId }} /> : null}
       </div>
     ) : null,
   };

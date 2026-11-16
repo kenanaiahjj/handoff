@@ -95,6 +95,9 @@ export function AgentHandoffPanel({ input }: {
     frames: CanvasFrameOption[];
     initialFrameId: string | null;
     initialNodeId: string | null;
+    /** Full element details per screen (the canvas only holds summaries). */
+    frameNodes: (frameId: string) => SnapshotNode[] | null;
+    ensureFrameNodes: (frameId: string) => void;
   };
 }) {
   const routeBase = `/api/workspaces/${encodeURIComponent(input.workspaceId)}/projects/${encodeURIComponent(input.projectId)}/handoffs/${encodeURIComponent(input.handoffId)}`;
@@ -122,7 +125,13 @@ export function AgentHandoffPanel({ input }: {
   const [notice, setNotice] = useState<string | null>(null);
 
   const selectedFrame = screenOptions.find((frame) => frame.id === frameId) ?? null;
-  const selectedNode = selectedFrame?.nodes.find((node) => node.sourceNodeId === nodeId) ?? null;
+  const detailedNodes = useMemo(() => (frameId ? input.frameNodes(frameId) : null), [frameId, input]);
+  const detailsReady = !selectedFrame || !selectedFrame.nodes.length || detailedNodes !== null;
+  const { ensureFrameNodes } = input;
+  useEffect(() => {
+    if (frameId) ensureFrameNodes(frameId);
+  }, [ensureFrameNodes, frameId]);
+  const selectedNode = detailedNodes?.find((node) => node.sourceNodeId === nodeId) ?? null;
   const versionIndex = input.versions.findIndex((version) => version.id === input.versionId);
   const baseline = versionIndex >= 0 ? input.versions[versionIndex + 1] ?? null : null;
   const matchingTasks = tasks.filter((task) => task.versionId === input.versionId);
@@ -130,11 +139,11 @@ export function AgentHandoffPanel({ input }: {
   const selectedTaskLinks = selectedTask
     ? agentLinkEdits[selectedTask.id] ?? { agentRunUrl: selectedTask.agentRunUrl ?? "", pullRequestUrl: selectedTask.pullRequestUrl ?? "" }
     : { agentRunUrl: "", pullRequestUrl: "" };
-  const nodeTokenBindings = selectedFrame?.nodes.flatMap((node) => node.tokens.map((token) => ({
+  const nodeTokenBindings = (detailedNodes ?? []).flatMap((node) => node.tokens.map((token) => ({
     sourceNodeId: node.sourceNodeId,
     elementName: node.name,
     token,
-  }))) ?? [];
+  })));
 
   useEffect(() => {
     let active = true;
@@ -278,7 +287,7 @@ export function AgentHandoffPanel({ input }: {
         .filter((draft) => draft.status === "approved" && draft.toVersionId === input.versionId)
         .map(({ id, title, summary, statements }) => ({ id, title, summary, statements })) ?? [];
       const nodeLimit = 300;
-      const frameNodes = selectedFrame?.nodes ?? [];
+      const frameNodes = detailedNodes ?? [];
       const visibleFrameNodes = frameNodes.slice(0, nodeLimit).map(serializeNode);
       const tokenLimit = 300;
       const visibleTokenBindings = nodeTokenBindings.slice(0, tokenLimit);
@@ -383,7 +392,7 @@ export function AgentHandoffPanel({ input }: {
     <section className="min-h-0 overflow-y-auto border-l border-border bg-surface p-4 max-lg:border-l-0 max-lg:border-t" aria-labelledby="agent-handoff-title">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground-subtle">Connected tools</p>
+          <p className="text-[12px] font-medium text-foreground-subtle">Connected tools</p>
           <h2 id="agent-handoff-title" className="mt-1 text-[15px] font-semibold text-foreground">Start with agent</h2>
         </div>
         <span className="rounded-control bg-surface-raised px-2 py-1 font-mono text-[10px] text-foreground-muted">Version {input.versionLabel}</span>
@@ -476,7 +485,7 @@ export function AgentHandoffPanel({ input }: {
       </fieldset>
 
       <div className="mt-4 grid gap-2">
-        <button type="button" onClick={() => void copyAgentBrief()} disabled={buildingBrief || loading} className="min-h-9 rounded-control bg-primary px-3 text-[11px] font-semibold text-primary-foreground hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50">{buildingBrief ? "Preparing brief…" : "Copy agent brief"}</button>
+        <button type="button" onClick={() => void copyAgentBrief()} disabled={buildingBrief || loading || !detailsReady} className="min-h-9 rounded-control bg-primary px-3 text-[11px] font-semibold text-primary-foreground hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50">{buildingBrief ? "Preparing brief…" : !detailsReady ? "Loading screen details…" : "Copy agent brief"}</button>
       </div>
       <details className="mt-2 rounded-control border border-border bg-surface-muted">
         <summary className="cursor-pointer px-3 py-2.5 text-[11px] font-medium text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Connect an MCP client</summary>
@@ -497,7 +506,7 @@ export function AgentHandoffPanel({ input }: {
       </details>
 
       {selectedFrame?.exact && selectedFrame.nodes.length ? <p className="mt-2 text-[10px] text-foreground-subtle">Brief includes exact source layout values for {Math.min(selectedFrame.nodes.length, 300)} elements and {Math.min(nodeTokenBindings.length, 300)} token bindings in {selectedFrame.name}.</p> : null}
-      {error ? <p role="alert" className="mt-3 rounded-control border border-[#8a6a38] bg-[#3c3020] px-2.5 py-2 text-[11px] leading-4 text-[#f0c77d]">{error}</p> : null}
+      {error ? <p role="alert" className="mt-3 rounded-control border border-warning/30 bg-warning/10 px-2.5 py-2 text-[11px] leading-4 text-warning">{error}</p> : null}
       {notice ? <p role="status" className="mt-3 text-[11px] leading-4 text-foreground-muted">{notice}</p> : null}
       {brief ? (
         <details className="mt-4 rounded-control border border-border bg-surface-muted">

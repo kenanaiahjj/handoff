@@ -109,7 +109,7 @@ export function InstallAppButton({ compact = false }: InstallAppButtonProps) {
     <>
       <button
         aria-label="Install Asbir Handoff"
-        className={"inline-flex shrink-0 items-center gap-1.5 rounded-control border border-border px-2.5 text-[11px] text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + (compact ? "h-11 lg:h-8" : "h-8")}
+        className={"dial-button shrink-0 px-3 text-[12px] " + (compact ? "h-11 lg:h-8" : "h-8")}
         onClick={() => void installApp()}
         title="Install Asbir Handoff as an app"
         type="button"
@@ -117,18 +117,18 @@ export function InstallAppButton({ compact = false }: InstallAppButtonProps) {
         <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
           <path d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 10.5v2h10v-2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" />
         </svg>
-        <span>{compact ? "Install" : "Install app"}</span>
+        <span className={compact ? "max-sm:sr-only" : undefined}>{compact ? "Install" : "Install app"}</span>
       </button>
       <dialog
         aria-labelledby="install-app-title"
-        className="m-auto w-[min(92vw,420px)] rounded-panel border border-border bg-surface p-0 text-foreground shadow-2xl backdrop:bg-black/65"
+        className="dial-popover m-auto w-[min(92vw,420px)] p-0 text-foreground backdrop:bg-black/60 backdrop:backdrop-blur-sm"
         onClose={() => setInstructionsOpen(false)}
         ref={dialogRef}
       >
         <div className="p-5">
           <div className="flex items-start justify-between gap-4">
             <div>
-              <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-foreground-subtle">Asbir Handoff</p>
+              <p className="text-[12px] font-medium text-foreground-subtle">Asbir Handoff</p>
               <h2 className="mt-1 text-[15px] font-semibold" id="install-app-title">Install this app</h2>
             </div>
             <button

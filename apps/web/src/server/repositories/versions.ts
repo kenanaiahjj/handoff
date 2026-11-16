@@ -595,15 +595,48 @@ export function getConfirmedNodeMatchesBetweenVersions(input: {
   });
 }
 
-export function getVersion(input: { workspaceId: string; versionId: string }) {
+// Versions are immutable (enforced by a trigger), so a parsed snapshot can be reused across
+// requests. Parsing and validating a large capture takes seconds; keep the two most recent per
+// database, keyed by version and content hash.
+const parsedSnapshotCache = new WeakMap<object, Map<string, StoredSnapshot>>();
+const parsedSnapshotCacheSize = 2;
+
+function cachedSnapshot(database: object, key: string, load: () => StoredSnapshot) {
+  let cache = parsedSnapshotCache.get(database);
+  if (!cache) {
+    cache = new Map();
+    parsedSnapshotCache.set(database, cache);
+  }
+  const hit = cache.get(key);
+  if (hit) {
+    cache.delete(key);
+    cache.set(key, hit);
+    return hit;
+  }
+  const snapshot = load();
+  cache.set(key, snapshot);
+  while (cache.size > parsedSnapshotCacheSize) cache.delete(cache.keys().next().value!);
+  return snapshot;
+}
+
+/** Stored size of a version's snapshot JSON in bytes, without loading or parsing it. */
+export function getVersionSnapshotSize(input: { workspaceId: string; versionId: string }) {
   const row = getDatabase()
+    .prepare("SELECT length(CAST(snapshot_json AS BLOB)) AS sizeBytes FROM handoff_version WHERE id = ? AND workspace_id = ?")
+    .get(input.versionId, input.workspaceId) as { sizeBytes: number } | undefined;
+  return row?.sizeBytes ?? 0;
+}
+
+export function getVersion(input: { workspaceId: string; versionId: string }) {
+  const database = getDatabase();
+  const row = database
     .prepare(
       `SELECT id, workspace_id AS workspaceId, handoff_id AS handoffId,
               version_label AS versionLabel, release_note AS releaseNote,
               source, source_file_id AS sourceFileId,
               source_revision_id AS sourceRevisionId, captured_at AS capturedAt,
               content_hash AS contentHash, visual_only AS visualOnly,
-              snapshot_json AS snapshotJson, created_by_user_id AS createdBy,
+              created_by_user_id AS createdBy,
               created_at AS createdAt
        FROM handoff_version WHERE id = ? AND workspace_id = ?`,
     )
@@ -620,7 +653,6 @@ export function getVersion(input: { workspaceId: string; versionId: string }) {
         capturedAt: string;
         contentHash: string;
         visualOnly: number;
-        snapshotJson: string;
         createdBy: string;
         createdAt: string;
       }
@@ -638,11 +670,16 @@ export function getVersion(input: { workspaceId: string; versionId: string }) {
     )
     .all(input.versionId, input.workspaceId) as StoredVersionAsset[];
 
-  const snapshotValue = JSON.parse(row.snapshotJson) as StoredSnapshot;
-  const snapshot = ("visualOnly" in snapshotValue && snapshotValue.visualOnly
-    ? visualOnlySnapshotSchema
-    : snapshotEnvelopeSchema
-  ).parse(snapshotValue);
+  const snapshot = cachedSnapshot(database, `${row.id}:${row.contentHash}`, () => {
+    const { snapshotJson } = database
+      .prepare("SELECT snapshot_json AS snapshotJson FROM handoff_version WHERE id = ? AND workspace_id = ?")
+      .get(input.versionId, input.workspaceId) as { snapshotJson: string };
+    const snapshotValue = JSON.parse(snapshotJson) as StoredSnapshot;
+    return ("visualOnly" in snapshotValue && snapshotValue.visualOnly
+      ? visualOnlySnapshotSchema
+      : snapshotEnvelopeSchema
+    ).parse(snapshotValue);
+  });
 
   return { ...row, visualOnly: row.visualOnly === 1, snapshot, assets };
 }

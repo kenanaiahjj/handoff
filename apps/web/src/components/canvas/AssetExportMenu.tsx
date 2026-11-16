@@ -101,13 +101,13 @@ export function AssetExportMenu({ targets }: { targets: AssetExportTarget[] }) {
 
   return (
     <details className="relative" ref={detailsRef}>
-      <summary className="grid size-11 shrink-0 cursor-pointer list-none place-items-center rounded-control text-foreground-muted transition-colors hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:size-8" aria-label="Export image" title="Export image">
+      <summary className="dial-button size-11 shrink-0 cursor-pointer list-none lg:size-8 [&::-webkit-details-marker]:hidden" aria-label="Export image" title="Export image">
         <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 16 16">
           <path d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 10.5v2h10v-2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.3" />
         </svg>
       </summary>
-      <div className="fixed inset-x-3 bottom-3 z-40 lg:absolute lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-full lg:z-20 lg:mt-2 lg:w-64 rounded-surface border border-border bg-surface p-3 shadow-xl">
-        <p className="font-mono text-[9px] uppercase tracking-wide text-foreground-subtle">Export image</p>
+      <div className="fixed inset-x-3 bottom-3 z-40 lg:absolute lg:inset-x-auto lg:bottom-auto lg:right-0 lg:top-full lg:z-20 lg:mt-2 lg:w-64 dial-popover p-3">
+        <p className="text-[12px] font-medium text-foreground-subtle">Export image</p>
         <label className="mt-2 block text-[10px] text-foreground-muted" htmlFor={selectId}>Canvas image</label>
         <select
           className="mt-1 min-h-9 w-full rounded-control border border-border bg-background px-2 text-xs text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"

@@ -17,11 +17,27 @@ export function isDevelopmentAuthBypassEnabled() {
   return process.env.NODE_ENV === "development" && process.env.ASBIR_AUTH_BYPASS === "1";
 }
 
-function getLocalTestUser() {
+export const viewAsCookieName = "asbir_view_as";
+export const localReviewerUser = { id: "asbir-local-reviewer", name: "Riley Reviewer", email: "reviewer@asbir.invalid" };
+
+function viewAsUserId(headers: Headers) {
+  const cookie = headers.get("cookie") ?? "";
+  const match = cookie.split(/;\s*/).find((part) => part.startsWith(viewAsCookieName + "="));
+  return match ? decodeURIComponent(match.slice(viewAsCookieName.length + 1)) : null;
+}
+
+function getLocalTestUser(headers: Headers) {
   const database = getDatabase();
+  const viewAsId = viewAsUserId(headers);
+  if (viewAsId) {
+    const viewAs = database
+      .prepare('SELECT id, name, email, emailVerified, image, createdAt, updatedAt FROM "user" WHERE id = ?')
+      .get(viewAsId) as DatabaseUser | undefined;
+    if (viewAs) return viewAs;
+  }
   const existing = database
-    .prepare('SELECT id, name, email, emailVerified, image, createdAt, updatedAt FROM "user" ORDER BY createdAt ASC, id ASC LIMIT 1')
-    .get() as DatabaseUser | undefined;
+    .prepare('SELECT id, name, email, emailVerified, image, createdAt, updatedAt FROM "user" WHERE id <> ? ORDER BY createdAt ASC, id ASC LIMIT 1')
+    .get(localReviewerUser.id) as DatabaseUser | undefined;
 
   if (existing) return existing;
 
@@ -36,8 +52,8 @@ function getLocalTestUser() {
     .get(id) as DatabaseUser;
 }
 
-function getLocalTestSession(): AuthSession {
-  const user = getLocalTestUser();
+function getLocalTestSession(headers: Headers): AuthSession {
+  const user = getLocalTestUser(headers);
   const now = new Date();
 
   return {
@@ -65,7 +81,7 @@ export async function getSessionForHeaders(headers: Headers) {
   if (isDevelopmentAuthBypassEnabled()) {
     // The bypass session is built from the clock, so mark the render as request-time.
     await connection();
-    return getLocalTestSession();
+    return getLocalTestSession(headers);
   }
   return auth.api.getSession({ headers });
 }

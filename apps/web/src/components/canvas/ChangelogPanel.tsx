@@ -1,6 +1,8 @@
 "use client";
 
+import { useObject } from "@ai-sdk/react";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { generatedChangelogSchema } from "@/src/server/ai/schema";
 import { evidenceCanvasHref } from "./evidence-link";
 
 type Audience = "product" | "developer" | "qa";
@@ -37,6 +39,17 @@ type ChangelogPanelProps = {
   versionHrefPrefix: string;
 };
 
+/** The stream route answers failures with a JSON `{ error }` body; useObject surfaces it as the message. */
+function generationErrorMessage(cause: Error) {
+  try {
+    const payload = JSON.parse(cause.message) as { error?: unknown };
+    if (typeof payload.error === "string" && payload.error) return payload.error;
+  } catch {
+    // Not JSON: the stream itself failed after it started.
+  }
+  return "The AI draft could not be completed. Try again.";
+}
+
 const audienceLabels: Record<Audience, string> = {
   product: "Product",
   developer: "Developer",
@@ -47,7 +60,6 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
   const [savingId, setSavingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -125,25 +137,28 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
     return () => document.removeEventListener("visibilitychange", refreshWhenVisible);
   }, [refreshDrafts]);
 
-  async function generateDraft() {
-    setGenerating(true);
+  // AI SDK UI: stream the draft object so statements appear as the model writes them.
+  // The server validates citations and saves the draft before it closes the stream.
+  const generation = useObject({
+    api: `${endpoint}/stream`,
+    schema: generatedChangelogSchema,
+    onFinish: ({ error: validationError }) => {
+      if (validationError) {
+        setError("The AI draft did not match the expected format. Try again.");
+        return;
+      }
+      setNotice("AI draft created. Review each statement and its supporting evidence.");
+      void loadDrafts();
+    },
+    onError: (cause) => setError(generationErrorMessage(cause)),
+  });
+  const generating = generation.isLoading;
+  const streamed = generation.object;
+
+  function generateDraft() {
     setError(null);
     setNotice(null);
-    try {
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fromVersionId, toVersionId }),
-      });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not generate a changelog draft.");
-      setDrafts((current) => [payload.draft as Draft, ...current]);
-      setNotice("AI draft created. Review each statement and its supporting evidence.");
-    } catch (generationError) {
-      setError(generationError instanceof Error ? generationError.message : "Could not generate a changelog draft.");
-    } finally {
-      setGenerating(false);
-    }
+    generation.submit({ fromVersionId, toVersionId });
   }
 
   function updateDraft(id: string, update: (draft: Draft) => Draft) {
@@ -180,17 +195,17 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
     <section className="rounded-panel border border-border bg-surface p-3" aria-labelledby="changelog-title">
       <div className="flex flex-col justify-between gap-3">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">AI-assisted · evidence linked</p>
+          <p className="text-[12px] font-medium text-foreground-subtle">AI-assisted · evidence linked</p>
           <h2 className="mt-1 text-base font-semibold text-foreground" id="changelog-title">Changelog</h2>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-foreground-muted">
             Drafts cite screen changes, layout findings, and team comments. Generate one here or save a draft from your connected AI through MCP; review every statement before approval.
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <button type="button" className="min-h-8 rounded-control px-2.5 text-xs font-medium text-foreground-muted hover:bg-surface-raised hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50" disabled={loading} onClick={() => void refreshDrafts()}>
+          <button type="button" className="dial-button min-h-8 px-2.5 text-xs" disabled={loading} onClick={() => void refreshDrafts()}>
             {loading ? "Refreshing…" : "Refresh"}
           </button>
-          <span className="rounded-pill bg-surface-raised px-2.5 py-1 font-mono text-[10px] uppercase tracking-wide text-foreground-subtle">
+          <span className="rounded-pill bg-surface-raised px-2.5 py-1 text-[12px] font-medium text-foreground-subtle">
             {drafts.length.toString().padStart(2, "0")} drafts
           </span>
         </div>
@@ -213,11 +228,16 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
           <button
             type="button"
             className="min-h-10 rounded-control bg-primary px-4 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={() => void generateDraft()}
+            onClick={generateDraft}
             disabled={!configured || loading || generating || versions.length < 2 || !fromVersionId || !toVersionId || fromVersionId === toVersionId}
           >
-            {generating ? "Generating…" : "Generate draft"}
+            {generating ? "Writing draft…" : "Generate draft"}
           </button>
+          {generating ? (
+            <button type="button" className="min-h-9 rounded-control px-3 text-xs text-foreground-muted hover:bg-surface hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" onClick={generation.stop}>
+              Stop
+            </button>
+          ) : null}
         </div>
       ) : (
         <p className="mt-4 rounded-control bg-surface-raised px-3 py-3 text-xs leading-5 text-foreground-muted">Add a second snapshot version to generate a changelog.</p>
@@ -231,6 +251,27 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
       {loading ? <p className="mt-3 text-xs text-foreground-subtle" role="status">Loading changelogs…</p> : null}
       {error ? <p className="mt-3 rounded-control border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs leading-5 text-warning" role="alert">{error}</p> : null}
       {notice ? <p className="mt-3 text-xs text-success" role="status">{notice}</p> : null}
+
+      {generating ? (
+        <article aria-busy="true" aria-live="polite" className="mt-4 rounded-surface border border-border bg-background p-3">
+          <p className="flex items-center gap-2 text-[12px] font-semibold text-foreground-subtle">
+            <span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-accent" />
+            Writing draft
+          </p>
+          <h3 className="mt-2 text-sm font-semibold text-foreground">{streamed?.title || "…"}</h3>
+          {streamed?.summary ? <p className="mt-1.5 whitespace-pre-line text-xs leading-5 text-foreground-muted">{streamed.summary}</p> : null}
+          {streamed?.statements?.length ? (
+            <ul className="mt-3 space-y-2">
+              {streamed.statements.map((statement, index) => statement?.text ? (
+                <li className="rounded-control bg-surface-raised px-3 py-2 text-xs leading-5 text-foreground" key={index}>
+                  {statement.audience ? <span className="mr-1.5 font-medium text-foreground-subtle">{audienceLabels[statement.audience]}</span> : null}
+                  {statement.text}
+                </li>
+              ) : null)}
+            </ul>
+          ) : null}
+        </article>
+      ) : null}
 
       <div className="mt-4 space-y-3">
         {drafts.map((draft) => (
@@ -258,7 +299,7 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
               {draft.statements.map((statement, index) => (
                 <div className="rounded-control bg-surface-raised p-3" key={`${draft.id}-${index}`}>
                   <div className="flex items-center justify-between gap-3">
-                    <label className="text-[10px] font-semibold uppercase tracking-wide text-foreground-subtle">
+                    <label className="text-[12px] font-semibold text-foreground-subtle">
                       Audience
                       <select className="ml-2 min-h-8 rounded-control border border-border bg-surface px-2 text-xs font-medium normal-case tracking-normal text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" value={statement.audience} onChange={(event) => updateDraft(draft.id, (item) => ({ ...item, statements: item.statements.map((candidate, candidateIndex) => candidateIndex === index ? { ...candidate, audience: event.target.value as Audience } : candidate) }))}>
                         {Object.entries(audienceLabels).map(([value, label]) => <option key={value} value={value}>{label}</option>)}

@@ -338,8 +338,8 @@ export function VersionCompare({
             <p aria-live="polite" className="mt-1 truncate text-[12px] text-foreground-subtle">
               {loading ? "Calculating the version diff…" : comparisonSummary}
             </p>
-            {!loading && sourceIdentityMessage ? <p className="mt-1 text-[11px] text-[#d7b775]" role="status">{sourceIdentityMessage}</p> : null}
-            {!loading && captureScopeMessage ? <p className="mt-1 text-[11px] leading-4 text-[#d7b775]" role="status">{captureScopeMessage}</p> : null}
+            {!loading && sourceIdentityMessage ? <p className="mt-1 text-[11px] text-warning" role="status">{sourceIdentityMessage}</p> : null}
+            {!loading && captureScopeMessage ? <p className="mt-1 text-[11px] leading-4 text-warning" role="status">{captureScopeMessage}</p> : null}
           </div>
           <div aria-label="Comparison view" className="flex rounded-control border border-border-strong p-0.5" role="group">
             {([
@@ -362,7 +362,7 @@ export function VersionCompare({
             ))}
           </div>
           <button
-            className="min-h-9 shrink-0 rounded-control px-3 text-[12px] text-foreground-muted hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+            className="dial-button min-h-9 shrink-0 px-3 text-[12px]"
             onClick={onClose}
             type="button"
           >
@@ -372,7 +372,7 @@ export function VersionCompare({
         {versions.length < 2 ? (
           <div className="m-6 rounded-control border border-border bg-surface-muted p-5 text-[13px] text-foreground-muted">Add another version to compare screen and layout changes.</div>
         ) : null}
-        {error || selectionError ? <p aria-live="assertive" className="mx-4 mt-3 rounded-control border border-[#7c5d37] bg-[#392c1d] p-3 text-[12px] text-[#f0c77b] sm:mx-6">{error ?? selectionError}</p> : null}
+        {error || selectionError ? <p aria-live="assertive" className="mx-4 mt-3 rounded-control border border-warning/30 bg-warning/10 p-3 text-[12px] text-warning sm:mx-6">{error ?? selectionError}</p> : null}
 
         {currentResult ? (
           <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[210px_minmax(0,1fr)_300px]">
@@ -469,7 +469,7 @@ export function VersionCompare({
                     </div>
                   ) : viewMode === "overlay" ? (
                     <div>
-                      <div className="relative grid min-h-[360px] place-items-center overflow-hidden rounded-control border border-border bg-surface-inset p-4 sm:min-h-[min(68vh,760px)]">
+                      <div className="relative grid min-h-[360px] place-items-center overflow-hidden rounded-control border border-transparent bg-surface-inset p-4 sm:min-h-[min(68vh,760px)]">
                         {activeFrame.before ? <PreviewImage alt={"Before: " + activeFrame.name} preview={activeFrame.before} className="pointer-events-none max-h-[min(68vh,760px)] w-full object-contain" /> : <p className="text-[12px] text-foreground-subtle">No earlier screen</p>}
                         {activeFrame.after ? <PreviewImage alt={"After: " + activeFrame.name} preview={activeFrame.after} className="pointer-events-none absolute inset-4 m-auto max-h-[min(68vh,760px)] w-[calc(100%-32px)] object-contain" style={{ opacity: overlayAmount / 100 }} /> : null}
                       </div>
@@ -641,7 +641,7 @@ function PreviewPanel({ label, preview }: { label: string; preview: Preview }) {
           </span>
         ) : null}
       </div>
-      <div className="grid min-h-[340px] place-items-center overflow-hidden rounded-control border border-border bg-surface-inset p-3 sm:min-h-[min(68vh,760px)]">
+      <div className="grid min-h-[340px] place-items-center overflow-hidden rounded-control border border-transparent bg-surface-inset p-3 sm:min-h-[min(68vh,760px)]">
         {preview ? <PreviewImage alt={label + ": " + preview.name} preview={preview} className="max-h-[min(68vh,760px)] w-full object-contain" /> : <p className="text-[12px] text-foreground-subtle">No screen in this version</p>}
       </div>
     </section>

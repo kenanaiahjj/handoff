@@ -56,7 +56,7 @@ function ConfirmDialog({ options, onSettle }: { options: ConfirmOptions; onSettl
     <dialog
       aria-describedby={descriptionId}
       aria-labelledby={titleId}
-      className="fixed inset-0 m-auto w-[calc(100vw-2rem)] max-w-sm overflow-hidden rounded-panel border border-border bg-surface p-0 text-foreground shadow-lg backdrop:bg-black/70"
+      className="dial-popover fixed inset-0 m-auto w-[calc(100vw-2rem)] max-w-sm overflow-hidden p-0 text-foreground backdrop:bg-black/60 backdrop:backdrop-blur-sm"
       onCancel={(event) => {
         event.preventDefault();
         onSettle(false);
@@ -68,11 +68,11 @@ function ConfirmDialog({ options, onSettle }: { options: ConfirmOptions; onSettl
       role="alertdialog"
     >
       <div className="p-5">
-        <h2 className="text-sm font-semibold text-foreground" id={titleId}>{options.title}</h2>
-        <div className="mt-2 text-xs leading-5 text-foreground-muted" id={descriptionId}>{options.description}</div>
+        <h2 className="text-[15px] font-semibold text-foreground" id={titleId}>{options.title}</h2>
+        <div className="mt-2 text-[13px] leading-5 text-foreground-muted" id={descriptionId}>{options.description}</div>
         <div className="mt-5 flex justify-end gap-2">
           <button
-            className="min-h-9 rounded-control px-3 text-xs text-foreground-muted hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+            className="dial-button min-h-9 px-4 text-[13px]"
             onClick={() => onSettle(false)}
             ref={cancelRef}
             type="button"
@@ -81,8 +81,8 @@ function ConfirmDialog({ options, onSettle }: { options: ConfirmOptions; onSettl
           </button>
           <button
             className={danger
-              ? "min-h-9 rounded-control bg-danger/15 px-3 text-xs font-semibold text-danger hover:bg-danger/25 focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger"
-              : "capture-primary-action min-h-9 rounded-control px-3 text-xs font-semibold"}
+              ? "min-h-9 rounded-control bg-danger/15 px-4 text-[13px] font-semibold text-danger hover:bg-danger/25"
+              : "capture-primary-action min-h-9 px-4 text-[13px]"}
             onClick={() => onSettle(true)}
             type="button"
           >

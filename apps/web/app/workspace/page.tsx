@@ -65,7 +65,7 @@ export default async function WorkspaceHomePage() {
                       <span aria-hidden="true" className="workspace-mark grid size-9 shrink-0 place-items-center text-[12px] font-semibold">{workspace.name.trim().slice(0, 1).toUpperCase() || "W"}</span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13px] font-medium text-foreground">{workspace.name}</span>
-                        <span className="mt-1 block text-[11px] text-foreground-subtle">{workspace.role === "reviewer" ? "Product manager / reviewer" : workspace.role}</span>
+                        <span className="mt-1 block text-[11px] capitalize text-foreground-subtle">{workspace.role === "reviewer" ? "Product manager / reviewer" : workspace.role}</span>
                       </span>
                       <svg aria-hidden="true" className="size-4 shrink-0 text-foreground-subtle transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
                     </Link>

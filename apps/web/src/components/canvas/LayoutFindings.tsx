@@ -129,11 +129,11 @@ export function LayoutFindings({ endpoint, canEdit = true, canComment = true }: 
     <section aria-labelledby="layout-findings-title" className="mt-5 rounded-panel border border-border bg-surface p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground-subtle">Deterministic checks</p>
+          <p className="text-[12px] font-medium text-foreground-subtle">Deterministic checks</p>
           <h2 className="mt-1 text-lg font-semibold text-foreground" id="layout-findings-title">Layout findings</h2>
           <p className="mt-1 text-xs text-foreground-muted">{data ? `${openCount} open · ${data.findings.length} total` : "Checking captured layout…"}</p>
         </div>
-        <button className="min-h-10 rounded-control border border-border bg-surface-inset px-3 text-xs text-foreground-muted hover:text-foreground disabled:opacity-50" disabled={!data?.findings.length} onClick={exportCsv} type="button">Export CSV</button>
+        <button className="min-h-10 rounded-control border border-transparent bg-surface-inset px-3 text-xs text-foreground-muted hover:text-foreground disabled:opacity-50" disabled={!data?.findings.length} onClick={exportCsv} type="button">Export CSV</button>
       </div>
 
       {error ? <p aria-live="assertive" className="mt-4 rounded-control border border-warning/30 bg-warning/5 p-3 text-xs text-warning">{error}</p> : null}
@@ -275,7 +275,7 @@ function FindingCard({
             {members.map((member) => <option key={member.id} value={member.id}>{member.name}</option>)}
           </select>
         </label>
-        <button className="min-h-10 rounded-control border border-border bg-surface-inset px-3 text-xs text-foreground-muted hover:text-foreground disabled:opacity-50" disabled={saving} onClick={() => void save({ status: finding.status === "open" ? "resolved" : "open" })} type="button">{finding.status === "open" ? "Mark resolved" : "Reopen finding"}</button>
+        <button className="min-h-10 rounded-control border border-transparent bg-surface-inset px-3 text-xs text-foreground-muted hover:text-foreground disabled:opacity-50" disabled={saving} onClick={() => void save({ status: finding.status === "open" ? "resolved" : "open" })} type="button">{finding.status === "open" ? "Mark resolved" : "Reopen finding"}</button>
       </div> : null}
     </article>
   );

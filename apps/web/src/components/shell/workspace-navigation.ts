@@ -1,7 +1,7 @@
 import type { WorkspaceNavSection } from "./WorkspaceShell";
 
 type WorkspaceNavigationProject = { id: string; name: string };
-type WorkspacePage = "overview" | "project" | "integrations";
+type WorkspacePage = "overview" | "projects" | "project" | "integrations";
 
 export function createWorkspaceNavigation({
   workspaceId,
@@ -19,7 +19,7 @@ export function createWorkspaceNavigation({
       label: "Workspace",
       items: [
         { label: "Overview", href: `/workspace/${workspaceId}`, icon: "home", active: page === "overview" },
-        { label: "Projects", href: `/workspace/${workspaceId}#projects`, icon: "grid" },
+        { label: "Projects", href: `/workspace/${workspaceId}/projects`, icon: "grid", active: page === "projects" },
         { label: "Integrations", href: `/workspace/${workspaceId}/integrations`, icon: "settings", active: page === "integrations" },
       ],
     },

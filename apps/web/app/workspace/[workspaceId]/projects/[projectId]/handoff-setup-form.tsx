@@ -97,10 +97,10 @@ export function HandoffSetupForm({ input, mode }: {
     <section
       aria-labelledby="handoff-setup-title"
       className={mode === "project"
-        ? "rounded-project-panel bg-surface-raised p-5"
+        ? "workspace-pane p-5"
         : "rounded-panel bg-surface p-3"}
     >
-      <h2 className={mode === "project" ? "text-base font-semibold tracking-[-0.02em] text-foreground" : "text-[12px] font-semibold text-foreground"} id="handoff-setup-title">
+      <h2 className={mode === "project" ? "text-[15px] font-semibold tracking-[-0.01em] text-foreground" : "text-[12px] font-semibold text-foreground"} id="handoff-setup-title">
         {mode === "project" ? "Start a handoff" : "Add a version"}
       </h2>
       <p className={mode === "project" ? "mt-2 text-[13px] leading-5 text-foreground-muted" : "mb-3 mt-1 text-[10px] leading-4 text-foreground-subtle"}>
@@ -111,7 +111,7 @@ export function HandoffSetupForm({ input, mode }: {
         <div className="mt-4 border-t border-border/80 pt-4">
           <label className="block text-xs font-medium text-foreground-muted" htmlFor="figma-capture-token">One-time capture token</label>
           <div className="mt-2 flex gap-2">
-            <input id="figma-capture-token" readOnly value={token} className="min-h-11 min-w-0 flex-1 rounded-control border border-border/70 bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+            <input id="figma-capture-token" readOnly value={token} className="min-h-11 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
             <button type="button" onClick={() => void copyToken()} className="capture-primary-action min-h-11 rounded-control px-4 text-xs font-semibold">Copy token</button>
           </div>
           {expiresAt ? <p className="mt-2 text-xs text-foreground-subtle">Expires {new Date(expiresAt).toLocaleTimeString()} · use once</p> : null}
@@ -123,7 +123,7 @@ export function HandoffSetupForm({ input, mode }: {
           {mode === "project" && input.handoffs.length ? (
             <label className="block text-xs font-medium text-foreground-muted sm:col-span-2" htmlFor="handoff-destination">
               Handoff
-              <select id="handoff-destination" value={handoffId} onChange={(event) => setHandoffId(event.target.value)} className="mt-2 min-h-11 w-full rounded-xl border border-border bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+              <select id="handoff-destination" value={handoffId} onChange={(event) => setHandoffId(event.target.value)} className="mt-2 min-h-11 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
                 <option value="">New handoff</option>
                 {input.handoffs.map((handoff) => <option key={handoff.id} value={handoff.id}>{handoff.name}</option>)}
               </select>
@@ -131,33 +131,33 @@ export function HandoffSetupForm({ input, mode }: {
           ) : mode === "handoff" ? (
             <div className="sm:col-span-2">
               <span className="block text-xs font-medium text-foreground-muted">Handoff</span>
-              <p className="mt-2 rounded-xl border border-border bg-surface-inset px-3 py-3 text-sm text-foreground">{input.handoffs.find((handoff) => handoff.id === handoffId)?.name ?? "Current handoff"}</p>
+              <p className="mt-2 rounded-control border border-transparent bg-surface-inset px-3 py-3 text-sm text-foreground">{input.handoffs.find((handoff) => handoff.id === handoffId)?.name ?? "Current handoff"}</p>
             </div>
           ) : null}
 
           {isNewHandoff ? (
             <label className="block text-xs font-medium text-foreground-muted sm:col-span-2" htmlFor="setup-handoff-name">
               Handoff name
-              <input id="setup-handoff-name" name="handoffName" value={handoffName} onChange={(event) => setHandoffName(event.target.value)} required maxLength={100} placeholder="Checkout redesign" className="mt-2 min-h-11 w-full rounded-xl border border-border bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+              <input id="setup-handoff-name" name="handoffName" value={handoffName} onChange={(event) => setHandoffName(event.target.value)} required maxLength={100} placeholder="Checkout redesign" className="mt-2 min-h-11 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
             </label>
           ) : null}
 
           <label className="block text-xs font-medium text-foreground-muted" htmlFor="setup-version-label">
             Version label
-            <input id="setup-version-label" name="versionLabel" value={versionLabel} onChange={(event) => setVersionLabel(event.target.value)} required maxLength={80} placeholder="1.0.0" className="mt-2 min-h-11 w-full rounded-xl border border-border bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+            <input id="setup-version-label" name="versionLabel" value={versionLabel} onChange={(event) => setVersionLabel(event.target.value)} required maxLength={80} placeholder="1.0.0" className="mt-2 min-h-11 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
           </label>
           <label className="block text-xs font-medium text-foreground-muted" htmlFor="setup-release-note">
             Release note <span className="font-normal text-foreground-subtle">(optional)</span>
-            <input id="setup-release-note" name="releaseNote" value={releaseNote} onChange={(event) => setReleaseNote(event.target.value)} maxLength={4000} placeholder="What should reviewers focus on?" className="mt-2 min-h-11 w-full rounded-xl border border-border bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+            <input id="setup-release-note" name="releaseNote" value={releaseNote} onChange={(event) => setReleaseNote(event.target.value)} maxLength={4000} placeholder="What should reviewers focus on?" className="mt-2 min-h-11 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
           </label>
 
           <fieldset className="sm:col-span-2">
             <legend className="mb-2 text-xs font-medium text-foreground-muted">Version source</legend>
-            <div aria-label="Version source" className="grid grid-cols-2 gap-1 rounded-control bg-surface-muted p-1" role="group">
+            <div aria-label="Version source" className="dial-segmented grid w-full grid-cols-2" role="group">
               {(["figma", "upload"] as const).map((option) => (
                 <button
                   aria-pressed={source === option}
-                  className={"min-h-9 rounded-chip px-2 text-xs font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary " + (source === option ? "bg-surface-strong text-foreground" : "text-foreground-muted hover:bg-surface-raised hover:text-foreground")}
+                  className="min-h-9 px-2 text-[13px]"
                   key={option}
                   onClick={() => { setSource(option); setErrorMessage(""); setNotice(""); }}
                   type="button"
@@ -174,7 +174,7 @@ export function HandoffSetupForm({ input, mode }: {
               <input
                 accept=".zip,.png,.jpg,.jpeg,.webp,.svg,image/png,image/jpeg,image/webp,image/svg+xml,application/zip"
                 aria-describedby="setup-upload-hint"
-                className="mt-2 block min-h-11 w-full rounded-xl border border-border bg-surface-inset px-3 py-2 text-sm text-foreground file:mr-3 file:rounded-full file:border-0 file:bg-surface-raised file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground"
+                className="mt-2 block min-h-11 w-full rounded-control border border-transparent bg-surface-inset px-3 py-2 text-sm text-foreground file:mr-3 file:rounded-full file:border-0 file:bg-surface-raised file:px-3 file:py-1.5 file:text-xs file:font-medium file:text-foreground"
                 id="setup-snapshot-file"
                 name="file"
                 required

@@ -160,7 +160,7 @@ export function collectChangelogEvidence(input: {
   return [...prioritizedEvidence, ...remainingEvidence];
 }
 
-export async function createEvidenceLinkedDraft(input: {
+type DraftInput = {
   workspaceId: string;
   handoffId: string;
   handoffName: string;
@@ -169,28 +169,45 @@ export async function createEvidenceLinkedDraft(input: {
   rules: Parameters<typeof evaluateLayoutRules>[1];
   frameMatches?: FrameMatch[];
   nodeMatches?: NodeMatch[];
-}, dependencies: ChangelogDraftDependencies = {}) {
-  const evidence = collectChangelogEvidence(input, dependencies.listComments);
+};
+
+export type PreparedChangelogDraft = ReturnType<typeof prepareChangelogDraft>;
+
+/** Collects evidence and builds the model input; shared by batch and streaming generation. */
+export function prepareChangelogDraft(input: DraftInput, listComments?: ChangelogDraftDependencies["listComments"]) {
+  const evidence = collectChangelogEvidence(input, listComments);
   const modelEvidence = evidence.slice(0, 200);
   const evidenceCoverage = { provided: modelEvidence.length, total: evidence.length };
-  const generated = await (dependencies.generateChangelog ?? generateChangelog)({
-    handoffName: input.handoffName,
-    fromVersionLabel: input.from.versionLabel,
-    toVersionLabel: input.to.versionLabel,
+  return {
+    evidence,
+    modelEvidence,
     evidenceCoverage,
-    evidence: modelEvidence.map(({ id, kind, label, content }) => ({ id, kind, label, details: content })),
-  });
-  const evidenceIds = new Set(modelEvidence.map((item) => item.id));
+    generationInput: {
+      handoffName: input.handoffName,
+      fromVersionLabel: input.from.versionLabel,
+      toVersionLabel: input.to.versionLabel,
+      evidenceCoverage,
+      evidence: modelEvidence.map(({ id, kind, label, content }) => ({ id, kind, label, details: content })),
+    },
+  };
+}
+
+/** Rejects citations outside the supplied evidence and attaches the cited evidence records. */
+export function finalizeChangelogDraft(
+  prepared: PreparedChangelogDraft,
+  generated: Awaited<ReturnType<typeof generateChangelog>>,
+) {
+  const evidenceIds = new Set(prepared.modelEvidence.map((item) => item.id));
   for (const statement of generated.content.statements) {
     if (statement.evidence.some((id) => !evidenceIds.has(id))) {
       throw new Error("The generated draft referenced evidence that was not part of this handoff.");
     }
   }
 
-  const evidenceMap = new Map(evidence.map((item) => [item.id, item]));
+  const evidenceMap = new Map(prepared.evidence.map((item) => [item.id, item]));
   return {
     title: generated.content.title,
-    summary: addEvidenceCoverageNote(generated.content.summary, evidenceCoverage),
+    summary: addEvidenceCoverageNote(generated.content.summary, prepared.evidenceCoverage),
     statements: generated.content.statements,
     evidence: generated.content.statements.flatMap((statement) => statement.evidence)
       .map((id) => evidenceMap.get(id)!)
@@ -198,6 +215,12 @@ export async function createEvidenceLinkedDraft(input: {
       .map(({ content: _content, ...item }) => item),
     model: generated.model,
   };
+}
+
+export async function createEvidenceLinkedDraft(input: DraftInput, dependencies: ChangelogDraftDependencies = {}) {
+  const prepared = prepareChangelogDraft(input, dependencies.listComments);
+  const generated = await (dependencies.generateChangelog ?? generateChangelog)(prepared.generationInput);
+  return finalizeChangelogDraft(prepared, generated);
 }
 
 function frameStatus(status: "added" | "removed" | "changed") {

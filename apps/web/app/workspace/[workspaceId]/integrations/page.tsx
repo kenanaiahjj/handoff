@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionForHeaders } from "@/src/server/auth-session";
 import { getDatabase } from "@/src/server/db";
 import { listProjects } from "@/src/server/repositories/projects";
+import { canSeeWholeWorkspace, filterProjectsForViewer } from "@/src/server/services/review-visibility";
 import { McpTokenManager } from "@/src/components/integrations/McpTokenManager";
 import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
@@ -35,14 +36,14 @@ export default async function IntegrationsPage({ params }: IntegrationsPageProps
        ORDER BY workspace.created_at DESC`,
     )
     .all(session.user.id) as WorkspaceChoice[];
-  const projects = listProjects(workspaceId) as Array<{ id: string; name: string }>;
+  const projects = listProjects(workspaceId) as Array<{ id: string; name: string; handoffCount: number; versionCount: number }>;
 
   return (
     <WorkspaceShell
       user={{ name: session.user.name, email: session.user.email }}
       workspace={workspace}
       workspaces={workspaces}
-      navSections={createWorkspaceNavigation({ workspaceId, projects, page: "integrations" })}
+      navSections={createWorkspaceNavigation({ workspaceId, projects: filterProjectsForViewer(workspaceId, { id: session.user.id, email: session.user.email, role: workspace.role }, projects), page: "integrations" })}
       breadcrumbs={[
         { label: "Workspaces", href: "/workspace" },
         { label: workspace.name, href: `/workspace/${workspaceId}` },
@@ -51,11 +52,11 @@ export default async function IntegrationsPage({ params }: IntegrationsPageProps
     >
       <main className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 sm:py-9">
         <section className="border-b border-border pb-5">
-          <p className="font-mono text-xs uppercase tracking-[0.16em] text-accent">Workspace integrations</p>
+          <p className="text-[12px] font-medium text-foreground-subtle">Workspace integrations</p>
           <h1 className="mt-1 text-2xl font-semibold tracking-tight text-foreground">MCP access</h1>
           <p className="mt-2 max-w-2xl text-sm leading-6 text-foreground-muted">Connect Asbir Handoff to your AI client with a personal, scoped token. Your AI client can also use its own Asbir Teams or ClickUp task tools, plus repository and QA MCP connections. Tokens stop working when revoked, expired, or when you leave the workspace.</p>
         </section>
-        <div className="mt-5"><McpTokenManager workspaceId={workspaceId} canManageAll={true} /></div>
+        <div className="mt-5"><McpTokenManager workspaceId={workspaceId} canManageAll={canSeeWholeWorkspace(workspace.role)} /></div>
       </main>
     </WorkspaceShell>
   );

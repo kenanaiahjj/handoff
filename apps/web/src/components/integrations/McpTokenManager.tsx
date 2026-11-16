@@ -124,7 +124,7 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
         <p className="mt-1 text-xs leading-5 text-foreground-muted">Connect an MCP-compatible agent to read this workspace’s frozen handoffs. Writes require a token scope.</p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <label className="sr-only" htmlFor="mcp-endpoint-url">MCP endpoint URL</label>
-          <input id="mcp-endpoint-url" readOnly value={endpointUrl} className="min-h-10 min-w-0 flex-1 rounded-control border border-border/70 bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+          <input id="mcp-endpoint-url" readOnly value={endpointUrl} className="min-h-10 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
           <button type="button" onClick={() => void copy(endpointUrl, "Endpoint URL")} className="min-h-10 rounded-control bg-surface-raised px-3 text-xs font-medium text-foreground-muted hover:bg-border hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Copy endpoint</button>
         </div>
       </section>
@@ -135,7 +135,7 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
         <form className="mt-4 space-y-4" onSubmit={createToken}>
           <label className="block text-xs font-medium text-foreground-muted">
             Token name
-            <input autoComplete="off" maxLength={80} required value={name} onChange={(event) => setName(event.target.value)} placeholder="For example, QA agent" className="mt-1.5 min-h-10 w-full rounded-control border border-border/70 bg-surface-inset px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+            <input autoComplete="off" maxLength={80} required value={name} onChange={(event) => setName(event.target.value)} placeholder="For example, QA agent" className="mt-1.5 min-h-10 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
           </label>
           <fieldset className="space-y-2">
             <legend className="text-xs font-medium text-foreground-muted">Access scopes</legend>
@@ -148,7 +148,7 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
           </fieldset>
           <label className="block text-xs font-medium text-foreground-muted">
             Expires after
-            <select value={expiresInDays} onChange={(event) => setExpiresInDays(Number(event.target.value))} className="mt-1.5 min-h-10 w-full rounded-control border border-border/70 bg-surface-inset px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
+            <select value={expiresInDays} onChange={(event) => setExpiresInDays(Number(event.target.value))} className="mt-1.5 min-h-10 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
               <option value={30}>30 days</option>
               <option value={90}>90 days</option>
               <option value={180}>180 days</option>
@@ -165,7 +165,7 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
           <p className="mt-1 text-xs leading-5 text-foreground-muted">This is the only time the token is shown. Store it in your MCP client’s secret settings.</p>
           <div className="mt-3 flex flex-col gap-2 sm:flex-row">
             <label className="sr-only" htmlFor="new-mcp-token">New MCP token</label>
-            <input id="new-mcp-token" readOnly value={oneTimeToken} className="min-h-10 min-w-0 flex-1 rounded-control border border-border/70 bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+            <input id="new-mcp-token" readOnly value={oneTimeToken} className="min-h-10 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
             <button type="button" onClick={() => void copy(oneTimeToken, "Token")} className="min-h-10 rounded-control bg-surface-raised px-3 text-xs font-medium text-foreground hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Copy token</button>
             <button type="button" onClick={() => setOneTimeToken(null)} className="min-h-10 rounded-control bg-surface-raised px-3 text-xs font-medium text-foreground-muted hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Hide token</button>
           </div>

@@ -4,7 +4,8 @@ import test, { after } from "node:test";
 import { createWorkspaceMcpToken, resolveWorkspaceMcpToken } from "../repositories/mcp-tokens.ts";
 import { getHandoff } from "../repositories/handoffs.ts";
 import { getVersion } from "../repositories/versions.ts";
-import { loadHandoff, loadVersion } from "./mcp-access.ts";
+import { loadHandoff, loadVersion, scopedLoaders } from "./mcp-access.ts";
+import { visibleHandoffIds } from "./review-visibility.ts";
 
 const priorDatabase = globalThis.__asbirDatabase;
 const database = new Database(":memory:");
@@ -12,9 +13,11 @@ database.pragma("foreign_keys = ON");
 globalThis.__asbirDatabase = database;
 
 database.exec(`
+  CREATE TABLE "user" (id TEXT PRIMARY KEY, email TEXT NOT NULL);
+  CREATE TABLE handoff_invite (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_id TEXT NOT NULL, email TEXT NOT NULL, token_hash TEXT NOT NULL, expires_at TEXT, revoked_at TEXT, invited_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL, role TEXT NOT NULL);
   CREATE TABLE workspace_membership (workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE workspace_mcp_token (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, created_by_user_id TEXT NOT NULL, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, scopes_json TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL);
-  CREATE TABLE project (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, created_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE project (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, created_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL, pd_in_charge_user_id TEXT);
   CREATE TABLE handoff (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, project_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, review_share_id TEXT, published_version_id TEXT, published_at TEXT, published_by_user_id TEXT, sharing_mode TEXT NOT NULL DEFAULT 'workspace');
   CREATE TABLE handoff_version (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_id TEXT NOT NULL, version_label TEXT NOT NULL, release_note TEXT, source TEXT NOT NULL, source_file_id TEXT NOT NULL, source_revision_id TEXT, captured_at TEXT NOT NULL, content_hash TEXT NOT NULL, visual_only INTEGER NOT NULL, snapshot_json TEXT NOT NULL, created_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE handoff_asset (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_version_id TEXT NOT NULL, asset_key TEXT NOT NULL, object_key TEXT NOT NULL, file_name TEXT NOT NULL, content_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, width INTEGER, height INTEGER);
@@ -55,8 +58,15 @@ for (const [workspaceId, projectId, handoffId] of [
     .run(handoffId, workspaceId, projectId, handoffId, now);
 }
 
+for (const [id, email] of [["designer", "designer@example.test"], ["designer-b", "designer-b@example.test"], ["reviewer", "Reviewer@Example.test"]]) {
+  database.prepare('INSERT INTO "user" (id, email) VALUES (?, ?)').run(id, email);
+}
 database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)")
   .run("workspace-a", "designer", "designer", now);
+database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)")
+  .run("workspace-a", "reviewer", "reviewer", now);
+database.prepare(`INSERT INTO handoff_invite (id, workspace_id, handoff_id, email, token_hash, expires_at, revoked_at, invited_by_user_id, created_at, role)
+  VALUES ('invite-a', 'workspace-a', 'handoff-a', 'reviewer@example.test', 'hash-a', NULL, NULL, 'designer', ?, 'qa')`).run(now);
 database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)")
   .run("workspace-b", "designer-b", "designer", now);
 
@@ -97,4 +107,32 @@ test("an MCP token can load only handoffs and versions from its workspace and ha
     () => loadVersion(access.workspaceId, { projectId: "project-a", handoffId: "handoff-a", versionId: "version-a-other" }),
     /Version not found in this handoff/,
   );
+});
+
+test("a reviewer's MCP token reaches only handoffs shared with that reviewer", () => {
+  const designerAccess = resolveWorkspaceMcpToken(createWorkspaceMcpToken({
+    workspaceId: "workspace-a", createdBy: "designer", name: "Designer agent", scopes: ["handoffs:read"], expiresInDays: 1,
+  }).token);
+  assert.equal(visibleHandoffIds("workspace-a", designerAccess.viewer), null, "designers keep workspace-wide access");
+
+  const access = resolveWorkspaceMcpToken(createWorkspaceMcpToken({
+    workspaceId: "workspace-a", createdBy: "reviewer", name: "Reviewer agent", scopes: ["handoffs:read"], expiresInDays: 1,
+  }).token);
+  assert.equal(access?.viewer.role, "reviewer");
+  const allowed = visibleHandoffIds("workspace-a", access.viewer);
+  assert.deepEqual([...allowed], ["handoff-a"], "the invite email matches case-insensitively");
+
+  const { loadHandoff: load, loadVersion: loadScopedVersion } = scopedLoaders(allowed);
+  assert.ok(load("workspace-a", "project-a", "handoff-a"));
+  assert.ok(loadScopedVersion("workspace-a", { projectId: "project-a", handoffId: "handoff-a", versionId: "version-a" }));
+  assert.throws(() => load("workspace-a", "project-a", "handoff-a-other"), /Handoff not found in this workspace/);
+  assert.throws(
+    () => loadScopedVersion("workspace-a", { projectId: "project-a", handoffId: "handoff-a-other", versionId: "version-a-other" }),
+    /Handoff not found in this workspace/,
+  );
+
+  database.prepare("UPDATE handoff_invite SET revoked_at = ? WHERE id = 'invite-a'").run(now);
+  assert.equal(visibleHandoffIds("workspace-a", access.viewer).size, 0, "revoking the invite removes access");
+  database.prepare("UPDATE project SET pd_in_charge_user_id = 'reviewer' WHERE id = 'project-a'").run();
+  assert.deepEqual([...visibleHandoffIds("workspace-a", access.viewer)].sort(), ["handoff-a", "handoff-a-other"], "a PD in charge sees the whole project");
 });

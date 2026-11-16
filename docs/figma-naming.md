@@ -17,8 +17,8 @@
 2. [What the plugin captures](#2-what-the-plugin-captures)
 3. [Core principles](#3-core-principles)
 4. [The format](#4-the-format)
-5. [Type — the surface taxonomy](#5-type--the-surface-taxonomy)
-6. [Area — the product map](#6-area--the-product-map)
+5. [Surface types — context, not part of the name](#5-surface-types--context-not-part-of-the-name)
+6. [Page or feature — the first name segment](#6-page-or-feature--the-first-name-segment)
 7. [Name — the specific surface](#7-name--the-specific-surface)
 8. [Variant — states and conditions](#8-variant--states-and-conditions)
 9. [Flows and multi-step sequences](#9-flows-and-multi-step-sequences)
@@ -91,12 +91,12 @@ A full-file capture that exceeds the layer or byte limits **stops** — the plug
 
 **P3 — Names are unique.** No two captured frames may share a name. See §4.
 
-**P4 — The vocabulary is closed.** Types, Areas, and Variants come from fixed lists. A closed vocabulary is what makes search work — synonym drift ("Guest" / "Logged Out" / "No Account" / "Anonymous") is what makes a file unsearchable.
+**P4 — Page and variant names stay consistent.** Use the product's established page or feature names and a shared variant vocabulary. Synonym drift ("Guest" / "Logged Out" / "No Account" / "Anonymous") makes a file harder to search.
 
 **P5 — One frame, one surface.** If a surface has two meaningfully different states, that's two frames sharing a base name. Never swap content inside one frame between versions — the diff becomes meaningless.
 
 **P6 — Name the artifact, not the journey.**
-✅ `Modal - Rewards - Claim Daily Drop`
+✅ `Rewards - Claim Daily Drop`
 ❌ `Pop-Up That Appears When You Claim The Daily Drop`
 The second breaks the day the entry point changes.
 
@@ -107,61 +107,64 @@ The second breaks the day the entry point changes.
 ## 4. The format
 
 ```
-Type - Area - Name (Variant)
+Page or Feature - Surface (Variant)
 ```
 
 ### Anatomy
 
 ```
-Screen  -  Paywall  -  Main  (Member, Error)
-└──┬──┘    └──┬───┘    └─┬┘   └──────┬─────┘
-   │          │          │           │
-   │          │          │           └─ optional; states, comma-separated
-   │          │          └───────────── the specific surface
-   │          └──────────────────────── product domain
-   └─────────────────────────────────── kind of surface
+Passenger  -  Booking Details  (Member, Error)
+└─────┬───┘    └───────┬─────┘  └──────┬─────┘
+      │                │                └─ optional; states, comma-separated
+      │                └────────────────── specific surface
+      └─────────────────────────────────── page or feature
 ```
+
+Start with the page or feature people use to find the surface. Leave type labels such as `Screen`, `Module`, and `Modal` out of the frame name.
 
 ### Mechanical rules
 
 | Rule | Detail |
 |---|---|
 | **Separator** | Hyphen with a space on **both** sides: ` - ` |
-| **Parts** | Exactly three, always |
+| **Parts** | Two, always: page or feature, then surface |
 | **Variant** | In parentheses, at the very end, only when needed |
 | **Multiple variants** | Comma-space separated inside one set of parens: `(Member, Empty)` |
-| **Casing** | Title Case in every part |
+| **Casing** | Title Case in both parts |
 | **Inner hyphens** | Fine, as long as they have no surrounding spaces: `First Top-Up` ✅ |
 
-The spaces around the separator are why `Flow - Wallet - First Top-Up` parses into three clean parts — `Top-Up`'s hyphen is unspaced.
+Use the spaced separator once, between the page or feature and the surface. Inner hyphens have no surrounding spaces, as in `Wallet - First Top-Up`.
 
 ### Uniqueness
 
 **Use non-empty, unique names for every captured frame**, anywhere in the file. Figma capture warns about blank or duplicate names after surrounding whitespace is trimmed, but still allows the upload. Follow the naming rule to make screen tracking and comparison clearer. When two versions have the same verified Figma file ID, Asbir automatically compares frames whose non-empty name is unique in both full captures, even if Figma generated a new frame ID. Name matching is case-sensitive. Keep a screen's name stable while it represents the same surface. Duplicate or blank names cannot be matched safely by name. Asbir does not auto-pair by name across different files or when a legacy snapshot's file identity cannot be verified; shared frame IDs can still match through the legacy identity path.
 
-If two frames seem to need the same name, one of them isn't a separate surface. Merge them, or separate them with a variant (§8).
+If two frames share a page or feature and surface name but represent different artifacts, give them distinct surface names. Use variants only when the same surface appears in different conditions (§8). Merge frames that represent the same artifact.
 
 ### Examples
 
 ```
-Screen - Store - Home
-Screen - Wallet - Details (Empty)
-Screen - Paywall - Main (Guest)
-Screen - Paywall - Main (Member)
-Sheet - Wallet - Top-Up Amount
-Modal - Rewards - Claim Daily Drop
-Overlay - Global - Offline Banner
-Module - Global - Tab Bar
-Flow - Store - Buy VIP Pass
-Flow - Store - Buy VIP Pass (Repeat)
-Message - Rewards - Streak Reminder Push
+Passenger - Booking Details
+Passenger - Booking Details (Loading)
+Passenger - Fare Summary
+Store - Home
+Wallet - Details (Empty)
+Paywall - Main (Guest)
+Paywall - Main (Member)
+Wallet - Top-Up Amount
+Rewards - Claim Daily Drop
+Global - Offline Banner
+Global - Tab Bar
+Store - Buy VIP Pass
+Store - Buy VIP Pass (Repeat)
+Rewards - Streak Reminder Push
 ```
 
 ---
 
-## 5. Type — the surface taxonomy
+## 5. Surface types — context, not part of the name
 
-Eight types cover everything we ship. Pick by **how the surface behaves**, not how it looks.
+These labels help the team discuss how a surface behaves. They do not appear in frame names. Pick a clear page or feature and surface name; use the design itself to show whether the artifact is a screen, modal, module, flow, or another surface type. For example, a Passenger screen and a Passenger module both begin with `Passenger`.
 
 ### The core eight
 
@@ -176,7 +179,7 @@ Eight types cover everything we ship. Pick by **how the surface behaves**, not h
 | `Message` | Out-of-app or inbox communication | Does it exist outside the running app? |
 | `Asset` | Shipped deliverable that isn't UI | Does it render somewhere other than our app? |
 
-> **Why `Module` and not `Component` or `Section`?** Both collide with reserved Figma terms, and the collision is live here: the plugin captures "frames **and components**," and it traverses Figma **Sections**. Naming a frame `Component - …` or `Section - …` means the name fights the tool. `Module` is unclaimed.
+The type labels are review vocabulary only. Figma object names still follow the page-or-feature format whether the captured object is a frame or a component.
 
 ### Optional types
 
@@ -197,7 +200,7 @@ Adopt one only when we actually ship that surface — vocabulary nobody uses mak
 - **`Sheet` vs `Modal`** — edge-anchored, swipe-dismissible → `Sheet`. Centered, requires a choice → `Modal`.
 - **`Modal` vs `Overlay`** — blocking → `Modal`. Ignorable → `Overlay`.
 - **`Module` vs `Screen`** — only promote a region to `Module` if it needs to be reviewed independently of its parent screen. Don't make one per card; make one for the ad slot you keep redesigning.
-- **Chrome vs content** — both are `Module`; the Area slot separates them. `Module - Global - Tab Bar` vs `Module - Wallet - Balance Card`.
+- **Chrome vs content** — both can use the `Module` review category. The page or feature label identifies ownership: `Global - Tab Bar` vs `Wallet - Balance Card`.
 - **`Flow` vs several `Screen`s** — do both when useful. See §9 for how a Flow captures.
 - **`Screen` vs `Asset`** — renders in our app → `Screen`. Renders in the App Store, an email client, or on paper → `Asset` or `Message`.
 
@@ -240,37 +243,29 @@ iOS/Android permission prompt · Apple Pay / Google Pay sheet · biometric promp
 
 We can't change these, so they're not surfaces of ours. Include them as step frames inside a `Flow` (`04 iOS Notification Prompt`) when the sequence needs them.
 
-### Type names we reject
+### Type labels do not appear in frame names
 
-| Proposed | Why not | Use |
+| Type label | Why it is omitted | Start with |
 |---|---|---|
-| `Page`, `View`, `Route` | Synonyms | `Screen` |
-| `Popup`, `Dialog`, `Alert`, `Prompt` | Four words, one surface | `Modal` |
-| `Drawer`, `Tray`, `Panel` | Same behavior, different word | `Sheet` |
-| `Toast`, `Snackbar`, `Banner`, `Tooltip` | Instances, not types | `Overlay` |
-| `Component` | Reserved Figma term; the plugin captures components | `Module` |
-| `Section` | Reserved Figma term; the plugin traverses Sections | `Module` |
-| `Card`, `Row`, `Block`, `Element` | Either a `Module` or not captured at all | `Module` |
-| `Wizard`, `Journey`, `Funnel`, `Prototype` | Same structure as a flow | `Flow` |
-| `Push`, `Email`, `SMS`, `Notification` | Channel belongs in the name | `Message` |
-| `State`, `Empty`, `Error`, `Loading` | Conditions, not surfaces | a variant |
-| `Interstitial`, `Takeover`, `Splash` | Full-screen is full-screen | `Screen` |
-| `Template`, `Variant`, `Instance` | Figma concepts, not product surfaces | — |
+| `Screen`, `Sheet`, `Modal`, `Overlay`, `Module`, `Flow`, `Message`, `Asset` | Surface type is not page or feature context | `Passenger - Booking Details` |
+| `Component`, `Section` | These are Figma object or container terms | A concrete name such as `Passenger - Fare Summary` |
+| `Page`, `View`, `Route` | These generic labels do not identify the product surface | The established page or feature name |
 
-Each is reasonable in isolation. Allowing any of them is how we end up back where we started.
+Use descriptive surface words where they help identify the artifact, such as `Tab Bar`, `Receipt Email`, or `Buy VIP Pass`. Do not add a type word solely to classify the frame.
 
 ---
 
-## 6. Area — the product map
+## 6. Page or feature — the first name segment
 
-Areas are the product's domains. They should match how the team already talks — and ideally how the code is organized.
+The first name segment identifies the product page or feature that owns the surface. For example, `Passenger` is a Tripket product page label. This segment does not refer to a Figma document page tab; those tabs remain the capture and organization units. Use the label the team already knows, and keep it aligned with the product and code organization.
 
-### Our areas
+### Page or feature labels
 
-| Area | Covers |
+| Page or feature | Covers |
 |---|---|
 | `Global` | Cross-app chrome and app-level states |
 | `Onboarding` | First-run, sign-up, sign-in, permissions |
+| `Passenger` | Tripket passenger booking and trip-management surfaces |
 | `Store` | Browsing, product detail, cart, checkout |
 | `Wallet` | Balance, top-up, transaction history, payment methods |
 | `Paywall` | Subscription offers, upgrade prompts, plan comparison |
@@ -279,9 +274,9 @@ Areas are the product's domains. They should match how the team already talks �
 | `Ads` | Ad units, rewarded video, ad-gated content |
 | `Vouchers` | Voucher issuance, claiming, partner redemption |
 
-> ⚠️ **Prune this to what we actually have before adopting.** An area nobody uses is dead vocabulary.
+> ⚠️ **Prune this to what we actually have before adopting.** A page or feature label nobody uses is dead vocabulary.
 
-### Candidate areas by domain
+### Candidate page or feature labels by domain
 
 The wider space to choose from, so the list we *did* pick is visibly a choice.
 
@@ -299,13 +294,13 @@ The wider space to choose from, so the list we *did* pick is visibly a choice.
 | **Monetization** | `Ads` · `Promotions` |
 | **Operator tools** | `Admin` · `Dashboard` · `Reports` · `Organizer` |
 
-### What `Global` actually means
+### What `Global` means
 
-`Global` means **"belongs to no product domain"** — not "appears in many places." When those diverge, ownership wins.
+`Global` means **"belongs to no product page or feature"** — not "appears in many places." When those diverge, ownership wins.
 
 **Appears everywhere, but not `Global`:**
 
-| Surface | Area | Why |
+| Surface | Page or feature | Why |
 |---|---|---|
 | "Daily drop claimed!" toast | `Rewards` | Rewards owns it, wherever it fires |
 | Upsell banner across the app | `Paywall` | Paywall team's surface |
@@ -313,24 +308,23 @@ The wider space to choose from, so the list we *did* pick is visibly a choice.
 | Ad slot in several feeds | `Ads` | Ads owns the unit |
 | Sign-in prompt interrupting any action | `Onboarding` | Auth owns it |
 
-**Appears in one place, but *is* `Global`:**
-`Screen - Global - Maintenance` · `Screen - Global - Not Found` · `Modal - Global - Force Update` · `Modal - Global - Session Expired`
+**Belongs to the app as a whole:**
+`Global - Maintenance` · `Global - Not Found` · `Global - Force Update` · `Global - Session Expired`
 
-> **The test:** ask *"whose team owns this?"* If the answer is a domain, use it however widely the surface appears. Only when there's genuinely no owner is it `Global`.
+> **The test:** ask *"which page or feature owns this?"* Use that label even if the surface appears elsewhere. Use `Global` only when no feature owns it.
 
 So `Global` holds two things: **chrome** (tab bar, header, nav, footer) and **app-level states** (offline, maintenance, 404, force update, session expired, generic error).
 
-**The template trap.** A generic `Module - Global - Empty State` is the reusable *pattern*. The wallet's actual empty state, with its own copy and art, is `Screen - Wallet - Details (Empty)`. If you're writing `Module - Global - Wallet Empty State`, the `Global` is wrong.
+**The template trap.** A generic `Global - Empty State` is the reusable *pattern*. The wallet's actual empty state, with its own copy and art, is `Wallet - Details (Empty)`. If you're writing `Global - Wallet Empty State`, the `Global` is wrong.
 
-**Health check:** `Global` should be our *smallest* area — roughly 5–10 frames. Past ~15% of the file, things are being filed there because they're hard to classify.
+**Health check:** `Global` should be our *smallest* feature label — roughly 5–10 frames. Past ~15% of the file, things are being filed there because they're hard to classify.
 
-### Bad areas — reject these
+### Labels to reject
 
-| Bad | Why | Fix |
+| Bad label | Why | Better choice |
 |---|---|---|
-| `Topping Up`, `Claiming` | An action, not a place | `Wallet`, `Vouchers` |
-| `Checkout Flow` | Bakes the type into the area | Area `Store`, type `Flow` |
-| `Misc`, `Other`, `General` | Dumping ground | A real area, or `Global` |
+| `Topping Up`, `Claiming` | Actions, not pages or features | `Wallet`, `Vouchers` |
+| `Misc`, `Other`, `General` | Dumping ground | A real page or feature, or `Global` |
 | `Mobile`, `iOS` | A platform — that's a variant | `(iOS)` |
 | `New Stuff`, `V2` | Recency | — |
 | `Sprint 14`, `Q3` | Time | — |
@@ -340,26 +334,26 @@ So `Global` holds two things: **chrome** (tab bar, header, nav, footer) and **ap
 
 > ⚠️ Guard `Misc` hardest. It starts as a convenience and ends up holding a third of the file.
 
-### Rules for areas
+### Rules for page or feature labels
 
-1. **An area is a place in the app, owned by someone.** If you can't say "that's the wallet team's," it probably isn't an area.
-2. **8–12 areas is the target.** Under 6 they stop filtering; over 15 nobody remembers them.
-3. **Every area should hold 3+ frames.** An area with one frame is really just a screen name.
-4. **Areas should roughly match the code's folder structure.** Then developers navigate the review canvas without translating.
-5. **Areas are nouns, not features.** `Wallet` ✅ — `Topping Up` ❌
-6. **One area per surface.** If it genuinely spans two, ask whose team owns it. A paywall inside the store is still `Paywall`.
-7. **`Global` is chrome and app-level states only** — not a bucket for the unclassifiable.
-8. **Adding an area is deliberate.** See §15.
+1. **Use the page or feature that owns the surface.** If you can't say "that's part of Passenger," the label might be too broad.
+2. **Keep the list small.** Use enough labels to filter the file, but avoid labels nobody remembers.
+3. **Each label should collect related surfaces.** A label with one frame might belong in the surface name instead.
+4. **Match product language and code structure where practical.** Then developers can navigate without translating terms.
+5. **Use nouns for page or feature labels.** `Passenger` ✅ — `Booking a Trip` ❌
+6. **Use one owner per surface.** A paywall inside the store still belongs under `Paywall` if that feature owns it.
+7. **`Global` is for app-level chrome and states** — not a bucket for the unclassifiable.
+8. **Add a label deliberately.** See §15.
 
 ---
 
 ## 7. Name — the specific surface
 
 - **2–4 words.** `Main`, `Home`, `Details`, `Product Detail`, `Buy VIP Pass`, `Transaction History`.
-- **`Main`** for an area's single primary surface when no better word exists. It's a fallback that keeps the three-part shape intact — if a better word exists (`Offer`, `Overview`), use it.
-- **`Home`** when the area has a landing surface plus deeper ones: `Screen - Store - Home` + `Screen - Store - Product Detail`.
-- **Don't repeat the area.** `Screen - Wallet - Wallet Details` ❌ → `Screen - Wallet - Details` ✅
-- **Don't repeat the type.** `Modal - Rewards - Claim Daily Drop Popup` ❌
+- **`Main`** for a page or feature's primary surface when no better word exists. If a clearer word exists (`Offer`, `Overview`), use it.
+- **`Home`** when the feature has a landing surface plus deeper ones: `Store - Home` + `Store - Product Detail`.
+- **Don't repeat the page or feature.** `Wallet - Wallet Details` ❌ → `Wallet - Details` ✅
+- **Don't include a type label.** Use `Rewards - Claim Daily Drop`, not `Modal - Rewards - Claim Daily Drop`.
 - **Verbs are fine for flows and actions.** `Buy VIP Pass`, `Claim Cebuana`, `First Top-Up`.
 - **Prefer the user's word over the internal one.** `Daily Drop`, not `DailyRewardV2Container`.
 - **Consistent abbreviations only.** `VIP`, `QR`, `KYC`, `OTP` are fine. Don't invent new ones.
@@ -402,8 +396,8 @@ Comma-separated, in this fixed slot order:
 ```
 
 ```
-Screen - Wallet - Details (Member, Empty)      ✅
-Screen - Wallet - Details (Empty, Member)      ❌ wrong order
+Wallet - Details (Member, Empty)      ✅
+Wallet - Details (Empty, Member)      ❌ wrong order
 ```
 
 **Cap: two variants.** Three or more means the surface is doing too much, or you're documenting a matrix — and a matrix belongs on a non-captured page, not in the handoff.
@@ -426,10 +420,10 @@ Would a reviewer want to see these side by side?
 
 ## 9. Flows and multi-step sequences
 
-A `Flow` frame is a **container** holding the ordered steps of a sequence.
+A flow frame is a **container** holding the ordered steps of a sequence. Its name still follows the same page-or-feature format; the flow category is not part of the name.
 
 ```
-Flow - Store - Buy VIP Pass          ← the top-level frame; this is what captures
+Store - Buy VIP Pass          ← the top-level frame; this is what captures
 ├── 01 Select Pass
 ├── 02 Confirm Purchase
 ├── 03 Payment Method
@@ -437,18 +431,18 @@ Flow - Store - Buy VIP Pass          ← the top-level frame; this is what captu
 └── 05 Success
 ```
 
-> ⚠️ **How this captures.** The plugin captures **top-level** frames. A `Flow` container captures as *one* artboard with the steps inside it as layers — not as five separate screens in the review canvas. The structured layer data is all there and inspectable, but reviewers see one wide frame.
+> ⚠️ **How this captures.** The plugin captures **top-level** frames. A flow container captures as *one* artboard with the steps inside it as layers — not as five separate surfaces in the review canvas. The structured layer data is all there and inspectable, but reviewers see one wide frame.
 >
-> **So capture both.** The `Flow` container carries the sequence — order, branching, transitions. Each step that developers have to build is *also* a top-level `Screen` frame of its own. The two aren't redundant: the flow answers "what happens in what order," the screens answer "what do I build." A step frame inside the flow and its standalone `Screen` are the same surface recorded for two different readers.
+> **So capture both.** The flow container carries the sequence — order, branching, transitions. Each step that developers have to build is *also* a top-level frame with its own page-or-feature name. The two aren't redundant: the flow answers "what happens in what order," and the standalone frames answer "what do I build."
 
 ### Rules
 
 1. **Step frames are zero-padded** — `01`, `02` … so they sort and read in order.
-2. **Step frames don't follow the three-part format.** They're internal to the flow; a short label is right.
+2. **Step frames don't follow the top-level format.** They're internal to the flow; a short label is right.
 3. **Leave gaps** (`10`, `20`, `30`) if you expect to insert steps.
 4. **Number, don't date.** Never `01 Select Pass (Jul 9)`.
 5. **Branches get a letter suffix:** `03a Payment Method - Card`, `03b Payment Method - Wallet`.
-6. **A step that's also a destination can exist twice** — as a top-level `Screen` and as a step inside the flow. That's intentional.
+6. **A step that's also a destination can exist twice** — as a top-level frame and as a step inside the flow. That's intentional.
 7. **Don't number top-level names.** `3.2 - Store - Buy VIP Pass` ❌ — journey order changes constantly.
 8. **Watch the width.** A long flow container makes a very wide render. If it's unreadable in the review canvas, split it into two flows.
 
@@ -460,112 +454,114 @@ Flow - Store - Buy VIP Pass          ← the top-level frame; this is what captu
 
 | Surface | Name |
 |---|---|
-| Store landing | `Screen - Store - Home` |
-| Product / pass detail | `Screen - Store - Product Detail` |
-| Search results | `Screen - Store - Search Results` |
-| Search, no results | `Screen - Store - Search Results (Empty)` |
-| Wallet balance & history | `Screen - Wallet - Details` |
-| Transaction detail | `Screen - Wallet - Transaction Detail` |
-| Paywall, not subscribed | `Screen - Paywall - Main (Guest)` |
-| Paywall, already subscribed | `Screen - Paywall - Main (Member)` |
-| Plan comparison | `Screen - Paywall - Plan Comparison` |
-| Profile, free user | `Screen - Profile - Main (Free)` |
-| Profile, subscriber | `Screen - Profile - Main (Subscribed)` |
-| Settings list | `Screen - Profile - Settings` |
-| Rewarded video playing | `Screen - Ads - Watching` |
-| Ad in fixed aspect ratio | `Screen - Ads - Fixed Ratio` |
-| Voucher list | `Screen - Vouchers - My Vouchers` |
-| Sign-in | `Screen - Onboarding - Sign In` |
-| OTP entry | `Screen - Onboarding - Verify OTP` |
+| Store landing | `Store - Home` |
+| Product / pass detail | `Store - Product Detail` |
+| Search results | `Store - Search Results` |
+| Search, no results | `Store - Search Results (Empty)` |
+| Wallet balance & history | `Wallet - Details` |
+| Transaction detail | `Wallet - Transaction Detail` |
+| Paywall, not subscribed | `Paywall - Main (Guest)` |
+| Paywall, already subscribed | `Paywall - Main (Member)` |
+| Plan comparison | `Paywall - Plan Comparison` |
+| Profile, free user | `Profile - Main (Free)` |
+| Profile, subscriber | `Profile - Main (Subscribed)` |
+| Settings list | `Profile - Settings` |
+| Rewarded video playing | `Ads - Watching` |
+| Ad in fixed aspect ratio | `Ads - Fixed Ratio` |
+| Voucher list | `Vouchers - My Vouchers` |
+| Sign-in | `Onboarding - Sign In` |
+| OTP entry | `Onboarding - Verify OTP` |
+
+For Tripket, use `Passenger` first for surfaces owned by the Passenger page. For example, a booking-details surface can be named `Passenger - Booking Details`.
 
 ### Sheets and panels
 
 | Surface | Name |
 |---|---|
-| Top-up amount picker | `Sheet - Wallet - Top-Up Amount` |
-| Payment method picker | `Sheet - Wallet - Payment Method` |
-| Filter panel | `Sheet - Store - Filters` |
-| Nav drawer | `Sheet - Global - Nav Drawer` |
-| Share menu | `Sheet - Global - Share` |
+| Top-up amount picker | `Wallet - Top-Up Amount` |
+| Payment method picker | `Wallet - Payment Method` |
+| Filter panel | `Store - Filters` |
+| Nav drawer | `Global - Nav Drawer` |
+| Share menu | `Global - Share` |
 
 ### Modals and dialogs
 
 | Surface | Name |
 |---|---|
-| Daily drop claim popup | `Modal - Rewards - Claim Daily Drop` |
-| Purchase confirmation | `Modal - Store - Confirm Purchase` |
-| Cancel subscription warning | `Modal - Paywall - Confirm Cancel` |
-| Delete account confirm | `Modal - Profile - Confirm Delete Account` |
-| Force-update wall | `Modal - Global - Force Update` |
-| Session expired | `Modal - Global - Session Expired` |
+| Daily drop claim popup | `Rewards - Claim Daily Drop` |
+| Purchase confirmation | `Store - Confirm Purchase` |
+| Cancel subscription warning | `Paywall - Confirm Cancel` |
+| Delete account confirm | `Profile - Confirm Delete Account` |
+| Force-update wall | `Global - Force Update` |
+| Session expired | `Global - Session Expired` |
 
 ### Overlays
 
 | Surface | Name |
 |---|---|
-| Success toast | `Overlay - Global - Success Toast` |
-| Error snackbar | `Overlay - Global - Error Snackbar` |
-| Offline banner | `Overlay - Global - Offline Banner` |
-| Feature tooltip | `Overlay - Store - Filter Tooltip` |
-| First-run coach marks | `Overlay - Onboarding - Coach Marks` |
+| Success toast | `Global - Success Toast` |
+| Error snackbar | `Global - Error Snackbar` |
+| Offline banner | `Global - Offline Banner` |
+| Feature tooltip | `Store - Filter Tooltip` |
+| First-run coach marks | `Onboarding - Coach Marks` |
 
 ### Modules and chrome
 
 | Surface | Name |
 |---|---|
-| Bottom tab bar | `Module - Global - Tab Bar` |
-| App header | `Module - Global - Header` |
-| Balance card | `Module - Wallet - Balance Card` |
-| Streak tracker | `Module - Rewards - Streak Tracker` |
-| Ad slot in feed | `Module - Ads - Feed Slot` |
-| Product card | `Module - Store - Product Card` |
+| Bottom tab bar | `Global - Tab Bar` |
+| App header | `Global - Header` |
+| Balance card | `Wallet - Balance Card` |
+| Streak tracker | `Rewards - Streak Tracker` |
+| Ad slot in feed | `Ads - Feed Slot` |
+| Product card | `Store - Product Card` |
 
 ### Flows
 
 | Surface | Name |
 |---|---|
-| Buying a VIP pass | `Flow - Store - Buy VIP Pass` |
-| Buying another, already owned | `Flow - Store - Buy VIP Pass (Repeat)` |
-| First-ever top-up | `Flow - Wallet - First Top-Up` |
-| Claiming a Cebuana voucher | `Flow - Vouchers - Claim Cebuana` |
-| Full checkout | `Flow - Store - Checkout` |
-| KYC verification | `Flow - Onboarding - Verify Identity` |
+| Buying a VIP pass | `Store - Buy VIP Pass` |
+| Buying another, already owned | `Store - Buy VIP Pass (Repeat)` |
+| First-ever top-up | `Wallet - First Top-Up` |
+| Claiming a Cebuana voucher | `Vouchers - Claim Cebuana` |
+| Full checkout | `Store - Checkout` |
+| KYC verification | `Onboarding - Verify Identity` |
 
 ### Messages
 
 | Surface | Name |
 |---|---|
-| Streak reminder push | `Message - Rewards - Streak Reminder Push` |
-| Purchase receipt email | `Message - Store - Receipt Email` |
-| OTP SMS | `Message - Onboarding - OTP SMS` |
-| Win-back email | `Message - Paywall - Win-Back Email` |
+| Streak reminder push | `Rewards - Streak Reminder Push` |
+| Purchase receipt email | `Store - Receipt Email` |
+| OTP SMS | `Onboarding - OTP SMS` |
+| Win-back email | `Paywall - Win-Back Email` |
 
 ### Assets
 
 | Surface | Name |
 |---|---|
-| Voucher QR artwork | `Asset - Vouchers - QR Code` |
-| App Store screenshots | `Asset - Global - Store Screenshots` |
-| Social share image | `Asset - Global - OG Image` |
+| Voucher QR artwork | `Vouchers - QR Code` |
+| App Store screenshots | `Global - Store Screenshots` |
+| Social share image | `Global - OG Image` |
 
 ### Universal states
 
 Name them as variants of the surface they interrupt:
 
 ```
-Screen - Wallet - Details (Loading)
-Screen - Wallet - Details (Empty)
-Screen - Wallet - Details (Error)
+Wallet - Details (Loading)
+Wallet - Details (Empty)
+Wallet - Details (Error)
 ```
 
 Only when a state is its own designed destination does it get its own name:
 
 ```
-Screen - Global - Maintenance
-Screen - Global - Not Found
+Global - Maintenance
+Global - Not Found
 ```
 
-**How to decide:** same layout, different content → variant. Replaces the surface entirely → its own `Screen`.
+**How to decide:** same layout, different content → variant. Replaces the surface entirely → give it a distinct surface name under the owning page or feature.
 
 ---
 
@@ -574,9 +570,10 @@ Screen - Global - Not Found
 | Rule | ✅ | ❌ |
 |---|---|---|
 | Title Case every part | `Buy VIP Pass` | `buy vip pass` |
-| Spaces around the separator | `Screen - Store - Home` | `Screen-Store-Home` |
-| No slashes | `Screen - Store - Home` | `Screen / Store / Home` |
-| No emoji in captured frame names | `Screen - Store - Home` | `🛍 Screen - Store - Home` |
+| Spaces around the separator | `Store - Home` | `Store-Home` |
+| No slashes | `Store - Home` | `Store / Home` |
+| No emoji in captured frame names | `Store - Home` | `🛍 Store - Home` |
+| No surface-type labels | `Passenger - Booking Details` | `Screen - Passenger - Booking Details` |
 | Spell out "and" | `Terms and Privacy` | `Terms & Privacy` |
 | No trailing punctuation | `Details` | `Details.` |
 | Single spaces only | `Buy VIP Pass` | `Buy  VIP Pass` |
@@ -608,17 +605,15 @@ Screen - Global - Not Found
 
 ### Synonym blacklist
 
-| Don't use | Use |
-|---|---|
-| Logged Out, No Account, Anonymous, Not Signed In | `Guest` |
-| No Membership, Non-Subscriber, Basic | `Free` |
-| Premium, Paid, Pro, VIP User | `Member` or `Subscribed` |
-| Pop-Up, Popup, Dialogue, Alert Box | type `Modal` |
-| Bottom Sheet, Drawer, Tray | type `Sheet` |
-| Toast, Snackbar, Banner *(as a name)* | type `Overlay` |
-| Blank, No Data, Zero State | `Empty` |
-| Spinner, Loader | `Loading` |
-| Page *(as a name suffix)* | type `Screen` |
+| Don't use | Why | Use |
+|---|---|---|
+| Logged Out, No Account, Anonymous, Not Signed In | Variant synonyms drift | `Guest` |
+| No Membership, Non-Subscriber, Basic | Variant synonyms drift | `Free` |
+| Premium, Paid, Pro, VIP User | Variant synonyms drift | `Member` or `Subscribed` |
+| `Screen`, `Module`, `Modal`, and other surface types as name parts | Type is omitted from frame names | Start with the owning page or feature |
+| Blank, No Data, Zero State | State synonyms drift | `Empty` |
+| Spinner, Loader | State synonyms drift | `Loading` |
+| Generic suffixes such as `Page`, `View`, `Route` | They don't identify the surface | A concrete surface name |
 
 ---
 
@@ -676,7 +671,7 @@ Loose page-level text, shapes, stickies, and notes **are not captured**. A note 
 
 If a note must reach the developer, pick one:
 - **Inside the frame** it annotates (captured as layers)
-- **A dedicated `Spec` frame** on the capture page, if we adopt that type (§5)
+- **A dedicated spec frame** on the capture page, if we choose to include specs (§5)
 - **The version's release note** in Asbir
 - **A comment** on the review canvas
 
@@ -693,22 +688,22 @@ The SVG companion uses layer names as IDs where Figma can provide one — so goo
 
 ## 15. Governance
 
-### Adding an Area
+### Adding a page or feature label
 
-1. Check it isn't an existing area under a different name.
+1. Check it isn't an existing page or feature under a different name.
 2. Raise it in design crit — one sentence on what it covers and what it doesn't.
 3. Owner (*[name]*) adds it here.
 4. Announce in `#design`.
 
-**Bar:** a genuinely new product domain. Not "this screen feels different."
+**Bar:** a genuinely new product page or feature. Not "this screen feels different."
 
 ### Adding a Variant
 
 Same process, lower bar. Check the catalog first — the answer is usually there under a different word.
 
-### Adding a Type
+### Reviewing the surface-type catalog
 
-**Very high bar.** Eight types cover every surface pattern in mobile and web. A ninth is far more likely to mean an existing definition needs sharpening. Bring it as a definition problem.
+Surface types are review vocabulary, not frame-name fields. Keep the catalog small and change it only when the team needs a clearer way to discuss a surface.
 
 ### Renaming a captured frame
 
@@ -723,7 +718,7 @@ Frames on non-captured pages can be renamed freely.
 
 ### Reviewing this doc
 
-Every six months, or after a major product expansion. Look for areas nobody used, variants that drifted, types people keep getting wrong.
+Every six months, or after a major product expansion. Look for page or feature labels nobody used, variants that drifted, and surface categories people keep getting wrong.
 
 ---
 
@@ -734,7 +729,7 @@ Do the whole file in one sitting. A half-migrated file is worse than an unmigrat
 1. **Audit.** List the frames on your capture page. Mark each: conforms / rename / shouldn't be captured / duplicate.
 2. **Resolve duplicates first.** Two frames of one surface become one frame, or two variants of one base name. Most of the value is here.
 3. **Move what shouldn't be captured** to `🚧 In Progress` or `🧪 Explorations`.
-4. **Rename**, working area by area rather than top to bottom — it keeps vocabulary decisions consistent.
+4. **Rename**, working page or feature by page or feature rather than top to bottom — it keeps vocabulary decisions consistent.
 5. **Capture once.** That version becomes the baseline every future name is matched against.
 6. **Post the before/after** in `#design`.
 
@@ -744,29 +739,29 @@ Do the whole file in one sitting. A half-migrated file is worse than an unmigrat
 
 | Before | After |
 |---|---|
-| Store Page (NEW) | `Screen - Store - Home` |
-| Wallet Details | `Screen - Wallet - Details` |
-| On First Top Up | `Flow - Wallet - First Top-Up` |
-| New Paywall - No Membership | `Screen - Paywall - Main (Guest)` |
-| New Paywall - With Membership | `Screen - Paywall - Main (Member)` |
-| Profile No Subscription | `Screen - Profile - Main (Free)` |
-| New Profile With Subscription | `Screen - Profile - Main (Subscribed)` |
-| Pop-Up For Claiming Daily Drop | `Modal - Rewards - Claim Daily Drop` |
-| Watching Ad | `Screen - Ads - Watching` |
-| Ads Fixed Ratio | `Screen - Ads - Fixed Ratio` |
-| Flow: Purchasing VIP Pass | `Flow - Store - Buy VIP Pass` |
-| Flow: Purchasing another VIP Pass | `Flow - Store - Buy VIP Pass (Repeat)` |
-| Cebuana Voucher Claiming Flow (NEW) | `Flow - Vouchers - Claim Cebuana` |
-| ClaimDailyDrop | *duplicate of the Modal above — merge* |
+| Store Page (NEW) | `Store - Home` |
+| Wallet Details | `Wallet - Details` |
+| On First Top Up | `Wallet - First Top-Up` |
+| New Paywall - No Membership | `Paywall - Main (Guest)` |
+| New Paywall - With Membership | `Paywall - Main (Member)` |
+| Profile No Subscription | `Profile - Main (Free)` |
+| New Profile With Subscription | `Profile - Main (Subscribed)` |
+| Pop-Up For Claiming Daily Drop | `Rewards - Claim Daily Drop` |
+| Watching Ad | `Ads - Watching` |
+| Ads Fixed Ratio | `Ads - Fixed Ratio` |
+| Flow: Purchasing VIP Pass | `Store - Buy VIP Pass` |
+| Flow: Purchasing another VIP Pass | `Store - Buy VIP Pass (Repeat)` |
+| Cebuana Voucher Claiming Flow (NEW) | `Vouchers - Claim Cebuana` |
+| ClaimDailyDrop | *duplicate of `Rewards - Claim Daily Drop` above — merge* |
 
-In an A→Z sort the result clusters by type, then area — and the Paywall and Profile variant pairs sit adjacent, which is where you want them when comparing two states.
+In an A→Z sort the result clusters by page or feature. The Paywall and Profile variant pairs also sit adjacent, which makes them easy to compare.
 
 ---
 
 ## 17. FAQ
 
-**A screen belongs to two areas — a paywall inside the store. Which wins?**
-Whoever owns it. A paywall is `Paywall` wherever it appears. If ownership is genuinely shared, the areas are drawn wrong.
+**A surface belongs to two features — a paywall inside the store. Which wins?**
+Use the feature that owns it. A paywall is `Paywall` wherever it appears. If ownership is genuinely shared, the page or feature labels need another look.
 
 **We redesigned a screen completely. New name?**
 No. Same surface, same name — that's exactly the diff Asbir exists to show. A new name hides the most interesting comparison in the handoff.
@@ -787,23 +782,25 @@ Not variants in our sense — experiments are temporary, names are permanent. Ke
 Only if they're frames on a capture page. Loose annotations are never captured (§14). Decide deliberately whether specs belong in the version.
 
 **The surface is in another language.**
-Name in English, add the locale as a variant: `Screen - Store - Home (Tagalog)`. Names are internal infrastructure.
+Name in English, add the locale as a variant: `Store - Home (Tagalog)`. Names are internal infrastructure.
 
 **What about tablet or desktop?**
 Platform variant when the surface is fundamentally the same: `(Tablet)`. A genuinely different product surface gets its own name.
 
 **I can't classify this surface.**
-That's a crit question, not a naming question. Post it in `#design` with a screenshot. The answer is usually "it's a `Module`" or "it's two things."
+The surface category does not change the name format. Start with the owning page or feature and use a concrete surface name. If ownership is unclear, post it in `#design` with a screenshot.
 
 ---
 
 ## 18. Cheat sheet
 
 ```
-FORMAT      Type - Area - Name (Variant)
-            spaces around the hyphens · Title Case · exactly 3 parts · unique
+FORMAT      Page or Feature - Surface (Variant)
+            one spaced separator · Title Case · 2 parts · unique
+            example: Passenger - Booking Details
 
-TYPES       Screen   full destination, own route
+TYPES       Review vocabulary only; leave type labels out of frame names
+            Screen   full destination, own route
             Sheet    edge-anchored, context visible behind
             Modal    centered, blocking, needs a decision
             Overlay  transient, non-blocking (toast, tooltip, banner)
@@ -812,8 +809,8 @@ TYPES       Screen   full destination, own route
             Message  push, email, SMS, inbox
             Asset    shipped, but not UI (QR, store screenshots)
 
-AREAS       Global · Onboarding · Store · Wallet · Paywall
-            Profile · Rewards · Ads · Vouchers
+PAGES /     Global · Onboarding · Passenger · Store · Wallet · Paywall
+FEATURES    Profile · Rewards · Ads · Vouchers
 
 VARIANTS    Guest · Free · Member · Subscribed · Trial · Expired
             Empty · Loading · Error · Offline · Success
@@ -834,30 +831,30 @@ FLOW STEPS  child frames named 01, 02, 03 … inside the Flow frame
 
 ## Appendix A — name format reference
 
-For whoever builds grouping, filtering, or validation in the Handoff app.
+Illustrative reference for future grouping, filtering, or validation in the Handoff app. Asbir currently matches complete frame names; it does not parse page or feature and surface names into separate fields.
 
 ```js
-const PATTERN = /^(Screen|Sheet|Modal|Overlay|Module|Flow|Message|Asset) - [A-Z][A-Za-z]+ - [A-Z][\w '\-]+( \(([\w \-]+)(, [\w \-]+)*\))?$/
+const PATTERN = /^[A-Z][\w '&-]* - [A-Z][\w '&-]*( \([\w ,'-]+\))?$/
 
 function parseFrameName(name) {
   const variantMatch = name.match(/ \(([^)]+)\)$/)
   const variants = variantMatch ? variantMatch[1].split(', ') : []
   const base = variantMatch ? name.slice(0, variantMatch.index) : name
-  const [type, area, surface] = base.split(' - ')
-  return { type, area, surface, variants }
+  const [pageOrFeature, surface] = base.split(' - ')
+  return { pageOrFeature, surface, variants }
 }
 
-// "Screen - Paywall - Main (Member, Error)"
-// → { type: 'Screen', area: 'Paywall', surface: 'Main',
+// "Passenger - Booking Details (Member, Error)"
+// → { pageOrFeature: 'Passenger', surface: 'Booking Details',
 //     variants: ['Member', 'Error'] }
 ```
 
-A conforming name gives the review canvas free structure: group by type, filter by area, and pair variants of one base name for side-by-side comparison.
+A conforming name gives the review canvas free structure: group and filter by page or feature, and pair variants of one base name for side-by-side comparison.
 
 For export filenames, replace ` - ` with `--`, spaces with `-`, and strip parens — keeping files flat, lowercase, and shell-safe:
 
 ```
-Screen - Paywall - Main (Member)  →  screen--paywall--main-member.png
+Passenger - Booking Details (Member)  →  passenger--booking-details-member.png
 ```
 
 ---
@@ -866,8 +863,8 @@ Screen - Paywall - Main (Member)  →  screen--paywall--main-member.png
 
 1. **Open with the problem, not the solution.** Show a current capture page: truncated names, `(NEW)` on a three-week-old frame, dates standing in for identity.
 2. **Show the §16 before/after.** The A→Z clustering does the arguing.
-3. **Present one real alternative and your recommendation.** `Area - Name - Type` sorts by feature instead of surface kind, which mirrors code organization — developers often prefer it. Take a genuine vote; a standard people chose survives one they were handed.
-4. **Prune the vocabulary together, live.** Cutting unused areas in the room turns the doc from an edict into the team's.
+3. **Show the format.** `Page or Feature - Surface` puts the product context first and keeps repeated type labels out of the frame list.
+4. **Prune the vocabulary together, live.** Cutting unused page or feature labels turns the doc from an edict into the team's.
 5. **Close on ownership and a date.**
 
-**Fill in before presenting:** owner name (header and §15), the date, and prune §6 areas to what we actually have.
+**Fill in before presenting:** owner name (header and §15), the date, and prune §6 page or feature labels to what we actually have.

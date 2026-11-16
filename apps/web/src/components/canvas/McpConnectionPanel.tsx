@@ -127,7 +127,7 @@ export function McpConnectionPanel({
             Gemini CLI MCP setup guide
           </a>
         ) : null}
-        <pre className="mt-2 max-h-48 overflow-auto rounded-control border border-border/70 bg-surface-inset p-2.5 font-mono text-[9px] leading-[1.55] text-foreground">
+        <pre className="mt-2 max-h-48 overflow-auto rounded-control border border-transparent bg-surface-inset p-2.5 font-mono text-[9px] leading-[1.55] text-foreground">
           <code>{configuration}</code>
         </pre>
         <div className="mt-2 flex flex-wrap gap-1.5">

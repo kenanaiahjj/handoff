@@ -74,7 +74,7 @@ export function PublishedChangelogPanel({
   return (
     <div className="min-h-0 flex-1 overflow-y-auto bg-surface p-3" aria-labelledby="published-changelog-title">
       <header className="border-b border-border pb-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-foreground-subtle">Published notes</p>
+        <p className="text-[12px] font-medium text-foreground-subtle">Published notes</p>
         <h2 className="mt-1 text-[13px] font-semibold text-foreground" id="published-changelog-title">Changelog</h2>
         <p className="mt-1 text-[11px] leading-5 text-foreground-subtle">Approved notes and their source evidence for Version {versionLabel}.</p>
       </header>
@@ -95,7 +95,7 @@ export function PublishedChangelogPanel({
               <div className="mt-3 space-y-3">
                 {draft.statements.map((statement, index) => (
                   <section className="rounded-control bg-surface-muted p-2.5" key={`${draft.id}-${index}`}>
-                    <h4 className="font-mono text-[9px] uppercase tracking-[0.12em] text-foreground-subtle">{audienceLabels[statement.audience]}</h4>
+                    <h4 className="text-[12px] font-medium text-foreground-subtle">{audienceLabels[statement.audience]}</h4>
                     <p className="mt-1 text-[11px] leading-5 text-foreground-muted">{statement.text}</p>
                     {statement.evidence.length ? (
                       <ul className="mt-2 space-y-1.5">

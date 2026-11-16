@@ -4,6 +4,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { type FormEvent, useState } from "react";
 import { authClient } from "@/src/client/auth-client";
+import { BrandMark } from "@/src/components/shell/BrandMark";
 
 export function SignInForm({ redirectTo }: { redirectTo: string }) {
   const [isCreatingAccount, setIsCreatingAccount] = useState(false);
@@ -42,10 +43,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
     <main className="min-h-screen bg-background px-5 py-8 sm:px-8 lg:grid lg:place-items-center">
       <div className="mx-auto grid w-full max-w-5xl items-center gap-12 lg:grid-cols-[minmax(0,1fr)_420px]">
         <section aria-labelledby="auth-intro-title" className="hidden max-w-xl lg:block">
-          <Link href="/" className="inline-flex items-center gap-2 text-xs font-semibold tracking-[0.04em] text-foreground">
-            <Image alt="" aria-hidden="true" className="size-6 rounded-control object-cover" height={24} src="/icons/asbir-handoff-v2-180.png" width={24} />
-            ASBIR <span className="font-normal text-foreground-subtle">/ HANDOFF</span>
-          </Link>
+          <Link aria-label="Asbir Handoff home" href="/" className="inline-flex"><BrandMark /></Link>
           <div className="mt-20 max-w-[470px]">
             <h1 className="text-3xl font-semibold leading-tight tracking-tight text-foreground" id="auth-intro-title">A frozen canvas with the details your team needs.</h1>
             <p className="mt-4 max-w-[410px] text-sm leading-6 text-foreground-muted">Capture a Figma design once. Review its screens, layout values, comments, and changes together.</p>
@@ -86,7 +84,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
               <span>Your name</span>
               <input
                 autoComplete="name"
-                className="h-10 w-full rounded-control border border-border bg-surface-inset px-3 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+                className="h-10 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
                 id="name"
                 maxLength={100}
                 name="name"
@@ -99,7 +97,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
             <span>Work email</span>
             <input
               autoComplete="email"
-              className="h-10 w-full rounded-control border border-border bg-surface-inset px-3 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+              className="h-10 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
               id="email"
               name="email"
               required
@@ -112,7 +110,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
             <span>Password</span>
             <input
               autoComplete={isCreatingAccount ? "new-password" : "current-password"}
-              className="h-10 w-full rounded-control border border-border bg-surface-inset px-3 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
+              className="h-10 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground outline-none transition-colors placeholder:text-foreground-subtle focus-visible:border-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
               id="password"
               minLength={12}
               name="password"

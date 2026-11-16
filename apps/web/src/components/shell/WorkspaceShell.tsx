@@ -1,7 +1,8 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { SignOutButton } from "@/app/workspace/workspace-actions";
-import { isDevelopmentAuthBypassEnabled } from "@/src/server/auth-session";
+import { isDevelopmentAuthBypassEnabled, localReviewerUser } from "@/src/server/auth-session";
+import { ViewAsSwitcher } from "./ViewAsSwitcher";
 import { InstallAppButton } from "./InstallAppButton";
 import { BrandMark } from "./BrandMark";
 
@@ -68,13 +69,13 @@ function NavigationSections({ sections }: { sections: WorkspaceNavSection[] }) {
     <div className="space-y-5">
       {sections.map((section) => (
         <section aria-label={section.label} key={section.label}>
-          <h2 className="px-2 pb-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-foreground-subtle">{section.label}</h2>
+          <h2 className="px-2.5 pb-1.5 text-[12px] font-medium text-foreground-subtle">{section.label}</h2>
           <ul className="space-y-0.5">
             {section.items.map((item) => (
               <li key={`${item.label}:${item.href}`}>
                 <Link
                   aria-current={item.active ? "page" : undefined}
-                  className={`flex min-h-9 items-center gap-2.5 rounded-control px-2.5 text-[13px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${item.active ? "workspace-nav-active text-foreground" : "text-foreground-muted hover:bg-surface-raised/70 hover:text-foreground"}`}
+                  className={`flex min-h-9 items-center gap-2.5 rounded-control px-2.5 text-[13px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${item.active ? "workspace-nav-active text-foreground" : "text-foreground-muted hover:bg-surface-inset hover:text-foreground"}`}
                   href={item.href}
                 >
                   <Icon name={item.icon} />
@@ -93,7 +94,7 @@ function WorkspacePicker({ workspace, workspaces = [] }: { workspace?: Workspace
   if (!workspace) {
     return (
       <div className="rounded-control border border-border bg-surface px-2.5 py-2">
-        <p className="text-[10px] uppercase tracking-[0.1em] text-foreground-subtle">Workspace</p>
+        <p className="text-[12px] font-medium text-foreground-subtle">Workspace</p>
         <p className="mt-0.5 truncate text-xs font-medium text-foreground">All workspaces</p>
       </div>
     );
@@ -101,16 +102,16 @@ function WorkspacePicker({ workspace, workspaces = [] }: { workspace?: Workspace
 
   return (
     <details className="group relative">
-      <summary aria-label={`Current workspace: ${workspace.name}. Open workspace switcher.`} className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-control border border-border bg-surface px-2.5 py-2 transition-colors hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
-        <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center rounded-control border border-border bg-surface-inset text-[11px] font-semibold text-foreground-muted">{workspace.name.trim().slice(0, 1).toUpperCase() || "W"}</span>
+      <summary aria-label={`Current workspace: ${workspace.name}. Open workspace switcher.`} className="flex min-h-11 cursor-pointer list-none items-center gap-2 rounded-control bg-surface-inset px-2.5 py-2 transition-colors hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+        <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center rounded-control border border-transparent bg-surface-inset text-[11px] font-semibold text-foreground-muted">{workspace.name.trim().slice(0, 1).toUpperCase() || "W"}</span>
         <span className="min-w-0 flex-1">
           <span className="block truncate text-xs font-medium text-foreground">{workspace.name}</span>
           <span className="block text-[10px] capitalize text-foreground-subtle">{workspace.role === "reviewer" ? "Product manager / reviewer" : workspace.role ?? "workspace"}</span>
         </span>
         <svg aria-hidden="true" className="size-3.5 shrink-0 text-foreground-subtle transition-transform group-open:rotate-180" fill="none" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
       </summary>
-      <nav aria-label="Switch workspace" className="absolute left-0 top-[calc(100%+6px)] z-30 w-64 rounded-control border border-border bg-surface p-1.5 shadow-xl shadow-black/30">
-        <p className="px-2 py-1.5 text-[10px] font-medium uppercase tracking-[0.12em] text-foreground-subtle">Workspaces</p>
+      <nav aria-label="Switch workspace" className="absolute left-0 top-[calc(100%+6px)] dial-popover z-30 w-64 p-1.5">
+        <p className="px-2 py-1.5 text-[12px] font-medium text-foreground-subtle">Workspaces</p>
         <ul className="max-h-64 overflow-y-auto">
           {workspaces.map((entry) => (
             <li key={entry.id}>
@@ -139,7 +140,13 @@ function SidebarContents({ user, workspace, workspaces, navSections }: Omit<Work
       <nav aria-label="Workspace navigation" className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
         <NavigationSections sections={navSections} />
       </nav>
-      <div className="border-t border-border p-3">
+      {isDevelopmentAuthBypassEnabled() && (workspace?.id ?? workspaces?.[0]?.id) ? (
+        <ViewAsSwitcher
+          current={user.email === localReviewerUser.email ? "reviewer" : "owner"}
+          workspaceId={(workspace?.id ?? workspaces?.[0]?.id)!}
+        />
+      ) : null}
+      <div className="border-t border-white/[0.06] p-3">
         <div className="flex min-w-0 items-center gap-2.5 px-1 py-1">
           <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-full border border-border bg-surface-raised text-[10px] font-semibold text-foreground">{user.name.trim().split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase()}</span>
           <span className="min-w-0 flex-1">
@@ -186,7 +193,7 @@ export function WorkspaceShell({
           <header className="workspace-topbar sticky top-2.5 z-20 flex h-12 items-center justify-between gap-3 border-b border-border px-4 sm:top-3 sm:px-6 lg:top-4">
             <div className="flex min-w-0 items-center gap-3">
               <details className="group relative lg:hidden">
-                <summary aria-label="Open workspace navigation" className="flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-control border border-border bg-surface-raised px-2.5 text-xs text-foreground-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+                <summary aria-label="Open workspace navigation" className="flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-control bg-surface-inset px-2.5 text-xs font-medium text-foreground-muted hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
                   <span aria-hidden="true" className="grid size-4 grid-cols-2 gap-[2px]"><i className="rounded-[1px] bg-current" /><i className="rounded-[1px] bg-current" /><i className="rounded-[1px] bg-current" /><i className="rounded-[1px] bg-current" /></span>
                   Menu
                 </summary>

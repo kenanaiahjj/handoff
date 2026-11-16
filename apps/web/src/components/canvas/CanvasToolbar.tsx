@@ -98,13 +98,13 @@ export function CanvasToolbar({
   return (
     <div className="contents text-[12px] text-foreground-muted lg:flex lg:flex-nowrap lg:items-center lg:gap-1" role="group" aria-label="Canvas controls">
       <button
-        className="min-h-11 shrink-0 rounded-control px-2.5 hover:bg-surface-strong hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:min-h-8"
+        className="dial-button max-lg:hidden min-h-11 shrink-0 px-3 text-[12px] lg:min-h-8"
         onClick={onFit}
         type="button"
       >
         Fit
       </button>
-      <div className="flex h-11 shrink-0 items-center gap-0.5 rounded-control bg-surface-raised px-0.5 lg:h-8">
+      <div className="dial-segmented h-11 shrink-0 lg:h-8">
         <button
           aria-label="Zoom out"
           className="grid size-11 shrink-0 place-items-center rounded text-[16px] text-foreground-muted hover:bg-surface-strong hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:size-7"
@@ -143,7 +143,7 @@ export function CanvasToolbar({
           <button
             aria-busy={publishPending}
             aria-describedby={!isLatestVersion ? "canvas-publish-version-hint" : undefined}
-            className="canvas-publish-action flex h-11 shrink-0 items-center justify-center rounded-full px-3 text-[12px] font-semibold lg:h-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#f4d994] disabled:cursor-not-allowed disabled:opacity-60"
+            className="canvas-publish-action flex h-11 shrink-0 items-center whitespace-nowrap justify-center px-3 text-[12px] font-semibold lg:h-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
             disabled={!isLatestVersion || publishPending}
             onClick={() => void publishCanvas()}
             title={!isLatestVersion ? "Select the latest version to publish." : undefined}

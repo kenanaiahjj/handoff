@@ -73,7 +73,7 @@ export function RenameHandoffButton({ endpoint, handoffName }: { endpoint: strin
       <div className="shrink-0">
         <button
           aria-label={`Rename handoff ${handoffName}`}
-          className="min-h-9 rounded-control px-3 text-xs text-foreground-muted hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          className="dial-button min-h-8 px-3 text-xs"
           onClick={() => { setName(handoffName); setEditing(true); }}
           type="button"
         >
@@ -89,7 +89,7 @@ export function RenameHandoffButton({ endpoint, handoffName }: { endpoint: strin
         <label className="sr-only" htmlFor={`rename-handoff-${endpoint}`}>Handoff name</label>
         <input
           autoFocus
-          className="h-9 min-w-0 flex-1 rounded-control border border-border bg-surface-inset px-3 text-xs text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
+          className="h-9 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 text-xs text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
           id={`rename-handoff-${endpoint}`}
           maxLength={100}
           onChange={(event) => setName(event.target.value)}
@@ -104,7 +104,7 @@ export function RenameHandoffButton({ endpoint, handoffName }: { endpoint: strin
           {pending ? "Saving…" : "Save"}
         </button>
         <button
-          className="min-h-9 rounded-control px-3 text-xs text-foreground-muted hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
+          className="dial-button min-h-9 px-3 text-xs"
           disabled={pending}
           onClick={cancel}
           type="button"
@@ -134,7 +134,7 @@ export function DeleteHandoffButton({ endpoint, handoffName, returnHref }: {
   });
   return (
     <div className="shrink-0">
-      <button aria-label={`Delete handoff ${handoffName}`} className="min-h-9 rounded-control px-3 text-xs text-danger hover:bg-danger/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger disabled:opacity-50" disabled={action.pending} onClick={() => void action.remove()} type="button">
+      <button aria-label={`Delete handoff ${handoffName}`} className="dial-button min-h-8 px-3 text-xs !text-danger hover:!bg-danger/15" disabled={action.pending} onClick={() => void action.remove()} type="button">
         {action.pending ? "Deleting…" : "Delete"}
       </button>
       {action.error ? <p className="mt-1 max-w-48 text-right text-[10px] text-danger" role="alert">{action.error}</p> : null}

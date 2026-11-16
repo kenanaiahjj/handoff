@@ -22,6 +22,10 @@ type ElementInspectorProps = {
   onSelectNode: (sourceNodeId: string) => void;
   onCopyLink: () => void | Promise<void>;
   inspecting?: boolean;
+  /** Full elements for the selected screen; null until they load. */
+  frameNodes?: SnapshotNode[] | null;
+  /** The selected element's summary, shown while its full details load. */
+  pendingNode?: { name: string; type: string; detailStatus: "idle" | "loading" | "error" | "ready" } | null;
 };
 
 function valueText(value: unknown) {
@@ -95,10 +99,10 @@ function MeasurementGroup({
   if (!entries.length) return null;
 
   return (
-    <section className="border-t border-border pt-3">
-      <h3 className="mb-1 text-[12px] font-semibold text-foreground-muted">{title}</h3>
-      {description ? <p className="mb-1 text-[11px] leading-4 text-foreground-muted">{description}</p> : null}
-      <dl>
+    <section className="border-t border-white/[0.06] pt-3">
+      <h3 className="dial-section-title mb-2">{title}</h3>
+      {description ? <p className="mb-2 text-[11px] leading-4 text-foreground-subtle">{description}</p> : null}
+      <dl className="space-y-1.5">
         {entries.map(([label, measurement]) => (
           <MeasurementRow key={label} label={label} measurement={measurement} />
         ))}
@@ -293,6 +297,8 @@ export function ElementInspector({
   onSelectNode,
   onCopyLink,
   inspecting = false,
+  frameNodes = null,
+  pendingNode = null,
 }: ElementInspectorProps) {
   const [cssCopied, setCssCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -335,7 +341,7 @@ export function ElementInspector({
     gridRowSizes: selectedNode.sourcePayload.gridRowSizes,
   }) : false;
   const gridParentNode = selectedNode?.parentSourceNodeId
-    ? frame.nodes.find((node) => node.sourceNodeId === selectedNode.parentSourceNodeId) ?? null
+    ? frameNodes?.find((node) => node.sourceNodeId === selectedNode.parentSourceNodeId) ?? null
     : null;
   const isGridItem = gridParentNode ? shouldShowGridLayout({
     mode: gridParentNode.layout.mode,
@@ -391,7 +397,25 @@ export function ElementInspector({
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-surface px-4 py-4 text-foreground-muted">
       <h2 className="text-[14px] font-semibold text-foreground">Properties</h2>
 
-      {selectedNode ? (
+      {!selectedNode && pendingNode ? (
+        <div aria-busy={pendingNode.detailStatus !== "error"} className="mt-4" role="status">
+          <p className="break-words text-[13px] font-semibold text-foreground">{pendingNode.name || "Unnamed element"}</p>
+          <span className="mt-1 inline-block rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono text-[11px] text-foreground-subtle">{pendingNode.type}</span>
+          {pendingNode.detailStatus === "error" ? (
+            <p className="mt-4 text-[12px] text-warning">Couldn’t load this element’s details. Select it again to retry.</p>
+          ) : (
+            <div aria-hidden="true" className="mt-5 space-y-3">
+              {[72, 56, 88, 64, 80].map((width, index) => (
+                <div className="flex items-center justify-between gap-3" key={index}>
+                  <span className="h-3 animate-pulse rounded bg-surface-raised" style={{ width: `${width / 2}%` }} />
+                  <span className="h-3 w-12 animate-pulse rounded bg-surface-raised" />
+                </div>
+              ))}
+              <span className="sr-only">Loading element details…</span>
+            </div>
+          )}
+        </div>
+      ) : selectedNode ? (
         <div className="mt-4">
           <div className="mb-4 min-w-0">
             <p className="break-words text-[13px] font-semibold text-foreground">{selectedNode.name || "Unnamed element"}</p>
@@ -401,15 +425,15 @@ export function ElementInspector({
             </div>
             <p className="mt-2 break-all font-mono text-[10px] text-foreground-subtle">{selectedNode.sourceNodeId}</p>
             <div className="mt-3 flex flex-wrap gap-1">
-              <button className="min-h-7 rounded-chip px-2 text-[10px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={copyCss} type="button">{cssCopied ? "Copied CSS" : "Copy CSS"}</button>
-              <button className="min-h-7 rounded-chip px-2 text-[10px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={copyLink} type="button">{linkCopied ? "Copied link" : "Copy link"}</button>
+              <button className="dial-button min-h-7 px-2.5 text-[11px]" onClick={copyCss} type="button">{cssCopied ? "Copied CSS" : "Copy CSS"}</button>
+              <button className="dial-button min-h-7 px-2.5 text-[11px]" onClick={copyLink} type="button">{linkCopied ? "Copied link" : "Copy link"}</button>
               {selectedNode.parentSourceNodeId ? (
-                <button className="min-h-7 rounded-chip px-2 text-[10px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={() => onSelectNode(selectedNode.parentSourceNodeId!)} type="button">Parent</button>
+                <button className="dial-button min-h-7 px-2.5 text-[11px]" onClick={() => onSelectNode(selectedNode.parentSourceNodeId!)} type="button">Parent</button>
               ) : null}
               {layerExport ? (
                 <a
                   aria-label={`Export ${selectedNode.name || "selected layer"} as ${layerExport.contentType === "image/svg+xml" ? "SVG" : "PNG"}`}
-                  className="inline-flex min-h-7 items-center rounded-chip bg-[#3a3020] px-2 text-[10px] font-medium text-[#f0c77b] hover:bg-[#514127] hover:text-[#ffe0a4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f0c77b]"
+                  className="inline-flex min-h-7 items-center rounded-chip bg-primary px-2 text-[10px] font-semibold text-primary-foreground hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
                   download={layerExport.fileName}
                   href={layerExport.downloadUrl}
                   title={`Download ${layerExport.fileName}`}
@@ -417,13 +441,13 @@ export function ElementInspector({
                   Export {layerExport.contentType === "image/svg+xml" ? "SVG" : "PNG"}
                 </a>
               ) : null}
-              {canCompare ? <button className="min-h-7 rounded-chip px-2 text-[10px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={onCompare} type="button">Compare</button> : null}
+              {canCompare ? <button className="dial-button min-h-7 px-2.5 text-[11px]" onClick={onCompare} type="button">Compare</button> : null}
             </div>
           </div>
 
           <section className="border-t border-border py-3">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <h3 className="text-[12px] font-semibold text-foreground-muted">Comments on this element</h3>
+              <h3 className="dial-section-title">Comments on this element</h3>
               <span className="font-mono text-[10px] text-foreground-subtle">{comments.length}</span>
             </div>
             {comments.slice(0, 3).map((comment) => (
@@ -433,17 +457,17 @@ export function ElementInspector({
           </section>
 
             <MeasurementGroup title="Layout" values={selectedBounds ?? selectedNode.bounds} description={inspectionGeometryNotice(selectedNode)} />
-          <section className="border-t border-border pt-3">
-            <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Size and shape</h3>
-            <dl className="space-y-2 text-[11px]">
-              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Aspect ratio</dt><dd className="font-mono text-right text-foreground">{aspectRatio ?? "Unavailable"}</dd></div>
+          <section className="border-t border-white/[0.06] pt-3">
+            <h3 className="dial-section-title mb-2">Size and shape</h3>
+            <dl className="space-y-1.5 text-[12px]">
+              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Aspect ratio</dt><dd className="font-mono text-right text-foreground">{aspectRatio ?? "Unavailable"}</dd></div>
               {hasCornerRadius ? (
                 <>
                   {radiusDisplayFields.map(({ label, value }) => {
       const effectiveValue = radiusLimit === null ? value : Math.min(value, radiusLimit);
                     const isClamped = effectiveValue < value;
                     return (
-                      <div className="grid grid-cols-[1fr_auto] items-start gap-x-3" key={label}>
+                      <div className="dial-row grid min-h-9 grid-cols-[1fr_auto] items-center gap-x-3 px-3 py-2" key={label}>
                         <dt className="text-foreground-subtle">{label}</dt>
                         <dd className="text-right"><CopyValue label={`${label.toLowerCase()} radius`} value={`${formatPrecisePixelValue(effectiveValue)}px`} /></dd>
                         {isClamped ? (
@@ -462,9 +486,9 @@ export function ElementInspector({
                     );
                   })}
                 </>
-              ) : <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Corner radius</dt><dd className="text-right text-foreground-subtle">Unavailable</dd></div>}
-              {finiteNumber(selectedNode.sourcePayload.rotation) !== null ? <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Rotation</dt><dd className="font-mono text-right text-foreground">{String(finiteNumber(selectedNode.sourcePayload.rotation))}°</dd></div> : null}
-              {finiteNumber(selectedNode.sourcePayload.opacity) !== null ? <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Opacity</dt><dd className="font-mono text-right text-foreground">{Math.round(finiteNumber(selectedNode.sourcePayload.opacity)! * 100)}%</dd></div> : null}
+              ) : <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Corner radius</dt><dd className="text-right text-foreground-subtle">Unavailable</dd></div>}
+              {finiteNumber(selectedNode.sourcePayload.rotation) !== null ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Rotation</dt><dd className="font-mono text-right text-foreground">{String(finiteNumber(selectedNode.sourcePayload.rotation))}°</dd></div> : null}
+              {finiteNumber(selectedNode.sourcePayload.opacity) !== null ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Opacity</dt><dd className="font-mono text-right text-foreground">{Math.round(finiteNumber(selectedNode.sourcePayload.opacity)! * 100)}%</dd></div> : null}
             </dl>
             <p className="mt-2 text-[10px] leading-4 text-foreground-subtle">The aspect ratio is calculated from the captured source bounds.</p>
           </section>
@@ -472,27 +496,27 @@ export function ElementInspector({
           <MeasurementGroup title="Measured margins" values={inspectionMargins(selectedNode)} />
           <MeasurementGroup title="Spacing" values={selectedNode.spacing} />
 
-          <section className="border-t border-border pt-3">
-            <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Layout properties</h3>
-            <dl className="space-y-2 text-[11px]">
-              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Mode</dt><dd className="text-right text-foreground">{selectedNode.layout.mode ?? "Unavailable"}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Direction</dt><dd className="text-right text-foreground">{selectedNode.layout.direction ?? "Unavailable"}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Primary alignment</dt><dd className="text-right text-foreground">{selectedNode.layout.primaryAxisAlign ?? "Unavailable"}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Counter alignment</dt><dd className="text-right text-foreground">{selectedNode.layout.counterAxisAlign ?? "Unavailable"}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Wrap</dt><dd className="text-right text-foreground">{selectedNode.layout.wrap === null ? "Unavailable" : selectedNode.layout.wrap ? "Enabled" : "Disabled"}</dd></div>
+          <section className="border-t border-white/[0.06] pt-3">
+            <h3 className="dial-section-title mb-2">Layout properties</h3>
+            <dl className="space-y-1.5 text-[12px]">
+              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Mode</dt><dd className="text-right text-foreground">{selectedNode.layout.mode ?? "Unavailable"}</dd></div>
+              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Direction</dt><dd className="text-right text-foreground">{selectedNode.layout.direction ?? "Unavailable"}</dd></div>
+              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Primary alignment</dt><dd className="text-right text-foreground">{selectedNode.layout.primaryAxisAlign ?? "Unavailable"}</dd></div>
+              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Counter alignment</dt><dd className="text-right text-foreground">{selectedNode.layout.counterAxisAlign ?? "Unavailable"}</dd></div>
+              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Wrap</dt><dd className="text-right text-foreground">{selectedNode.layout.wrap === null ? "Unavailable" : selectedNode.layout.wrap ? "Enabled" : "Disabled"}</dd></div>
             </dl>
           </section>
 
           {isGridContainer ? (
-            <section className="border-t border-border pt-3">
-              <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Grid layout</h3>
-              <dl className="space-y-2 text-[11px]">
-                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Columns</dt><dd className="text-right text-foreground">{valueText(selectedNode.layout.constraints.gridColumnCount)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Rows</dt><dd className="text-right text-foreground">{valueText(selectedNode.layout.constraints.gridRowCount)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Column gap</dt><dd className="text-right text-foreground">{measurementText(selectedNode.spacing.columnGap.value, selectedNode.spacing.columnGap.unit)} {selectedNode.spacing.columnGap.unit}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Row gap</dt><dd className="text-right text-foreground">{measurementText(selectedNode.spacing.rowGap.value, selectedNode.spacing.rowGap.unit)} {selectedNode.spacing.rowGap.unit}</dd></div>
-                {selectedNode.sourcePayload.gridAutoTracks !== undefined ? <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Automatic rows</dt><dd className="text-right text-foreground">{valueText(selectedNode.sourcePayload.gridAutoTracks)}</dd></div> : null}
-                {selectedNode.sourcePayload.gridItemsPositioning !== undefined ? <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Item placement</dt><dd className="text-right text-foreground">{valueText(selectedNode.sourcePayload.gridItemsPositioning)}</dd></div> : null}
+            <section className="border-t border-white/[0.06] pt-3">
+              <h3 className="dial-section-title mb-2">Grid layout</h3>
+              <dl className="space-y-1.5 text-[12px]">
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Columns</dt><dd className="text-right text-foreground">{valueText(selectedNode.layout.constraints.gridColumnCount)}</dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Rows</dt><dd className="text-right text-foreground">{valueText(selectedNode.layout.constraints.gridRowCount)}</dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Column gap</dt><dd className="text-right text-foreground">{measurementText(selectedNode.spacing.columnGap.value, selectedNode.spacing.columnGap.unit)} {selectedNode.spacing.columnGap.unit}</dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Row gap</dt><dd className="text-right text-foreground">{measurementText(selectedNode.spacing.rowGap.value, selectedNode.spacing.rowGap.unit)} {selectedNode.spacing.rowGap.unit}</dd></div>
+                {selectedNode.sourcePayload.gridAutoTracks !== undefined ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Automatic rows</dt><dd className="text-right text-foreground">{valueText(selectedNode.sourcePayload.gridAutoTracks)}</dd></div> : null}
+                {selectedNode.sourcePayload.gridItemsPositioning !== undefined ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Item placement</dt><dd className="text-right text-foreground">{valueText(selectedNode.sourcePayload.gridItemsPositioning)}</dd></div> : null}
               </dl>
               {gridColumnTracks.length ? <p className="mt-2 break-words text-[10px] leading-4 text-foreground-subtle">Column tracks: {gridColumnTracks.map((track, index) => `${index + 1}. ${formatGridTrack(track)}`).join(" · ")}</p> : null}
               {gridRowTracks.length ? <p className="mt-1 break-words text-[10px] leading-4 text-foreground-subtle">Row tracks: {gridRowTracks.map((track, index) => `${index + 1}. ${formatGridTrack(track)}`).join(" · ")}</p> : null}
@@ -500,10 +524,10 @@ export function ElementInspector({
           ) : null}
 
           {isGridItem ? (
-            <section className="border-t border-border pt-3">
-              <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Grid item</h3>
-              <dl className="space-y-2 text-[11px]">
-                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Cell</dt><dd className="text-right text-foreground">{[
+            <section className="border-t border-white/[0.06] pt-3">
+              <h3 className="dial-section-title mb-2">Grid item</h3>
+              <dl className="space-y-1.5 text-[12px]">
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Cell</dt><dd className="text-right text-foreground">{[
                   gridRowIndex === null ? null : `Row ${Math.trunc(gridRowIndex) + 1}`,
                   gridColumnIndex === null ? null : `Column ${Math.trunc(gridColumnIndex) + 1}`,
                 ].filter(Boolean).join(" · ") || "Unavailable"}</dd></div>
@@ -520,8 +544,8 @@ export function ElementInspector({
           ) : null}
 
           {capturedLayoutGrids(selectedNode).length ? (
-            <section className="border-t border-border pt-3">
-              <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Canvas grids</h3>
+            <section className="border-t border-white/[0.06] pt-3">
+              <h3 className="dial-section-title mb-2">Canvas grids</h3>
               <ul className="space-y-2">
                 {capturedLayoutGrids(selectedNode).map((grid, index) => (
                   <li className="rounded-control bg-surface-inset p-2.5 text-[10px]" key={`${String(grid.pattern ?? "grid")}-${index}`}>
@@ -537,8 +561,8 @@ export function ElementInspector({
             </section>
           ) : null}
 
-          <section className="border-t border-border pt-3">
-            <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Appearance</h3>
+          <section className="border-t border-white/[0.06] pt-3">
+            <h3 className="dial-section-title mb-2">Appearance</h3>
             {appearancePaints.length ? (
               <div className="space-y-1.5">
                 {appearancePaints.map((paint, index) => (
@@ -581,24 +605,24 @@ export function ElementInspector({
             ) : null}
           </section>
 
-          <section className="border-t border-border pt-3">
-            <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Typography</h3>
+          <section className="border-t border-white/[0.06] pt-3">
+            <h3 className="dial-section-title mb-2">Typography</h3>
             {selectedTypography ? (
-              <dl className="space-y-2 text-[11px]">
-                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Font</dt><dd className="max-w-40 truncate text-right text-foreground">{selectedTypography.fontFamily ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Size</dt><dd className="text-right text-foreground">{selectedTypography.fontSize.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.fontSize)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Weight</dt><dd className="text-right text-foreground">{selectedTypography.fontWeight ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Line height</dt><dd className="text-right text-foreground">{selectedTypography.lineHeight.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.lineHeight)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Letter spacing</dt><dd className="text-right text-foreground">{selectedTypography.letterSpacing.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.letterSpacing)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Alignment</dt><dd className="text-right text-foreground">{selectedTypography.textAlign ?? "Unavailable"}</dd></div>
+              <dl className="space-y-1.5 text-[12px]">
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Font</dt><dd className="max-w-40 truncate text-right text-foreground">{selectedTypography.fontFamily ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Size</dt><dd className="text-right text-foreground">{selectedTypography.fontSize.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.fontSize)}</dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Weight</dt><dd className="text-right text-foreground">{selectedTypography.fontWeight ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Line height</dt><dd className="text-right text-foreground">{selectedTypography.lineHeight.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.lineHeight)}</dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Letter spacing</dt><dd className="text-right text-foreground">{selectedTypography.letterSpacing.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.letterSpacing)}</dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Alignment</dt><dd className="text-right text-foreground">{selectedTypography.textAlign ?? "Unavailable"}</dd></div>
                 {selectedTypography.content !== null ? <div className="border-t border-border pt-2"><dt className="text-foreground-subtle">Text content</dt><dd className="mt-1 break-words text-foreground">{selectedTypography.content}</dd></div> : null}
               </dl>
             ) : textStyleRuns.length ? <p className="text-[11px] text-foreground-subtle">Typography is captured per text run.</p> : <p className="text-[11px] text-foreground-subtle">No typography data captured.</p>}
             <TextStyleRuns runs={textStyleRuns} />
           </section>
 
-          <section className="border-t border-border pt-3">
-            <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Bound tokens</h3>
+          <section className="border-t border-white/[0.06] pt-3">
+            <h3 className="dial-section-title mb-2">Bound tokens</h3>
             {selectedNode.tokens.length ? (
               <ul className="space-y-2">
                 {selectedNode.tokens.map((token) => (
@@ -627,9 +651,9 @@ export function ElementInspector({
             {inspecting ? "Select a design element to see its size, spacing, colors and type." : "Switch to Inspect in the top bar, then select a design element to see its size, spacing, colors and type. View keeps layer hit areas out of the way."} Hold <kbd className="rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono text-[11px] text-foreground">Alt</kbd> and hover another element to see pixel distances in the canvas. Click a value to copy it.
           </p>
           <p><kbd className="rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono text-[11px] text-foreground">⌘ F</kbd> searches text, colors and elements on every screen.</p>
-          <dl className="space-y-2 border-t border-border pt-3 text-[11px]">
-            <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Screens</dt><dd className="font-mono text-foreground">{frameCount}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Captured elements</dt><dd className="font-mono text-foreground">{totalNodeCount}</dd></div>
+          <dl className="space-y-1.5 border-t border-white/[0.06] pt-3 text-[12px]">
+            <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Screens</dt><dd className="font-mono text-foreground">{frameCount}</dd></div>
+            <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Captured elements</dt><dd className="font-mono text-foreground">{totalNodeCount}</dd></div>
           </dl>
           {!frame.exact ? <p className="text-[11px] leading-5 text-foreground-subtle">This image has no structured source attributes. Upload a structured Figma capture for exact measurements and token bindings.</p> : null}
         </div>
@@ -642,12 +666,12 @@ export function ElementInspector({
         <div className="mt-4">
           <div className="flex items-center justify-between gap-2">
             <h3 className="break-words text-[13px] font-medium text-foreground">{frame.name}</h3>
-            {canCompare ? <button className="min-h-8 rounded-control px-2.5 text-[11px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={onCompare} type="button">Compare</button> : null}
+            {canCompare ? <button className="dial-button min-h-8 px-2.5 text-[12px]" onClick={onCompare} type="button">Compare</button> : null}
           </div>
           <p className="mt-2 text-[12px] leading-5 text-foreground-subtle">{inspecting ? "Select an element to inspect its captured attributes." : "Switch to Inspect in the top bar, then select an element to inspect its captured attributes."}</p>
-          <dl className="mt-4 space-y-2 border-t border-border pt-3 text-[11px]">
-            <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Size</dt><dd className="font-mono text-foreground">{formatFrameSize(frame.sourceWidth, frame.sourceHeight)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Elements</dt><dd className="font-mono text-foreground">{frame.nodes.length}</dd></div>
+          <dl className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3 text-[12px]">
+            <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Size</dt><dd className="font-mono text-foreground">{formatFrameSize(frame.sourceWidth, frame.sourceHeight)}</dd></div>
+            <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Elements</dt><dd className="font-mono text-foreground">{frame.nodes.length}</dd></div>
           </dl>
           <p className="mt-4 border-t border-border pt-3 text-[10px] leading-4 text-foreground-subtle">Measurements retain source or measured provenance.</p>
         </div>

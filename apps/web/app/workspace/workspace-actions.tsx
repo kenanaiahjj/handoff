@@ -65,7 +65,7 @@ export function CreateWorkspaceForm() {
     <form className="flex flex-wrap gap-3" onSubmit={createWorkspace}>
       <label className="sr-only" htmlFor="workspace-name">Workspace name</label>
       <input
-        className="h-9 min-w-[12rem] flex-1 basis-48 rounded-control border border-border bg-surface-inset px-3 text-[12px] text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
+        className="h-9 min-w-[12rem] flex-1 basis-48 rounded-control border border-transparent bg-surface-inset px-3 text-[12px] text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
         id="workspace-name"
         maxLength={80}
         onChange={(event) => setName(event.target.value)}
@@ -74,7 +74,7 @@ export function CreateWorkspaceForm() {
         value={name}
       />
       <button
-        className="capture-primary-action h-9 shrink-0 rounded-full px-4 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
+        className="capture-primary-action h-9 shrink-0 px-4 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
         disabled={pending}
         type="submit"
       >
@@ -120,7 +120,7 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
     <form className="flex flex-col gap-3 sm:flex-row" onSubmit={createProject}>
       <label className="sr-only" htmlFor="project-name">Project name</label>
       <input
-        className="h-9 min-w-0 flex-1 rounded-control border border-border bg-surface-inset px-3 text-[12px] text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
+        className="h-9 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 text-[12px] text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
         id="project-name"
         maxLength={80}
         onChange={(event) => setName(event.target.value)}
@@ -129,7 +129,7 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
         value={name}
       />
       <button
-        className="capture-primary-action h-9 rounded-full px-4 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
+        className="capture-primary-action h-9 px-4 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
         disabled={pending}
         type="submit"
       >
@@ -227,7 +227,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
         <label className="space-y-1.5 text-[12px] text-foreground" htmlFor="invite-role">
           <span className="block font-medium">Team role</span>
           <select
-            className="h-9 w-full rounded-control border border-border bg-surface-inset px-3 text-[12px] text-foreground outline-none focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
+            className="h-9 w-full rounded-control border border-transparent bg-surface-inset px-3 text-[12px] text-foreground outline-none focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
             id="invite-role"
             onChange={(event) => setRole(event.target.value)}
             value={role}
@@ -242,7 +242,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
         <label className="space-y-1.5 text-[12px] text-foreground" htmlFor="invite-expiry">
           <span className="block font-medium">Link expires</span>
           <select
-            className="h-9 w-full rounded-control border border-border bg-surface-inset px-3 text-[12px] text-foreground outline-none focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
+            className="h-9 w-full rounded-control border border-transparent bg-surface-inset px-3 text-[12px] text-foreground outline-none focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
             id="invite-expiry"
             onChange={(event) => setExpiresInDays(event.target.value)}
             value={expiresInDays}
@@ -257,7 +257,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
           </select>
         </label>
         <button
-          className="capture-primary-action h-9 self-end rounded-full px-3 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60 sm:col-span-2"
+          className="capture-primary-action h-9 self-end px-3 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60 sm:col-span-2"
           disabled={pending}
           type="submit"
         >

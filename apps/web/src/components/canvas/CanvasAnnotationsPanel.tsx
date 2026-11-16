@@ -103,11 +103,11 @@ export function CanvasAnnotationsPanel({
             <h2 className="text-[12px] font-semibold text-foreground">Canvas notes</h2>
             <p className="mt-1 text-[10px] leading-4 text-foreground-subtle">Notes stay visible on the design canvas and belong to this immutable version. Comments remain threaded separately.</p>
           </div>
-          <span className="shrink-0 rounded-full bg-[#39332a] px-2 py-1 font-mono text-[9px] text-[#e0c68d]">{annotations.length}</span>
+          <span className="shrink-0 rounded-full bg-surface-strong px-2 py-1 font-mono text-[9px] text-foreground-muted">{annotations.length}</span>
         </div>
         {canEdit ? (
           <button
-            className="mt-3 min-h-8 rounded-control bg-[#4b412d] px-2.5 text-[10px] font-medium text-[#f4d89e] hover:bg-[#5a4b30] disabled:opacity-50"
+            className="mt-3 min-h-8 rounded-control bg-surface-inset px-2.5 text-[10px] font-medium text-foreground hover:bg-surface-raised disabled:opacity-50"
             disabled={placing || Boolean(pendingPoint)}
             onClick={onStartPlacement}
             type="button"
@@ -116,51 +116,51 @@ export function CanvasAnnotationsPanel({
           </button>
         ) : null}
         {placing ? (
-          <div aria-live="polite" className="mt-2 space-y-2 text-[10px] leading-4 text-[#d8bf89]">
+          <div aria-live="polite" className="mt-2 space-y-2 text-[10px] leading-4 text-foreground-muted">
             <p>Click a frame or empty canvas point to place a note, or use the button to place it at the selected screen center.</p>
             <button
-              className="min-h-8 rounded-control border border-[#76633a] px-2.5 text-[10px] font-medium text-[#f4d89e] hover:bg-[#393329] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-8 rounded-control border border-transparent px-2.5 text-[10px] font-medium text-foreground hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!hasSelectedScreen}
               onClick={onPlaceAtSelectedScreen}
               type="button"
             >
               Place at center of selected screen
             </button>
-            {!hasSelectedScreen ? <p className="text-[#b9aa86]">Select a screen to enable this option.</p> : null}
+            {!hasSelectedScreen ? <p className="text-foreground-subtle">Select a screen to enable this option.</p> : null}
           </div>
         ) : null}
       </section>
 
       {editing ? (
-        <section className="rounded-control border border-[#76633a] bg-[#29251d] p-3" aria-label={selected ? "Edit canvas note" : "Add canvas note"}>
-          <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#d3b975]">{selected ? "Edit note" : "New note"}</p>
-          {pendingPoint ? <p className="mt-1 text-[10px] text-[#a99975]">Placed on {screenNames[pendingPoint.frameId] ?? (pendingPoint.frameId === overviewCanvasFrameId ? "Canvas" : "selected screen")}</p> : null}
+        <section className="rounded-control border border-transparent bg-surface-inset p-3" aria-label={selected ? "Edit canvas note" : "Add canvas note"}>
+          <p className="text-[12px] font-medium text-foreground-subtle">{selected ? "Edit note" : "New note"}</p>
+          {pendingPoint ? <p className="mt-1 text-[10px] text-foreground-subtle">Placed on {screenNames[pendingPoint.frameId] ?? (pendingPoint.frameId === overviewCanvasFrameId ? "Canvas" : "selected screen")}</p> : null}
           <label className="mt-3 block text-[10px] text-foreground-muted" htmlFor="canvas-note-title">Title</label>
-          <input aria-describedby={actionError ? "canvas-note-error" : undefined} autoFocus={!selected && Boolean(pendingPoint)} className="mt-1 h-8 w-full rounded-chip border border-[#514831] bg-surface-inset px-2 text-[11px] text-white outline-none focus:border-[#c3a65f]" id="canvas-note-title" maxLength={120} onChange={(event) => setTitle(event.target.value)} required value={title} />
+          <input aria-describedby={actionError ? "canvas-note-error" : undefined} autoFocus={!selected && Boolean(pendingPoint)} className="mt-1 h-8 w-full rounded-chip border border-transparent bg-surface-inset px-2 text-[11px] text-white outline-none focus:border-transparent" id="canvas-note-title" maxLength={120} onChange={(event) => setTitle(event.target.value)} required value={title} />
           <label className="mt-2 block text-[10px] text-foreground-muted" htmlFor="canvas-note-body">Annotation</label>
-          <textarea aria-describedby={actionError ? "canvas-note-error" : undefined} className="mt-1 min-h-24 w-full resize-y rounded-chip border border-[#514831] bg-surface-inset px-2 py-1.5 text-[11px] leading-5 text-white outline-none focus:border-[#c3a65f]" id="canvas-note-body" maxLength={2000} onChange={(event) => setBody(event.target.value)} required value={body} />
+          <textarea aria-describedby={actionError ? "canvas-note-error" : undefined} className="mt-1 min-h-24 w-full resize-y rounded-chip border border-transparent bg-surface-inset px-2 py-1.5 text-[11px] leading-5 text-white outline-none focus:border-transparent" id="canvas-note-body" maxLength={2000} onChange={(event) => setBody(event.target.value)} required value={body} />
           <div className="mt-2 flex justify-end gap-1.5">
-            <button className="min-h-8 rounded-chip px-2 text-[10px] text-foreground-muted hover:bg-[#39352c]" onClick={onCancel} type="button">Cancel</button>
+            <button className="min-h-8 rounded-chip px-2 text-[10px] text-foreground-muted hover:bg-surface-raised" onClick={onCancel} type="button">Cancel</button>
             {selected ? <button className="min-h-8 rounded-chip px-2 text-[10px] text-danger hover:bg-danger/10 disabled:opacity-50" disabled={saving} onClick={() => void remove()} type="button">Delete</button> : null}
-            <button className="min-h-8 rounded-chip bg-[#d7b86e] px-2.5 text-[10px] font-semibold text-[#2b2415] hover:bg-[#e8cc89] disabled:opacity-50" disabled={saving || !pendingPoint && !selected} onClick={() => void save()} type="button">{saving ? "Saving…" : selected ? "Save note" : "Add note"}</button>
+            <button className="min-h-8 rounded-chip bg-primary px-2.5 text-[10px] font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-50" disabled={saving || !pendingPoint && !selected} onClick={() => void save()} type="button">{saving ? "Saving…" : selected ? "Save note" : "Add note"}</button>
           </div>
           {actionError ? <p className="mt-2 text-[10px] text-danger" id="canvas-note-error" role="alert">{actionError}</p> : null}
         </section>
       ) : null}
 
-      {error ? <p className="rounded-chip bg-[#3b2928] px-2.5 py-2 text-[10px] leading-4 text-danger" role="alert">{error}</p> : null}
+      {error ? <p className="rounded-chip bg-danger/15 px-2.5 py-2 text-[10px] leading-4 text-danger" role="alert">{error}</p> : null}
       <ol className="space-y-2">
         {annotations.map((annotation) => (
           <li key={annotation.id}>
             <button
               aria-pressed={annotation.id === selectedAnnotationId}
-              className={"w-full rounded-control border p-2.5 text-left transition-colors " + (annotation.id === selectedAnnotationId ? "border-[#8e7440] bg-[#332c20]" : "border-border bg-surface-muted hover:bg-surface-raised")}
+              className={"w-full rounded-control border p-2.5 text-left transition-colors " + (annotation.id === selectedAnnotationId ? "border-transparent bg-surface-raised" : "border-border bg-surface-muted hover:bg-surface-raised")}
               onClick={() => onSelect(annotation.id)}
               type="button"
             >
-              <span className="block text-[11px] font-semibold text-[#e8d7ad]">{annotation.title}</span>
-              <span className="mt-1 block whitespace-pre-wrap break-words text-[10px] leading-4 text-[#c5c0b3]">{annotation.body}</span>
-              <span className="mt-1.5 block text-[9px] text-[#8f8b80]">{screenNames[annotation.frameId] ?? "Screen"} · {annotation.authorName}</span>
+              <span className="block text-[11px] font-semibold text-foreground">{annotation.title}</span>
+              <span className="mt-1 block whitespace-pre-wrap break-words text-[10px] leading-4 text-foreground-muted">{annotation.body}</span>
+              <span className="mt-1.5 block text-[9px] text-foreground-subtle">{screenNames[annotation.frameId] ?? "Screen"} · {annotation.authorName}</span>
             </button>
           </li>
         ))}

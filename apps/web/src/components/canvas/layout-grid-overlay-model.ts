@@ -9,7 +9,9 @@ type LayoutGridFrame = {
   id: string;
   nodes: Array<{
     sourceNodeId: string;
-    sourcePayload: Record<string, unknown>;
+    /** Canvas summaries carry the root's grids directly; full nodes keep them in sourcePayload. */
+    layoutGrids?: unknown;
+    sourcePayload?: Record<string, unknown>;
   }>;
 };
 
@@ -28,7 +30,7 @@ function finiteNumber(value: unknown): number | null {
 
 export function getVisibleLayoutGrids(frame: LayoutGridFrame): CapturedLayoutGrid[] {
   const root = frame.nodes.find((node) => node.sourceNodeId === frame.id);
-  const value = root?.sourcePayload.layoutGrids;
+  const value = root?.layoutGrids ?? root?.sourcePayload?.layoutGrids;
   if (!Array.isArray(value)) return [];
   return value.flatMap((entry) => {
     const grid = recordOf(entry);

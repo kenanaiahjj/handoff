@@ -1,9 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import Image from "next/image";
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { BrandMark } from "@/src/components/shell/BrandMark";
 
 type InviteInfo = {
   workspaceName: string;
@@ -63,11 +63,8 @@ export function InviteClient({ token }: { token: string }) {
   return (
     <main className="flex min-h-screen items-center justify-center px-5 py-12">
       <section className="w-full max-w-[440px] rounded-panel border border-border bg-surface p-6 sm:p-8">
-        <Link href="/" className="inline-flex items-center gap-2 text-sm font-semibold tracking-[0.08em] text-foreground">
-          <Image alt="" aria-hidden="true" className="size-7 rounded-control object-cover" height={28} src="/icons/asbir-handoff-v2-180.png" width={28} />
-          ASBIR <span className="font-normal tracking-normal text-foreground-muted">/ HANDOFF</span>
-        </Link>
-        <p className="mt-8 font-mono text-xs uppercase tracking-[0.16em] text-accent">Team invitation</p>
+        <Link aria-label="Asbir Handoff home" href="/" className="inline-flex"><BrandMark /></Link>
+        <p className="mt-8 text-[12px] font-medium text-foreground-subtle">Team invitation</p>
         <h1 className="mt-2 text-title font-semibold leading-title text-foreground">
           {invite ? `Join ${invite.workspaceName}` : "Review invitation"}
         </h1>

@@ -225,7 +225,7 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
     <div className="mt-4 space-y-4 border-t border-border pt-4">
       <label className="grid gap-1.5 text-xs text-foreground-muted" htmlFor="handoff-sharing-mode">
         Who can open this canvas?
-        <select className="min-h-10 w-full rounded-control border border-border bg-surface-inset px-3 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" disabled={pending || loading} id="handoff-sharing-mode" onChange={(event) => void updateMode(event.target.value as SharingMode)} value={mode}>
+        <select className="min-h-10 w-full rounded-control border border-transparent bg-surface-inset px-3 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" disabled={pending || loading} id="handoff-sharing-mode" onChange={(event) => void updateMode(event.target.value as SharingMode)} value={mode}>
           <option value="workspace">Workspace members — sign in required</option>
           <option value="invited">Only invited people — role-based link</option>
           <option value="anyone">Anyone with the link — no sign-in</option>
@@ -241,7 +241,7 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
               : "Open the handoff and publish its latest version to create a review link."}
           </p>
           {publishTarget?.isLatestVersion ? (
-            <button aria-busy={pending} className="canvas-publish-action min-h-9 shrink-0 rounded-full px-4 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60" disabled={pending} onClick={() => void publishLatest()} type="button">
+            <button aria-busy={pending} className="canvas-publish-action min-h-9 shrink-0 px-4 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-60" disabled={pending} onClick={() => void publishLatest()} type="button">
               {pending ? "Publishing…" : "Publish"}
             </button>
           ) : null}
@@ -256,14 +256,14 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
       ) : null}
 
       {reviewUrl ? <section aria-labelledby="handoff-access-list-heading">
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-foreground-muted" id="handoff-access-list-heading">Who can open the published canvas?</h4>
+        <h4 className="text-[12px] font-semibold text-foreground-muted" id="handoff-access-list-heading">Who can open the published canvas?</h4>
         {reviewUrl && mode === "workspace" ? <p className="mt-1 text-xs leading-5 text-foreground-muted">All listed workspace members can open this canvas.</p> : null}
         {reviewUrl && mode === "invited" ? <p className="mt-1 text-xs leading-5 text-foreground-muted">Workspace owners and designers, plus anyone with an active invite link, can view and comment. Emails below are recipient labels.</p> : null}
         {reviewUrl && mode === "anyone" ? <p className="mt-1 text-xs leading-5 text-foreground-muted">Anyone with this link can view the canvas. Link viewers are not identifiable here. Workspace owners and designers can manage it.</p> : null}
 
         {mode === "workspace" ? (
           workspaceMembers.length ? (
-            <ul className="mt-2 max-h-44 divide-y divide-border overflow-y-auto rounded-md border border-border bg-surface-inset px-3">
+            <ul className="mt-2 max-h-44 divide-y divide-border overflow-y-auto rounded-md border border-transparent bg-surface-inset px-3">
               {workspaceMembers.map((member) => (
                 <li className="flex min-h-10 items-center justify-between gap-2 py-2" key={member.id}>
                   <span className="min-w-0">
@@ -279,9 +279,9 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
 
         {mode !== "workspace" ? (
           <>
-            <p className="mt-3 text-[11px] font-medium uppercase tracking-wide text-foreground-subtle">Workspace owners and designers</p>
+            <p className="mt-3 text-[12px] font-semibold text-foreground-subtle">Workspace owners and designers</p>
             {workspaceMembers.some((member) => member.role === "owner" || member.role === "designer") ? (
-              <ul className="mt-2 divide-y divide-border rounded-md border border-border bg-surface-inset px-4">
+              <ul className="mt-2 divide-y divide-border rounded-md border border-transparent bg-surface-inset px-4">
                 {workspaceMembers.filter((member) => member.role === "owner" || member.role === "designer").map((member) => (
                   <li className="flex min-h-12 items-center justify-between gap-3 py-3" key={member.id}>
                     <span className="min-w-0">
@@ -298,7 +298,7 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
       </section> : null}
 
       {reviewUrl ? (
-        <div className="flex items-center gap-3 rounded-md border border-border bg-surface-inset px-3 py-3">
+        <div className="flex items-center gap-3 rounded-md border border-transparent bg-surface-inset px-3 py-3">
           <span className="min-w-0 flex-1">
             <span className="block text-[11px] uppercase tracking-wide text-foreground-subtle">Canvas link</span>
             <span className="mt-1 block break-all font-mono text-[11px] text-foreground-muted">{reviewUrl}</span>
@@ -327,13 +327,13 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
       {mode === "invited" && reviewUrl ? (
         <form className="grid gap-3 sm:grid-cols-2" onSubmit={(event) => void createInvite(event)}>
           <label className="sr-only" htmlFor="handoff-invite-email">Recipient email</label>
-          <input autoComplete="email" className="min-h-10 min-w-0 rounded-control border border-border bg-surface-inset px-3 text-xs text-foreground placeholder:text-foreground-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" disabled={!reviewUrl || loading || pending} id="handoff-invite-email" onChange={(event) => setInviteEmail(event.target.value)} placeholder="name@company.com" required type="email" value={inviteEmail} />
+          <input autoComplete="email" className="min-h-10 min-w-0 rounded-control border border-transparent bg-surface-inset px-3 text-xs text-foreground placeholder:text-foreground-subtle focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" disabled={!reviewUrl || loading || pending} id="handoff-invite-email" onChange={(event) => setInviteEmail(event.target.value)} placeholder="name@company.com" required type="email" value={inviteEmail} />
           <label className="sr-only" htmlFor="handoff-invite-role">Invite role</label>
-          <select className="min-h-10 rounded-control border border-border bg-surface-inset px-3 text-xs uppercase text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" disabled={!reviewUrl || loading || pending} id="handoff-invite-role" onChange={(event) => setInviteRole(event.target.value as InviteRole)} value={inviteRole}>
+          <select className="min-h-10 rounded-control border border-transparent bg-surface-inset px-3 text-xs uppercase text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" disabled={!reviewUrl || loading || pending} id="handoff-invite-role" onChange={(event) => setInviteRole(event.target.value as InviteRole)} value={inviteRole}>
             <option value="pd">PD</option><option value="qa">QA</option><option value="dev">DEV</option><option value="exec">EXEC</option>
           </select>
           <label className="sr-only" htmlFor="handoff-invite-expiry">Invitation expiry</label>
-          <select className="min-h-10 rounded-control border border-border bg-surface-inset px-3 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" disabled={!reviewUrl || loading || pending} id="handoff-invite-expiry" onChange={(event) => setInviteExpiry(event.target.value)} value={inviteExpiry}>
+          <select className="min-h-10 rounded-control border border-transparent bg-surface-inset px-3 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" disabled={!reviewUrl || loading || pending} id="handoff-invite-expiry" onChange={(event) => setInviteExpiry(event.target.value)} value={inviteExpiry}>
             <option value="1">Expires in 1 day</option><option value="7">Expires in 7 days</option><option value="15">Expires in 15 days</option><option value="30">Expires in 30 days</option><option value="90">Expires in 90 days</option><option value="365">Expires in 1 year</option><option value="never">Never expires</option>
           </select>
           <button className="min-h-10 w-full rounded-control border border-border-strong bg-surface-raised px-3 text-xs font-medium text-foreground transition-colors hover:bg-surface-strong/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={!reviewUrl || loading || pending} type="submit">Create invite</button>
@@ -343,17 +343,17 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
       {createdInviteUrl ? (
         <div className="flex flex-wrap gap-2">
           <label className="sr-only" htmlFor="created-handoff-invite">Invitation link</label>
-          <input className="min-h-10 min-w-0 flex-1 rounded-control border border-border bg-surface-inset px-3 font-mono text-[11px] text-foreground-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" id="created-handoff-invite" readOnly value={createdInviteUrl} />
+          <input className="min-h-10 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 font-mono text-[11px] text-foreground-muted focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" id="created-handoff-invite" readOnly value={createdInviteUrl} />
           <button className="min-h-10 rounded-control border border-border-strong bg-surface-raised px-3 text-xs font-medium text-foreground transition-colors hover:bg-surface-strong/80 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" onClick={emailInvite} title="Open a prefilled email draft in your email app" type="button">Email invite</button>
           <button className="min-h-10 rounded-control bg-primary px-3 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" onClick={() => void copyInviteLink()} type="button">Copy invite link</button>
         </div>
       ) : null}
 
       {reviewUrl || invites.length ? <section aria-labelledby="handoff-invites-heading">
-        <h4 className="text-[11px] font-semibold uppercase tracking-wide text-foreground-muted" id="handoff-invites-heading">{mode === "invited" && reviewUrl ? "Active invite links" : "Invitation links"} <span className="font-mono">{invites.length.toString().padStart(2, "0")}</span></h4>
+        <h4 className="text-[12px] font-semibold text-foreground-muted" id="handoff-invites-heading">{mode === "invited" && reviewUrl ? "Active invite links" : "Invitation links"} <span className="font-mono">{invites.length.toString().padStart(2, "0")}</span></h4>
         {mode !== "invited" && invites.length ? <p className="mt-1 text-[11px] leading-4 text-foreground-subtle">These invitation links are inactive while this handoff uses another access mode. You can still revoke them.</p> : null}
         {invites.length ? (
-          <ul className="mt-2 divide-y divide-border rounded-md border border-border bg-surface-inset px-3">
+          <ul className="mt-2 divide-y divide-border rounded-md border border-transparent bg-surface-inset px-3">
             {invites.map((invite) => (
               <li className="flex min-h-10 items-center justify-between gap-2 py-2" key={invite.id}>
                 <span className="min-w-0">

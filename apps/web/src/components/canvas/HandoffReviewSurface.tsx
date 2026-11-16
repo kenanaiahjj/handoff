@@ -8,7 +8,7 @@ import type { CompareRouteState } from "./compare-state";
 import { formatFigmaCaptureScope } from "@asbir/snapshot-contract";
 import { HandoffReview } from "./HandoffReview";
 import { getVersion, type StoredVersionAsset } from "@/src/server/repositories/versions";
-import { buildOverviewOverlayNodes } from "./overview-overlay-nodes";
+import { summarizeCanvasNode } from "./canvas-node-summary";
 
 export type ReviewVersionSummary = VersionOption & {
   id: string;
@@ -78,6 +78,7 @@ function buildCanvasFrames(version: StoredVersion, publicReviewShareId?: string)
     }
     return {
       ...input,
+      nodes: input.nodes.map((node) => summarizeCanvasNode(node, input.id)),
       pageName: input.kind === "frame" ? pageNames.get(pageIdByFrameId.get(input.id) ?? "") : undefined,
       imageSrc: assetUrl(asset.objectKey),
       fileName: asset.fileName,
@@ -108,9 +109,8 @@ function buildCanvasFrames(version: StoredVersion, publicReviewShareId?: string)
     sourceX: overviewBounds?.x.value ?? 0,
     sourceY: overviewBounds?.y.value ?? 0,
     nodes: [],
-    overlayNodes: overviewExact && structuredSnapshot
-      ? buildOverviewOverlayNodes(structuredSnapshot.frames, pageOffsets)
-      : [],
+    // Built in the browser from the screen summaries (see buildOverviewOverlayFromScreens).
+    overlayNodes: [],
     exact: overviewExact,
     kind: "overview",
   });

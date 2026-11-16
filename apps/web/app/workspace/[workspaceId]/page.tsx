@@ -1,10 +1,13 @@
-import Link from "next/link";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { getSessionForHeaders } from "@/src/server/auth-session";
 import { getDatabase } from "@/src/server/db";
 import { listProjects } from "@/src/server/repositories/projects";
-import { CreateInviteForm, CreateProjectForm } from "../workspace-actions";
+import { CreateInviteForm } from "../workspace-actions";
+import { ProjectsPane, type ProjectCard } from "./projects-pane";
+import Link from "next/link";
+import { NewVersionBadge } from "@/src/components/shell/NewVersionBadge";
+import { canSeeWholeWorkspace, countUpdatesByProject, filterProjectsForViewer, listViewerUpdates } from "@/src/server/services/review-visibility";
 import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 
@@ -18,14 +21,6 @@ type WorkspaceDetail = {
   id: string;
   name: string;
   role: string;
-};
-
-type ProjectCard = {
-  id: string;
-  name: string;
-  createdAt: string;
-  handoffCount: number;
-  versionCount: number;
 };
 
 type WorkspaceInvite = {
@@ -51,7 +46,10 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
 
   if (!workspace) notFound();
 
-  const projects = listProjects(workspace.id) as ProjectCard[];
+  const viewer = { id: session.user.id, email: session.user.email, role: workspace.role };
+  const canManage = canSeeWholeWorkspace(workspace.role);
+  const projects = filterProjectsForViewer(workspace.id, viewer, listProjects(workspace.id) as ProjectCard[]);
+  const updates = listViewerUpdates(workspace.id, viewer);
   const invites = getDatabase()
     .prepare(
       `SELECT id, role, expires_at AS expiresAt, created_at AS createdAt
@@ -84,46 +82,46 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
         <header className="workspace-dashboard-heading">
           <div>
             <h1 className="font-semibold text-foreground">{workspace.name}</h1>
-            <p className="mt-2 text-[13px] leading-5 text-foreground-muted">Projects keep source canvases, frozen versions, and review decisions together.</p>
+            <p className="mt-2 text-[13px] leading-5 text-foreground-muted">{canManage ? "Projects keep source canvases, frozen versions, and review decisions together." : "Projects and handoffs shared with you for review."}</p>
           </div>
           <span className="workspace-role px-3 py-1.5 text-[11px] capitalize">{workspace.role}</span>
         </header>
 
         <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <section aria-labelledby="projects-title" className="workspace-pane p-5 sm:p-6" id="projects">
-            <div className="workspace-pane-heading">
-              <h2 className="text-[14px] font-semibold text-foreground" id="projects-title">Projects</h2>
-              <span className="workspace-pane-count font-mono text-[11px]">{projects.length.toString().padStart(2, "0")}</span>
-            </div>
-            {projects.length ? (
-              <ul className="workspace-list mt-2">
-                {projects.map((project) => (
-                  <li className="py-1" key={project.id}>
-                    <div className="workspace-list-item flex min-h-[72px] items-center gap-3 px-2.5">
-                      <Link aria-label={`Open ${project.name}`} className="flex min-w-0 flex-1 items-center gap-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspace.id}/projects/${project.id}`}>
-                      <span aria-hidden="true" className="workspace-mark grid size-9 shrink-0 place-items-center text-[12px] font-semibold">{project.name.trim().slice(0, 1).toUpperCase() || "P"}</span>
-                      <span className="min-w-0 flex-1">
-                        <span className="block truncate text-[13px] font-medium text-foreground">{project.name}</span>
-                        <span className="mt-1 block text-[11px] text-foreground-subtle">{project.handoffCount} handoffs <span aria-hidden="true">·</span> {project.versionCount} versions</span>
-                      </span>
-                    </Link>
-                    <Link className="capture-primary-action inline-flex min-h-8 shrink-0 items-center justify-center rounded-full px-3 text-[10px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover" href={`/workspace/${workspace.id}/projects/${project.id}#setup-handoff-name`}>Start handoff</Link>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            ) : (
-              <p className="workspace-empty-state px-2 py-7 text-[12px]">No projects yet. Create one to start a design handoff.</p>
-            )}
-            <div className="workspace-create mt-5 pt-5"><CreateProjectForm workspaceId={workspace.id} /></div>
-          </section>
+          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} />
 
-          <section aria-labelledby="invite-title" className="workspace-pane p-5 sm:p-6">
-            <div className="workspace-pane-heading">
-              <h2 className="text-[14px] font-semibold text-foreground" id="invite-title">Invite your team</h2>
-            </div>
-            <div className="mt-4"><CreateInviteForm key={workspace.id} workspaceId={workspace.id} initialInvites={invites} /></div>
-          </section>
+          {canManage ? (
+            <section aria-labelledby="invite-title" className="workspace-pane p-5 sm:p-6">
+              <div className="workspace-pane-heading">
+                <h2 className="text-[14px] font-semibold text-foreground" id="invite-title">Invite your team</h2>
+              </div>
+              <div className="mt-4"><CreateInviteForm key={workspace.id} workspaceId={workspace.id} initialInvites={invites} /></div>
+            </section>
+          ) : (
+            <section aria-labelledby="updates-title" className="workspace-pane p-5 sm:p-6">
+              <div className="workspace-pane-heading">
+                <h2 className="text-[14px] font-semibold text-foreground" id="updates-title">Updates for you</h2>
+                <span className="workspace-pane-count font-mono text-[11px]">{updates.length.toString().padStart(2, "0")}</span>
+              </div>
+              {updates.length ? (
+                <ul className="workspace-list mt-2">
+                  {updates.map((update) => (
+                    <li className="py-1" key={update.handoffId}>
+                      <Link className="workspace-list-item flex flex-col gap-1 px-2.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspace.id}/projects/${update.projectId}/handoffs/${update.handoffId}`}>
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-[13px] font-medium text-foreground">{update.handoffName}</span>
+                          <NewVersionBadge label="New" />
+                        </span>
+                        <span className="truncate text-[11px] text-foreground-subtle">Version {update.versionLabel} · {update.projectName} · {new Date(update.createdAt).toLocaleDateString()}</span>
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="workspace-empty-state px-2 py-7 text-[12px]">You’re up to date. New versions of handoffs shared with you show up here.</p>
+              )}
+            </section>
+          )}
         </div>
       </main>
     </WorkspaceShell>

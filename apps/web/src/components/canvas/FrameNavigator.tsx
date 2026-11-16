@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import type { SnapshotNode } from "@asbir/snapshot-contract";
 import { filterChangedFrames } from "./changed-frame-filter";
 import { comparisonFrameStatusLabel } from "./compare-presentation";
+import type { CanvasNodeSummary } from "./canvas-node-summary";
 
 type CanvasFrameOption = {
   id: string;
@@ -17,14 +18,15 @@ type CanvasFrameOption = {
   pixelHeight: number;
   sourceX: number;
   sourceY: number;
-  nodes: SnapshotNode[];
+  /** Lightweight element summaries; full details load per screen (see useFrameNodeDetails). */
+  nodes: CanvasNodeSummary[];
   overlayNodes?: CanvasOverlayNode[];
   layerExports?: Record<string, { downloadUrl: string; fileName: string; contentType: "image/png" | "image/svg+xml" }>;
   exact: boolean;
   kind: "overview" | "frame";
 };
 
-export type CanvasOverlayNode = Pick<SnapshotNode, "sourceNodeId" | "sourceFrameId" | "name" | "type" | "visible" | "bounds">;
+export type CanvasOverlayNode = Pick<CanvasNodeSummary, "sourceNodeId" | "sourceFrameId" | "name" | "type" | "visible" | "bounds">;
 
 export type { CanvasFrameOption };
 export type CanvasFrameChangeStatus = "added" | "removed" | "changed" | "unchanged" | "only-in-before-capture" | "only-in-after-capture";
@@ -83,7 +85,7 @@ export function FrameNavigator({
     (node.name + " " + node.type + " " + node.sourceNodeId).toLowerCase().includes(elementQuery.toLowerCase()),
   );
 
-  function depthForNode(node: SnapshotNode) {
+  function depthForNode(node: CanvasNodeSummary) {
     let depth = 0;
     let parentId = node.parentSourceNodeId;
     const seen = new Set([node.sourceNodeId]);
@@ -99,7 +101,7 @@ export function FrameNavigator({
     <nav aria-label="Snapshot screens" className="flex h-full min-h-0 min-w-0 flex-col border-r border-border bg-surface text-foreground-muted">
       <div className="shrink-0 space-y-3 p-3">
         <button
-          className="flex h-9 w-full items-center gap-2 rounded-control border border-border bg-surface-muted px-2.5 text-left text-[12px] text-foreground-muted hover:border-border-strong hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          className="dial-button h-9 w-full !justify-start px-2.5 text-left text-[13px]"
           id="canvas-search-screens-trigger"
           onClick={onOpenSearch}
           title="Search captured text, colors, and elements"
@@ -114,7 +116,7 @@ export function FrameNavigator({
         </button>
         <input
           aria-label="Filter screens"
-            className="h-9 w-full rounded-control border border-transparent bg-surface-raised px-2.5 text-[13px] text-foreground outline-none placeholder:text-foreground-muted focus:border-border-strong focus:bg-surface-raised focus:ring-2 focus:ring-foreground-subtle/40"
+            className="h-9 w-full rounded-control border border-transparent bg-surface-inset px-2.5 text-[13px] text-foreground outline-none placeholder:text-foreground-subtle hover:bg-surface-raised focus:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/60"
           id="review-screen-filter"
           onChange={(event) => setScreenQuery(event.target.value)}
           placeholder="Filter screens"
@@ -124,7 +126,7 @@ export function FrameNavigator({
         <label className="flex min-h-7 cursor-pointer items-center gap-2 text-[12px] leading-5 text-foreground-muted">
           <input
             checked={changedOnly}
-            className="size-3.5 accent-[#d99a32]"
+            className="size-3.5 accent-[var(--foreground)]"
             disabled={!comparisonSummary}
             onChange={(event) => onChangedOnlyChange(event.target.checked)}
             title={comparisonSummary ? undefined : "Compare versions to filter changed screens."}
@@ -136,11 +138,11 @@ export function FrameNavigator({
       </div>
 
       <div className="flex items-center justify-between px-3 pb-2 pt-1">
-        <h2 className="text-[12px] font-semibold text-foreground-muted">Screens</h2>
+        <h2 className="dial-section-title">Screens</h2>
           <span className="font-mono text-[10px] text-foreground-subtle">{visibleFrames.length}/{screens.length}</span>
       </div>
 
-      <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
+      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
         {visibleFrames.map((frame, index) => {
           const selected = frame.id === activeFrameId;
           const status = frameStatuses[frame.id];
@@ -152,7 +154,7 @@ export function FrameNavigator({
             <li key={frame.id}>
               <button
                 aria-pressed={selected}
-                className={"flex min-h-9 w-full items-center gap-2 rounded-control border px-2.5 text-left text-[13px] transition-colors " + (selected ? "border-border-strong bg-surface-raised text-foreground" : "border-transparent text-foreground-muted hover:bg-surface-raised hover:text-foreground")}
+                className={"flex min-h-9 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] font-medium transition-colors " + (selected ? "bg-surface-strong text-foreground" : "text-foreground-muted hover:bg-surface-inset hover:text-foreground")}
                 onClick={() => onSelect(frame.id)}
                 title={frame.pageName ? `${frame.name} · ${frame.pageName}` : frame.name}
                 type="button"

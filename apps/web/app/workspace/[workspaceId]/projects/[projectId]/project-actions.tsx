@@ -33,12 +33,12 @@ export function ProjectPdInChargeForm({ input }: {
   }
 
   return (
-    <section className="rounded-project-panel border border-border bg-surface p-5" aria-labelledby="pd-in-charge-title">
+    <section className="workspace-pane p-5" aria-labelledby="pd-in-charge-title">
       <h2 className="text-sm font-semibold tracking-[-0.02em] text-foreground" id="pd-in-charge-title">PD in charge</h2>
       <p className="mt-2 text-[13px] leading-5 text-foreground-muted">Assign a workspace Owner or Designer to lead this project. Owners can also act as PDs, and Designers do not need workspace ownership.</p>
       <label className="mt-5 block text-xs font-medium text-foreground-muted" htmlFor="project-pd-in-charge">PD in charge</label>
       <select
-        className="mt-2 min-h-11 w-full rounded-xl border border-border bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+        className="mt-2 min-h-11 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
         id="project-pd-in-charge"
         onChange={(event) => setSelectedId(event.target.value)}
         value={selectedId}
@@ -46,7 +46,7 @@ export function ProjectPdInChargeForm({ input }: {
         <option value="">Unassigned</option>
         {input.candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.role === "owner" ? "Owner" : "Designer"} · {candidate.email}</option>)}
       </select>
-      <button className="mt-4 min-h-10 rounded-full border border-border-strong bg-surface-raised px-4 text-xs font-semibold text-foreground transition-colors hover:bg-surface-strong/80 disabled:cursor-not-allowed disabled:opacity-50" disabled={saving || selectedId === savedId} onClick={() => void save()} type="button">{saving ? "Saving…" : "Save assignment"}</button>
+      <button className="dial-button mt-4 min-h-9 px-4 text-[13px]" disabled={saving || selectedId === savedId} onClick={() => void save()} type="button">{saving ? "Saving…" : "Save assignment"}</button>
       {error ? <p className="mt-3 text-xs text-danger" role="alert">{error}</p> : notice ? <p aria-live="polite" className="mt-3 text-xs text-foreground-muted">{notice}</p> : null}
     </section>
   );

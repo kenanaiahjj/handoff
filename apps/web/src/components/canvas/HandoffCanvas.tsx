@@ -3,7 +3,8 @@
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import type { SnapshotNode } from "@asbir/snapshot-contract";
+import { buildOverviewOverlayFromScreens, type CanvasNodeSummary } from "./canvas-node-summary";
+import { useFrameNodeDetails } from "./useFrameNodeDetails";
 import { CommentThread, type PendingCommentPoint } from "../comments/CommentThread";
 import type { CommentIdentity, HandoffComment } from "../comments/CommentPin";
 import { CanvasToolbar } from "./CanvasToolbar";
@@ -78,7 +79,7 @@ type AnnotationPayload = { annotations: CanvasAnnotationRecord[] };
 type SearchCategory = "All" | "Text" | "Colors" | "Elements";
 type SearchResult = {
   frame: CanvasFrameOption;
-  node: SnapshotNode;
+  node: CanvasNodeSummary;
   category: Exclude<SearchCategory, "All">;
   detail: string;
 };
@@ -120,7 +121,7 @@ function getFocusableElements(container: HTMLElement) {
 }
 
 export function HandoffCanvas({
-  frames,
+  frames: framesProp,
   commentsEndpoint,
   workspaceId,
   projectId,
@@ -134,6 +135,10 @@ export function HandoffCanvas({
   metadata,
   dockPanels,
 }: HandoffCanvasProps) {
+  // The server sends each element once (per screen); derive the overview's hit areas here.
+  const frames = useMemo(() => framesProp.map((frame) => frame.kind === "overview" && frame.exact
+    ? { ...frame, overlayNodes: buildOverviewOverlayFromScreens(framesProp.filter((candidate) => candidate.kind === "frame")) }
+    : frame), [framesProp]);
   const sharingEndpoint = metadata.canManageSharing
     ? `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`
     : null;
@@ -167,12 +172,16 @@ export function HandoffCanvas({
   const [showResolvedPins, setShowResolvedPins] = useState(false);
   const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "agent" | "local" | "mcp">("inspect");
   const [canvasModeOverride, setCanvasModeOverride] = useState<"view" | "inspect" | null>(null);
-  const [statesOpen, setStatesOpen] = useState(false);
+  // Open by default so the server render already has the desktop layout (screen list included);
+  // until the real viewport is known, the list stays hidden below the desktop breakpoint.
+  const [statesOpen, setStatesOpen] = useState(true);
+  const [layoutReady, setLayoutReady] = useState(false);
   const [mobilePanelOpenOverride, setMobilePanelOpenOverride] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
   const canvasMode = canvasModeOverride ?? (linkedNode ? "inspect" : "view");
   const mobilePanelOpen = mobilePanelOpenOverride ?? (isMobile && Boolean(linkedNode));
   const [commentMode, setCommentMode] = useState(false);
+  const [commentThreadOpen, setCommentThreadOpen] = useState(false);
   const [annotationMode, setAnnotationMode] = useState(false);
   const [pendingPoint, setPendingPoint] = useState<PendingCommentPoint | null>(null);
   const [pendingAnnotationPoint, setPendingAnnotationPoint] = useState<PendingCommentPoint | null>(null);
@@ -229,6 +238,7 @@ export function HandoffCanvas({
       setIsMobile(media.matches);
       setStatesOpen(!media.matches);
       setMobilePanelOpenOverride(null);
+      setLayoutReady(true);
     };
     updateLayout();
     media.addEventListener("change", updateLayout);
@@ -337,7 +347,7 @@ export function HandoffCanvas({
   const hasLayoutGrids = useMemo(() => hasVisibleLayoutGrids(
     visualFrame?.kind === "overview" && visualFrame.exact ? canvasScreens : visualFrame ? [visualFrame] : [],
   ), [canvasScreens, visualFrame]);
-  const requestedSelectedNode = useMemo<SnapshotNode | null>(() => {
+  const requestedSelectedNode = useMemo<CanvasNodeSummary | null>(() => {
     if (!requestedSelectedNodeId) return null;
     return screens.flatMap((frame) => frame.nodes).find((node) => node.sourceNodeId === requestedSelectedNodeId) ?? null;
   }, [screens, requestedSelectedNodeId]);
@@ -346,6 +356,21 @@ export function HandoffCanvas({
     ? null
     : requestedSelectedNode;
   const selectedNodeId = selectedNode?.sourceNodeId ?? (changedOnlyActive ? null : requestedSelectedNodeId);
+
+  // The canvas renders from element summaries; full details load per screen on demand.
+  const frameNodesEndpoint = useCallback(
+    (frameId: string) => commentsEndpoint.replace(/\/comments$/, `/frames/${encodeURIComponent(frameId)}/nodes`),
+    [commentsEndpoint],
+  );
+  const frameDetails = useFrameNodeDetails(frameNodesEndpoint);
+  const { ensure: ensureFrameNodes } = frameDetails;
+  useEffect(() => {
+    if (selectedNode) ensureFrameNodes(selectedNode.sourceFrameId);
+  }, [ensureFrameNodes, selectedNode]);
+  const selectedFrameNodes = selectedNode ? frameDetails.nodesFor(selectedNode.sourceFrameId) : null;
+  const detailedSelectedNode = selectedNode
+    ? selectedFrameNodes?.find((node) => node.sourceNodeId === selectedNode.sourceNodeId) ?? null
+    : null;
 
   const commentCount = comments.filter((comment) => comment.parentCommentId === null).length;
   const openCommentCount = comments.filter((comment) => comment.parentCommentId === null && !comment.resolvedAt).length;
@@ -507,7 +532,23 @@ export function HandoffCanvas({
           return;
         }
       }
+      if (event.key === "Escape" && target instanceof Element && target.closest("[data-comment-popover]")) {
+        event.preventDefault();
+        setPendingPoint(null);
+        setCommentThreadOpen(false);
+        return;
+      }
       if (editing) return;
+      const modified = event.metaKey || event.ctrlKey || event.altKey;
+      if (!modified && event.key.toLowerCase() === "c" && metadata.canComment) {
+        event.preventDefault();
+        setAnnotationMode(false);
+        setPendingAnnotationPoint(null);
+        setPendingPoint(null);
+        setCommentThreadOpen(false);
+        setCommentMode((current) => !current);
+        return;
+      }
       if (event.key.toLowerCase() === "o") {
         setCanvasModeOverride("inspect");
         setPanelMode("inspect");
@@ -519,11 +560,57 @@ export function HandoffCanvas({
         setCommentMode(false);
         setAnnotationMode(false);
         setPendingAnnotationPoint(null);
+        setPendingPoint(null);
+        setCommentThreadOpen(false);
       }
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeSearchIndex, closeSearchPanel, copySearchHighlights, previewSearchResult, searchOpen, searchResults, selectSearchResult, viewportControls]);
+  }, [activeSearchIndex, closeSearchPanel, copySearchHighlights, metadata.canComment, previewSearchResult, searchOpen, searchResults, selectSearchResult, viewportControls]);
+
+  // Clicking anywhere outside the anchored comment (or another pin) closes it, like Figma.
+  useEffect(() => {
+    if (!pendingPoint && !commentThreadOpen) return;
+    function closeOnOutsidePointer(event: PointerEvent) {
+      const target = event.target;
+      if (target instanceof Element && target.closest("[data-comment-popover], [data-comment-pin], [data-comment-list]")) return;
+      setPendingPoint(null);
+      setCommentThreadOpen(false);
+    }
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
+  }, [commentThreadOpen, pendingPoint]);
+
+  // Live comments: poll every two seconds while visible, never overlapping, and refresh as soon
+  // as the tab becomes visible or focused again. Failed refreshes keep the last good list.
+  useEffect(() => {
+    let active = true;
+    let inFlight = false;
+    async function poll() {
+      if (inFlight || document.visibilityState !== "visible") return;
+      inFlight = true;
+      try {
+        const response = await fetch(commentsEndpoint, { cache: "no-store" });
+        if (!response.ok) return;
+        const payload = await response.json() as CommentPayload;
+        if (active && Array.isArray(payload.comments)) setComments(payload.comments);
+      } catch {
+        // Keep the last successful list; the next tick retries.
+      } finally {
+        inFlight = false;
+      }
+    }
+    const interval = window.setInterval(() => void poll(), 2000);
+    const onVisible = () => { if (document.visibilityState === "visible") void poll(); };
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("focus", onVisible);
+    return () => {
+      active = false;
+      window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("focus", onVisible);
+    };
+  }, [commentsEndpoint]);
 
   if (!overviewFrame || !visualFrame) {
     return <p className="p-6 text-sm text-foreground-muted">This snapshot has no frames to display.</p>;
@@ -563,14 +650,11 @@ export function HandoffCanvas({
 
   function placeComment(point: PendingCommentPoint) {
     setPendingPoint(point);
+    setCommentThreadOpen(false);
+    setSelectedCommentId(null);
     setSelectedFrameId(point.frameId);
     setCommentMode(false);
     setAnnotationMode(false);
-    setPanelMode("comments");
-    if (isMobile) {
-      setStatesOpen(false);
-      setMobilePanelOpenOverride(true);
-    }
     setCommentError(null);
     setCanvasModeOverride(canvasMode);
     updateLinkState(point.frameId, point.sourceNodeId);
@@ -650,15 +734,21 @@ export function HandoffCanvas({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(input),
     });
-    const payload = await response.json() as { error?: string };
+    const payload = await response.json() as { error?: string; id?: string };
     if (!response.ok) throw new Error(payload.error ?? "Could not save comment.");
     await refreshComments();
+    return payload;
   }
 
   async function createComment(body: string, point: PendingCommentPoint) {
-    await sendComment({ body, ...point });
+    const created = await sendComment({ body, ...point });
     setPendingPoint(null);
     setCommentError(null);
+    // Keep the new thread open at its pin so replies can follow immediately.
+    if (created.id) {
+      setSelectedCommentId(created.id);
+      setCommentThreadOpen(true);
+    }
   }
 
   async function replyToComment(parentCommentId: string, body: string) {
@@ -683,10 +773,12 @@ export function HandoffCanvas({
     setSelectedFrameId(comment.frameId);
     setSelectedCommentId(comment.parentCommentId ?? comment.id);
     setSelectedNodeId(comment.sourceNodeId);
+    setPendingPoint(null);
+    setCommentThreadOpen(true);
     setPanelMode("comments");
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpenOverride(true);
+      setMobilePanelOpenOverride(false);
     }
     setCanvasModeOverride(canvasMode);
     updateLinkState(comment.frameId, comment.sourceNodeId, comment.id);
@@ -768,15 +860,15 @@ export function HandoffCanvas({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface text-foreground">
-      <header className="relative z-20 flex h-auto min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface px-3 py-1 text-foreground-muted xl:h-12 xl:flex-nowrap xl:gap-3 xl:py-0">
-        <div className="flex min-w-0 flex-1 items-center gap-3">
+      <header className="relative z-20 flex h-auto min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface px-3 py-1 text-foreground-muted xl:gap-3">
+        <div className="flex min-w-0 flex-1 items-center gap-3 lg:min-w-[330px]">
           <Link aria-label="Asbir Handoff home" className="flex min-h-9 shrink-0 items-center rounded-lg px-1 transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" href={metadata.projectHref.startsWith("/workspace") ? "/workspace" : metadata.projectHref}>
             <BrandMark compact />
           </Link>
           <span aria-hidden="true" className="h-6 w-px shrink-0 bg-surface-strong" />
           <label className="sr-only" htmlFor="review-version-select">Snapshot version</label>
           <select
-            className="h-11 min-w-0 max-w-none flex-1 rounded-control border border-transparent bg-surface-raised px-3 text-[13px] text-foreground hover:bg-surface-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:h-9 lg:max-w-[340px] lg:min-w-[150px]"
+            className="h-11 min-w-0 max-w-none flex-1 rounded-control border border-transparent bg-surface-raised px-3 text-[13px] text-foreground hover:bg-surface-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:h-9 lg:max-w-[340px] lg:min-w-[180px]"
             id="review-version-select"
             title={metaParts.join(" · ")}
             onChange={(event) => window.location.assign(metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(event.target.value))}
@@ -790,11 +882,11 @@ export function HandoffCanvas({
         <p className="hidden min-w-0 flex-1 truncate text-[12px] text-foreground-subtle 2xl:block" title={metaParts.join(" · ")}>
           {metaParts.join(" · ")}
         </p>
-        <nav aria-label="Handoff review tools" className="ml-0 flex w-full min-w-0 flex-wrap items-center gap-1 pb-1 lg:ml-auto lg:w-auto lg:flex-nowrap lg:pb-0">
+        <nav aria-label="Handoff review tools" className="ml-0 flex w-full min-w-0 flex-wrap items-center gap-1 pb-1 lg:ml-auto lg:w-auto lg:shrink-0 lg:flex-nowrap lg:pb-0">
           <InstallAppButton compact />
           <button
             aria-pressed={statesOpen}
-            className={"h-11 shrink-0 rounded-control px-2 text-[11px] font-medium transition-colors lg:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + (statesOpen ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
+            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 lg:hidden"}
             id="canvas-mobile-screens-toggle"
             onClick={() => {
               setSearchOpen(false);
@@ -806,11 +898,11 @@ export function HandoffCanvas({
           >
             Screens {screens.length}
           </button>
-          <div aria-label="Canvas mode" className="flex h-12 shrink-0 items-center gap-0.5 rounded-control bg-surface-inset p-0.5 lg:h-8" role="group">
+          <div aria-label="Canvas mode" className="dial-segmented h-12 shrink-0 lg:h-8" role="group">
             {(["view", "inspect"] as const).map((mode) => (
               <button
                 aria-pressed={canvasMode === mode}
-                className={"h-11 rounded-control px-2 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:h-7 " + (canvasMode === mode ? "bg-surface-raised text-foreground shadow-sm shadow-black/30" : "text-foreground-subtle hover:text-foreground")}
+                className="h-11 px-2.5 text-[12px] lg:h-7"
                 key={mode}
                 onClick={() => {
                   setCanvasModeOverride(mode);
@@ -824,7 +916,7 @@ export function HandoffCanvas({
           </div>
           <button
             aria-pressed={panelMode === "comments"}
-            className={"h-11 shrink-0 rounded-control px-3 text-[12px] transition-colors lg:h-9 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + (panelMode === "comments" ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
+            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 "}
             onClick={() => {
               setPanelMode("comments");
               setCommentMode(false);
@@ -841,7 +933,7 @@ export function HandoffCanvas({
           </button>
           <button
             aria-pressed={panelMode === "annotations"}
-            className={"h-11 shrink-0 rounded-control px-3 text-[12px] transition-colors lg:h-9 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + (panelMode === "annotations" ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
+            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 "}
             onClick={() => {
               setPanelMode("annotations");
               setCommentMode(false);
@@ -859,7 +951,7 @@ export function HandoffCanvas({
           </button>
           {metadata.canManageIntegrations ? <button
             aria-pressed={panelMode === "mcp"}
-            className={"h-11 shrink-0 rounded-control px-3 text-[12px] transition-colors lg:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + (panelMode === "mcp" ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
+            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 lg:hidden"}
             onClick={() => {
               setPanelMode("mcp");
               setCommentMode(false);
@@ -875,7 +967,7 @@ export function HandoffCanvas({
           </button> : null}
           <button
             aria-pressed={outlinesVisible}
-            className={"hidden h-9 rounded-control px-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:inline-flex sm:items-center " + (outlinesVisible ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
+            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 hidden sm:inline-flex"}
             onClick={() => {
               setCanvasModeOverride("inspect");
               setPanelMode("inspect");
@@ -889,7 +981,7 @@ export function HandoffCanvas({
           <button
             aria-label="Toggle Figma layout grids"
             aria-pressed={layoutGridsVisible && hasLayoutGrids}
-            className={"hidden h-9 rounded-control px-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:inline-flex sm:items-center " + (layoutGridsVisible && hasLayoutGrids ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white") + (hasLayoutGrids ? "" : " cursor-not-allowed opacity-45")}
+            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 hidden sm:inline-flex"}
             disabled={!hasLayoutGrids}
             onClick={() => setLayoutGridsVisible((current) => !current)}
             title={hasLayoutGrids ? "Show captured Figma layout grids" : "No visible Figma layout grids were captured"}
@@ -897,9 +989,9 @@ export function HandoffCanvas({
           >
             Grid
           </button>
-          {viewportControls ? (
-            <CanvasToolbar
-              scale={viewportControls.scale}
+          {/* Rendered before the viewport is ready too, so the toolbar doesn't jump when it mounts. */}
+          <CanvasToolbar
+              scale={viewportControls?.scale ?? 1}
               exportTargets={exportTargets}
               shareUrl={metadata.reviewHref}
               shareTitle={metadata.projectName + " · " + metadata.handoffName}
@@ -908,26 +1000,26 @@ export function HandoffCanvas({
               publishVersionId={metadata.selectedVersionId}
               latestVersionId={metadata.versions[0]?.id ?? metadata.selectedVersionId}
               publishedVersionId={metadata.publishedVersionId}
-              onZoomOut={viewportControls.zoomOut}
-              onFit={viewportControls.fitToFrame}
-              onZoomIn={viewportControls.zoomIn}
+              onZoomOut={() => viewportControls?.zoomOut()}
+              onFit={() => viewportControls?.fitToFrame()}
+              onZoomIn={() => viewportControls?.zoomIn()}
             />
-          ) : <span className="px-2 text-[11px] text-foreground-subtle">Fit</span>}
         </nav>
       </header>
       {latestPublished && latestPublished.versionId !== metadata.selectedVersionId ? (
-        <div className="flex min-h-10 items-center justify-between gap-3 border-b border-[#514127] bg-[#342a1a] px-4 py-2 text-[11px] text-[#f0c77b]">
-          <p>{latestPublished.versionId !== metadata.publishedVersionId ? "A new version was published" : "Latest published version"} · Version {latestPublished.versionLabel}</p>
-          <Link className="shrink-0 rounded-chip px-2 py-1 font-medium text-[#ffe0a4] hover:bg-white/10 hover:text-white" href={metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(latestPublished.versionId)}>View latest</Link>
+        <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2 text-[12px] text-foreground-muted">
+          <p className="flex items-center gap-2"><span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning" />{latestPublished.versionId !== metadata.publishedVersionId ? "A new version was published" : "Latest published version"} · Version {latestPublished.versionLabel}</p>
+          <Link className="dial-button shrink-0 px-3 py-1.5 text-[12px]" href={metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(latestPublished.versionId)}>View latest</Link>
         </div>
       ) : null}
       {comparisonSummary && (
         comparisonSummary.changed > 0 || comparisonSummary.added > 0 || comparisonSummary.removed > 0 ||
         comparisonSummary.onlyInAfterCapture > 0 || comparisonSummary.onlyInBeforeCapture > 0 || comparisonSummary.changeCount > 0
       ) ? (
-        <div aria-live="polite" className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-[#514127] bg-[#342a1a] px-4 py-2 text-[11px] text-[#f0c77b]">
-          <p>
-            <span className="font-semibold text-[#ffe0a4]">{[
+        <div aria-live="polite" className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-surface px-4 py-2 text-[12px] text-foreground-muted">
+          <p className="flex flex-wrap items-center gap-x-2">
+            <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning" />
+            <span className="font-semibold text-foreground">{[
               comparisonSummary.changed ? `${comparisonSummary.changed} screen${comparisonSummary.changed === 1 ? "" : "s"} changed` : "",
               comparisonSummary.added ? `${comparisonSummary.added} new` : "",
               comparisonSummary.removed ? `${comparisonSummary.removed} removed` : "",
@@ -938,7 +1030,7 @@ export function HandoffCanvas({
             {` since ${comparisonSummary.earlierVersionLabel}`}
           </p>
           <button
-            className="shrink-0 rounded-control px-2.5 py-1 font-medium text-[#ffe0a4] hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f0c77b]"
+            className="capture-primary-action shrink-0 px-3 py-1.5 text-[12px]"
             onClick={() => {
               setCommentMode(false);
               setStatesOpen(false);
@@ -969,7 +1061,7 @@ export function HandoffCanvas({
           <div
             aria-label={searchOpen ? "Search screens" : "Snapshot screens"}
             aria-modal={isMobile && statesOpen ? true : undefined}
-            className="absolute inset-y-0 left-0 z-30 w-[min(260px,86vw)] shadow-2xl lg:static lg:z-auto lg:w-auto lg:shadow-none"
+            className={"absolute inset-y-0 left-0 z-30 w-[min(260px,86vw)] shadow-2xl lg:static lg:z-auto lg:w-auto lg:shadow-none" + (layoutReady ? "" : " max-lg:hidden")}
             ref={screenPanelRef}
             role={isMobile && statesOpen ? "dialog" : undefined}
             tabIndex={isMobile ? -1 : undefined}
@@ -978,7 +1070,7 @@ export function HandoffCanvas({
               <div className="flex justify-end border-b border-border bg-surface px-2 py-1.5 lg:hidden">
                 <button
                   aria-label="Close screens panel"
-                  className="min-h-8 rounded-control px-2.5 text-[11px] text-foreground-muted hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                  className="dial-button min-h-8 px-2.5 text-[11px]"
                   onClick={() => {
                     setStatesOpen(false);
                     setSearchOpen(false);
@@ -1069,7 +1161,7 @@ export function HandoffCanvas({
                     <p className="px-2 py-3 text-[11px] leading-5 text-foreground-subtle">Search captured text, colors, element names, and types.</p>
                   )}
                   {searchResults.length ? (
-                    <button className="mt-2 min-h-8 w-full rounded-control text-[11px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={copySearchHighlights} type="button">
+                    <button className="dial-button mt-2 min-h-8 w-full text-[11px]" onClick={copySearchHighlights} type="button">
                       Highlight all on the canvas
                     </button>
                   ) : null}
@@ -1129,6 +1221,19 @@ export function HandoffCanvas({
           commentMode={commentMode}
           onSelectComment={selectComment}
           onPlaceComment={placeComment}
+          commentPopover={{
+            pendingPoint: metadata.canComment ? pendingPoint : null,
+            threadOpen: commentThreadOpen,
+            canWrite: metadata.canComment,
+            canResolve: metadata.canComment,
+            onCreate: createComment,
+            onReply: replyToComment,
+            onResolve: resolveComment,
+            onClose: () => {
+              setPendingPoint(null);
+              setCommentThreadOpen(false);
+            },
+          }}
           onViewportChange={setViewportControls}
         />
         </div>
@@ -1144,7 +1249,7 @@ export function HandoffCanvas({
             <div className="flex shrink-0 justify-end border-b border-border px-2 py-1.5 lg:hidden">
               <button
                 aria-label="Close details panel"
-                className="min-h-8 rounded-control px-2.5 text-[11px] text-foreground-muted hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                className="dial-button min-h-8 px-2.5 text-[11px]"
                 onClick={() => setMobilePanelOpenOverride(false)}
                 type="button"
               >
@@ -1152,7 +1257,7 @@ export function HandoffCanvas({
               </button>
             </div>
           ) : null}
-          <nav aria-label="Details panels" className="mx-2.5 mb-1 mt-2.5 flex shrink-0 gap-0.5 overflow-x-auto rounded-surface bg-surface-inset p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <nav aria-label="Details panels" className="dial-segmented mx-3 mb-1 mt-3 flex shrink-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {([
               ["inspect", "Properties", true],
               ["compare", "Compare", canCompare],
@@ -1163,7 +1268,7 @@ export function HandoffCanvas({
             ] as const).filter(([, , visible]) => visible).map(([mode, label]) => (
               <button
                 aria-pressed={mode === "compare" ? comparisonOpen : panelMode === mode}
-                className={"min-h-7 min-w-fit flex-1 whitespace-nowrap rounded-control px-1.5 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + ((mode === "compare" ? comparisonOpen : panelMode === mode) ? "bg-surface-raised text-foreground shadow-sm shadow-black/30" : "text-foreground-subtle hover:text-foreground")}
+                className="min-h-8 min-w-fit flex-1 whitespace-nowrap px-1.5 text-[12px]"
                 key={mode}
                 onClick={() => {
                   if (mode === "compare") {
@@ -1185,16 +1290,16 @@ export function HandoffCanvas({
           {panelMode === "annotations" ? (
             <CanvasAnnotationsPanel key={`${selectedAnnotationId ?? "new"}:${pendingAnnotationPoint?.frameId ?? ""}:${pendingAnnotationPoint?.x ?? ""}:${pendingAnnotationPoint?.y ?? ""}`} annotations={annotations} screenNames={{ [overviewCanvasFrameId]: "Canvas", ...Object.fromEntries(screens.map((screen) => [screen.id, screen.name])) }} selectedAnnotationId={selectedAnnotationId} pendingPoint={pendingAnnotationPoint} placing={annotationMode} canEdit={metadata.canAnnotate} hasSelectedScreen={Boolean(selectedFrame)} error={annotationError} onSelect={selectAnnotation} onStartPlacement={() => { setCommentMode(false); setSelectedAnnotationId(null); setPendingAnnotationPoint(null); setAnnotationMode(true); }} onPlaceAtSelectedScreen={annotateSelectedScreen} onCancel={() => { setAnnotationMode(false); setPendingAnnotationPoint(null); setSelectedAnnotationId(null); }} onCreate={createAnnotation} onUpdate={updateAnnotation} onDelete={deleteAnnotation} />
           ) : panelMode === "comments" ? (
-          <div className="min-h-0 flex-1 overflow-y-auto p-3">
+          <div className="min-h-0 flex-1 overflow-y-auto p-3" data-comment-list>
             <CommentThread
               comments={comments}
               frames={frames}
-              pendingPoint={pendingPoint}
+              pendingPoint={null}
               selectedCommentId={selectedCommentId}
               error={commentError}
               openCount={openCommentCount}
               canWrite={metadata.canComment}
-              canResolve={metadata.canAnnotate}
+              canResolve={metadata.canComment}
               commentIdentity={metadata.commentIdentity}
               hasSelectedScreen={Boolean(selectedFrame)}
               showResolvedPins={showResolvedPins}
@@ -1239,6 +1344,8 @@ export function HandoffCanvas({
             frames,
             initialFrameId: selectedFrameId,
             initialNodeId: selectedNodeId,
+            frameNodes: frameDetails.nodesFor,
+            ensureFrameNodes,
           }} />
         ) : panelMode === "local" && metadata.canUseLocalPreview ? (
           <LocalPreviewPanel
@@ -1252,7 +1359,9 @@ export function HandoffCanvas({
         ) : panelMode === "inspect" ? (
           <ElementInspector
             frame={selectedFrame ?? overviewFrame}
-            selectedNode={selectedNode}
+            selectedNode={detailedSelectedNode}
+            frameNodes={selectedFrameNodes}
+            pendingNode={selectedNode && !detailedSelectedNode ? { name: selectedNode.name, type: selectedNode.type, detailStatus: frameDetails.statusFor(selectedNode.sourceFrameId) } : null}
             frameCount={screens.length}
             totalNodeCount={screens.reduce((count, frame) => count + frame.nodes.length, 0)}
             comments={selectedNode ? comments.filter((comment) => comment.sourceNodeId === selectedNode.sourceNodeId) : []}

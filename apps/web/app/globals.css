@@ -2,20 +2,22 @@
 
 :root {
   color-scheme: dark;
-  --background: #19191b;
-  --surface: #1f1f21;
-  --surface-muted: #252527;
-  --surface-raised: #2c2c2f;
-  --surface-strong: #38383c;
-  --surface-inset: #161618;
-  --foreground: #ececee;
-  --foreground-muted: #aeaeb3;
-  --foreground-subtle: #96969c;
-  --border: #2f2f33;
-  --border-strong: #434348;
-  --primary: #dedede;
-  --primary-hover: #f2f2f2;
-  --primary-foreground: #171717;
+  /* DialKit-style neutrals: a #212121 glass panel with white-alpha layers, flattened to solid
+     values so contrast stays predictable. Subtle text uses DialKit's 60% tier (not 40%) for AA. */
+  --background: #161616;
+  --surface: #212121;
+  --surface-inset: #2c2c2c; /* control fill, white 5% */
+  --surface-muted: #333333; /* white 8% */
+  --surface-raised: #373737; /* hover, white 10% */
+  --surface-strong: #424242; /* active, white 15% */
+  --foreground: #f4f4f4;
+  --foreground-muted: #bcbcbc;
+  --foreground-subtle: #a6a6a6;
+  --border: rgb(255 255 255 / 0.1);
+  --border-strong: rgb(255 255 255 / 0.15);
+  --primary: #f4f4f4;
+  --primary-hover: #ffffff;
+  --primary-foreground: #161616;
   --accent: #83a878;
   --capture-action: var(--primary);
   --capture-action-hover: var(--primary-hover);
@@ -25,13 +27,15 @@
   --success: var(--accent);
   --warning: #d7b86e;
   --danger: #d2786f;
-  --font-ui: var(--font-geist-sans);
+  --font-ui: system-ui, -apple-system, "SF Pro Display", "SF Pro Text", "Helvetica Neue", sans-serif;
   --font-data: var(--font-geist-mono);
   --radius-chip: 6px;
   --radius-control: 8px;
-  --radius-surface: 12px;
-  --radius-panel: 16px;
-  --project-panel-radius: 20px;
+  --radius-surface: 10px;
+  --radius-panel: 14px;
+  --project-panel-radius: 14px;
+  --shadow-panel: 0 8px 32px rgb(0 0 0 / 0.5);
+  --shadow-popover: 0 8px 24px rgb(0 0 0 / 0.4);
   --radius-pill: 9999px;
   --space-1: 4px;
   --space-2: 8px;
@@ -105,7 +109,7 @@ body {
   min-height: 100vh;
   background: var(--background);
   color: var(--foreground);
-  font-family: var(--font-ui), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-ui);
   font-variant-numeric: tabular-nums;
   -webkit-font-smoothing: antialiased;
 }
@@ -118,10 +122,10 @@ textarea {
 select {
   appearance: none;
   padding-inline-end: 2.25rem;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius-control);
   background-color: var(--surface-inset);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4.5 6 3.5 3.5L11.5 6' stroke='%23b0b0b0' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16' fill='none'%3E%3Cpath d='m4.5 6 3.5 3.5L11.5 6' stroke='%23bcbcbc' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
   background-position: right 0.75rem center;
   background-repeat: no-repeat;
   background-size: 0.875rem;
@@ -130,12 +134,11 @@ select {
 }
 
 select:hover:not(:disabled) {
-  border-color: var(--border-strong);
-  background-color: color-mix(in srgb, var(--surface-inset) 76%, var(--surface-raised));
+  background-color: var(--surface-raised);
 }
 
 select:focus-visible {
-  border-color: var(--primary-hover);
+  border-color: transparent;
 }
 
 select:disabled {
@@ -153,11 +156,12 @@ select option {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--surface-inset);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  border: 2px solid var(--surface-inset);
+  border: 2px solid transparent;
+  background-clip: padding-box;
   border-radius: 999px;
   background: var(--border-strong);
 }
@@ -172,28 +176,30 @@ select option {
 }
 
 :focus-visible {
-  outline: 2px solid var(--primary-hover);
+  outline: 2px solid rgb(255 255 255 / 0.6);
   outline-offset: 2px;
 }
 
+
 .capture-primary-action {
-  border: 1px solid color-mix(in srgb, var(--capture-action-foreground) 10%, transparent);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control) !important;
   background: var(--capture-action);
   color: var(--capture-action-foreground);
-  transition: background-color 160ms ease, transform 160ms ease;
+  font-weight: 600;
+  transition: background-color 120ms ease, transform 120ms ease;
 }
 
 .capture-primary-action:hover:not(:disabled) {
   background: var(--capture-action-hover);
-  transform: translateY(-1px);
 }
 
 .capture-primary-action:active:not(:disabled) {
-  transform: translateY(0);
+  transform: scale(0.98);
 }
 
 .capture-primary-action:focus-visible {
-  outline: 2px solid var(--primary-hover);
+  outline: 2px solid rgb(255 255 255 / 0.6);
   outline-offset: 2px;
 }
 
@@ -240,7 +246,7 @@ select option {
 }
 
 .workspace-shell {
-  --workspace-frame: var(--surface-inset);
+  --workspace-frame: var(--background);
   --workspace-pane: var(--surface);
   overflow-x: clip;
   background: var(--background);
@@ -254,76 +260,57 @@ select option {
 }
 
 .workspace-sidebar {
-  background: var(--surface);
+  background: var(--background);
 }
 
 .workspace-nav-active {
-  background: color-mix(in srgb, var(--accent) 14%, var(--surface));
-  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 16%, transparent);
+  background: var(--surface-inset);
   color: var(--foreground);
 }
 
 .workspace-topbar {
-  background: var(--surface-inset);
+  background: var(--background);
 }
 
 .workspace-dashboard {
   width: min(100%, 1480px);
 }
 
-.workspace-dashboard .capture-primary-action {
-  border: 1px solid color-mix(in srgb, var(--warning) 70%, var(--border));
-  border-radius: var(--radius-pill);
-  background: var(--warning);
-  color: var(--primary-foreground);
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--warning) 24%, transparent);
-  transition: background-color 160ms ease, transform 160ms ease, box-shadow 160ms ease;
-}
-
-.workspace-dashboard .capture-primary-action:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--warning) 88%, white);
-  box-shadow: 0 12px 28px color-mix(in srgb, var(--warning) 32%, transparent);
-}
-
-.workspace-dashboard .capture-primary-action:disabled {
-  box-shadow: none;
-}
-
 .canvas-publish-action {
-  border: 1px solid color-mix(in srgb, var(--warning) 70%, var(--border));
-  background: var(--warning);
+  border: 1px solid transparent;
+  border-radius: var(--radius-control) !important;
+  background: var(--primary);
   color: var(--primary-foreground);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--warning) 20%, transparent);
-  transition: background-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+  font-weight: 600;
+  transition: background-color 120ms ease, transform 120ms ease;
 }
 
 .canvas-publish-action:hover:not(:disabled) {
-  background: color-mix(in srgb, var(--warning) 88%, white);
-  box-shadow: 0 7px 18px color-mix(in srgb, var(--warning) 28%, transparent);
-  transform: translateY(-1px);
+  background: var(--primary-hover);
 }
 
 .canvas-publish-action:active:not(:disabled) {
-  transform: translateY(0);
+  transform: scale(0.98);
 }
 
 .canvas-publish-action:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--warning) 78%, white);
+  outline: 2px solid rgb(255 255 255 / 0.6);
   outline-offset: 2px;
 }
 
 .canvas-publish-action:disabled {
-  box-shadow: none;
   transform: none;
 }
 
 .canvas-publish-status {
   display: inline-flex;
+  flex-shrink: 0;
+  white-space: nowrap;
   min-height: 32px;
   align-items: center;
   gap: 6px;
   padding: 0 10px;
-  color: var(--accent);
+  color: var(--foreground-muted);
   font-size: 12px;
   font-weight: 500;
 }
@@ -349,10 +336,10 @@ select option {
 }
 
 .workspace-role {
-  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--border));
-  border-radius: var(--radius-pill);
-  background: color-mix(in srgb, var(--accent) 10%, var(--surface-inset));
-  color: var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--surface-inset);
+  color: var(--foreground-muted);
+  font-weight: 500;
 }
 
 .workspace-dashboard-columns {
@@ -364,7 +351,7 @@ select option {
   border: 1px solid var(--border);
   border-radius: var(--project-panel-radius);
   background: var(--workspace-pane);
-  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.03);
+  box-shadow: var(--shadow-panel);
 }
 
 .workspace-pane-heading {
@@ -372,48 +359,62 @@ select option {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  border-bottom: 1px solid var(--border);
-  padding: 0 2px 12px;
+  border-bottom: 1px solid rgb(255 255 255 / 0.06);
+  padding: 0 2px 8px;
+  margin-bottom: 8px;
+}
+
+.workspace-pane-heading h2 {
+  font-size: 13px;
+  letter-spacing: -0.01em;
 }
 
 .workspace-pane-count {
-  color: var(--accent);
+  color: var(--foreground-subtle);
 }
 
-.workspace-list > li + li,
-.workspace-handoff-list > li + li {
-  border-top: 1px solid var(--border);
+.workspace-list,
+.workspace-handoff-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.workspace-list > li,
+.workspace-handoff-list > li {
+  padding-block: 0;
 }
 
 .workspace-list-item {
-  border-radius: var(--radius-surface);
-  transition: background-color 150ms ease, color 150ms ease;
+  border-radius: var(--radius-control);
+  background: var(--surface-inset);
+  transition: background-color 120ms ease, color 120ms ease;
 }
 
 .workspace-list-item:hover {
-  background: var(--surface-muted);
+  background: var(--surface-raised);
 }
 
 .workspace-mark {
-  border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--border));
-  border-radius: var(--radius-surface);
-  background: color-mix(in srgb, var(--accent) 16%, var(--surface-muted));
-  color: color-mix(in srgb, var(--accent) 70%, var(--foreground));
+  border-radius: var(--radius-control);
+  background: var(--surface-strong);
+  color: var(--foreground);
 }
 
 .workspace-create {
-  border-top: 1px solid var(--border);
+  border-top: 1px solid rgb(255 255 255 / 0.06);
 }
 
 .workspace-handoff-item {
   min-width: 0;
-  border-radius: var(--radius-surface);
-  transition: background-color 150ms ease;
+  border-radius: var(--radius-control);
+  background: var(--surface-inset);
+  transition: background-color 120ms ease;
 }
 
 .workspace-handoff-item:hover,
 .workspace-handoff-item:focus-within {
-  background: var(--surface-muted);
+  background: var(--surface-raised);
 }
 
 .workspace-handoff-actions {
@@ -430,6 +431,7 @@ select option {
   border: 1px solid var(--border);
   border-radius: var(--project-panel-radius);
   background: var(--surface);
+  box-shadow: var(--shadow-panel);
 }
 
 .workspace-empty-state {
@@ -446,5 +448,214 @@ select option {
   .workspace-list-item,
   .workspace-handoff-item {
     transition: none;
+  }
+}
+
+@layer components {
+  /* DialKit-style building blocks: filled white-alpha controls, no hard dividers. */
+  .dial-button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: var(--radius-control);
+    background: var(--surface-inset);
+    color: var(--foreground-muted);
+    font-weight: 500;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+
+  .dial-button:hover:not(:disabled) {
+    background: var(--surface-raised);
+    color: var(--foreground);
+  }
+
+  .dial-button:active:not(:disabled),
+  .dial-button[aria-pressed="true"] {
+    background: var(--surface-strong);
+    color: var(--foreground);
+  }
+
+  .dial-button:disabled {
+    cursor: not-allowed;
+    opacity: 0.45;
+  }
+
+  .dial-row {
+    border-radius: var(--radius-control);
+    background: var(--surface-inset);
+    transition: background-color 120ms ease;
+  }
+
+  .dial-row:hover {
+    background: var(--surface-raised);
+  }
+
+  /* Buttons sitting on a filled row step one fill level up so they stay visible. */
+  .workspace-handoff-item .dial-button,
+  .workspace-list-item .dial-button,
+  .dial-row .dial-button {
+    background: var(--surface-muted);
+  }
+
+  .workspace-handoff-item .dial-button:hover:not(:disabled),
+  .workspace-list-item .dial-button:hover:not(:disabled),
+  .dial-row .dial-button:hover:not(:disabled) {
+    background: var(--surface-strong);
+  }
+
+  .dial-segmented {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 2px;
+    border-radius: var(--radius-control);
+    background: var(--surface-inset);
+  }
+
+  .dial-segmented > button {
+    border-radius: 6px;
+    color: var(--foreground-subtle);
+    font-weight: 500;
+    transition: background-color 120ms ease, color 120ms ease;
+  }
+
+  .dial-segmented > button:hover {
+    color: var(--foreground);
+  }
+
+  .dial-segmented > button[aria-pressed="true"] {
+    background: var(--surface-strong);
+    color: var(--foreground);
+  }
+
+  .dial-popover {
+    border: 1px solid var(--border);
+    border-radius: var(--radius-panel);
+    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    box-shadow: var(--shadow-panel);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+
+  .dial-section-title {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    color: var(--foreground);
+  }
+}
+
+/* Opening animation: logo settles in, wordmark rises, a progress line sweeps, then the
+   overlay lifts away. Runs once per session (html[data-splash="seen"] skips it). */
+.app-splash {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 18px;
+  background:
+    radial-gradient(60% 50% at 50% 42%, rgb(255 255 255 / 0.06), transparent 70%),
+    var(--background);
+  animation: app-splash-out 420ms cubic-bezier(0.4, 0, 0.2, 1) 1450ms forwards;
+}
+
+html[data-splash="seen"] .app-splash {
+  display: none;
+}
+
+.app-splash-mark {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 64px;
+  height: 64px;
+}
+
+.app-splash-logo {
+  border-radius: 16px;
+  box-shadow: 0 12px 40px rgb(0 0 0 / 0.55);
+  animation: app-splash-logo 700ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.app-splash-ring {
+  position: absolute;
+  inset: -10px;
+  border: 1px solid rgb(255 255 255 / 0.22);
+  border-radius: 24px;
+  animation: app-splash-ring 1200ms cubic-bezier(0.22, 1, 0.36, 1) 150ms both;
+}
+
+.app-splash-word {
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  color: var(--foreground);
+  animation: app-splash-rise 600ms cubic-bezier(0.22, 1, 0.36, 1) 250ms both;
+}
+
+.app-splash-word span {
+  font-weight: 400;
+  color: var(--foreground-subtle);
+}
+
+.app-splash-bar {
+  width: 120px;
+  height: 2px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgb(255 255 255 / 0.1);
+  animation: app-splash-rise 600ms cubic-bezier(0.22, 1, 0.36, 1) 350ms both;
+}
+
+.app-splash-bar span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--foreground);
+  transform-origin: left;
+  animation: app-splash-progress 1000ms cubic-bezier(0.65, 0, 0.35, 1) 400ms both;
+}
+
+@keyframes app-splash-logo {
+  from { opacity: 0; transform: scale(0.72); filter: blur(6px); }
+  to { opacity: 1; transform: scale(1); filter: blur(0); }
+}
+
+@keyframes app-splash-ring {
+  0% { opacity: 0; transform: scale(0.8); }
+  35% { opacity: 1; }
+  100% { opacity: 0; transform: scale(1.45); }
+}
+
+@keyframes app-splash-rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes app-splash-progress {
+  from { transform: scaleX(0); }
+  to { transform: scaleX(1); }
+}
+
+@keyframes app-splash-out {
+  to { opacity: 0; transform: scale(1.03); visibility: hidden; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-splash {
+    animation: app-splash-out 200ms linear 500ms forwards;
+  }
+
+  .app-splash-logo,
+  .app-splash-ring,
+  .app-splash-word,
+  .app-splash-bar,
+  .app-splash-bar span {
+    animation: none;
   }
 }

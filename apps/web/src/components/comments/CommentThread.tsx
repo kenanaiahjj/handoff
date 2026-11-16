@@ -34,25 +34,30 @@ type CommentThreadProps = {
   onToggleResolvedPins: (show: boolean) => void;
 };
 
-function CommentComposer({
+export function CommentComposer({
   label,
   submitLabel,
   onSubmit,
+  onCancel,
   autoFocus = false,
+  compact = false,
 }: {
   label: string;
   submitLabel: string;
   onSubmit: (body: string) => Promise<void>;
+  onCancel?: () => void;
   autoFocus?: boolean;
+  /** Smaller field for the on-canvas popover; Enter sends and Shift+Enter adds a line. */
+  compact?: boolean;
 }) {
   const inputId = useId();
   const [body, setBody] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!body.trim()) return;
+  async function submit(event?: FormEvent<HTMLFormElement>) {
+    event?.preventDefault();
+    if (!body.trim() || saving) return;
     setSaving(true);
     setError(null);
     try {
@@ -71,20 +76,29 @@ function CommentComposer({
       <textarea
         autoFocus={autoFocus}
         aria-describedby={error ? `${inputId}-error` : undefined}
-        className="min-h-20 w-full resize-y rounded-control border border-border-strong bg-surface-inset px-3 py-2 text-[12px] leading-5 text-foreground placeholder:text-foreground-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+        className={(compact ? "min-h-16 resize-none" : "min-h-20 resize-y") + " w-full rounded-control border border-transparent bg-surface-inset px-3 py-2 text-[12px] leading-5 text-foreground placeholder:text-foreground-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"}
         id={inputId}
         maxLength={4000}
         onChange={(event) => setBody(event.target.value)}
+        onKeyDown={(event) => {
+          if (compact && event.key === "Enter" && !event.shiftKey && !event.nativeEvent.isComposing) {
+            event.preventDefault();
+            void submit();
+          }
+        }}
         placeholder={label}
         required
         value={body}
       />
-      {error ? <p className="text-[11px] text-[#efaa4a]" id={`${inputId}-error`} role="alert">{error}</p> : null}
+      {error ? <p className="text-[11px] text-warning" id={`${inputId}-error`} role="alert">{error}</p> : null}
       <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-[10px] text-foreground-subtle">{body.length}/4000</span>
-        <button className="min-h-8 rounded-control bg-primary px-3 text-[11px] font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={!body.trim() || saving} type="submit">
-          {saving ? "Saving…" : submitLabel}
-        </button>
+        <span className="font-mono text-[10px] text-foreground-subtle">{compact ? "Enter to send" : `${body.length}/4000`}</span>
+        <span className="flex items-center gap-1">
+          {onCancel ? <button className="dial-button min-h-8 px-2.5 text-[11px]" onClick={onCancel} type="button">Cancel</button> : null}
+          <button className="min-h-8 rounded-control bg-primary px-3 text-[12px] font-semibold text-primary-foreground hover:bg-primary-hover disabled:cursor-not-allowed disabled:opacity-50" disabled={!body.trim() || saving} type="submit">
+            {saving ? "Saving…" : submitLabel}
+          </button>
+        </span>
       </div>
     </form>
   );
@@ -122,7 +136,7 @@ export function CommentThread({
         <h2 className="text-[14px] font-semibold text-foreground" id="comments-title">Comments</h2>
         {canWrite ? <button
           aria-pressed={commentMode}
-          className="min-h-8 rounded-control px-2.5 text-[11px] text-foreground-muted hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+          className="dial-button min-h-8 px-2.5 text-[11px]"
           onClick={onStartComment}
           type="button"
         >
@@ -132,11 +146,11 @@ export function CommentThread({
       <p className="mt-1 text-[11px] text-foreground-subtle">{openCount} open · {roots.length} total</p>
       {commentIdentity ? <p className="mt-2 rounded-control bg-surface-raised px-2.5 py-2 text-[10px] leading-4 text-foreground-muted">Comments will appear as {commentIdentity.label} · {commentIdentity.role.toUpperCase()}. Anyone with this invite link can post using that label.</p> : null}
 
-      <div aria-label="Comment status" className="mt-4 flex gap-1 border-b border-border" role="group">
+      <div aria-label="Comment status" className="dial-segmented mt-4 grid w-full grid-cols-2" role="group">
         {(["open", "resolved"] as const).map((tab) => (
           <button
             aria-pressed={activeTab === tab}
-            className={"border-b-2 px-2.5 py-2 text-[11px] capitalize " + (activeTab === tab ? "border-foreground-muted text-white" : "border-transparent text-foreground-subtle hover:text-white")}
+            className="min-h-8 px-2.5 text-[12px] capitalize"
             key={tab}
             onClick={() => setActiveTab(tab)}
             type="button"
@@ -183,12 +197,12 @@ export function CommentThread({
       {error ? <p aria-live="assertive" className="mt-3 rounded-control border border-[#76522a] bg-[#332718] p-2.5 text-[11px] text-[#efb45f]">{error}</p> : null}
 
       {visibleRoots.length ? (
-        <ol className="mt-2 divide-y divide-border">
+        <ol className="mt-2">
           {visibleRoots.map((comment, index) => {
             const replies = comments.filter((reply) => reply.parentCommentId === comment.id);
             const selected = selectedCommentId === comment.id;
             return (
-              <li className={"py-3 " + (selected ? "bg-surface-raised px-2" : "")} key={comment.id}>
+              <li className={"my-1.5 rounded-control px-3 py-3 " + (selected ? "bg-surface-raised" : "bg-surface-inset")} key={comment.id}>
                 <article>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <button className="flex min-w-0 items-center gap-2 text-left" onClick={() => onSelect(comment.id)} type="button">

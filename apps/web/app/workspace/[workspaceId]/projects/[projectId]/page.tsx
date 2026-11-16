@@ -12,8 +12,9 @@ import { ProjectRulesForm } from "@/src/components/ProjectRulesForm";
 import { DeleteHandoffButton, RenameHandoffButton } from "@/src/components/canvas/HandoffLifecycleActions";
 import { HandoffAccessDialog } from "@/src/components/canvas/HandoffAccessDialog";
 import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
-import { StartHandoffButton } from "./start-handoff-button";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
+import { NewVersionBadge } from "@/src/components/shell/NewVersionBadge";
+import { filterProjectsForViewer, handoffNewness, visibleHandoffIds } from "@/src/server/services/review-visibility";
 
 export const instant = false;
 
@@ -43,7 +44,12 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   if (!project || !membership) notFound();
   const canManageHandoffs = membership.role === "owner" || membership.role === "designer";
 
-  const handoffs = listHandoffs({ workspaceId, projectId }) as ProjectHandoff[];
+  const viewer = { id: session.user.id, email: session.user.email, role: membership.role };
+  const visible = visibleHandoffIds(workspaceId, viewer);
+  const handoffs = (listHandoffs({ workspaceId, projectId }) as ProjectHandoff[])
+    .filter((handoff) => !visible || visible.has(handoff.id));
+  if (visible && !handoffs.length) notFound();
+  const newness = handoffNewness(session.user.id, handoffs.map((handoff) => handoff.id));
   const workspace = getDatabase()
     .prepare("SELECT workspace.id, workspace.name, workspace_membership.role FROM workspace JOIN workspace_membership ON workspace_membership.workspace_id = workspace.id WHERE workspace.id = ? AND workspace_membership.user_id = ?")
     .get(workspaceId, session.user.id) as WorkspaceChoice | undefined;
@@ -51,7 +57,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   const workspaces = getDatabase()
     .prepare("SELECT workspace.id, workspace.name, workspace_membership.role FROM workspace JOIN workspace_membership ON workspace_membership.workspace_id = workspace.id WHERE workspace_membership.user_id = ? ORDER BY workspace.created_at DESC")
     .all(session.user.id) as WorkspaceChoice[];
-  const projects = listProjects(workspaceId) as Array<{ id: string; name: string }>;
+  const projects = filterProjectsForViewer(workspaceId, viewer, listProjects(workspaceId) as Array<{ id: string; name: string; handoffCount: number; versionCount: number }>);
   const navSections = createWorkspaceNavigation({ workspaceId, projects, page: "project", activeProjectId: projectId });
 
   return (
@@ -66,12 +72,11 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
         <header className="workspace-dashboard-heading">
           <div>
             <h1 className="font-semibold text-foreground">{project.name}</h1>
-            <p className="mt-2 text-[13px] leading-5 text-foreground-muted">Keep the app’s design canvas and every reviewed version in this project.</p>
+            <p className="mt-2 text-[13px] leading-5 text-foreground-muted">{canManageHandoffs ? "Keep the app’s design canvas and every reviewed version in this project." : "Handoffs shared with you in this project. New versions are marked until you open them."}</p>
           </div>
-          <StartHandoffButton />
         </header>
 
-        <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
+        <div className={"workspace-dashboard-columns mt-6 grid gap-5 " + (canManageHandoffs ? "xl:grid-cols-[minmax(0,1fr)_390px]" : "max-w-4xl")}>
           <section aria-labelledby="handoff-list-title" className="workspace-pane p-5 sm:p-6" id="handoffs">
             <div className="workspace-pane-heading">
               <h2 className="text-[14px] font-semibold text-foreground" id="handoff-list-title">Handoffs</h2>
@@ -89,7 +94,10 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
                       >
                         <span aria-hidden="true" className="workspace-mark grid size-9 shrink-0 place-items-center text-foreground"><svg className="size-4" fill="none" viewBox="0 0 16 16"><path d="M3 3.5h10v9H3zM5.5 6h5M5.5 8.5h3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.2" /></svg></span>
                         <span className="min-w-0 flex-1 pt-0.5">
-                          <span className="block truncate text-sm font-medium leading-5 text-foreground">{handoff.name}</span>
+                          <span className="flex min-w-0 items-center gap-2">
+                            <span className="truncate text-sm font-medium leading-5 text-foreground">{handoff.name}</span>
+                            {newness.get(handoff.id)?.isNew ? <NewVersionBadge /> : null}
+                          </span>
                           <span className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] leading-4 text-foreground-subtle">
                             <span>{handoff.versionCount} {handoff.versionCount === 1 ? "version" : "versions"}</span>
                             <span aria-hidden="true">·</span>
@@ -101,7 +109,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
                         <svg aria-hidden="true" className="mt-1 size-4 shrink-0 text-foreground-subtle transition-transform group-hover/link:translate-x-0.5" fill="none" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
                       </Link>
                       {canManageHandoffs ? (
-                        <div className="workspace-handoff-actions mt-3 flex flex-wrap items-center justify-end gap-1 pt-2.5">
+                        <div className="workspace-handoff-actions mt-3 flex flex-wrap items-center justify-end gap-1.5 pt-1">
                           <RenameHandoffButton
                             endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoff.id)}`}
                             handoffName={handoff.name}
@@ -126,17 +134,19 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
             )}
           </section>
 
-          <aside aria-label="Start a design handoff" className="space-y-3" id="start-handoff">
-            <ProjectPdInChargeForm input={{ workspaceId, projectId, candidates: listProjectPdCandidates(workspaceId), selectedId: project.pdInChargeUserId }} />
-            <HandoffSetupForm mode="project" input={{ workspaceId, projectId, handoffs: handoffs.map(({ id, name }) => ({ id, name })) }} />
-          </aside>
+          {canManageHandoffs ? (
+            <aside aria-label="Start a design handoff" className="space-y-3" id="start-handoff">
+              <ProjectPdInChargeForm input={{ workspaceId, projectId, candidates: listProjectPdCandidates(workspaceId), selectedId: project.pdInChargeUserId }} />
+              <HandoffSetupForm mode="project" input={{ workspaceId, projectId, handoffs: handoffs.map(({ id, name }) => ({ id, name })) }} />
+            </aside>
+          ) : null}
         </div>
 
-        <details className="workspace-settings-disclosure mt-6 px-4 py-4">
+        {canManageHandoffs ? <details className="workspace-settings-disclosure mt-6 px-4 py-4">
           <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden"><svg aria-hidden="true" className="size-3.5 shrink-0 text-foreground-subtle transition-transform [[open]>summary>&]:rotate-90" fill="none" viewBox="0 0 16 16"><path d="m6 4 4 4-4 4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>Layout QA rules</summary>
           <p className="mb-5 mt-2 max-w-2xl text-xs leading-5 text-foreground-muted">Set this project’s spacing scale, token requirements, and frame limits. Handoff applies these rules to each structured snapshot.</p>
           <ProjectRulesForm workspaceId={workspaceId} projectId={projectId} initialRules={project.rules} />
-        </details>
+        </details> : null}
       </main>
     </WorkspaceShell>
   );

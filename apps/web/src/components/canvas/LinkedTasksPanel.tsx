@@ -89,7 +89,7 @@ export function LinkedTasksPanel({ input }: {
     <section className="mt-4 rounded-panel border border-border bg-surface p-4 sm:p-5" aria-labelledby="linked-tasks-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-accent">Connected tools</p>
+          <p className="text-[12px] font-medium text-foreground-subtle">Connected tools</p>
           <h2 id="linked-tasks-title" className="mt-1 text-base font-semibold text-foreground">Tasks</h2>
           <p className="mt-1 text-xs leading-5 text-foreground-muted">Link work created by your AI in Asbir Teams, ClickUp, Linear, or another connected tool.</p>
         </div>

@@ -6,18 +6,20 @@ import { generatedChangelogSchema } from "@/src/server/ai/schema";
 import { createChangelogDraft, listApprovedChangelogsForVersion } from "@/src/server/repositories/changelogs";
 import { createHandoffComment, listHandoffCommentsPage } from "@/src/server/repositories/comments";
 import { listFindingStates } from "@/src/server/repositories/findings";
-import { listHandoffVersionsPage, listHandoffsPage } from "@/src/server/repositories/handoffs";
-import { getProject, listProjectsPage } from "@/src/server/repositories/projects";
+import { listHandoffVersionsPage, listHandoffs, listHandoffsPage } from "@/src/server/repositories/handoffs";
+import { getProject, listProjects, listProjectsPage } from "@/src/server/repositories/projects";
 import { resolveWorkspaceMcpToken, type McpScope } from "@/src/server/repositories/mcp-tokens";
 import { listLinkedExternalTasksPage } from "@/src/server/repositories/linked-external-tasks";
 import {
   getConfirmedFrameMatchesBetweenVersions,
   getConfirmedNodeMatchesBetweenVersions,
   getVersion,
+  getVersionSnapshotSize,
 } from "@/src/server/repositories/versions";
 import { linkExternalTaskToHandoff } from "@/src/server/services/link-external-task";
 import { toMcpApprovedChangelog } from "@/src/server/services/mcp-changelog";
-import { loadHandoff, loadVersion } from "@/src/server/services/mcp-access";
+import { scopedLoaders } from "@/src/server/services/mcp-access";
+import { filterProjectsForViewer, visibleHandoffIds } from "@/src/server/services/review-visibility";
 import { taskLinkFieldsSchema, taskLinkSchema } from "@/src/server/services/task-context";
 import { diffSnapshots, isStructuredSnapshot } from "@/src/server/services/diff";
 import { evaluateLayoutRules } from "@/src/server/services/layout-rules";
@@ -130,12 +132,20 @@ function allowMcpOrigin(request: Request) {
   return allowed.has(origin);
 }
 
-function registerReadTools(server: McpServer, workspaceId: string) {
+type McpViewer = { id: string; email: string; role: string };
+
+function registerReadTools(server: McpServer, workspaceId: string, viewer: McpViewer, allowedHandoffIds: Set<string> | null) {
+  const { loadHandoff, loadVersion } = scopedLoaders(allowedHandoffIds);
   server.registerTool("list_projects", {
     title: "List workspace projects",
     description: "List a page of projects in the token's workspace. Results are limited to 100; follow page.nextOffset while page.hasMore is true.",
     inputSchema: z.object(inventoryPageInput),
   }, async ({ offset, limit }) => {
+    if (allowedHandoffIds) {
+      // Reviewer tokens only see projects holding a handoff shared with the token's creator.
+      const projects = filterProjectsForViewer(workspaceId, viewer, listProjects(workspaceId) as Array<{ id: string; handoffCount: number; versionCount: number }>);
+      return textResult(pageItems(projects.slice(offset, offset + limit), projects.length, offset, limit));
+    }
     const result = listProjectsPage(workspaceId, { offset, limit });
     return textResult(pageItems(result.items, result.total, offset, limit));
   });
@@ -147,6 +157,11 @@ function registerReadTools(server: McpServer, workspaceId: string) {
   }, async ({ projectId, offset, limit }) => {
     try {
       if (!getProject({ workspaceId, projectId })) throw new Error("Project not found in this workspace.");
+      if (allowedHandoffIds) {
+        const handoffs = (listHandoffs({ workspaceId, projectId }) as Array<{ id: string }>).filter((handoff) => allowedHandoffIds.has(handoff.id));
+        if (!handoffs.length) throw new Error("Project not found in this workspace.");
+        return textResult(pageItems(handoffs.slice(offset, offset + limit), handoffs.length, offset, limit));
+      }
       const result = listHandoffsPage({ workspaceId, projectId, offset, limit });
       return textResult(pageItems(result.items, result.total, offset, limit));
     } catch (error) { return failure(error); }
@@ -229,7 +244,7 @@ function registerReadTools(server: McpServer, workspaceId: string) {
           width: asset.width,
           height: asset.height,
         }));
-      const snapshotSizeBytes = Buffer.byteLength(version.snapshotJson, "utf8");
+      const snapshotSizeBytes = getVersionSnapshotSize({ workspaceId, versionId: version.id });
       if (snapshotSizeBytes > maxInlineSnapshotBytes) {
         const elementCount = isStructuredSnapshot(version.snapshot)
           ? version.snapshot.frames.reduce((total, frame) => total + frame.nodes.length, 0)
@@ -554,8 +569,9 @@ function registerReadTools(server: McpServer, workspaceId: string) {
   });
 }
 
-function registerWriteTools(server: McpServer, input: { workspaceId: string; createdBy: string; scopes: McpScope[]; baseUrl: string }) {
+function registerWriteTools(server: McpServer, input: { workspaceId: string; createdBy: string; scopes: McpScope[]; baseUrl: string; allowedHandoffIds: Set<string> | null }) {
   const { workspaceId, createdBy, baseUrl } = input;
+  const { loadHandoff, loadVersion } = scopedLoaders(input.allowedHandoffIds);
   if (input.scopes.includes("comments:write")) {
     server.registerTool("create_comment", {
       title: "Add a pinned handoff comment",
@@ -720,6 +736,8 @@ export async function POST(request: Request) {
   const result = await authorize(request);
   if ("response" in result) return result.response;
   const { access, token } = result;
+  // A token acts with its creator's visibility: reviewers reach only handoffs shared with them.
+  const allowedHandoffIds = visibleHandoffIds(access.workspaceId, access.viewer);
   const handler = createMcpHandler(() => {
     const server = new McpServer({
       name: "asbir-handoff",
@@ -732,8 +750,8 @@ export async function POST(request: Request) {
         "Use connected task, repository, and QA tools only for work the user requested, following those tools' permissions.",
       ].join(" "),
     });
-    if (access.scopes.includes("handoffs:read")) registerReadTools(server, access.workspaceId);
-    registerWriteTools(server, { workspaceId: access.workspaceId, createdBy: access.createdBy, scopes: access.scopes, baseUrl: process.env.BETTER_AUTH_URL || new URL(request.url).origin });
+    if (access.scopes.includes("handoffs:read")) registerReadTools(server, access.workspaceId, access.viewer, allowedHandoffIds);
+    registerWriteTools(server, { workspaceId: access.workspaceId, createdBy: access.createdBy, scopes: access.scopes, baseUrl: process.env.BETTER_AUTH_URL || new URL(request.url).origin, allowedHandoffIds });
     return server;
   }, { responseMode: "json" });
   const authInfo: AuthInfo = {

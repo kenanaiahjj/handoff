@@ -11,6 +11,7 @@ import { canvasAnchorAtPoint, canvasAnchorToViewportPoint } from "./canvas-ancho
 import { CommentPin, type HandoffComment } from "../comments/CommentPin";
 import type { PendingCommentPoint } from "../comments/CommentThread";
 import { layoutCommentPins } from "../comments/comment-pin-layout";
+import { CanvasCommentPopover } from "../comments/CanvasCommentPopover";
 import { LayoutGridOverlay } from "./LayoutGridOverlay";
 import { comparisonFrameStatusLabel } from "./compare-presentation";
 import { getCanvasFrameLabelMaxWidth, shouldShowCanvasFrameLabel } from "./canvas-frame-label-visibility";
@@ -46,6 +47,17 @@ type CanvasViewportProps = {
   commentMode: boolean;
   onSelectComment: (commentId: string) => void;
   onPlaceComment: (point: PendingCommentPoint) => void;
+  /** Figma-style anchored comments: the composer for a new pin and the open thread. */
+  commentPopover?: {
+    pendingPoint: PendingCommentPoint | null;
+    threadOpen: boolean;
+    canWrite: boolean;
+    canResolve: boolean;
+    onCreate: (body: string, point: PendingCommentPoint) => Promise<void>;
+    onReply: (parentCommentId: string, body: string) => Promise<void>;
+    onResolve: (commentId: string, resolved: boolean) => Promise<void>;
+    onClose: () => void;
+  };
   annotations: Array<{ id: string; frameId: string; sourceNodeId: string | null; x: number; y: number; title: string; body: string; authorName: string }>;
   selectedAnnotationId: string | null;
   annotationMode: boolean;
@@ -112,6 +124,7 @@ export function CanvasViewport({
   commentMode,
   onSelectComment,
   onPlaceComment,
+  commentPopover,
   annotations,
   selectedAnnotationId,
   annotationMode,
@@ -281,6 +294,30 @@ export function CanvasViewport({
     }];
   });
   const inverseScale = 1 / Math.max(transform.scale, 0.01);
+  // Flip the comment popover to the pin's left when it would run off the viewport's right edge.
+  const popoverFlips = (x: number) =>
+    (x - frame.sourceWidth / 2) * transform.scale + transform.offsetX + viewportSize.width / 2 + 340 > viewportSize.width;
+  const openThreadPin = commentPopover?.threadOpen
+    ? commentPins.find(({ comment }) => comment.id === selectedCommentId) ?? null
+    : null;
+  const pendingCommentPosition = commentPopover?.pendingPoint
+    ? canvasAnchorToViewportPoint(commentPopover.pendingPoint, frame, screens, overviewOrigin)
+    : null;
+  const openThreadKey = openThreadPin ? openThreadPin.comment.id : null;
+  const openThreadPoint = openThreadPin ? { x: openThreadPin.comment.x, y: openThreadPin.comment.y } : null;
+
+  // When a thread opens off-screen (e.g. picked from the list), pan so its pin and popover fit.
+  useEffect(() => {
+    const point = openThreadPoint;
+    if (!openThreadKey || !point || !viewportSize.width) return;
+    const screenX = (point.x - frame.sourceWidth / 2) * transform.scale + transform.offsetX + viewportSize.width / 2;
+    const screenY = (point.y - frame.sourceHeight / 2) * transform.scale + transform.offsetY + viewportSize.height / 2;
+    const margin = 48;
+    const fits = screenX >= margin && screenX <= viewportSize.width - margin && screenY >= margin && screenY <= viewportSize.height - 200;
+    if (!fits) panBy(viewportSize.width * 0.4 - screenX, viewportSize.height * 0.3 - screenY);
+    // Only re-center when a different thread opens, not on every pan or zoom.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openThreadKey]);
   const canvasFrameLabelMaxWidth = getCanvasFrameLabelMaxWidth(viewportSize.width, transform.scale);
   const overviewResolutionScale = Math.min(
     frame.pixelWidth / Math.max(frame.sourceWidth, 1),
@@ -639,6 +676,47 @@ export function CanvasViewport({
               />
             </span>
           ))}
+
+          {commentPopover && pendingCommentPosition && commentPopover.pendingPoint ? (
+            <>
+              <span
+                aria-hidden="true"
+                className="pointer-events-none absolute z-30 grid size-7 place-items-center rounded-full border-2 border-primary-foreground bg-primary text-[12px] font-semibold text-primary-foreground shadow-lg"
+                style={{ left: pendingCommentPosition.x - 14 * inverseScale, top: pendingCommentPosition.y - 14 * inverseScale, transform: `scale(${inverseScale})`, transformOrigin: "top left" }}
+              >
+                +
+              </span>
+              <CanvasCommentPopover
+                flip={popoverFlips(pendingCommentPosition.x)}
+                inverseScale={inverseScale}
+                key={`${commentPopover.pendingPoint.frameId}:${commentPopover.pendingPoint.x}:${commentPopover.pendingPoint.y}`}
+                mode="compose"
+                onClose={commentPopover.onClose}
+                onCreate={commentPopover.onCreate}
+                point={commentPopover.pendingPoint}
+                x={pendingCommentPosition.x}
+                y={pendingCommentPosition.y}
+              />
+            </>
+          ) : null}
+          {commentPopover && openThreadPin && !commentPopover.pendingPoint ? (
+            <CanvasCommentPopover
+              canResolve={commentPopover.canResolve}
+              canWrite={commentPopover.canWrite}
+              flip={popoverFlips(openThreadPin.comment.x)}
+              index={openThreadPin.index}
+              inverseScale={inverseScale}
+              key={openThreadPin.comment.id}
+              mode="thread"
+              onClose={commentPopover.onClose}
+              onReply={commentPopover.onReply}
+              onResolve={commentPopover.onResolve}
+              replies={comments.filter((comment) => comment.parentCommentId === openThreadPin.comment.id)}
+              root={comments.find((comment) => comment.id === openThreadPin.comment.id) ?? openThreadPin.comment}
+              x={openThreadPin.comment.x}
+              y={openThreadPin.comment.y}
+            />
+          ) : null}
         </div>
         <span aria-atomic="true" aria-live="polite" className="sr-only">{distanceAnnouncement}</span>
       </div>

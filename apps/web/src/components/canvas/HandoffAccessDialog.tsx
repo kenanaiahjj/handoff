@@ -28,8 +28,8 @@ export function HandoffAccessDialog({ endpoint, handoffName, variant = "access",
         aria-haspopup="dialog"
         aria-label={isShareDialog ? `Share ${handoffName}` : `Manage access to ${handoffName}`}
         className={isShareDialog
-          ? "flex h-11 shrink-0 items-center gap-1.5 rounded-control px-2.5 text-[12px] text-foreground-muted hover:bg-surface-strong hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:h-8"
-          : "min-h-9 shrink-0 rounded-control px-2.5 text-xs font-medium text-foreground-muted hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"}
+          ? "dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8"
+          : "dial-button min-h-8 shrink-0 px-3 text-xs"}
         onClick={() => setOpen(true)}
         title={isShareDialog ? "Share handoff and manage access" : "Manage access"}
         type="button"
@@ -46,7 +46,7 @@ export function HandoffAccessDialog({ endpoint, handoffName, variant = "access",
       </button>
       <dialog
         aria-labelledby="handoff-access-dialog-title"
-        className="fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-hidden rounded-panel border border-border bg-surface p-0 text-foreground shadow-lg backdrop:bg-black/70"
+        className="dial-popover fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-hidden p-0 text-foreground backdrop:bg-black/60 backdrop:backdrop-blur-sm"
         onClose={(event) => {
           // Nested dialogs (confirmations) also emit close; only react to this dialog closing.
           if (event.target === event.currentTarget) setOpen(false);
@@ -57,7 +57,7 @@ export function HandoffAccessDialog({ endpoint, handoffName, variant = "access",
           <div className="max-h-[calc(100dvh-2rem)] overflow-y-auto p-4 sm:p-5">
             <header className="flex items-start justify-between gap-4">
               <div className="min-w-0">
-                {!isShareDialog ? <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground-subtle">Handoff access</p> : null}
+                {!isShareDialog ? <p className="text-[12px] font-medium text-foreground-subtle">Handoff access</p> : null}
                 <h2 className={isShareDialog ? "text-base font-semibold text-foreground" : "mt-1 text-base font-semibold text-foreground"} id="handoff-access-dialog-title">{isShareDialog ? "Share handoff" : "Manage access"}</h2>
                 <p className="mt-1 truncate text-xs text-foreground-muted">{handoffName}</p>
               </div>

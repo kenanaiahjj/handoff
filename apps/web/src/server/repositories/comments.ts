@@ -100,7 +100,8 @@ export function setCommentResolved(input: {
   versionId: string;
   commentId: string;
   resolved: boolean;
-  updatedBy: string;
+  /** Null when a link-based invitee resolves without a signed-in account. */
+  updatedBy: string | null;
 }) {
   const result = getDatabase()
     .prepare(

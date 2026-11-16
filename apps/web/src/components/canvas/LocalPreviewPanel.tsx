@@ -93,7 +93,7 @@ export function LocalPreviewPanel({
           <label className="sr-only" htmlFor="local-preview-url">Local development URL</label>
           <input
             autoComplete="url"
-            className="h-9 min-w-0 flex-1 rounded-control border border-border-strong bg-surface-inset px-2.5 font-mono text-[10px] text-foreground outline-none placeholder:text-foreground-muted focus:border-foreground-subtle"
+            className="h-9 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-2.5 font-mono text-[10px] text-foreground outline-none placeholder:text-foreground-muted focus:border-foreground-subtle"
             id="local-preview-url"
             onChange={(event) => setDraftUrl(event.target.value)}
             placeholder="http://localhost:3000"
@@ -145,16 +145,16 @@ export function LocalPreviewPanel({
         {mode === "overlay" ? (
           <label className="flex min-w-0 items-center gap-2 text-[9px] text-foreground-subtle">
             Local opacity
-            <input aria-label="Local preview opacity" className="w-16 accent-[#d99a32]" max="100" min="10" onChange={(event) => setOpacity(Number(event.target.value))} type="range" value={opacity} />
+            <input aria-label="Local preview opacity" className="w-16 accent-[var(--foreground)]" max="100" min="10" onChange={(event) => setOpacity(Number(event.target.value))} type="range" value={opacity} />
           </label>
         ) : null}
       </div>
 
-      <div className="relative min-h-[220px] flex-1 overflow-hidden rounded-control border border-border bg-surface-inset" ref={stageRef}>
+      <div className="relative min-h-[220px] flex-1 overflow-hidden rounded-control border border-transparent bg-surface-inset" ref={stageRef}>
         {frame ? (
           <div className={"absolute inset-0 flex items-center justify-center " + (mode === "side-by-side" ? "gap-2 px-2" : "")}>
             {(mode === "side-by-side" ? ["reference", "local"] as const : ["overlay"] as const).map((layout) => (
-              <div className="relative min-w-0 overflow-hidden rounded-chip border border-border-strong bg-surface-inset" key={layout} style={{ width: frame.sourceWidth * scale, height: frame.sourceHeight * scale }}>
+              <div className="relative min-w-0 overflow-hidden rounded-chip border border-transparent bg-surface-inset" key={layout} style={{ width: frame.sourceWidth * scale, height: frame.sourceHeight * scale }}>
                 {layout !== "local" ? <Image alt={`Published reference: ${frame.name}`} className="pointer-events-none absolute left-0 top-0 max-w-none select-none" draggable={false} height={frame.pixelHeight} src={frame.imageSrc} style={{ width: frame.sourceWidth, height: frame.sourceHeight, transform: `scale(${scale})`, transformOrigin: "top left" }} unoptimized width={frame.pixelWidth} /> : null}
                 {layout !== "reference" ? (
                   url ? <iframe

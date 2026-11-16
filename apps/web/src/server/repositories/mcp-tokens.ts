@@ -88,13 +88,19 @@ export function resolveWorkspaceMcpToken(token: string) {
     } | undefined;
   if (!record || record.revokedAt || Date.parse(record.expiresAt) <= Date.now()) return null;
   const membership = getDatabase()
-    .prepare("SELECT 1 FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
-    .get(record.workspaceId, record.createdBy);
+    .prepare(
+      `SELECT workspace_membership.role, COALESCE("user".email, '') AS email
+       FROM workspace_membership LEFT JOIN "user" ON "user".id = workspace_membership.user_id
+       WHERE workspace_membership.workspace_id = ? AND workspace_membership.user_id = ?`,
+    )
+    .get(record.workspaceId, record.createdBy) as { role: string; email: string } | undefined;
   if (!membership) return null;
   return {
     id: record.id,
     workspaceId: record.workspaceId,
     createdBy: record.createdBy,
+    /** The token acts with its creator's current role and email, so visibility follows invites. */
+    viewer: { id: record.createdBy, email: membership.email, role: membership.role },
     scopes: JSON.parse(record.scopesJson) as McpScope[],
     expiresAt: record.expiresAt,
   };

@@ -9,13 +9,15 @@
     "lint": "eslint ."
   },
   "dependencies": {
+    "@ai-sdk/openai": "^4.0.118",
+    "@ai-sdk/react": "^4.0.177",
     "@asbir/snapshot-contract": "^0.1.0",
     "@modelcontextprotocol/server": "^2.4.0",
+    "ai": "^7.0.173",
     "better-auth": "^1.7.17",
     "better-sqlite3": "^13.0.3",
     "fflate": "^0.8.3",
     "next": "16.4.5",
-    "openai": "^7.51.0",
     "react": "19.3.0",
     "react-dom": "19.3.0"
   },

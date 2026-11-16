@@ -104,7 +104,7 @@ export function PixelDiffView({ before, after }: { before: PixelPreview; after: 
   }, [plannedWidth, plannedHeight, before.imageUrl, before.sourceWidth, before.sourceHeight, after.imageUrl, after.sourceWidth, after.sourceHeight]);
 
   return (
-    <div className="relative grid min-h-[min(68vh,760px)] place-items-center overflow-hidden rounded-surface border border-border bg-surface-inset p-3">
+    <div className="relative grid min-h-[min(68vh,760px)] place-items-center overflow-hidden rounded-surface border border-transparent bg-surface-inset p-3">
       {plan.status === "ready" && afterImageRect ? (
         <div className="relative max-h-[min(68vh,760px)] max-w-full">
           <Image
