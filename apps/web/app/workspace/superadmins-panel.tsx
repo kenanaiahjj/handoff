@@ -33,7 +33,7 @@ export function SuperadminsPanel({ initial, currentEmail }: { initial: Superadmi
     try {
       await send("POST", target);
       setEmail("");
-      setMessage(`${target} now owns every workspace. They get access the next time they sign in.`);
+      setMessage(`${target} is now an admin. They get access the next time they sign in.`);
     } catch (error) {
       setMessage((error as Error).message);
     } finally {
@@ -43,8 +43,8 @@ export function SuperadminsPanel({ initial, currentEmail }: { initial: Superadmi
 
   async function remove(target: string) {
     const confirmed = await confirm({
-      title: "Remove super admin?",
-      description: `${target} will no longer be added to new workspaces. Their access to existing workspaces stays until you change it in each one.`,
+      title: "Remove admin?",
+      description: `${target} will no longer be an admin. Their current role in the workspace stays until you change it.`,
       confirmLabel: "Remove",
     });
     if (!confirmed) return;
@@ -52,7 +52,7 @@ export function SuperadminsPanel({ initial, currentEmail }: { initial: Superadmi
     setMessage("");
     try {
       await send("DELETE", target);
-      setMessage(`${target} is no longer a super admin.`);
+      setMessage(`${target} is no longer an admin.`);
     } catch (error) {
       setMessage((error as Error).message);
     } finally {
@@ -63,7 +63,7 @@ export function SuperadminsPanel({ initial, currentEmail }: { initial: Superadmi
   return (
     <div className="space-y-4">
       <p className="text-[12px] leading-5 text-foreground-muted">
-        Super admins own every workspace, including ones created later. They can sign in from any email domain.
+        Admins manage every project and can invite people. They can sign in from any email domain.
       </p>
       <ul className="space-y-1">
         {superadmins.map((admin) => {

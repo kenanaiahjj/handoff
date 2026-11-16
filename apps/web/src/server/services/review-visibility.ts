@@ -152,6 +152,8 @@ export function countUpdatesByProject(updates: ViewerUpdate[]) {
   return counts;
 }
 
+export type ScreenChanges = { changed: number; added: number; removed: number };
+
 export type ViewerHandoff = {
   handoffId: string;
   handoffName: string;
@@ -159,7 +161,57 @@ export type ViewerHandoff = {
   updatedAt: string;
   isNew: boolean;
   previewUrl: string | null;
+  /** The newest version, and the one this person last opened (null if never). */
+  latestVersionId: string | null;
+  seenVersionId: string | null;
+  /** For a new version this person has seen an earlier one of: what changed since. */
+  changesSinceSeen: ScreenChanges | null;
 };
+
+// Versions never change, so a comparison between two of them can be kept for the server's lifetime.
+const screenChangesCache = new Map<string, ScreenChanges>();
+
+/**
+ * Each screen's Figma frame id (stable across renames) and the fingerprint (stored object key) of its
+ * render, read inside SQLite so the large snapshot never has to be parsed in JavaScript.
+ */
+function screenFingerprints(versionId: string) {
+  const rows = getDatabase()
+    .prepare(
+      `SELECT COALESCE(json_extract(frame.value, '$.sourceFrameId'), json_extract(frame.value, '$.name')) AS name,
+              handoff_asset.object_key AS objectKey
+       FROM handoff_version, json_each(handoff_version.snapshot_json, '$.frames') AS frame
+       LEFT JOIN handoff_asset ON handoff_asset.handoff_version_id = handoff_version.id
+         AND handoff_asset.asset_key = json_extract(frame.value, '$.renderAssetKey')
+       WHERE handoff_version.id = ?`,
+    )
+    .all(versionId) as Array<{ name: string; objectKey: string | null }>;
+  return new Map(rows.map((row) => [row.name, row.objectKey ?? ""] as const));
+}
+
+/** Frame ids that are new or look different in the later version. */
+export function changedFrameIdsBetween(fromVersionId: string, toVersionId: string) {
+  const before = screenFingerprints(fromVersionId);
+  const after = screenFingerprints(toVersionId);
+  return [...after].filter(([id, fingerprint]) => before.get(id) !== fingerprint).map(([id]) => id);
+}
+
+/** How many screens changed, were added, or were removed between two versions of a handoff. */
+export function screenChangesBetween(fromVersionId: string, toVersionId: string): ScreenChanges {
+  const key = `${fromVersionId}:${toVersionId}`;
+  const cached = screenChangesCache.get(key);
+  if (cached) return cached;
+  const before = screenFingerprints(fromVersionId);
+  const after = screenFingerprints(toVersionId);
+  const result: ScreenChanges = { changed: 0, added: 0, removed: 0 };
+  for (const [name, fingerprint] of after) {
+    if (!before.has(name)) result.added += 1;
+    else if (before.get(name) !== fingerprint) result.changed += 1;
+  }
+  for (const name of before.keys()) if (!after.has(name)) result.removed += 1;
+  screenChangesCache.set(key, result);
+  return result;
+}
 
 export type ViewerProject = {
   workspaceId: string;
@@ -232,7 +284,17 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
       updatedAt: row.versionCreatedAt ?? row.handoffCreatedAt,
       isNew: Boolean(row.versionId) && row.versionId !== row.seenVersionId && row.createdBy !== viewer.id,
       previewUrl: row.previewKey ? `/api/assets/${encodeURIComponent(row.previewKey)}` : null,
+      latestVersionId: row.versionId,
+      seenVersionId: row.seenVersionId,
+      changesSinceSeen: null,
     };
+    if (handoff.isNew && row.seenVersionId && row.versionId) {
+      try {
+        handoff.changesSinceSeen = screenChangesBetween(row.seenVersionId, row.versionId);
+      } catch {
+        // A comparison that can't be read just leaves the tile without a count.
+      }
+    }
     const project = projects.get(row.projectId) ?? { workspaceId, workspaceName: row.workspaceName, projectId: row.projectId, projectName: row.projectName, handoffs: [], newCount: 0, updatedAt: handoff.updatedAt };
     project.handoffs.push(handoff);
     if (handoff.isNew) project.newCount += 1;
@@ -252,4 +314,35 @@ export function listViewerHomeAcrossWorkspaces(viewer: { id: string; email: stri
   return memberships
     .flatMap((membership) => listViewerHome(membership.id, { ...viewer, role: membership.role }))
     .sort((a, b) => Math.min(b.newCount, 1) - Math.min(a.newCount, 1) || b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/**
+ * Marks handoffs as opened at their newest version for this person, skipping any they can't see.
+ * Returns how many were marked.
+ */
+export function markHandoffsSeenForViewer(viewer: { id: string; email: string }, handoffIds: string[]) {
+  const database = getDatabase();
+  const rows = database
+    .prepare(
+      `SELECT handoff.id, handoff.workspace_id AS workspaceId, workspace_membership.role,
+              (SELECT id FROM handoff_version WHERE handoff_version.handoff_id = handoff.id
+                 ORDER BY created_at DESC, id DESC LIMIT 1) AS latestVersionId
+       FROM handoff
+       JOIN workspace_membership ON workspace_membership.workspace_id = handoff.workspace_id AND workspace_membership.user_id = ?
+       WHERE handoff.id IN (${handoffIds.map(() => "?").join(", ") || "NULL"})`,
+    )
+    .all(viewer.id, ...handoffIds) as Array<{ id: string; workspaceId: string; role: string; latestVersionId: string | null }>;
+  const visibleByWorkspace = new Map<string, Set<string> | null>();
+  let marked = 0;
+  for (const row of rows) {
+    if (!row.latestVersionId) continue;
+    if (!visibleByWorkspace.has(row.workspaceId)) {
+      visibleByWorkspace.set(row.workspaceId, visibleHandoffIds(row.workspaceId, { ...viewer, role: row.role }));
+    }
+    const visible = visibleByWorkspace.get(row.workspaceId);
+    if (visible && !visible.has(row.id)) continue;
+    markHandoffSeen({ userId: viewer.id, workspaceId: row.workspaceId, handoffId: row.id, latestVersionId: row.latestVersionId });
+    marked += 1;
+  }
+  return marked;
 }

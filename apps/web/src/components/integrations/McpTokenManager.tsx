@@ -121,7 +121,7 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
     <div className="space-y-5">
       <section className="rounded-panel bg-surface p-4 sm:p-5" aria-labelledby="mcp-endpoint-title">
         <h2 id="mcp-endpoint-title" className="text-sm font-semibold text-foreground">MCP endpoint</h2>
-        <p className="mt-1 text-xs leading-5 text-foreground-muted">Connect an MCP-compatible agent to read this workspace’s frozen handoffs. Writes require a token scope.</p>
+        <p className="mt-1 text-xs leading-5 text-foreground-muted">Connect an MCP-compatible agent to read your team’s frozen handoffs. Writes require a token scope.</p>
         <div className="mt-3 flex flex-col gap-2 sm:flex-row">
           <label className="sr-only" htmlFor="mcp-endpoint-url">MCP endpoint URL</label>
           <input id="mcp-endpoint-url" readOnly value={endpointUrl} className="min-h-10 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />

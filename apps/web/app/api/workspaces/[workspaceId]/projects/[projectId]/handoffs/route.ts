@@ -1,3 +1,5 @@
+import { after } from "next/server";
+import { notifyNewVersion } from "@/src/server/services/slack";
 import { z } from "zod";
 import { visibleHandoffIds } from "@/src/server/services/review-visibility";
 import { getDatabase } from "@/src/server/db";
@@ -90,6 +92,7 @@ export async function POST(request: Request, context: HandoffRoute) {
       assets: upload.assets,
     });
 
+    after(() => notifyNewVersion({ workspaceId: workspaceId, handoffId: created.handoffId, versionId: created.versionId, createdBy: access.userId }).catch((error) => console.warn("[slack]", error)));
     return Response.json(created, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {

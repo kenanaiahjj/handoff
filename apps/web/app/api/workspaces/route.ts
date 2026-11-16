@@ -30,6 +30,11 @@ export async function POST(request: Request) {
   const session = await getSessionForRequest(request);
   if (!session) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
+  // One company workspace: new teams of work are projects inside it.
+  if (getDatabase().prepare("SELECT 1 FROM workspace LIMIT 1").get()) {
+    return Response.json({ error: "Create a project instead. Everything lives in one team." }, { status: 409 });
+  }
+
   const parsed = createWorkspaceSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) {
     return Response.json({ error: "Enter a workspace name under 80 characters." }, { status: 400 });

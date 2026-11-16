@@ -5,7 +5,7 @@ import { getDatabase } from "@/src/server/db";
 import { listProjects } from "@/src/server/repositories/projects";
 import { canSeeWholeWorkspace, filterProjectsForViewer } from "@/src/server/services/review-visibility";
 import { McpTokenManager } from "@/src/components/integrations/McpTokenManager";
-import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
+import { WorkspaceShell } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 
 export const instant = false;
@@ -27,28 +27,14 @@ export default async function IntegrationsPage({ params }: IntegrationsPageProps
   if (!workspace) notFound();
 
   const database = getDatabase();
-  const workspaces = database
-    .prepare(
-      `SELECT workspace.id, workspace.name, workspace_membership.role
-       FROM workspace
-       JOIN workspace_membership ON workspace_membership.workspace_id = workspace.id
-       WHERE workspace_membership.user_id = ?
-       ORDER BY workspace.created_at DESC`,
-    )
-    .all(session.user.id) as WorkspaceChoice[];
   const projects = listProjects(workspaceId) as Array<{ id: string; name: string; handoffCount: number; versionCount: number }>;
 
   return (
     <WorkspaceShell
       user={{ name: session.user.name, email: session.user.email }}
       workspace={workspace}
-      workspaces={workspaces}
-      navSections={createWorkspaceNavigation({ workspaceId, projects: filterProjectsForViewer(workspaceId, { id: session.user.id, email: session.user.email, role: workspace.role }, projects), page: "integrations" })}
-      breadcrumbs={[
-        { label: "Workspaces", href: "/workspace" },
-        { label: workspace.name, href: `/workspace/${workspaceId}` },
-        { label: "Integrations" },
-      ]}
+      navSections={createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects: filterProjectsForViewer(workspaceId, { id: session.user.id, email: session.user.email, role: workspace.role }, projects), page: "integrations" })}
+      breadcrumbs={[{ label: "Integrations" }]}
     >
       <main className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 sm:py-9">
         <section className="border-b border-border pb-5">

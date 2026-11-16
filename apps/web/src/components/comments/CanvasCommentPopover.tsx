@@ -1,5 +1,7 @@
 "use client";
 
+import { CommentBody } from "./mentions";
+
 import { useState } from "react";
 import type { HandoffComment } from "./CommentPin";
 import { CommentComposer, type PendingCommentPoint } from "./CommentThread";
@@ -131,7 +133,7 @@ export function CanvasCommentPopover(props: CanvasCommentPopoverProps) {
             {[props.root, ...props.replies].map((comment) => (
               <li key={comment.id}>
                 <Author comment={comment} />
-                <p className="mt-1 whitespace-pre-wrap break-words pl-7 text-[12px] leading-5 text-foreground-muted">{comment.body}</p>
+                <p className="mt-1 whitespace-pre-wrap break-words pl-7 text-[12px] leading-5 text-foreground-muted"><CommentBody body={comment.body} /></p>
               </li>
             ))}
           </ol>

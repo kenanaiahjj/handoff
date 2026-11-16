@@ -32,7 +32,7 @@ export function AuthShell({
       <div aria-hidden="true" className="auth-shell-grain pointer-events-none absolute inset-0 -z-10" />
 
       <div className="flex flex-1 items-center justify-center py-16">
-        <div className={"auth-shell-enter w-full " + (wide ? "max-w-[440px]" : "max-w-[360px]")}>
+        <div className={"auth-shell-enter w-full " + (wide ? "max-w-[560px]" : "max-w-[360px]")}>
           <Link aria-label="Asbir Handoff home" className="mx-auto block w-fit rounded-[14px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-primary" href="/">
             <Image
               alt=""

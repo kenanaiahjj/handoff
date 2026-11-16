@@ -77,11 +77,11 @@ export function McpConnectionPanel({
           className="mt-3 inline-flex min-h-8 items-center rounded-control bg-surface px-2.5 text-[10px] font-medium text-foreground hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
           href={"/workspace/" + encodeURIComponent(workspaceId) + "/integrations"}
         >
-          {canManageIntegrations ? "Create or manage a token" : "Open workspace integrations"}
+          {canManageIntegrations ? "Create or manage a token" : "Open integrations"}
           <span aria-hidden="true" className="ml-1.5">↗</span>
         </Link>
         {!canManageIntegrations ? (
-          <p className="mt-2 text-[10px] leading-4 text-foreground-subtle">Ask a Workspace Owner to create a scoped token if you do not have one.</p>
+          <p className="mt-2 text-[10px] leading-4 text-foreground-subtle">Ask an owner to create a scoped token if you do not have one.</p>
         ) : null}
       </section>
 

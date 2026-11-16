@@ -3,6 +3,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 import { AppSplash } from "@/src/components/shell/AppSplash";
 import { DeviceCacheRegistration } from "@/src/client/device-cache";
+import { UpdateNotice } from "@/src/components/shell/UpdateNotice";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -43,6 +44,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
       <body className="min-h-full flex flex-col">
         <AppSplash />
         <DeviceCacheRegistration />
+        <UpdateNotice />
         {children}
       </body>
     </html>

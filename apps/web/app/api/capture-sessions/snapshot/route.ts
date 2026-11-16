@@ -1,3 +1,5 @@
+import { after } from "next/server";
+import { notifyNewVersion } from "@/src/server/services/slack";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
 import { getCaptureSession } from "@/src/server/repositories/capture-sessions";
@@ -239,6 +241,7 @@ export async function POST(request: Request) {
         : undefined,
     });
     const origin = process.env.BETTER_AUTH_URL || new URL(request.url).origin;
+    after(() => notifyNewVersion({ workspaceId: session.workspaceId, handoffId: created.handoffId, versionId: created.versionId, createdBy: session.createdBy }).catch((error) => console.warn("[slack]", error)));
     const reviewUrl = new URL(`/workspace/${encodeURIComponent(session.workspaceId)}/projects/${encodeURIComponent(session.projectId)}/handoffs/${encodeURIComponent(created.handoffId)}?versionId=${encodeURIComponent(created.versionId)}`, origin).toString();
       return jsonResponse({ ...created, projectId: session.projectId, reviewUrl }, { status: 201 });
   } catch (error) {

@@ -6,11 +6,11 @@ import type { WorkspaceRole } from "../workspace-access";
  * everyone else sees only the handoffs shared with them.
  */
 export const jobRoles = {
-  designer: { label: "Product designer", description: "Capture designs and publish handoffs.", workspaceRole: "designer" },
-  dev: { label: "Developer", description: "Build from the specs and measurements.", workspaceRole: "developer" },
+  designer: { label: "Product designer", description: "Capture and publish handoffs.", workspaceRole: "designer" },
+  dev: { label: "Developer", description: "Build from specs and measurements.", workspaceRole: "developer" },
   qa: { label: "QA", description: "Check builds against the design.", workspaceRole: "qa" },
-  pm: { label: "Product manager", description: "Review handoffs and lead projects.", workspaceRole: "reviewer" },
-  marketing: { label: "Marketing", description: "Follow launches and grab final screens.", workspaceRole: "reviewer" },
+  pm: { label: "Product manager", description: "Review handoffs, lead projects.", workspaceRole: "reviewer" },
+  marketing: { label: "Marketing", description: "Follow launches, grab final screens.", workspaceRole: "reviewer" },
   exec: { label: "Executive", description: "Follow progress and sign off.", workspaceRole: "reviewer" },
 } as const satisfies Record<string, { label: string; description: string; workspaceRole: WorkspaceRole }>;
 

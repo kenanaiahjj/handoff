@@ -53,19 +53,15 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     .prepare("SELECT workspace.id, workspace.name, workspace_membership.role FROM workspace JOIN workspace_membership ON workspace_membership.workspace_id = workspace.id WHERE workspace.id = ? AND workspace_membership.user_id = ?")
     .get(workspaceId, session.user.id) as WorkspaceChoice | undefined;
   if (!workspace) notFound();
-  const workspaces = getDatabase()
-    .prepare("SELECT workspace.id, workspace.name, workspace_membership.role FROM workspace JOIN workspace_membership ON workspace_membership.workspace_id = workspace.id WHERE workspace_membership.user_id = ? ORDER BY workspace.created_at DESC")
-    .all(session.user.id) as WorkspaceChoice[];
   const projects = filterProjectsForViewer(workspaceId, viewer, listProjects(workspaceId) as Array<{ id: string; name: string; handoffCount: number; versionCount: number }>);
-  const navSections = createWorkspaceNavigation({ workspaceId, projects, page: "project", activeProjectId: projectId });
+  const navSections = createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects, page: "project", activeProjectId: projectId });
 
   return (
     <WorkspaceShell
       user={{ name: session.user.name, email: session.user.email }}
       workspace={workspace}
-      workspaces={workspaces}
       navSections={navSections}
-      breadcrumbs={[{ label: "Workspaces", href: "/workspace" }, { label: workspace.name, href: `/workspace/${workspaceId}` }, { label: project.name }]}
+      breadcrumbs={[{ label: "Projects", href: `/workspace/${workspaceId}` }, { label: project.name }]}
     >
       <main className="workspace-dashboard mx-auto px-5 py-7 sm:px-8 sm:py-9">
         <header className="workspace-dashboard-heading">

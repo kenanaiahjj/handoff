@@ -1,0 +1,68 @@
+import assert from "node:assert/strict";
+import Database from "better-sqlite3";
+import test, { after } from "node:test";
+
+const priorDatabase = globalThis.__asbirDatabase;
+const database = new Database(":memory:");
+globalThis.__asbirDatabase = database;
+
+database.exec(`
+  CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT, email TEXT);
+  CREATE TABLE workspace_membership (workspace_id TEXT, user_id TEXT, role TEXT);
+  CREATE TABLE project (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, pd_in_charge_user_id TEXT);
+  CREATE TABLE handoff (id TEXT PRIMARY KEY, workspace_id TEXT, project_id TEXT, name TEXT);
+  CREATE TABLE handoff_invite (id TEXT, workspace_id TEXT, handoff_id TEXT, email TEXT, revoked_at TEXT, expires_at TEXT);
+  CREATE TABLE handoff_comment (id TEXT PRIMARY KEY, handoff_version_id TEXT, frame_id TEXT, body TEXT, created_by_user_id TEXT,
+    author_label TEXT, resolved_at TEXT);
+  CREATE TABLE comment_mention (comment_id TEXT, user_id TEXT, workspace_id TEXT, handoff_id TEXT, thread_id TEXT,
+    mentioned_by_user_id TEXT, created_at TEXT, done_at TEXT, PRIMARY KEY (comment_id, user_id));
+`);
+database.prepare(`INSERT INTO "user" VALUES ('owner', 'Olive Owner', 'olive@lmf.ventures'), ('riley', 'Riley Reviewer', 'riley@lmf.ventures'), ('sam', 'Sam Outsider', 'sam@lmf.ventures')`).run();
+database.prepare("INSERT INTO workspace_membership VALUES ('ws', 'owner', 'owner'), ('ws', 'riley', 'reviewer'), ('ws', 'sam', 'reviewer')").run();
+database.prepare("INSERT INTO project VALUES ('p', 'ws', 'Maayo', NULL)").run();
+database.prepare("INSERT INTO handoff VALUES ('h', 'ws', 'p', 'Rebooking')").run();
+// Riley can see the handoff; Sam can't.
+database.prepare("INSERT INTO handoff_invite VALUES ('i', 'ws', 'h', 'riley@lmf.ventures', NULL, NULL)").run();
+
+const { listMentionables, listOpenMentions, markMentionDone, mentionedUserIds, plainCommentText, recordCommentMentions } = await import("./mentions.ts");
+
+after(() => {
+  globalThis.__asbirDatabase = priorDatabase;
+  database.close();
+});
+
+function comment(id, body, author, parent = null) {
+  database.prepare("INSERT INTO handoff_comment VALUES (?, 'v', 'f', ?, ?, NULL, NULL)").run(id, body, author);
+  return recordCommentMentions({ workspaceId: "ws", handoffId: "h", commentId: id, threadId: parent ?? id, authorId: author, body });
+}
+
+const riley = { id: "riley", email: "riley@lmf.ventures", role: "reviewer" };
+
+test("mention tokens are parsed and shown as @Name", () => {
+  const body = "Hey @[Riley Reviewer](user:riley) can you check?";
+  assert.deepEqual(mentionedUserIds(body), ["riley"]);
+  assert.equal(plainCommentText(body), "Hey @Riley Reviewer can you check?");
+});
+
+test("only people who can see the handoff can be mentioned", () => {
+  assert.deepEqual(listMentionables("ws", "h").map((person) => person.id).sort(), ["owner", "riley"]);
+  const mentioned = comment("c1", "@[Riley Reviewer](user:riley) and @[Sam Outsider](user:sam)", "owner");
+  assert.deepEqual(mentioned.map((person) => person.id), ["riley"]);
+});
+
+test("an open mention shows in Needs you until the person replies, the thread resolves, or they mark it done", () => {
+  assert.deepEqual(listOpenMentions("riley", "ws", riley).map((mention) => mention.commentId), ["c1"]);
+  assert.equal(listOpenMentions("riley", "ws", riley)[0].excerpt, "@Riley Reviewer and @Sam Outsider");
+
+  comment("c2", "On it", "riley", "c1");
+  assert.deepEqual(listOpenMentions("riley", "ws", riley), []);
+
+  comment("c3", "One more @[Riley Reviewer](user:riley)", "owner", "c1");
+  assert.equal(listOpenMentions("riley", "ws", riley).length, 1);
+  assert.equal(markMentionDone("riley", "c3"), true);
+  assert.deepEqual(listOpenMentions("riley", "ws", riley), []);
+
+  comment("c4", "New thread @[Riley Reviewer](user:riley)", "owner");
+  database.prepare("UPDATE handoff_comment SET resolved_at = 'now' WHERE id = 'c4'").run();
+  assert.deepEqual(listOpenMentions("riley", "ws", riley), []);
+});

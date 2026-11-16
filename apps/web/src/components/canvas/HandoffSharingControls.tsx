@@ -95,7 +95,7 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
   async function updateMode(nextMode: SharingMode, revokePublicLink = false) {
     if (nextMode === mode && !revokePublicLink) return;
     const confirmation = revokePublicLink
-      ? { title: "Revoke public link?", description: "The current link and any outstanding invitation links will stop working. A new link will require workspace sign-in.", confirmLabel: "Revoke link" }
+      ? { title: "Revoke public link?", description: "The current link and any outstanding invitation links will stop working. A new link will require team sign-in.", confirmLabel: "Revoke link" }
       : nextMode === "anyone"
         ? { title: "Make this canvas public?", description: "Anyone with the link will be able to view and comment without signing in.", confirmLabel: "Make public", tone: "default" as const }
         : null;
@@ -121,10 +121,10 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
       if (revokePublicLink) {
         setInvites(payload.invites ?? []);
         setCreatedInviteUrl("");
-        setMessage("Public link revoked. Outstanding invitation links were also revoked. The new canvas link requires workspace sign-in.");
+        setMessage("Public link revoked. Outstanding invitation links were also revoked. The new canvas link requires team sign-in.");
       } else {
         setMessage(mode === "anyone" && payload.mode !== "anyone"
-          ? "Public access is off. The canvas link now requires workspace access."
+          ? "Public access is off. The canvas link now requires team access."
           : "Sharing settings updated.");
       }
     } catch (cause) {
@@ -226,7 +226,7 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
       <label className="grid gap-1.5 text-xs text-foreground-muted" htmlFor="handoff-sharing-mode">
         Who can open this canvas?
         <select className="min-h-10 w-full rounded-control border border-transparent bg-surface-inset px-3 text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" disabled={pending || loading} id="handoff-sharing-mode" onChange={(event) => void updateMode(event.target.value as SharingMode)} value={mode}>
-          <option value="workspace">Workspace members — sign in required</option>
+          <option value="workspace">Team members — sign in required</option>
           <option value="invited">Only invited people — role-based link</option>
           <option value="anyone">Anyone with the link — no sign-in</option>
         </select>
@@ -257,9 +257,9 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
 
       {reviewUrl ? <section aria-labelledby="handoff-access-list-heading">
         <h4 className="text-[12px] font-semibold text-foreground-muted" id="handoff-access-list-heading">Who can open the published canvas?</h4>
-        {reviewUrl && mode === "workspace" ? <p className="mt-1 text-xs leading-5 text-foreground-muted">All listed workspace members can open this canvas.</p> : null}
-        {reviewUrl && mode === "invited" ? <p className="mt-1 text-xs leading-5 text-foreground-muted">Workspace owners and designers, plus anyone with an active invite link, can view and comment. Emails below are recipient labels.</p> : null}
-        {reviewUrl && mode === "anyone" ? <p className="mt-1 text-xs leading-5 text-foreground-muted">Anyone with this link can view the canvas. Link viewers are not identifiable here. Workspace owners and designers can manage it.</p> : null}
+        {reviewUrl && mode === "workspace" ? <p className="mt-1 text-xs leading-5 text-foreground-muted">All listed team members can open this canvas.</p> : null}
+        {reviewUrl && mode === "invited" ? <p className="mt-1 text-xs leading-5 text-foreground-muted">Owners and designers, plus anyone with an active invite link, can view and comment. Emails below are recipient labels.</p> : null}
+        {reviewUrl && mode === "anyone" ? <p className="mt-1 text-xs leading-5 text-foreground-muted">Anyone with this link can view the canvas. Link viewers are not identifiable here. Owners and designers can manage it.</p> : null}
 
         {mode === "workspace" ? (
           workspaceMembers.length ? (
@@ -274,12 +274,12 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
                 </li>
               ))}
             </ul>
-          ) : <p className="mt-1 text-xs text-foreground-subtle">No workspace members were found.</p>
+          ) : <p className="mt-1 text-xs text-foreground-subtle">No team members were found.</p>
         ) : null}
 
         {mode !== "workspace" ? (
           <>
-            <p className="mt-3 text-[12px] font-semibold text-foreground-subtle">Workspace owners and designers</p>
+            <p className="mt-3 text-[12px] font-semibold text-foreground-subtle">Owners and designers</p>
             {workspaceMembers.some((member) => member.role === "owner" || member.role === "designer") ? (
               <ul className="mt-2 divide-y divide-border rounded-md border border-transparent bg-surface-inset px-4">
                 {workspaceMembers.filter((member) => member.role === "owner" || member.role === "designer").map((member) => (
@@ -292,7 +292,7 @@ export function HandoffSharingControls({ endpoint, handoffName, refreshKey = 0, 
                   </li>
                 ))}
               </ul>
-            ) : <p className="mt-1 text-xs text-foreground-subtle">No workspace owners or designers were found.</p>}
+            ) : <p className="mt-1 text-xs text-foreground-subtle">No owners or designers were found.</p>}
           </>
         ) : null}
       </section> : null}

@@ -9,6 +9,10 @@ import { formatFigmaCaptureScope } from "@asbir/snapshot-contract";
 import { getHandoff, listHandoffVersions } from "@/src/server/repositories/handoffs";
 import { getProject } from "@/src/server/repositories/projects";
 import { getVersion } from "@/src/server/repositories/versions";
+import { HandoffTabs } from "@/src/components/shell/HandoffTabs";
+import { MentionProvider } from "@/src/components/comments/mentions";
+import { MobileReview, type MobileScreen } from "@/src/components/canvas/MobileReview";
+import { changedFrameIdsBetween } from "@/src/server/services/review-visibility";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
 import { CanvasPublicationStatus } from "@/src/components/canvas/CanvasPublicationStatus";
 import { DeleteHandoffButton, DeleteHandoffVersionButton } from "@/src/components/canvas/HandoffLifecycleActions";
@@ -169,8 +173,40 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
     ) : null,
   };
 
+  // Phone swipe view: each screen's render, flagged when new or changed since the previous version.
+  const assetsByKey = new Map(version.assets.map((asset) => [asset.assetKey, asset] as const));
+  const selectedIndex = versions.findIndex((entry) => entry.id === version.id);
+  const previousVersionId = selectedIndex >= 0 ? versions[selectedIndex + 1]?.id : undefined;
+  let changedIds = new Set<string>();
+  if (previousVersionId) {
+    try {
+      changedIds = new Set(changedFrameIdsBetween(previousVersionId, version.id));
+    } catch {
+      // Without a comparison, no screen is flagged.
+    }
+  }
+  const mobileScreens: MobileScreen[] = (version.snapshot as SnapshotEnvelope).frames.flatMap((frame) => {
+    const asset = assetsByKey.get(frame.renderAssetKey);
+    if (!asset) return [];
+    return [{
+      id: frame.sourceFrameId,
+      name: frame.name,
+      imageUrl: `/api/assets/${encodeURIComponent(asset.objectKey)}`,
+      width: asset.width ?? 390,
+      height: asset.height ?? 844,
+      changed: changedIds.has(frame.sourceFrameId),
+    }];
+  });
+
   return (
-    <div className="h-dvh min-h-0 overflow-hidden bg-surface text-foreground">
+    <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-surface text-foreground">
+      <MobileReview backHref="/workspace" handoffName={handoff.name} screens={mobileScreens} versionLabel={version.versionLabel} />
+      <HandoffTabs
+        current={{ id: handoffId, href: `/workspace/${workspaceId}/projects/${projectId}/handoffs/${handoffId}`, title: handoff.name, project: project.name }}
+        homeHref="/workspace"
+      />
+      <div className="flex min-h-0 flex-1 flex-col">
+      <MentionProvider endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/mentionable`}>
       <HandoffReviewSurface
         workspaceId={workspaceId}
         projectId={projectId}
@@ -192,6 +228,8 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
         canUseLocalPreview={true}
         dockPanels={dockPanels}
       />
+      </MentionProvider>
+      </div>
     </div>
   );
 }

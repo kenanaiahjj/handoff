@@ -1,3 +1,5 @@
+import { after } from "next/server";
+import { notifyNewVersion } from "@/src/server/services/slack";
 import { z } from "zod";
 import { createSnapshotEnvelope, removeFramesFromSnapshot, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { getHandoff, listHandoffVersions } from "@/src/server/repositories/handoffs";
@@ -75,6 +77,7 @@ export async function POST(request: Request, context: RemoveScreensRoute) {
       assets,
       reuseAssetsFromVersionId: baseVersionId,
     });
+    after(() => notifyNewVersion({ workspaceId: workspaceId, handoffId: created.handoffId, versionId: created.versionId, createdBy: actor.userId }).catch((error) => console.warn("[slack]", error)));
     return Response.json({ versionId: created.versionId, removed: removedNames }, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });

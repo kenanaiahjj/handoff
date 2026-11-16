@@ -1,17 +1,16 @@
-// Dev-only: creates sample workspaces with handoffs shared to the local reviewer account, so the
+// Dev-only: creates sample projects with handoffs shared to the local reviewer account, so the
 // reviewer side of the app has something to show. Each sample handoff is a slice of an existing
 // Figma capture (same images, fewer screens), so every canvas opens normally.
 //
 // Run from the repo root while no capture is being uploaded:
-//   node --experimental-transform-types --loader ./scripts/node-esm-loader.mjs scripts/seed-sample-workspaces.mjs
+//   node --experimental-transform-types --loader ./scripts/node-esm-loader.mjs scripts/seed-sample-projects.mjs
 //
-// Safe to rerun: workspaces that already exist (by name) are skipped.
+// Safe to rerun: projects that already exist (by name) are skipped.
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import path from "node:path";
 
 process.chdir(path.resolve("apps/web"));
 const { getDatabase } = await import("@/src/server/db.ts");
-const { addSuperadminsToWorkspace } = await import("@/src/server/services/superadmins.ts");
 const { localReviewerUser } = await import("@/src/server/auth-session.ts");
 const { createSnapshotEnvelope, removeFramesFromSnapshot } = await import("@asbir/snapshot-contract");
 
@@ -23,48 +22,28 @@ const isoDaysAgo = (days) => new Date(Date.now() - days * DAY).toISOString();
 // `seen` is the version index the reviewer last opened (null = never), which drives the "New" dots.
 const samples = [
   {
-    workspace: "Maayo Ferries",
-    projects: [
-      {
-        name: "Mobile booking",
-        handoffs: [
-          { name: "Passenger details", screens: ["Booking - Passenger", "Passenger -"], versions: [{ label: "1.0", daysAgo: 12, keep: 0.5 }, { label: "1.1", daysAgo: 1 }], seen: 0 },
-          { name: "Rebooking", screens: ["Booking - Rebook"], versions: [{ label: "1.0", daysAgo: 9 }], seen: 0 },
-          { name: "Return trips", screens: ["Booking - Return", "Booking - Departure"], versions: [{ label: "1.0", daysAgo: 0.2 }], seen: null },
-        ],
-      },
-      {
-        name: "Tickets & refunds",
-        handoffs: [
-          { name: "Ticket wallet", screens: ["Tickets - Ticket", "Tickets - Pending", "Tickets - Departed", "Tickets - Expired"], versions: [{ label: "2.0", daysAgo: 20, keep: 0.6 }, { label: "2.1", daysAgo: 6 }], seen: 1 },
-          // Not shared with the reviewer: proves hidden handoffs stay hidden.
-          { name: "Refunds & cancellations", screens: ["Booking - Maayo", "Tickets - Refunded", "Tickets - Partial"], versions: [{ label: "1.0", daysAgo: 3 }], seen: null, shared: false },
-        ],
-      },
+    project: "Maayo Ferries",
+    handoffs: [
+      { name: "Passenger details", screens: ["Booking - Passenger", "Passenger -"], versions: [{ label: "1.0", daysAgo: 12, keep: 0.5 }, { label: "1.1", daysAgo: 1 }], seen: 0 },
+      { name: "Rebooking", screens: ["Booking - Rebook"], versions: [{ label: "1.0", daysAgo: 9 }], seen: 0 },
+      { name: "Return trips", screens: ["Booking - Return", "Booking - Departure"], versions: [{ label: "1.0", daysAgo: 0.2 }], seen: null },
+      { name: "Ticket wallet", screens: ["Tickets - Ticket", "Tickets - Pending", "Tickets - Departed", "Tickets - Expired"], versions: [{ label: "2.0", daysAgo: 20, keep: 0.6 }, { label: "2.1", daysAgo: 6 }], seen: 1 },
+      // Not shared with the reviewer: proves hidden handoffs stay hidden.
+      { name: "Refunds & cancellations", screens: ["Booking - Maayo", "Tickets - Refunded", "Tickets - Partial"], versions: [{ label: "1.0", daysAgo: 3 }], seen: null, shared: false },
     ],
   },
   {
-    workspace: "OceanJet Partners",
-    projects: [
-      {
-        name: "Operator portal",
-        handoffs: [
-          { name: "Operator schedules", screens: ["Schedule -", "Asset - Schedule"], versions: [{ label: "0.9", daysAgo: 15, keep: 0.5 }, { label: "1.0", daysAgo: 2 }], seen: 0 },
-          { name: "Brand kit", screens: ["Asset - Brand", "Module - Global", "Global -", "Overlay - Global"], versions: [{ label: "1.0", daysAgo: 30 }], seen: 0 },
-        ],
-      },
+    project: "OceanJet Partners",
+    handoffs: [
+      { name: "Operator schedules", screens: ["Schedule -", "Asset - Schedule"], versions: [{ label: "0.9", daysAgo: 15, keep: 0.5 }, { label: "1.0", daysAgo: 2 }], seen: 0 },
+      { name: "Brand kit", screens: ["Asset - Brand", "Module - Global", "Global -", "Overlay - Global"], versions: [{ label: "1.0", daysAgo: 30 }], seen: 0 },
     ],
   },
   {
-    workspace: "LMF Ventures Labs",
-    projects: [
-      {
-        name: "Account & profile",
-        handoffs: [
-          { name: "Home & profile", screens: ["Home -", "Profile -", "Support -"], versions: [{ label: "1.0", daysAgo: 0.5 }], seen: null },
-          { name: "Sign up", screens: ["Onboarding -", "Booking - Guest", "Booking - Email"], versions: [{ label: "1.0", daysAgo: 25 }], seen: 0 },
-        ],
-      },
+    project: "LMF Ventures Labs",
+    handoffs: [
+      { name: "Home & profile", screens: ["Home -", "Profile -", "Support -"], versions: [{ label: "1.0", daysAgo: 0.5 }], seen: null },
+      { name: "Sign up", screens: ["Onboarding -", "Booking - Guest", "Booking - Email"], versions: [{ label: "1.0", daysAgo: 25 }], seen: 0 },
     ],
   },
 ];
@@ -127,39 +106,33 @@ const insert = {
   ),
 };
 
+// Everything lives in the one company workspace (the oldest), as projects.
+const company = database.prepare("SELECT id FROM workspace ORDER BY created_at ASC, id ASC LIMIT 1").get();
+if (!company) throw new Error("No workspace yet. Sign in once to set it up.");
+insert.membership.run(company.id, localReviewerUser.id, "reviewer", now);
+
 for (const sample of samples) {
-  if (database.prepare("SELECT 1 FROM workspace WHERE name = ?").get(sample.workspace)) {
-    console.log(`Skipped "${sample.workspace}" (already exists).`);
+  if (database.prepare("SELECT 1 FROM project WHERE workspace_id = ? AND name = ?").get(company.id, sample.project)) {
+    console.log(`Skipped "${sample.project}" (already exists).`);
     continue;
   }
-  // Build every snapshot first (async), then write the workspace in one transaction.
+  // Build every snapshot first (async), then write the project in one transaction.
   const plan = [];
-  for (const project of sample.projects) {
-    for (const handoff of project.handoffs) {
-      const versions = [];
-      for (const version of handoff.versions) versions.push({ ...version, snapshot: await sliceSnapshot(handoff.screens, version.keep) });
-      plan.push({ project, handoff, versions });
-    }
+  for (const handoff of sample.handoffs) {
+    const versions = [];
+    for (const version of handoff.versions) versions.push({ ...version, snapshot: await sliceSnapshot(handoff.screens, version.keep) });
+    plan.push({ handoff, versions });
   }
 
-  const workspaceId = randomUUID();
+  const workspaceId = company.id;
   const createdAt = isoDaysAgo(40);
   let shared = 0;
   database.transaction(() => {
-    insert.workspace.run(workspaceId, sample.workspace, owner.id, createdAt);
-    insert.membership.run(workspaceId, owner.id, "owner", createdAt);
-    insert.membership.run(workspaceId, localReviewerUser.id, "reviewer", createdAt);
-    addSuperadminsToWorkspace(workspaceId);
-
-    const projectIds = new Map();
-    for (const { project, handoff, versions } of plan) {
-      if (!projectIds.has(project.name)) {
-        const projectId = randomUUID();
-        insert.project.run(projectId, workspaceId, project.name, owner.id, createdAt);
-        projectIds.set(project.name, projectId);
-      }
+    const projectId = randomUUID();
+    insert.project.run(projectId, workspaceId, sample.project, owner.id, createdAt);
+    for (const { handoff, versions } of plan) {
       const handoffId = randomUUID();
-      insert.handoff.run(handoffId, workspaceId, projectIds.get(project.name), handoff.name, owner.id, isoDaysAgo(versions[0].daysAgo + 1));
+      insert.handoff.run(handoffId, workspaceId, projectId, handoff.name, owner.id, isoDaysAgo(versions[0].daysAgo + 1));
 
       const versionIds = versions.map((version) => {
         const versionId = randomUUID();
@@ -187,5 +160,5 @@ for (const sample of samples) {
       if (handoff.seen !== null) insert.seen.run(localReviewerUser.id, workspaceId, handoffId, versionIds[handoff.seen], isoDaysAgo(versions[handoff.seen].daysAgo));
     }
   })();
-  console.log(`Created "${sample.workspace}": ${plan.length} handoffs, ${shared} shared with ${localReviewerUser.email}.`);
+  console.log(`Created project "${sample.project}": ${plan.length} handoffs, ${shared} shared with ${localReviewerUser.email}.`);
 }

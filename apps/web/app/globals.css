@@ -771,16 +771,52 @@ html[data-splash="seen"] .app-splash {
     0 24px 60px -20px rgb(0 0 0 / 0.7),
     0 2px 8px rgb(0 0 0 / 0.35);
 }
-.onboarding-row {
-  background: transparent;
-  transition: background-color 140ms ease, box-shadow 140ms ease;
+.onboarding-tile {
+  border: 1px solid rgb(255 255 255 / 0.06);
+  background: rgb(255 255 255 / 0.02);
+  transition: background-color 160ms ease, border-color 160ms ease, box-shadow 200ms ease, transform 120ms ease;
 }
-.onboarding-row:hover {
-  background: var(--surface-inset);
+.onboarding-tile::before {
+  /* Soft light from the top edge; shows on hover and selection. */
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 70% at 50% -10%, rgb(255 255 255 / 0.1), transparent 60%);
+  opacity: 0;
+  transition: opacity 200ms ease;
+  pointer-events: none;
 }
-.onboarding-row[data-selected] {
-  background: var(--surface-muted);
-  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.12);
+.onboarding-tile:hover {
+  border-color: rgb(255 255 255 / 0.12);
+  background: rgb(255 255 255 / 0.035);
+}
+.onboarding-tile:hover::before {
+  opacity: 0.5;
+}
+.onboarding-tile:active {
+  transform: scale(0.985);
+}
+.onboarding-tile[data-selected] {
+  border-color: rgb(255 255 255 / 0.4);
+  background: rgb(255 255 255 / 0.06);
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 0.06), 0 12px 28px -14px rgb(0 0 0 / 0.8);
+}
+.onboarding-tile[data-selected]::before {
+  opacity: 1;
+}
+.onboarding-tile-icon {
+  background: rgb(255 255 255 / 0.06);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.06);
+  color: var(--foreground-muted);
+  transition: background-color 180ms ease, color 180ms ease;
+}
+.onboarding-tile:hover .onboarding-tile-icon {
+  color: var(--foreground);
+}
+.onboarding-tile[data-selected] .onboarding-tile-icon {
+  background: var(--foreground);
+  color: var(--background);
+  box-shadow: 0 4px 14px -4px rgb(255 255 255 / 0.35);
 }
 .onboarding-kbd {
   display: inline-grid;
@@ -795,48 +831,42 @@ html[data-splash="seen"] .app-splash {
   font-size: 10px;
   color: var(--foreground-subtle);
 }
-.onboarding-row-key {
-  opacity: 0;
+.onboarding-tile-key {
   transition: opacity 140ms ease;
 }
-.onboarding-row:hover .onboarding-row-key,
-.onboarding-row:focus-visible .onboarding-row-key {
-  opacity: 1;
-}
-.onboarding-row[data-selected] .onboarding-row-key {
-  display: none;
+.onboarding-tile[data-selected] .onboarding-tile-key {
+  opacity: 0;
 }
 .onboarding-check {
-  border: 1px solid var(--border-strong);
+  opacity: 0;
+  transform: scale(0.6);
   color: transparent;
-  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease, transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity 160ms ease, background-color 160ms ease, color 160ms ease, transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
 }
-.onboarding-row[data-selected] .onboarding-check {
-  border-color: var(--foreground);
+.onboarding-tile[data-selected] .onboarding-check {
+  opacity: 1;
   background: var(--foreground);
   color: var(--background);
-  transform: scale(1.08);
+  transform: scale(1);
 }
 .onboarding-continue {
-  background: var(--surface-inset);
-  color: var(--foreground-subtle);
-  border: 1px solid var(--border);
-  transition: background-color 200ms ease, color 200ms ease, transform 120ms ease, box-shadow 200ms ease;
-}
-.onboarding-continue[data-ready] {
   background: #f4f4f4;
   color: #161616;
-  border-color: transparent;
-  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -8px rgb(255 255 255 / 0.25);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), inset 0 -1px 0 rgb(0 0 0 / 0.08);
+  transition: background-color 160ms ease, opacity 200ms ease, transform 120ms ease, box-shadow 200ms ease;
 }
-.onboarding-continue[data-ready]:hover:not(:disabled) {
+.onboarding-continue:hover:not(:disabled) {
   background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), 0 8px 24px -10px rgb(255 255 255 / 0.35);
 }
-.onboarding-continue[data-ready]:active:not(:disabled) {
-  transform: scale(0.985);
+.onboarding-continue:active:not(:disabled) {
+  transform: scale(0.97);
 }
-.onboarding-continue:disabled:not([data-ready]) {
+/* Still clearly the primary button, just not ready yet. */
+.onboarding-continue:disabled {
+  opacity: 0.35;
   cursor: not-allowed;
+  box-shadow: none;
 }
 
 /* Viewer home: app-like list for reviewers. */
@@ -885,4 +915,102 @@ html[data-splash="seen"] .app-splash {
 }
 .viewer-tile:active {
   transform: scale(0.99);
+}
+
+/* "A new version is available" pill. */
+@media (prefers-reduced-motion: no-preference) {
+  .update-notice > div {
+    animation: update-notice-in 360ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+@keyframes update-notice-in {
+  from { opacity: 0; transform: translateY(-12px) scale(0.98); }
+  to { opacity: 1; transform: none; }
+}
+
+/* Pin button: quiet until hovered, always visible once pinned or on touch screens. */
+.viewer-group .viewer-pin {
+  opacity: 0;
+}
+.viewer-group:hover .viewer-pin,
+.viewer-group .viewer-pin:focus-visible,
+.viewer-group[data-pinned] .viewer-pin {
+  opacity: 1;
+}
+.viewer-group[data-pinned] .viewer-pin {
+  color: var(--foreground);
+}
+@media (hover: none) {
+  .viewer-group .viewer-pin {
+    opacity: 1;
+  }
+}
+
+/* Tabs for open handoffs. */
+.handoff-tabs {
+  scrollbar-width: none;
+}
+.handoff-tab {
+  color: var(--foreground-subtle);
+  transition: background-color 120ms ease;
+}
+.handoff-tab:hover {
+  background: rgb(255 255 255 / 0.04);
+}
+.handoff-tab[data-active] {
+  background: var(--surface);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.08), 1px 0 0 var(--border), -1px 0 0 var(--border);
+}
+.handoff-tab .handoff-tab-close {
+  opacity: 0;
+}
+.handoff-tab:hover .handoff-tab-close,
+.handoff-tab[data-active] .handoff-tab-close,
+.handoff-tab .handoff-tab-close:focus-visible {
+  opacity: 1;
+}
+@media (hover: none) {
+  .handoff-tab .handoff-tab-close {
+    opacity: 1;
+  }
+}
+
+/* Quick open (⌘K). */
+.quick-open-item[data-active] {
+  background: var(--surface-muted);
+}
+@media (prefers-reduced-motion: no-preference) {
+  .quick-open {
+    animation: quick-open-in 160ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  }
+}
+@keyframes quick-open-in {
+  from { opacity: 0; transform: translateY(-6px) scale(0.985); }
+  to { opacity: 1; transform: none; }
+}
+
+/* @mentions in comments. */
+.comment-mention {
+  border-radius: 4px;
+  background: rgb(255 138 61 / 0.14);
+  padding: 0 3px;
+  color: #ffb07a;
+  font-weight: 500;
+}
+.mention-option[data-active] {
+  background: var(--surface-muted);
+}
+
+/* Phone swipe review. */
+.mobile-review-track {
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+.mobile-review-track::-webkit-scrollbar {
+  display: none;
+}
+.mobile-review-slide {
+  scroll-snap-align: center;
+  scroll-snap-stop: always;
 }

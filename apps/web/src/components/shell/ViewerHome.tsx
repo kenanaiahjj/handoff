@@ -2,11 +2,18 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { lastScreenHash } from "./HandoffTabs";
+import { QuickOpen, type QuickOpenItem } from "./QuickOpen";
+import { NeedsYou } from "./NeedsYou";
+import type { OpenMention } from "@/src/server/services/mentions";
 import { SignOutButton } from "@/app/workspace/workspace-actions";
 import type { ViewerProject } from "@/src/server/services/review-visibility";
 
 type Filter = "all" | "updated";
+
+type ViewerGroupItem = ViewerProject["handoffs"][number] & { workspaceId: string; projectId: string; projectName: string };
+type ViewerGroup = { key: string; title: string; newCount: number; updatedAt: string; projectCount: number; items: ViewerGroupItem[] };
 
 const relativeTime = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
@@ -26,6 +33,16 @@ function timeAgo(iso: string) {
   return "just now";
 }
 
+/** "3 screens changed · 1 new" style summary of what changed since this person last looked. */
+function changesLabel(changes: { changed: number; added: number; removed: number }) {
+  const parts = [
+    changes.changed ? `${changes.changed} ${changes.changed === 1 ? "screen" : "screens"} changed` : "",
+    changes.added ? `${changes.added} new` : "",
+    changes.removed ? `${changes.removed} removed` : "",
+  ].filter(Boolean);
+  return parts.length ? parts.join(" · ") : "No visible screen changes";
+}
+
 function initials(name: string) {
   return name.trim().split(/\s+/).map((part) => part[0]).join("").slice(0, 2).toUpperCase() || "?";
 }
@@ -42,6 +59,8 @@ export function ViewerHome({
   projects,
   devBypass = false,
   devTools,
+  pinKeys = [],
+  mentions = [],
 }: {
   /** Where the logo goes: this workspace, or the combined home. */
   homeHref: string;
@@ -51,6 +70,10 @@ export function ViewerHome({
   showWorkspaceNames?: boolean;
   user: { name: string; email: string; image: string | null };
   projects: ViewerProject[];
+  /** Comments that mention this person and still need a reply. */
+  mentions?: OpenMention[];
+  /** This person's pins, "workspace:<id>" or "project:<id>", oldest first. */
+  pinKeys?: string[];
   /** Development bypass is on: "Sign out" leaves it for this browser. */
   devBypass?: boolean;
   devTools?: ReactNode;
@@ -58,12 +81,84 @@ export function ViewerHome({
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
-  const newTotal = projects.reduce((total, project) => total + project.newCount, 0);
+  const [pins, setPins] = useState(pinKeys);
+  const pinKind = showWorkspaceNames ? "workspace" : "project";
+  const pinKeyFor = (groupKey: string) => `${pinKind}:${groupKey}`;
+
+  async function togglePin(groupKey: string) {
+    const key = pinKeyFor(groupKey);
+    const pinned = !pins.includes(key);
+    const previous = pins;
+    // Move it right away; the server confirms in the background.
+    setPins(pinned ? [...pins, key] : pins.filter((pin) => pin !== key));
+    try {
+      const response = await fetch("/api/me/pins", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ kind: pinKind, targetId: groupKey, pinned }),
+      });
+      if (!response.ok) throw new Error();
+      setPins(((await response.json()) as { pins: string[] }).pins);
+    } catch {
+      setPins(previous);
+    }
+  }
+  // Handoffs marked as seen on this page, applied right away while the server records them.
+  const [seenIds, setSeenIds] = useState<Set<string>>(() => new Set());
+  const liveProjects = useMemo(
+    () =>
+      projects.map((project) => {
+        const handoffs = project.handoffs.map((handoff) => (seenIds.has(handoff.handoffId) ? { ...handoff, isNew: false } : handoff));
+        return { ...project, handoffs, newCount: handoffs.filter((handoff) => handoff.isNew).length };
+      }),
+    [projects, seenIds],
+  );
+
+  async function markSeen(handoffIds: string[]) {
+    if (!handoffIds.length) return;
+    setSeenIds((current) => new Set([...current, ...handoffIds]));
+    try {
+      const response = await fetch("/api/me/seen", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ handoffIds }),
+      });
+      if (!response.ok) throw new Error();
+    } catch {
+      setSeenIds((current) => new Set([...current].filter((id) => !handoffIds.includes(id))));
+    }
+  }
+
+  // Tiles reopen each handoff on the screen this person last looked at (remembered on this device).
+  const [resume, setResume] = useState<Record<string, string>>({});
+  useEffect(() => {
+    const hashes: Record<string, string> = {};
+    for (const project of projects) for (const handoff of project.handoffs) hashes[handoff.handoffId] = lastScreenHash(handoff.handoffId);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read from localStorage, only available after mount.
+    setResume(hashes);
+  }, [projects]);
+
+  const quickOpenItems = useMemo<QuickOpenItem[]>(
+    () =>
+      liveProjects.flatMap((project) =>
+        project.handoffs.map((handoff) => ({
+          id: handoff.handoffId,
+          label: handoff.handoffName,
+          detail: project.projectName + (handoff.versionLabel ? ` · ${handoff.versionLabel}` : ""),
+          href: `/workspace/${project.workspaceId}/projects/${project.projectId}/handoffs/${handoff.handoffId}${resume[handoff.handoffId] ?? ""}`,
+          isNew: handoff.isNew,
+        })),
+      ),
+    [liveProjects, resume],
+  );
+
+  const newTotal = liveProjects.reduce((total, project) => total + project.newCount, 0);
+  const newIds = liveProjects.flatMap((project) => project.handoffs.filter((handoff) => handoff.isNew).map((handoff) => handoff.handoffId));
   const firstName = user.name.split(" ")[0] ?? "";
 
   const visibleProjects = useMemo(() => {
     const needle = query.trim().toLowerCase();
-    return projects
+    return liveProjects
       .map((project) => ({
         ...project,
         handoffs: project.handoffs.filter(
@@ -73,7 +168,44 @@ export function ViewerHome({
         ),
       }))
       .filter((project) => project.handoffs.length);
-  }, [projects, filter, query]);
+  }, [liveProjects, filter, query]);
+
+  // Across workspaces, each workspace is one group holding all its handoffs; inside one workspace,
+  // each project is a group. Groups with something new come first, then the most recently updated.
+  const groups = useMemo(() => {
+    const byKey = new Map<string, ViewerGroup>();
+    for (const project of visibleProjects) {
+      const key = showWorkspaceNames ? project.workspaceId : project.projectId;
+      const group = byKey.get(key) ?? {
+        key,
+        title: showWorkspaceNames ? project.workspaceName : project.projectName,
+        newCount: 0,
+        updatedAt: project.updatedAt,
+        projectCount: 0,
+        items: [],
+      };
+      group.projectCount += 1;
+      for (const handoff of project.handoffs) {
+        group.items.push({ ...handoff, workspaceId: project.workspaceId, projectId: project.projectId, projectName: project.projectName });
+        if (handoff.isNew) group.newCount += 1;
+        if (handoff.updatedAt > group.updatedAt) group.updatedAt = handoff.updatedAt;
+      }
+      byKey.set(key, group);
+    }
+    const newsThenRecent = <T extends { updatedAt: string }>(news: (item: T) => number) => (a: T, b: T) =>
+      news(b) - news(a) || b.updatedAt.localeCompare(a.updatedAt);
+    const pinOrder = (group: ViewerGroup) => pins.indexOf(`${showWorkspaceNames ? "workspace" : "project"}:${group.key}`);
+    const byNews = newsThenRecent<ViewerGroup>((group) => Math.min(group.newCount, 1));
+    return [...byKey.values()]
+      .map((group) => ({ ...group, items: group.items.sort(newsThenRecent((item) => Number(item.isNew))) }))
+      // Pinned groups first, in the order they were pinned; the rest by news, then recency.
+      .sort((a, b) => {
+        const pa = pinOrder(a);
+        const pb = pinOrder(b);
+        if (pa !== -1 || pb !== -1) return (pa === -1 ? Infinity : pa) - (pb === -1 ? Infinity : pb);
+        return byNews(a, b);
+      });
+  }, [visibleProjects, showWorkspaceNames, pins]);
 
   return (
     <div className="viewer-home min-h-dvh bg-background text-foreground">
@@ -108,11 +240,6 @@ export function ViewerHome({
                     <p className="truncate text-[12px] text-foreground-subtle">{user.email}</p>
                   </div>
                   <div className="my-1 h-px bg-border" />
-                  {showWorkspaceNames ? null : (
-                    <Link className="block rounded-[6px] px-2.5 py-2 text-[13px] text-foreground-muted hover:bg-surface-inset hover:text-foreground" href="/workspace" role="menuitem">
-                      All workspaces
-                    </Link>
-                  )}
                   <div className="px-1 pb-1 pt-1.5 [&>button]:w-full [&>button]:justify-start [&>button]:text-left">
                     <SignOutButton devBypass={devBypass} />
                   </div>
@@ -123,6 +250,7 @@ export function ViewerHome({
         </div>
       </header>
 
+      <QuickOpen items={quickOpenItems} />
       <main className="mx-auto max-w-5xl px-4 pb-24 pt-8 sm:px-6 sm:pt-12">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -132,6 +260,10 @@ export function ViewerHome({
                 <>
                   <span aria-hidden="true" className="viewer-dot" />
                   {newTotal === 1 ? "1 handoff has a new version" : `${newTotal} handoffs have new versions`}
+                  <span aria-hidden="true" className="text-foreground-subtle">·</span>
+                  <button className="text-foreground-subtle underline decoration-border-strong underline-offset-4 transition-colors hover:text-foreground" onClick={() => void markSeen(newIds)} type="button">
+                    Mark all as seen
+                  </button>
                 </>
               ) : projects.length ? (
                 "You’re all caught up."
@@ -151,7 +283,7 @@ export function ViewerHome({
                 <input
                   className="h-8 w-full rounded-control border border-border bg-surface-inset pl-8 pr-2.5 text-[13px] outline-none placeholder:text-foreground-subtle focus-visible:border-foreground/30"
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search"
+                  placeholder="Search  ⌘K"
                   type="search"
                   value={query}
                 />
@@ -166,6 +298,8 @@ export function ViewerHome({
           ) : null}
         </div>
 
+        <NeedsYou className="mt-10" initial={mentions} />
+
         {!projects.length ? (
           <div className="mt-16 rounded-panel border border-dashed border-border px-6 py-14 text-center">
             <p className="text-[14px] font-medium">No handoffs yet</p>
@@ -177,22 +311,49 @@ export function ViewerHome({
           </p>
         ) : (
           <div className="mt-10 space-y-10">
-            {visibleProjects.map((project) => (
-              <section aria-labelledby={`project-${project.projectId}`} key={project.projectId}>
-                <div className="mb-3 flex min-w-0 items-center gap-2">
-                  <h2 className="min-w-0 truncate text-[13px] font-semibold" id={`project-${project.projectId}`}>
-                    {showWorkspaceNames ? <span className="font-normal text-foreground-subtle">{project.workspaceName} <span aria-hidden="true">/</span> </span> : null}
-                    {project.projectName}
-                  </h2>
-                  {project.newCount ? <span className="viewer-count">{project.newCount} new</span> : null}
-                  <span className="ml-auto shrink-0 text-[12px] text-foreground-subtle" suppressHydrationWarning>Updated {timeAgo(project.updatedAt)}</span>
+            {groups.map((group) => (
+              <section aria-labelledby={`group-${group.key}`} className="viewer-group" data-pinned={pins.includes(pinKeyFor(group.key)) || undefined} key={group.key}>
+                <div className="mb-3 flex min-w-0 items-center gap-2.5">
+                  {showWorkspaceNames ? (
+                    <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-[7px] bg-surface-strong text-[11px] font-semibold">
+                      {group.title.trim().slice(0, 1).toUpperCase()}
+                    </span>
+                  ) : null}
+                  <h2 className="min-w-0 truncate text-[14px] font-semibold tracking-[-0.01em]" id={`group-${group.key}`}>{group.title}</h2>
+                  {group.newCount ? <span className="viewer-count">{group.newCount} new</span> : null}
+                  {group.newCount ? (
+                    <button
+                      className="viewer-mark-seen shrink-0 rounded-[6px] px-1.5 py-0.5 text-[12px] text-foreground-subtle transition-colors hover:bg-surface-inset hover:text-foreground"
+                      onClick={() => void markSeen(group.items.filter((item) => item.isNew).map((item) => item.handoffId))}
+                      type="button"
+                    >
+                      Mark seen
+                    </button>
+                  ) : null}
+                  <span className="ml-auto shrink-0 text-[12px] text-foreground-subtle" suppressHydrationWarning>Updated {timeAgo(group.updatedAt)}</span>
+                  <button
+                    aria-label={pins.includes(pinKeyFor(group.key)) ? `Unpin ${group.title}` : `Pin ${group.title} to the top`}
+                    aria-pressed={pins.includes(pinKeyFor(group.key))}
+                    className="viewer-pin grid size-7 shrink-0 place-items-center rounded-[7px] text-foreground-subtle transition-colors hover:bg-surface-inset hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40"
+                    onClick={() => void togglePin(group.key)}
+                    title={pins.includes(pinKeyFor(group.key)) ? "Unpin" : "Pin to top"}
+                    type="button"
+                  >
+                    <svg aria-hidden="true" className="size-3.5" fill={pins.includes(pinKeyFor(group.key)) ? "currentColor" : "none"} stroke="currentColor" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16">
+                      <path d="M6 2.5h4l-.5 4 2.5 2.5H4L6.5 6.5 6 2.5ZM8 9v4.5" strokeLinecap="round" />
+                    </svg>
+                  </button>
                 </div>
                 <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {project.handoffs.map((handoff) => (
+                  {group.items.map((handoff) => (
                     <li key={handoff.handoffId}>
                       <Link
                         className="viewer-tile group block overflow-hidden rounded-panel border border-border bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40"
-                        href={`/workspace/${project.workspaceId}/projects/${project.projectId}/handoffs/${handoff.handoffId}`}
+                        href={
+                          handoff.isNew && handoff.changesSinceSeen && handoff.seenVersionId && handoff.latestVersionId
+                            ? `/workspace/${handoff.workspaceId}/projects/${handoff.projectId}/handoffs/${handoff.handoffId}?compare=1&compareFrom=${handoff.seenVersionId}&compareTo=${handoff.latestVersionId}&versionId=${handoff.latestVersionId}`
+                            : `/workspace/${handoff.workspaceId}/projects/${handoff.projectId}/handoffs/${handoff.handoffId}${resume[handoff.handoffId] ?? ""}`
+                        }
                       >
                         <div className="viewer-tile-preview review-dot-grid relative aspect-[16/10] overflow-hidden">
                           {handoff.previewUrl ? (
@@ -204,7 +365,7 @@ export function ViewerHome({
                           {handoff.isNew ? (
                             <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2 py-1 text-[11px] font-medium text-foreground backdrop-blur">
                               <span aria-hidden="true" className="viewer-dot" />
-                              New version
+                              {handoff.changesSinceSeen ? changesLabel(handoff.changesSinceSeen) : "New version"}
                             </span>
                           ) : null}
                         </div>
@@ -212,7 +373,8 @@ export function ViewerHome({
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13px] font-medium">{handoff.handoffName}</span>
                             <span className="mt-0.5 block truncate text-[12px] text-foreground-subtle" suppressHydrationWarning>
-                              {handoff.versionLabel ? `Version ${handoff.versionLabel} · ` : ""}
+                              {showWorkspaceNames ? `${handoff.projectName} · ` : ""}
+                              {handoff.versionLabel ? `${/^\d/.test(handoff.versionLabel) ? "v" : ""}${handoff.versionLabel} · ` : ""}
                               {timeAgo(handoff.updatedAt)}
                             </span>
                           </span>

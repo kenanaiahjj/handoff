@@ -1,7 +1,10 @@
+import { after } from "next/server";
+import { notifyMentions } from "@/src/server/services/slack";
 import { z } from "zod";
 import { getDatabase } from "@/src/server/db";
 import { getHandoff } from "@/src/server/repositories/handoffs";
 import { createHandoffComment, listHandoffComments } from "@/src/server/repositories/comments";
+import { recordCommentMentions } from "@/src/server/services/mentions";
 import { getVersion, type StoredSnapshot } from "@/src/server/repositories/versions";
 import { isStructuredSnapshot } from "@/src/server/services/diff";
 import type { SnapshotFrame } from "@asbir/snapshot-contract";
@@ -137,6 +140,18 @@ export async function POST(request: Request, context: CommentsRoute) {
       body: parsed.data.body,
       createdBy: access.userId,
     });
+    const mentioned = recordCommentMentions({
+      workspaceId,
+      handoffId,
+      commentId: created.id,
+      threadId: parentCommentId ?? created.id,
+      authorId: access.userId,
+      body: parsed.data.body,
+    });
+    after(() =>
+      notifyMentions({ workspaceId, handoffId, versionId, commentId: created.id, authorId: access.userId, body: parsed.data.body, mentioned })
+        .catch((error) => console.warn("[slack]", error)),
+    );
     return Response.json(created, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });

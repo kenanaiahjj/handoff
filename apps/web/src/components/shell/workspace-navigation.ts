@@ -5,21 +5,24 @@ type WorkspacePage = "overview" | "projects" | "project" | "integrations";
 
 export function createWorkspaceNavigation({
   workspaceId,
+  companyName,
   projects,
   page,
   activeProjectId,
 }: {
   workspaceId: string;
+  /** The team's name, e.g. "Asbir Tech", shown above the main links. */
+  companyName?: string;
   projects: WorkspaceNavigationProject[];
   page: WorkspacePage;
   activeProjectId?: string;
 }): WorkspaceNavSection[] {
   return [
     {
-      label: "Workspace",
+      label: companyName ?? "Main",
+      hideLabel: !companyName,
       items: [
-        { label: "Overview", href: `/workspace/${workspaceId}`, icon: "home", active: page === "overview" },
-        { label: "Projects", href: `/workspace/${workspaceId}/projects`, icon: "grid", active: page === "projects" },
+        { label: "Projects", href: `/workspace/${workspaceId}`, icon: "home", active: page === "overview" || page === "projects" },
         { label: "Integrations", href: `/workspace/${workspaceId}/integrations`, icon: "settings", active: page === "integrations" },
       ],
     },

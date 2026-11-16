@@ -66,7 +66,7 @@ export function InviteClient({ token }: { token: string }) {
         <Link aria-label="Asbir Handoff home" href="/" className="inline-flex"><BrandMark /></Link>
         <p className="mt-8 text-[12px] font-medium text-foreground-subtle">Team invitation</p>
         <h1 className="mt-2 text-title font-semibold leading-title text-foreground">
-          {invite ? `Join ${invite.workspaceName}` : "Review invitation"}
+          {invite ? "Join your team on Asbir Handoff" : "Review invitation"}
         </h1>
         {invite ? (
           <p className="mt-3 text-sm leading-6 text-foreground-muted" role="status">

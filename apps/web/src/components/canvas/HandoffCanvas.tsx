@@ -622,6 +622,19 @@ export function HandoffCanvas({
     };
   }, [commentsEndpoint]);
 
+  // "?comment=<id>" (from "Needs you" or a notification) opens that thread once comments load.
+  const selectCommentRef = useRef(selectComment);
+  useEffect(() => {
+    selectCommentRef.current = selectComment;
+  });
+  const openedCommentFromUrl = useRef(false);
+  useEffect(() => {
+    if (openedCommentFromUrl.current || !comments.length) return;
+    const target = new URLSearchParams(window.location.search).get("comment");
+    openedCommentFromUrl.current = true;
+    if (target && comments.some((comment) => comment.id === target)) selectCommentRef.current(target);
+  }, [comments]);
+
   if (!overviewFrame || !visualFrame) {
     return <p className="p-6 text-sm text-foreground-muted">This snapshot has no frames to display.</p>;
   }
@@ -824,6 +837,7 @@ export function HandoffCanvas({
     setCanvasModeOverride(canvasMode);
     updateLinkState(comment.frameId, comment.sourceNodeId, comment.id);
   }
+
 
   function compareFrame(frameId: string) {
     onCompareScreen(frameId);

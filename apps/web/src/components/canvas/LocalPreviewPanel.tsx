@@ -88,7 +88,7 @@ export function LocalPreviewPanel({
     <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-surface p-3 text-foreground-muted">
       <section aria-labelledby="local-preview-title" className="rounded-control border border-border bg-surface-muted p-3">
         <h2 className="text-[12px] font-semibold text-foreground" id="local-preview-title">Compare with your local app</h2>
-        <p className="mt-1 text-[10px] leading-4 text-foreground-subtle">The URL is saved in this browser only. Handoff does not upload your code or send this URL to the workspace.</p>
+        <p className="mt-1 text-[10px] leading-4 text-foreground-subtle">The URL is saved in this browser only. Handoff does not upload your code or send this URL to your team.</p>
         <form className="mt-3 flex gap-1.5" onSubmit={saveUrl}>
           <label className="sr-only" htmlFor="local-preview-url">Local development URL</label>
           <input
