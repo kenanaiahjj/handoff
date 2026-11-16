@@ -44,7 +44,7 @@ export default async function IntegrationsPage({ params }: IntegrationsPageProps
       workspaces={workspaces}
       navSections={createWorkspaceNavigation({ workspaceId, projects, page: "integrations" })}
       breadcrumbs={[
-        { label: "Team spaces", href: "/workspace" },
+        { label: "Workspaces", href: "/workspace" },
         { label: workspace.name, href: `/workspace/${workspaceId}` },
         { label: "Integrations" },
       ]}

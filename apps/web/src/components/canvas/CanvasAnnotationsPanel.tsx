@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { PendingCommentPoint } from "../comments/CommentThread";
 import { overviewCanvasFrameId } from "./canvas-anchor";
+import { useConfirm } from "@/src/components/ConfirmDialog";
 
 export type CanvasAnnotationRecord = {
   id: string;
@@ -53,6 +54,7 @@ export function CanvasAnnotationsPanel({
   const [body, setBody] = useState(selected?.body ?? "");
   const [saving, setSaving] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
 
   const editing = canEdit && Boolean(selected || pendingPoint);
   async function save() {
@@ -75,6 +77,12 @@ export function CanvasAnnotationsPanel({
 
   async function remove() {
     if (!selected) return;
+    const confirmed = await confirm({
+      title: "Delete this note?",
+      description: "The note will be removed from this version for everyone.",
+      confirmLabel: "Delete note",
+    });
+    if (!confirmed) return;
     setSaving(true);
     setActionError(null);
     try {
@@ -88,18 +96,18 @@ export function CanvasAnnotationsPanel({
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-[#202020] p-3 text-[#d0d0d0]">
-      <section className="rounded-[6px] border border-[#3b3b3b] bg-[#252525] p-3">
+    <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-surface p-3 text-foreground-muted">
+      <section className="rounded-control border border-border bg-surface-muted p-3">
         <div className="flex items-start justify-between gap-2">
           <div>
-            <h2 className="text-[12px] font-semibold text-[#ededed]">Canvas notes</h2>
-            <p className="mt-1 text-[10px] leading-4 text-[#999]">Notes stay visible on the design canvas and belong to this immutable version. Comments remain threaded separately.</p>
+            <h2 className="text-[12px] font-semibold text-foreground">Canvas notes</h2>
+            <p className="mt-1 text-[10px] leading-4 text-foreground-subtle">Notes stay visible on the design canvas and belong to this immutable version. Comments remain threaded separately.</p>
           </div>
           <span className="shrink-0 rounded-full bg-[#39332a] px-2 py-1 font-mono text-[9px] text-[#e0c68d]">{annotations.length}</span>
         </div>
         {canEdit ? (
           <button
-            className="mt-3 min-h-8 rounded-[5px] bg-[#4b412d] px-2.5 text-[10px] font-medium text-[#f4d89e] hover:bg-[#5a4b30] disabled:opacity-50"
+            className="mt-3 min-h-8 rounded-control bg-[#4b412d] px-2.5 text-[10px] font-medium text-[#f4d89e] hover:bg-[#5a4b30] disabled:opacity-50"
             disabled={placing || Boolean(pendingPoint)}
             onClick={onStartPlacement}
             type="button"
@@ -111,7 +119,7 @@ export function CanvasAnnotationsPanel({
           <div aria-live="polite" className="mt-2 space-y-2 text-[10px] leading-4 text-[#d8bf89]">
             <p>Click a frame or empty canvas point to place a note, or use the button to place it at the selected screen center.</p>
             <button
-              className="min-h-8 rounded-[5px] border border-[#76633a] px-2.5 text-[10px] font-medium text-[#f4d89e] hover:bg-[#393329] disabled:cursor-not-allowed disabled:opacity-50"
+              className="min-h-8 rounded-control border border-[#76633a] px-2.5 text-[10px] font-medium text-[#f4d89e] hover:bg-[#393329] disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!hasSelectedScreen}
               onClick={onPlaceAtSelectedScreen}
               type="button"
@@ -124,29 +132,29 @@ export function CanvasAnnotationsPanel({
       </section>
 
       {editing ? (
-        <section className="rounded-[6px] border border-[#76633a] bg-[#29251d] p-3" aria-label={selected ? "Edit canvas note" : "Add canvas note"}>
+        <section className="rounded-control border border-[#76633a] bg-[#29251d] p-3" aria-label={selected ? "Edit canvas note" : "Add canvas note"}>
           <p className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#d3b975]">{selected ? "Edit note" : "New note"}</p>
           {pendingPoint ? <p className="mt-1 text-[10px] text-[#a99975]">Placed on {screenNames[pendingPoint.frameId] ?? (pendingPoint.frameId === overviewCanvasFrameId ? "Canvas" : "selected screen")}</p> : null}
-          <label className="mt-3 block text-[10px] text-[#bbb]" htmlFor="canvas-note-title">Title</label>
-          <input aria-describedby={actionError ? "canvas-note-error" : undefined} autoFocus={!selected && Boolean(pendingPoint)} className="mt-1 h-8 w-full rounded-[4px] border border-[#514831] bg-[#1b1a17] px-2 text-[11px] text-white outline-none focus:border-[#c3a65f]" id="canvas-note-title" maxLength={120} onChange={(event) => setTitle(event.target.value)} required value={title} />
-          <label className="mt-2 block text-[10px] text-[#bbb]" htmlFor="canvas-note-body">Annotation</label>
-          <textarea aria-describedby={actionError ? "canvas-note-error" : undefined} className="mt-1 min-h-24 w-full resize-y rounded-[4px] border border-[#514831] bg-[#1b1a17] px-2 py-1.5 text-[11px] leading-5 text-white outline-none focus:border-[#c3a65f]" id="canvas-note-body" maxLength={2000} onChange={(event) => setBody(event.target.value)} required value={body} />
+          <label className="mt-3 block text-[10px] text-foreground-muted" htmlFor="canvas-note-title">Title</label>
+          <input aria-describedby={actionError ? "canvas-note-error" : undefined} autoFocus={!selected && Boolean(pendingPoint)} className="mt-1 h-8 w-full rounded-chip border border-[#514831] bg-surface-inset px-2 text-[11px] text-white outline-none focus:border-[#c3a65f]" id="canvas-note-title" maxLength={120} onChange={(event) => setTitle(event.target.value)} required value={title} />
+          <label className="mt-2 block text-[10px] text-foreground-muted" htmlFor="canvas-note-body">Annotation</label>
+          <textarea aria-describedby={actionError ? "canvas-note-error" : undefined} className="mt-1 min-h-24 w-full resize-y rounded-chip border border-[#514831] bg-surface-inset px-2 py-1.5 text-[11px] leading-5 text-white outline-none focus:border-[#c3a65f]" id="canvas-note-body" maxLength={2000} onChange={(event) => setBody(event.target.value)} required value={body} />
           <div className="mt-2 flex justify-end gap-1.5">
-            <button className="min-h-8 rounded-[4px] px-2 text-[10px] text-[#aaa] hover:bg-[#39352c]" onClick={onCancel} type="button">Cancel</button>
-            {selected ? <button className="min-h-8 rounded-[4px] px-2 text-[10px] text-[#e69a90] hover:bg-[#432e2c] disabled:opacity-50" disabled={saving} onClick={() => void remove()} type="button">Delete</button> : null}
-            <button className="min-h-8 rounded-[4px] bg-[#d7b86e] px-2.5 text-[10px] font-semibold text-[#2b2415] hover:bg-[#e8cc89] disabled:opacity-50" disabled={saving || !pendingPoint && !selected} onClick={() => void save()} type="button">{saving ? "Saving…" : selected ? "Save note" : "Add note"}</button>
+            <button className="min-h-8 rounded-chip px-2 text-[10px] text-foreground-muted hover:bg-[#39352c]" onClick={onCancel} type="button">Cancel</button>
+            {selected ? <button className="min-h-8 rounded-chip px-2 text-[10px] text-danger hover:bg-danger/10 disabled:opacity-50" disabled={saving} onClick={() => void remove()} type="button">Delete</button> : null}
+            <button className="min-h-8 rounded-chip bg-[#d7b86e] px-2.5 text-[10px] font-semibold text-[#2b2415] hover:bg-[#e8cc89] disabled:opacity-50" disabled={saving || !pendingPoint && !selected} onClick={() => void save()} type="button">{saving ? "Saving…" : selected ? "Save note" : "Add note"}</button>
           </div>
-          {actionError ? <p className="mt-2 text-[10px] text-[#f0a29c]" id="canvas-note-error" role="alert">{actionError}</p> : null}
+          {actionError ? <p className="mt-2 text-[10px] text-danger" id="canvas-note-error" role="alert">{actionError}</p> : null}
         </section>
       ) : null}
 
-      {error ? <p className="rounded-[4px] bg-[#3b2928] px-2.5 py-2 text-[10px] leading-4 text-[#f0a29c]" role="alert">{error}</p> : null}
+      {error ? <p className="rounded-chip bg-[#3b2928] px-2.5 py-2 text-[10px] leading-4 text-danger" role="alert">{error}</p> : null}
       <ol className="space-y-2">
         {annotations.map((annotation) => (
           <li key={annotation.id}>
             <button
               aria-pressed={annotation.id === selectedAnnotationId}
-              className={"w-full rounded-[6px] border p-2.5 text-left transition-colors " + (annotation.id === selectedAnnotationId ? "border-[#8e7440] bg-[#332c20]" : "border-[#3a3a3a] bg-[#242424] hover:bg-[#2d2d2d]")}
+              className={"w-full rounded-control border p-2.5 text-left transition-colors " + (annotation.id === selectedAnnotationId ? "border-[#8e7440] bg-[#332c20]" : "border-border bg-surface-muted hover:bg-surface-raised")}
               onClick={() => onSelect(annotation.id)}
               type="button"
             >
@@ -156,8 +164,9 @@ export function CanvasAnnotationsPanel({
             </button>
           </li>
         ))}
-        {!annotations.length ? <li className="rounded-[5px] border border-dashed border-[#3d3d3d] px-3 py-5 text-center text-[10px] text-[#888]">No canvas notes on this version yet.</li> : null}
+        {!annotations.length ? <li className="rounded-control border border-dashed border-border px-3 py-5 text-center text-[10px] text-foreground-subtle">No canvas notes on this version yet.</li> : null}
       </ol>
+      {dialog}
     </div>
   );
 }

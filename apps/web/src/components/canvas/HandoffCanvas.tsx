@@ -9,6 +9,7 @@ import type { CommentIdentity, HandoffComment } from "../comments/CommentPin";
 import { CanvasToolbar } from "./CanvasToolbar";
 import { CanvasViewport, type CanvasViewportControls } from "./CanvasViewport";
 import { InstallAppButton } from "@/src/components/shell/InstallAppButton";
+import { BrandMark } from "@/src/components/shell/BrandMark";
 import { AgentHandoffPanel } from "./AgentHandoffPanel";
 import { ElementInspector } from "./ElementInspector";
 import { LocalPreviewPanel } from "./LocalPreviewPanel";
@@ -47,6 +48,7 @@ export type ReviewMetadata = {
   versionIsPublished: boolean;
   contentHash: string;
   canManageIntegrations: boolean;
+  canManageSharing: boolean;
   canAnnotate: boolean;
   canComment: boolean;
   commentIdentity: CommentIdentity | null;
@@ -73,7 +75,7 @@ type HandoffCanvasProps = {
 
 type CommentPayload = { comments: HandoffComment[] };
 type AnnotationPayload = { annotations: CanvasAnnotationRecord[] };
-type SearchCategory = "All" | "Text" | "Colours" | "Elements";
+type SearchCategory = "All" | "Text" | "Colors" | "Elements";
 type SearchResult = {
   frame: CanvasFrameOption;
   node: SnapshotNode;
@@ -132,6 +134,9 @@ export function HandoffCanvas({
   metadata,
   dockPanels,
 }: HandoffCanvasProps) {
+  const sharingEndpoint = metadata.canManageSharing
+    ? `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`
+    : null;
   const overviewFrame = frames.find((frame) => frame.kind === "overview") ?? frames[0];
   const screens = useMemo(() => frames.filter((frame) => frame.kind === "frame"), [frames]);
   const exportTargets = useMemo(() => frames.map((frame) => ({
@@ -356,7 +361,7 @@ export function HandoffCanvas({
         const elementValue = [node.name, node.type, node.sourceNodeId].join(" ");
         const candidates: Array<{ category: Exclude<SearchCategory, "All">; value: string; detail: string }> = [
           { category: "Text", value: textValue, detail: node.typography?.content || node.name },
-          { category: "Colours", value: colorValue, detail: colorValue || "No captured colour" },
+          { category: "Colors", value: colorValue, detail: colorValue || "No captured color" },
           { category: "Elements", value: elementValue, detail: node.name + " · " + node.type },
         ];
         const match = candidates.find((candidate) =>
@@ -521,7 +526,7 @@ export function HandoffCanvas({
   }, [activeSearchIndex, closeSearchPanel, copySearchHighlights, previewSearchResult, searchOpen, searchResults, selectSearchResult, viewportControls]);
 
   if (!overviewFrame || !visualFrame) {
-    return <p className="p-6 text-sm text-[#aaa]">This snapshot has no frames to display.</p>;
+    return <p className="p-6 text-sm text-foreground-muted">This snapshot has no frames to display.</p>;
   }
 
   function selectFrame(frameId: string) {
@@ -762,17 +767,18 @@ export function HandoffCanvas({
   ].filter(Boolean);
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#202020] text-[#e5e5e5]">
-      <header className="relative z-20 flex h-auto min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-[#383838] bg-[#202020] px-3 py-1 text-[#c8c8c8] lg:h-12 lg:flex-nowrap lg:gap-3 lg:py-0">
-        <div className="flex min-w-0 flex-1 items-center gap-3 lg:flex-none">
-          <Link className="min-h-6 max-w-[180px] shrink-0 truncate text-[13px] font-semibold text-[#ededed] hover:text-white" href={metadata.projectHref}>
-            Asbir <span className="font-normal text-[#929292]">Handoff</span>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface text-foreground">
+      <header className="relative z-20 flex h-auto min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface px-3 py-1 text-foreground-muted xl:h-12 xl:flex-nowrap xl:gap-3 xl:py-0">
+        <div className="flex min-w-0 flex-1 items-center gap-3">
+          <Link aria-label="Asbir Handoff home" className="flex min-h-9 shrink-0 items-center rounded-lg px-1 transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" href={metadata.projectHref.startsWith("/workspace") ? "/workspace" : metadata.projectHref}>
+            <BrandMark compact />
           </Link>
-          <span aria-hidden="true" className="h-6 w-px shrink-0 bg-[#3b3b3b]" />
+          <span aria-hidden="true" className="h-6 w-px shrink-0 bg-surface-strong" />
           <label className="sr-only" htmlFor="review-version-select">Snapshot version</label>
           <select
-            className="h-11 min-w-0 max-w-none flex-1 rounded-[8px] border border-transparent bg-[#303030] px-3 text-[13px] text-[#ececec] hover:bg-[#363636] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#b4b4b4] lg:h-9 lg:max-w-[340px] lg:min-w-[210px] lg:flex-none"
+            className="h-11 min-w-0 max-w-none flex-1 rounded-control border border-transparent bg-surface-raised px-3 text-[13px] text-foreground hover:bg-surface-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:h-9 lg:max-w-[340px] lg:min-w-[150px]"
             id="review-version-select"
+            title={metaParts.join(" · ")}
             onChange={(event) => window.location.assign(metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(event.target.value))}
             value={metadata.selectedVersionId}
           >
@@ -781,14 +787,14 @@ export function HandoffCanvas({
             ))}
           </select>
         </div>
-        <p className="hidden min-w-0 flex-1 truncate text-[12px] text-[#999] xl:block" title={metaParts.join(" · ")}>
+        <p className="hidden min-w-0 flex-1 truncate text-[12px] text-foreground-subtle 2xl:block" title={metaParts.join(" · ")}>
           {metaParts.join(" · ")}
         </p>
-        <nav aria-label="Handoff review tools" className="ml-0 flex w-full min-w-0 shrink-0 items-center gap-1 overflow-x-auto overscroll-x-contain pb-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden lg:ml-auto lg:w-auto lg:overflow-visible lg:pb-0">
+        <nav aria-label="Handoff review tools" className="ml-0 flex w-full min-w-0 flex-wrap items-center gap-1 pb-1 lg:ml-auto lg:w-auto lg:flex-nowrap lg:pb-0">
           <InstallAppButton compact />
           <button
             aria-pressed={statesOpen}
-            className={"h-11 shrink-0 rounded-[7px] px-2 text-[11px] font-medium transition-colors lg:hidden " + (statesOpen ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
+            className={"h-11 shrink-0 rounded-control px-2 text-[11px] font-medium transition-colors lg:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + (statesOpen ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
             id="canvas-mobile-screens-toggle"
             onClick={() => {
               setSearchOpen(false);
@@ -800,11 +806,11 @@ export function HandoffCanvas({
           >
             Screens {screens.length}
           </button>
-          <div aria-label="Canvas mode" className="flex h-12 shrink-0 items-center rounded-[7px] bg-[#292929] p-0.5 lg:h-8" role="group">
+          <div aria-label="Canvas mode" className="flex h-12 shrink-0 items-center gap-0.5 rounded-control bg-surface-inset p-0.5 lg:h-8" role="group">
             {(["view", "inspect"] as const).map((mode) => (
               <button
                 aria-pressed={canvasMode === mode}
-                className={"h-11 rounded-[5px] px-2 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] lg:h-7 " + (canvasMode === mode ? "bg-[#444] text-white" : "text-[#a9a9a9] hover:bg-[#363636] hover:text-white")}
+                className={"h-11 rounded-control px-2 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:h-7 " + (canvasMode === mode ? "bg-surface-raised text-foreground shadow-sm shadow-black/30" : "text-foreground-subtle hover:text-foreground")}
                 key={mode}
                 onClick={() => {
                   setCanvasModeOverride(mode);
@@ -818,7 +824,7 @@ export function HandoffCanvas({
           </div>
           <button
             aria-pressed={panelMode === "comments"}
-            className={"h-11 shrink-0 rounded-[7px] px-3 text-[12px] transition-colors lg:h-9 " + (panelMode === "comments" ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
+            className={"h-11 shrink-0 rounded-control px-3 text-[12px] transition-colors lg:h-9 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + (panelMode === "comments" ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
             onClick={() => {
               setPanelMode("comments");
               setCommentMode(false);
@@ -835,7 +841,7 @@ export function HandoffCanvas({
           </button>
           <button
             aria-pressed={panelMode === "annotations"}
-            className={"h-11 shrink-0 rounded-[7px] px-3 text-[12px] transition-colors lg:h-9 " + (panelMode === "annotations" ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
+            className={"h-11 shrink-0 rounded-control px-3 text-[12px] transition-colors lg:h-9 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + (panelMode === "annotations" ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
             onClick={() => {
               setPanelMode("annotations");
               setCommentMode(false);
@@ -853,7 +859,7 @@ export function HandoffCanvas({
           </button>
           {metadata.canManageIntegrations ? <button
             aria-pressed={panelMode === "mcp"}
-            className={"h-11 shrink-0 rounded-[7px] px-3 text-[12px] transition-colors lg:hidden " + (panelMode === "mcp" ? "bg-[#444] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
+            className={"h-11 shrink-0 rounded-control px-3 text-[12px] transition-colors lg:hidden focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + (panelMode === "mcp" ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
             onClick={() => {
               setPanelMode("mcp");
               setCommentMode(false);
@@ -869,7 +875,7 @@ export function HandoffCanvas({
           </button> : null}
           <button
             aria-pressed={outlinesVisible}
-            className={"hidden h-9 rounded-[7px] px-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] sm:inline-flex sm:items-center " + (outlinesVisible ? "bg-[#3b3b3b] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white")}
+            className={"hidden h-9 rounded-control px-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:inline-flex sm:items-center " + (outlinesVisible ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
             onClick={() => {
               setCanvasModeOverride("inspect");
               setPanelMode("inspect");
@@ -883,7 +889,7 @@ export function HandoffCanvas({
           <button
             aria-label="Toggle Figma layout grids"
             aria-pressed={layoutGridsVisible && hasLayoutGrids}
-            className={"hidden h-9 rounded-[7px] px-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] sm:inline-flex sm:items-center " + (layoutGridsVisible && hasLayoutGrids ? "bg-[#3b3b3b] text-white" : "text-[#c3c3c3] hover:bg-[#303030] hover:text-white") + (hasLayoutGrids ? "" : " cursor-not-allowed opacity-45")}
+            className={"hidden h-9 rounded-control px-3 text-[12px] transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary sm:inline-flex sm:items-center " + (layoutGridsVisible && hasLayoutGrids ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white") + (hasLayoutGrids ? "" : " cursor-not-allowed opacity-45")}
             disabled={!hasLayoutGrids}
             onClick={() => setLayoutGridsVisible((current) => !current)}
             title={hasLayoutGrids ? "Show captured Figma layout grids" : "No visible Figma layout grids were captured"}
@@ -897,17 +903,22 @@ export function HandoffCanvas({
               exportTargets={exportTargets}
               shareUrl={metadata.reviewHref}
               shareTitle={metadata.projectName + " · " + metadata.handoffName}
+              sharingEndpoint={sharingEndpoint}
+              publishEndpoint={sharingEndpoint ? `${sharingEndpoint}/publish` : null}
+              publishVersionId={metadata.selectedVersionId}
+              latestVersionId={metadata.versions[0]?.id ?? metadata.selectedVersionId}
+              publishedVersionId={metadata.publishedVersionId}
               onZoomOut={viewportControls.zoomOut}
               onFit={viewportControls.fitToFrame}
               onZoomIn={viewportControls.zoomIn}
             />
-          ) : <span className="px-2 text-[11px] text-[#999]">Fit</span>}
+          ) : <span className="px-2 text-[11px] text-foreground-subtle">Fit</span>}
         </nav>
       </header>
       {latestPublished && latestPublished.versionId !== metadata.selectedVersionId ? (
         <div className="flex min-h-10 items-center justify-between gap-3 border-b border-[#514127] bg-[#342a1a] px-4 py-2 text-[11px] text-[#f0c77b]">
           <p>{latestPublished.versionId !== metadata.publishedVersionId ? "A new version was published" : "Latest published version"} · Version {latestPublished.versionLabel}</p>
-          <Link className="shrink-0 rounded-[4px] px-2 py-1 font-medium text-[#ffe0a4] hover:bg-white/10 hover:text-white" href={metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(latestPublished.versionId)}>View latest</Link>
+          <Link className="shrink-0 rounded-chip px-2 py-1 font-medium text-[#ffe0a4] hover:bg-white/10 hover:text-white" href={metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(latestPublished.versionId)}>View latest</Link>
         </div>
       ) : null}
       {comparisonSummary && (
@@ -927,7 +938,7 @@ export function HandoffCanvas({
             {` since ${comparisonSummary.earlierVersionLabel}`}
           </p>
           <button
-            className="shrink-0 rounded-[5px] px-2.5 py-1 font-medium text-[#ffe0a4] hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f0c77b]"
+            className="shrink-0 rounded-control px-2.5 py-1 font-medium text-[#ffe0a4] hover:bg-white/10 hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f0c77b]"
             onClick={() => {
               setCommentMode(false);
               setStatesOpen(false);
@@ -964,10 +975,10 @@ export function HandoffCanvas({
             tabIndex={isMobile ? -1 : undefined}
           >
             {isMobile ? (
-              <div className="flex justify-end border-b border-[#3a3a3a] bg-[#202020] px-2 py-1.5 lg:hidden">
+              <div className="flex justify-end border-b border-border bg-surface px-2 py-1.5 lg:hidden">
                 <button
                   aria-label="Close screens panel"
-                  className="min-h-8 rounded-[5px] px-2.5 text-[11px] text-[#bdbdbd] hover:bg-[#303030] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+                  className="min-h-8 rounded-control px-2.5 text-[11px] text-foreground-muted hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                   onClick={() => {
                     setStatesOpen(false);
                     setSearchOpen(false);
@@ -980,17 +991,17 @@ export function HandoffCanvas({
               </div>
             ) : null}
             {searchOpen ? (
-              <nav aria-label="Search screens" className="flex h-full min-h-0 min-w-0 flex-col border-r border-[#3a3a3a] bg-[#202020] text-[#c4c4c4]">
-                <div className="shrink-0 space-y-3 border-b border-[#3a3a3a] p-3">
+              <nav aria-label="Search screens" className="flex h-full min-h-0 min-w-0 flex-col border-r border-border bg-surface text-foreground-muted">
+                <div className="shrink-0 space-y-3 border-b border-border p-3">
                   <div className="flex items-center justify-between gap-2">
                     <button
-                      className="rounded-[5px] px-2 py-1 text-[11px] text-[#bdbdbd] hover:bg-[#303030] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+                      className="rounded-control px-2 py-1 text-[11px] text-foreground-muted hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                       onClick={closeSearchPanel}
                       type="button"
                     >
                       ← Screens
                     </button>
-                    <span className="font-mono text-[10px] text-[#888]">{searchQuery.trim() ? `${searchResults.length} found` : "Search"}</span>
+                    <span className="font-mono text-[10px] text-foreground-subtle">{searchQuery.trim() ? `${searchResults.length} found` : "Search"}</span>
                   </div>
                   <input
                     autoFocus
@@ -999,23 +1010,23 @@ export function HandoffCanvas({
                     aria-autocomplete="list"
                     aria-controls={searchResults.length ? "handoff-search-results" : undefined}
                     aria-expanded={Boolean(searchResults.length)}
-                    aria-label="Search text, colours and elements"
-                    className="h-9 w-full rounded-[7px] border border-[#3b3b3b] bg-[#292929] px-2.5 text-[12px] text-[#ededed] outline-none placeholder:text-[#a0a0a0] focus:border-[#5b5b5b] focus:bg-[#343434] focus:ring-2 focus:ring-[#8a8a8a]/40"
+                    aria-label="Search text, colors and elements"
+                    className="h-9 w-full rounded-control border border-border bg-surface-muted px-2.5 text-[12px] text-foreground outline-none placeholder:text-foreground-muted focus:border-border-strong focus:bg-surface-raised focus:ring-2 focus:ring-foreground-subtle/40"
                     id="handoff-search-input"
                     onChange={(event) => {
                       setSearchQuery(event.target.value);
                       setActiveSearchIndex(-1);
                     }}
-                    placeholder="Text, colours, elements"
+                    placeholder="Text, colors, elements"
                     role="combobox"
                     type="search"
                     value={searchQuery}
                   />
                   <div aria-label="Search categories" className="flex gap-1 overflow-x-auto" role="group">
-                    {(["All", "Text", "Colours", "Elements"] as SearchCategory[]).map((category) => (
+                    {(["All", "Text", "Colors", "Elements"] as SearchCategory[]).map((category) => (
                       <button
                         aria-pressed={searchCategory === category}
-                        className={"shrink-0 rounded-[5px] px-2.5 py-1 text-[11px] " + (searchCategory === category ? "bg-[#414141] text-white" : "text-[#aaa] hover:bg-[#333] hover:text-white")}
+                        className={"shrink-0 rounded-control px-2.5 py-1 text-[11px] " + (searchCategory === category ? "bg-surface-strong text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
                         key={category}
                         onClick={() => {
                           setSearchCategory(category);
@@ -1035,7 +1046,7 @@ export function HandoffCanvas({
                         {searchResults.map((result, index) => (
                           <li
                             aria-selected={index === activeSearchIndex}
-                            className={"cursor-pointer rounded-[6px] px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] " + (index === activeSearchIndex ? "bg-[#414141] text-white ring-1 ring-[#676767]" : "text-[#ddd] hover:bg-[#353535]")}
+                            className={"cursor-pointer rounded-control px-3 py-2 text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + (index === activeSearchIndex ? "bg-surface-strong text-white ring-1 ring-foreground-subtle" : "text-foreground hover:bg-surface-raised")}
                             id={`handoff-search-result-${index}`}
                             key={result.frame.id + result.node.sourceNodeId + result.category + index}
                             onClick={() => {
@@ -1046,24 +1057,24 @@ export function HandoffCanvas({
                             role="option"
                           >
                             <span className="block truncate text-[12px]">{result.node.name || result.node.type}</span>
-                            <span className="mt-0.5 block truncate text-[11px] text-[#999]">{result.frame.name} · {result.detail}</span>
-                            <span className="mt-1 block text-[10px] text-[#888]">{result.category}</span>
+                            <span className="mt-0.5 block truncate text-[11px] text-foreground-subtle">{result.frame.name} · {result.detail}</span>
+                            <span className="mt-1 block text-[10px] text-foreground-subtle">{result.category}</span>
                           </li>
                         ))}
                       </ul>
                     ) : (
-                      <p aria-live="polite" className="px-2 py-3 text-[11px] text-[#999]">No matching text, colours, or elements.</p>
+                      <p aria-live="polite" className="px-2 py-3 text-[11px] text-foreground-subtle">No matching text, colors, or elements.</p>
                     )
                   ) : (
-                    <p className="px-2 py-3 text-[11px] leading-5 text-[#929292]">Search captured text, colours, element names, and types.</p>
+                    <p className="px-2 py-3 text-[11px] leading-5 text-foreground-subtle">Search captured text, colors, element names, and types.</p>
                   )}
                   {searchResults.length ? (
-                    <button className="mt-2 min-h-8 w-full rounded-[5px] text-[11px] text-[#b9b9b9] hover:bg-[#353535] hover:text-white" onClick={copySearchHighlights} type="button">
+                    <button className="mt-2 min-h-8 w-full rounded-control text-[11px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={copySearchHighlights} type="button">
                       Highlight all on the canvas
                     </button>
                   ) : null}
                 </div>
-                <footer aria-live="polite" className="shrink-0 border-t border-[#3c3c3c] px-3 py-2.5 text-[10px] text-[#999]">
+                <footer aria-live="polite" className="shrink-0 border-t border-border px-3 py-2.5 text-[10px] text-foreground-subtle">
                   {activeSearchIndex >= 0 ? `${activeSearchIndex + 1} of ${searchResults.length} selected · ` : ""}↑ ↓ preview · Enter inspect · Esc screens
                 </footer>
               </nav>
@@ -1124,16 +1135,16 @@ export function HandoffCanvas({
         <aside
           aria-label="Handoff details"
           aria-modal={isMobile && mobilePanelOpen ? true : undefined}
-          className={"min-h-0 min-w-0 flex-col overflow-hidden border-l border-[#3a3a3a] bg-[#202020] " + (mobilePanelOpen ? "absolute inset-0 z-30 flex w-full border-l-0 shadow-2xl lg:static lg:z-auto lg:w-auto lg:border-l lg:shadow-none" : "hidden lg:static lg:flex")}
+          className={"min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-surface " + (mobilePanelOpen ? "absolute inset-0 z-30 flex w-full border-l-0 shadow-2xl lg:static lg:z-auto lg:w-auto lg:border-l lg:shadow-none" : "hidden lg:static lg:flex")}
           ref={detailsPanelRef}
           role={isMobile && mobilePanelOpen ? "dialog" : undefined}
           tabIndex={isMobile && mobilePanelOpen ? -1 : undefined}
         >
           {isMobile && mobilePanelOpen ? (
-            <div className="flex shrink-0 justify-end border-b border-[#393939] px-2 py-1.5 lg:hidden">
+            <div className="flex shrink-0 justify-end border-b border-border px-2 py-1.5 lg:hidden">
               <button
                 aria-label="Close details panel"
-                className="min-h-8 rounded-[5px] px-2.5 text-[11px] text-[#bdbdbd] hover:bg-[#303030] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+                className="min-h-8 rounded-control px-2.5 text-[11px] text-foreground-muted hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                 onClick={() => setMobilePanelOpenOverride(false)}
                 type="button"
               >
@@ -1141,7 +1152,7 @@ export function HandoffCanvas({
               </button>
             </div>
           ) : null}
-          <nav aria-label="Details panels" className="grid shrink-0 grid-cols-4 gap-1 border-b border-[#393939] p-2">
+          <nav aria-label="Details panels" className="mx-2.5 mb-1 mt-2.5 flex shrink-0 gap-0.5 overflow-x-auto rounded-surface bg-surface-inset p-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
             {([
               ["inspect", "Properties", true],
               ["compare", "Compare", canCompare],
@@ -1152,7 +1163,7 @@ export function HandoffCanvas({
             ] as const).filter(([, , visible]) => visible).map(([mode, label]) => (
               <button
                 aria-pressed={mode === "compare" ? comparisonOpen : panelMode === mode}
-                className={"min-h-8 truncate rounded-[5px] px-1.5 text-[10px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] " + ((mode === "compare" ? comparisonOpen : panelMode === mode) ? "bg-[#3b3b3b] text-white" : "text-[#a9a9a9] hover:bg-[#2e2e2e] hover:text-white")}
+                className={"min-h-7 min-w-fit flex-1 whitespace-nowrap rounded-control px-1.5 text-[11px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary " + ((mode === "compare" ? comparisonOpen : panelMode === mode) ? "bg-surface-raised text-foreground shadow-sm shadow-black/30" : "text-foreground-subtle hover:text-foreground")}
                 key={mode}
                 onClick={() => {
                   if (mode === "compare") {
@@ -1251,6 +1262,7 @@ export function HandoffCanvas({
             onAddComment={commentOnSelectedElement}
             onSelectNode={selectNode}
             onCopyLink={() => navigator.clipboard?.writeText(window.location.href)}
+            inspecting={canvasMode === "inspect"}
           />
           ) : null}
         </aside>

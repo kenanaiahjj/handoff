@@ -10,10 +10,10 @@ function format(value, category) {
   return formatComparisonValue(value, category);
 }
 
-test("preserves fractional Figma pixels in comparison summaries", () => {
-  assert.equal(format(15.9845, "layout"), "15.9845");
+test("rounds Figma pixels to two decimals in comparison summaries", () => {
+  assert.equal(format(15.9845, "layout"), "15.98");
   assert.equal(format(15.25, "geometry"), "15.25");
-  assert.equal(format(-0.068777, "layout"), "-0.068777");
+  assert.equal(format(-0.068777, "layout"), "-0.07");
 });
 
 test("formats captured pixel measurements without changing ratios", () => {
@@ -23,7 +23,7 @@ test("formats captured pixel measurements without changing ratios", () => {
   };
   assert.equal(
     format(value, "layout"),
-    '{"bounds":{"x":{"value":35.9845,"unit":"px"},"width":{"value":15.25,"unit":"px"}},"aspectRatio":{"value":0.3333,"unit":"ratio"}}',
+    '{"bounds":{"x":{"value":35.98,"unit":"px"},"width":{"value":15.25,"unit":"px"}},"aspectRatio":{"value":0.3333,"unit":"ratio"}}',
   );
   assert.equal(value.bounds.x.value, 35.9845, "formatting must not change the captured source value");
   assert.equal(format("1 of 5", "structure"), "1 of 5");
@@ -36,14 +36,14 @@ test("formats pixel values inside structured diffs while preserving non-pixel va
     fills: [{ opacity: { value: 0.125, unit: "ratio" } }],
   };
   const expected = {
-    bounds: { x: { value: 35.9845, unit: "px" } },
+    bounds: { x: { value: 35.98, unit: "px" } },
     fills: [{ opacity: { value: 0.125, unit: "ratio" } }],
   };
   assert.equal(format(value, "structure"), JSON.stringify(expected));
 });
 
-test("preserves fractional Figma pixels in direct measurements", () => {
-  assert.equal(format({ value: 35.9845, unit: "px", provenance: "source" }, "geometry"), "35.9845 px");
+test("rounds fractional Figma pixels in direct measurements", () => {
+  assert.equal(format({ value: 35.9845, unit: "px", provenance: "source" }, "geometry"), "35.98 px");
   assert.equal(format({ value: 0.125, unit: "ratio" }, "style"), "0.125 ratio");
 });
 
@@ -54,9 +54,9 @@ test("summarizes captured paint objects as a color and opacity", () => {
   );
 });
 
-test("preserves fractional frame dimensions and labels them in pixels", () => {
+test("rounds fractional frame dimensions and labels them in pixels", () => {
   assert.equal(typeof comparisonFormatting?.formatFrameSize, "function", "frame size formatter must be available");
-  assert.equal(comparisonFormatting.formatFrameSize(349.1485290527344, 253), "349.1485290527344 × 253 px");
+  assert.equal(comparisonFormatting.formatFrameSize(349.1485290527344, 253), "349.15 × 253 px");
   assert.equal(comparisonFormatting.formatFrameSize(100.25, 99.74), "100.25 × 99.74 px");
 });
 

@@ -1,3 +1,4 @@
+import { connection } from "next/server";
 import type { AuthSession } from "./auth";
 import { auth } from "./auth";
 import { getDatabase } from "./db";
@@ -61,6 +62,10 @@ function getLocalTestSession(): AuthSession {
 }
 
 export async function getSessionForHeaders(headers: Headers) {
-  if (isDevelopmentAuthBypassEnabled()) return getLocalTestSession();
+  if (isDevelopmentAuthBypassEnabled()) {
+    // The bypass session is built from the clock, so mark the render as request-time.
+    await connection();
+    return getLocalTestSession();
+  }
   return auth.api.getSession({ headers });
 }

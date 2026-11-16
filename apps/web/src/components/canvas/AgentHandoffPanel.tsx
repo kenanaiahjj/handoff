@@ -380,129 +380,129 @@ export function AgentHandoffPanel({ input }: {
   }
 
   return (
-    <section className="min-h-0 overflow-y-auto border-l border-[#3a3a3a] bg-[#202020] p-4 max-lg:border-l-0 max-lg:border-t" aria-labelledby="agent-handoff-title">
+    <section className="min-h-0 overflow-y-auto border-l border-border bg-surface p-4 max-lg:border-l-0 max-lg:border-t" aria-labelledby="agent-handoff-title">
       <div className="flex items-center justify-between gap-3">
         <div>
-          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-[#9a9a9a]">Connected tools</p>
-          <h2 id="agent-handoff-title" className="mt-1 text-[15px] font-semibold text-[#ededed]">Start with agent</h2>
+          <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-foreground-subtle">Connected tools</p>
+          <h2 id="agent-handoff-title" className="mt-1 text-[15px] font-semibold text-foreground">Start with agent</h2>
         </div>
-        <span className="rounded-[5px] bg-[#303030] px-2 py-1 font-mono text-[10px] text-[#bdbdbd]">Version {input.versionLabel}</span>
+        <span className="rounded-control bg-surface-raised px-2 py-1 font-mono text-[10px] text-foreground-muted">Version {input.versionLabel}</span>
       </div>
 
-      <p className="mt-2 text-[12px] leading-5 text-[#a3a3a3]">Prepare a version-pinned brief with design evidence, review notes, and a linked task for a coding or QA agent.</p>
+      <p className="mt-2 text-[12px] leading-5 text-foreground-muted">Prepare a version-pinned brief with design evidence, review notes, and a linked task for a coding or QA agent.</p>
 
-      <label className="mt-4 block text-[11px] font-medium text-[#bdbdbd]" htmlFor="agent-screen-select">Screen scope</label>
-      <select id="agent-screen-select" value={frameId} onChange={(event) => { setFrameId(event.target.value); setNodeId(""); }} className="mt-1.5 min-h-9 w-full rounded-[5px] border border-[#444] bg-[#282828] px-2.5 text-[12px] text-[#e4e4e4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">
+      <label className="mt-4 block text-[11px] font-medium text-foreground-muted" htmlFor="agent-screen-select">Screen scope</label>
+      <select id="agent-screen-select" value={frameId} onChange={(event) => { setFrameId(event.target.value); setNodeId(""); }} className="mt-1.5 min-h-9 w-full rounded-control border border-border-strong bg-surface-muted px-2.5 text-[12px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
         {screenOptions.map((frame) => <option key={frame.id} value={frame.id}>{frame.name}</option>)}
       </select>
       {selectedFrame?.nodes.length ? (
         <>
-          <label className="mt-3 block text-[11px] font-medium text-[#bdbdbd]" htmlFor="agent-element-select">Focus element <span className="font-normal text-[#888]">(optional)</span></label>
-          <select id="agent-element-select" value={nodeId} onChange={(event) => setNodeId(event.target.value)} className="mt-1.5 min-h-9 w-full rounded-[5px] border border-[#444] bg-[#282828] px-2.5 text-[12px] text-[#e4e4e4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">
+          <label className="mt-3 block text-[11px] font-medium text-foreground-muted" htmlFor="agent-element-select">Focus element <span className="font-normal text-foreground-subtle">(optional)</span></label>
+          <select id="agent-element-select" value={nodeId} onChange={(event) => setNodeId(event.target.value)} className="mt-1.5 min-h-9 w-full rounded-control border border-border-strong bg-surface-muted px-2.5 text-[12px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
             <option value="">Whole screen</option>
             {selectedFrame.nodes.map((node) => <option key={node.sourceNodeId} value={node.sourceNodeId}>{node.name || node.type} · {node.sourceNodeId}</option>)}
           </select>
         </>
       ) : (
-        <p className="mt-2 rounded-[5px] bg-[#282828] px-2.5 py-2 text-[11px] leading-5 text-[#999]">This visual-only screen has no captured node measurements or token bindings.</p>
+        <p className="mt-2 rounded-control bg-surface-muted px-2.5 py-2 text-[11px] leading-5 text-foreground-subtle">This visual-only screen has no captured node measurements or token bindings.</p>
       )}
 
-      <label className="mt-3 block text-[11px] font-medium text-[#bdbdbd]" htmlFor="agent-task-select">Related task</label>
-      <select id="agent-task-select" value={taskId} onChange={(event) => setTaskId(event.target.value)} disabled={loading} className="mt-1.5 min-h-9 w-full rounded-[5px] border border-[#444] bg-[#282828] px-2.5 text-[12px] text-[#e4e4e4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa] disabled:opacity-60">
+      <label className="mt-3 block text-[11px] font-medium text-foreground-muted" htmlFor="agent-task-select">Related task</label>
+      <select id="agent-task-select" value={taskId} onChange={(event) => setTaskId(event.target.value)} disabled={loading} className="mt-1.5 min-h-9 w-full rounded-control border border-border-strong bg-surface-muted px-2.5 text-[12px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60">
         <option value="">No task selected</option>
         {matchingTasks.map((task) => <option key={task.id} value={task.id}>{task.title} · {task.sourceSystem}</option>)}
       </select>
       {selectedTask ? (
-        <form className="mt-3 space-y-2 rounded-[5px] border border-[#3d3d3d] bg-[#252525] p-3" onSubmit={saveAgentLinks}>
-          <p className="text-[10px] leading-4 text-[#999]">Return the agent run or pull request here to keep implementation progress with this task.</p>
+        <form className="mt-3 space-y-2 rounded-control border border-border bg-surface-muted p-3" onSubmit={saveAgentLinks}>
+          <p className="text-[10px] leading-4 text-foreground-subtle">Return the agent run or pull request here to keep implementation progress with this task.</p>
           {selectedTask.agentRunUrl || selectedTask.pullRequestUrl ? (
             <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px]">
-              {selectedTask.agentRunUrl ? <a href={selectedTask.agentRunUrl} target="_blank" rel="noreferrer" className="text-[#d0d0d0] underline underline-offset-2 hover:text-white">Open agent run</a> : null}
-              {selectedTask.pullRequestUrl ? <a href={selectedTask.pullRequestUrl} target="_blank" rel="noreferrer" className="text-[#d0d0d0] underline underline-offset-2 hover:text-white">Open pull request</a> : null}
+              {selectedTask.agentRunUrl ? <a href={selectedTask.agentRunUrl} target="_blank" rel="noreferrer" className="text-foreground-muted underline underline-offset-2 hover:text-white">Open agent run</a> : null}
+              {selectedTask.pullRequestUrl ? <a href={selectedTask.pullRequestUrl} target="_blank" rel="noreferrer" className="text-foreground-muted underline underline-offset-2 hover:text-white">Open pull request</a> : null}
             </div>
           ) : null}
-          <label className="block text-[10px] text-[#aaa]">Agent run URL
-            <input type="url" maxLength={2000} value={selectedTaskLinks.agentRunUrl} onChange={(event) => setAgentLinkEdits((current) => ({ ...current, [selectedTask.id]: { ...selectedTaskLinks, agentRunUrl: event.target.value } }))} placeholder="https://…" className="mt-1 w-full rounded-[5px] border border-[#444] bg-[#202020] px-2 py-2 text-[11px] text-[#e4e4e4] placeholder:text-[#a0a0a0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" />
+          <label className="block text-[10px] text-foreground-muted">Agent run URL
+            <input type="url" maxLength={2000} value={selectedTaskLinks.agentRunUrl} onChange={(event) => setAgentLinkEdits((current) => ({ ...current, [selectedTask.id]: { ...selectedTaskLinks, agentRunUrl: event.target.value } }))} placeholder="https://…" className="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-2 text-[11px] text-foreground placeholder:text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" />
           </label>
-          <label className="block text-[10px] text-[#aaa]">Pull request URL
-            <input type="url" maxLength={2000} value={selectedTaskLinks.pullRequestUrl} onChange={(event) => setAgentLinkEdits((current) => ({ ...current, [selectedTask.id]: { ...selectedTaskLinks, pullRequestUrl: event.target.value } }))} placeholder="https://…" className="mt-1 w-full rounded-[5px] border border-[#444] bg-[#202020] px-2 py-2 text-[11px] text-[#e4e4e4] placeholder:text-[#a0a0a0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" />
+          <label className="block text-[10px] text-foreground-muted">Pull request URL
+            <input type="url" maxLength={2000} value={selectedTaskLinks.pullRequestUrl} onChange={(event) => setAgentLinkEdits((current) => ({ ...current, [selectedTask.id]: { ...selectedTaskLinks, pullRequestUrl: event.target.value } }))} placeholder="https://…" className="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-2 text-[11px] text-foreground placeholder:text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" />
           </label>
-          <button type="submit" disabled={savingAgentLinks} className="min-h-8 rounded-[5px] border border-[#494949] px-3 text-[11px] font-medium text-[#dedede] hover:bg-[#303030] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aaa] disabled:opacity-50">{savingAgentLinks ? "Saving…" : "Save returned links"}</button>
+          <button type="submit" disabled={savingAgentLinks} className="min-h-8 rounded-control border border-border-strong px-3 text-[11px] font-medium text-foreground hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50">{savingAgentLinks ? "Saving…" : "Save returned links"}</button>
         </form>
       ) : null}
-      {loading ? <p className="mt-1 text-[10px] text-[#888]" role="status">Loading linked tasks…</p> : null}
+      {loading ? <p className="mt-1 text-[10px] text-foreground-subtle" role="status">Loading linked tasks…</p> : null}
       {!loading && matchingTasks.length === 0 ? (
-        <p className="mt-2 text-[11px] leading-5 text-[#999]">Your AI can create work through its connected Asbir Teams or ClickUp task tools, then link it here with Asbir’s <code>link_task</code> tool.</p>
+        <p className="mt-2 text-[11px] leading-5 text-foreground-subtle">Your AI can create work through its connected Asbir Teams or ClickUp task tools, then link it here with Asbir’s <code>link_task</code> tool.</p>
       ) : null}
 
-      <details className="mt-3 rounded-[5px] border border-[#3d3d3d] bg-[#252525]">
-          <summary className="cursor-pointer px-3 py-2.5 text-[11px] font-medium text-[#c9c9c9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">Link a task created elsewhere</summary>
-          <form className="space-y-2.5 border-t border-[#3b3b3b] p-3" onSubmit={linkTask}>
-            <label className="block text-[10px] text-[#aaa]">Task system <span className="font-normal text-[#888]">(optional)</span>
-              <input maxLength={80} value={newTaskSourceSystem} onChange={(event) => setNewTaskSourceSystem(event.target.value)} placeholder="Asbir Teams, ClickUp, Linear…" className="mt-1 w-full rounded-[5px] border border-[#444] bg-[#202020] px-2 py-2 text-[11px] text-[#e4e4e4] placeholder:text-[#a0a0a0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" />
+      <details className="mt-3 rounded-control border border-border bg-surface-muted">
+          <summary className="cursor-pointer px-3 py-2.5 text-[11px] font-medium text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Link a task created elsewhere</summary>
+          <form className="space-y-2.5 border-t border-border p-3" onSubmit={linkTask}>
+            <label className="block text-[10px] text-foreground-muted">Task system <span className="font-normal text-foreground-subtle">(optional)</span>
+              <input maxLength={80} value={newTaskSourceSystem} onChange={(event) => setNewTaskSourceSystem(event.target.value)} placeholder="Asbir Teams, ClickUp, Linear…" className="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-2 text-[11px] text-foreground placeholder:text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" />
             </label>
-            <label className="block text-[10px] text-[#aaa]">Task ID <span className="font-normal text-[#888]">(optional)</span>
-              <input maxLength={500} value={newTaskExternalId} onChange={(event) => setNewTaskExternalId(event.target.value)} className="mt-1 w-full rounded-[5px] border border-[#444] bg-[#202020] px-2 py-2 text-[11px] text-[#e4e4e4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" />
+            <label className="block text-[10px] text-foreground-muted">Task ID <span className="font-normal text-foreground-subtle">(optional)</span>
+              <input maxLength={500} value={newTaskExternalId} onChange={(event) => setNewTaskExternalId(event.target.value)} className="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-2 text-[11px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" />
             </label>
-            <label className="block text-[10px] text-[#aaa]">Task URL <span className="font-normal text-[#888]">(optional)</span>
-              <input type="url" maxLength={2000} value={newTaskExternalUrl} onChange={(event) => setNewTaskExternalUrl(event.target.value)} placeholder="https://…" className="mt-1 w-full rounded-[5px] border border-[#444] bg-[#202020] px-2 py-2 text-[11px] text-[#e4e4e4] placeholder:text-[#a0a0a0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" />
+            <label className="block text-[10px] text-foreground-muted">Task URL <span className="font-normal text-foreground-subtle">(optional)</span>
+              <input type="url" maxLength={2000} value={newTaskExternalUrl} onChange={(event) => setNewTaskExternalUrl(event.target.value)} placeholder="https://…" className="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-2 text-[11px] text-foreground placeholder:text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" />
             </label>
-            <label className="block text-[10px] text-[#aaa]">Task title
-              <input required maxLength={200} value={newTaskTitle} onChange={(event) => setNewTaskTitle(event.target.value)} className="mt-1 w-full rounded-[5px] border border-[#444] bg-[#202020] px-2 py-2 text-[11px] text-[#e4e4e4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" />
+            <label className="block text-[10px] text-foreground-muted">Task title
+              <input required maxLength={200} value={newTaskTitle} onChange={(event) => setNewTaskTitle(event.target.value)} className="mt-1 w-full rounded-control border border-border-strong bg-surface px-2 py-2 text-[11px] text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" />
             </label>
-            <label className="block text-[10px] text-[#aaa]">Notes <span className="font-normal text-[#888]">(optional)</span>
-              <textarea maxLength={6000} value={newTaskDescription} onChange={(event) => setNewTaskDescription(event.target.value)} className="mt-1 min-h-20 w-full resize-y rounded-[5px] border border-[#444] bg-[#202020] px-2 py-2 text-[11px] leading-4 text-[#e4e4e4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" />
+            <label className="block text-[10px] text-foreground-muted">Notes <span className="font-normal text-foreground-subtle">(optional)</span>
+              <textarea maxLength={6000} value={newTaskDescription} onChange={(event) => setNewTaskDescription(event.target.value)} className="mt-1 min-h-20 w-full resize-y rounded-control border border-border-strong bg-surface px-2 py-2 text-[11px] leading-4 text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" />
             </label>
-            <button type="submit" disabled={savingTask || loading} className="min-h-8 rounded-[5px] bg-[#e5e5e5] px-3 text-[11px] font-semibold text-[#202020] hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aaa] disabled:opacity-50">{savingTask ? "Linking…" : "Link task"}</button>
+            <button type="submit" disabled={savingTask || loading} className="min-h-8 rounded-control bg-primary px-3 text-[11px] font-semibold text-primary-foreground hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50">{savingTask ? "Linking…" : "Link task"}</button>
           </form>
       </details>
 
-      <label className="mt-4 block text-[11px] font-medium text-[#bdbdbd]" htmlFor="agent-acceptance-criteria">Acceptance criteria</label>
-      <textarea id="agent-acceptance-criteria" value={criteria} onChange={(event) => setCriteria(event.target.value)} maxLength={4000} placeholder="What should the implementation or QA pass prove?" className="mt-1.5 min-h-24 w-full resize-y rounded-[5px] border border-[#444] bg-[#282828] px-2.5 py-2 text-[12px] leading-5 text-[#e4e4e4] placeholder:text-[#a0a0a0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]" />
+      <label className="mt-4 block text-[11px] font-medium text-foreground-muted" htmlFor="agent-acceptance-criteria">Acceptance criteria</label>
+      <textarea id="agent-acceptance-criteria" value={criteria} onChange={(event) => setCriteria(event.target.value)} maxLength={4000} placeholder="What should the implementation or QA pass prove?" className="mt-1.5 min-h-24 w-full resize-y rounded-control border border-border-strong bg-surface-muted px-2.5 py-2 text-[12px] leading-5 text-foreground placeholder:text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" />
 
       <fieldset className="mt-4 space-y-2">
-        <legend className="text-[11px] font-medium text-[#bdbdbd]">Agent MCP access</legend>
-        <p className="text-[10px] leading-4 text-[#888]"><code className="text-[#c9c9c9]">handoffs:read</code> is required for the frozen snapshot.</p>
+        <legend className="text-[11px] font-medium text-foreground-muted">Agent MCP access</legend>
+        <p className="text-[10px] leading-4 text-foreground-subtle"><code className="text-foreground-muted">handoffs:read</code> is required for the frozen snapshot.</p>
         {([
           ["tasks:write", "Link external tasks to handoff evidence"],
           ["comments:write", "Leave review comments"],
           ["changelog:write", "Draft changelogs"],
         ] as Array<[AgentScope, string]>).map(([scope, label]) => (
-          <label key={scope} className="flex items-center gap-2 text-[10px] text-[#aaa]">
-            <input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)} className="size-3.5 accent-[#c8c8c8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aaa]" />
-            <span>{label} <code className="text-[#c9c9c9]">{scope}</code></span>
+          <label key={scope} className="flex items-center gap-2 text-[10px] text-foreground-muted">
+            <input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)} className="size-3.5 accent-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
+            <span>{label} <code className="text-foreground-muted">{scope}</code></span>
           </label>
         ))}
       </fieldset>
 
       <div className="mt-4 grid gap-2">
-        <button type="button" onClick={() => void copyAgentBrief()} disabled={buildingBrief || loading} className="min-h-9 rounded-[5px] bg-[#e5e5e5] px-3 text-[11px] font-semibold text-[#202020] hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aaa] disabled:opacity-50">{buildingBrief ? "Preparing brief…" : "Copy agent brief"}</button>
+        <button type="button" onClick={() => void copyAgentBrief()} disabled={buildingBrief || loading} className="min-h-9 rounded-control bg-primary px-3 text-[11px] font-semibold text-primary-foreground hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:opacity-50">{buildingBrief ? "Preparing brief…" : "Copy agent brief"}</button>
       </div>
-      <details className="mt-2 rounded-[5px] border border-[#3d3d3d] bg-[#252525]">
-        <summary className="cursor-pointer px-3 py-2.5 text-[11px] font-medium text-[#c9c9c9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">Connect an MCP client</summary>
-        <div className="space-y-2.5 border-t border-[#3b3b3b] p-3">
-          <p className="text-[10px] leading-4 text-[#999]">{input.integrationHref ? <>Create your personal scoped token in <Link className="underline underline-offset-2 hover:text-white" href={input.integrationHref}>MCP access</Link>.</> : "Open MCP access settings to create a personal scoped token."} The workspace URL is pinned to this team.</p>
+      <details className="mt-2 rounded-control border border-border bg-surface-muted">
+        <summary className="cursor-pointer px-3 py-2.5 text-[11px] font-medium text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Connect an MCP client</summary>
+        <div className="space-y-2.5 border-t border-border p-3">
+          <p className="text-[10px] leading-4 text-foreground-subtle">{input.integrationHref ? <>Create your personal scoped token in <Link className="underline underline-offset-2 hover:text-white" href={input.integrationHref}>MCP access</Link>.</> : "Open MCP access settings to create a personal scoped token."} The workspace URL is pinned to this team.</p>
           <div className="grid grid-cols-2 gap-2">
-            <button type="button" onClick={() => void copySetupConfiguration("codex")} className="min-h-8 rounded-[5px] bg-[#dedede] px-2 text-[10px] font-semibold text-[#202020] hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aaa]">Copy Codex config</button>
-            <button type="button" onClick={() => void copySetupConfiguration("generic")} className="min-h-8 rounded-[5px] border border-[#494949] px-2 text-[10px] font-medium text-[#d0d0d0] hover:bg-[#303030] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#aaa]">Copy generic JSON</button>
+            <button type="button" onClick={() => void copySetupConfiguration("codex")} className="min-h-8 rounded-control bg-primary px-2 text-[10px] font-semibold text-primary-foreground hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Copy Codex config</button>
+            <button type="button" onClick={() => void copySetupConfiguration("generic")} className="min-h-8 rounded-control border border-border-strong px-2 text-[10px] font-medium text-foreground-muted hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Copy generic JSON</button>
           </div>
-          <p className="text-[10px] leading-4 text-[#888]">Set <code className="text-[#c9c9c9]">ASBIR_MCP_TOKEN</code> in the agent environment. Keep the token in a secret store; it is never included in copied configuration.</p>
+          <p className="text-[10px] leading-4 text-foreground-subtle">Set <code className="text-foreground-muted">ASBIR_MCP_TOKEN</code> in the agent environment. Keep the token in a secret store; it is never included in copied configuration.</p>
           {setupPreview ? (
             <div>
-              <p className="mb-1 text-[10px] font-medium text-[#aaa]">{setupPreview.label}</p>
-              <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-[5px] border border-[#383838] bg-[#1d1d1d] p-2 font-mono text-[10px] leading-4 text-[#c8c8c8]">{setupPreview.content}</pre>
+              <p className="mb-1 text-[10px] font-medium text-foreground-muted">{setupPreview.label}</p>
+              <pre className="max-h-40 overflow-auto whitespace-pre-wrap break-words rounded-control border border-border bg-surface p-2 font-mono text-[10px] leading-4 text-foreground-muted">{setupPreview.content}</pre>
             </div>
           ) : null}
         </div>
       </details>
 
-      {selectedFrame?.exact && selectedFrame.nodes.length ? <p className="mt-2 text-[10px] text-[#999]">Brief includes exact source layout values for {Math.min(selectedFrame.nodes.length, 300)} elements and {Math.min(nodeTokenBindings.length, 300)} token bindings in {selectedFrame.name}.</p> : null}
-      {error ? <p role="alert" className="mt-3 rounded-[5px] border border-[#8a6a38] bg-[#3c3020] px-2.5 py-2 text-[11px] leading-4 text-[#f0c77d]">{error}</p> : null}
-      {notice ? <p role="status" className="mt-3 text-[11px] leading-4 text-[#c3c3c3]">{notice}</p> : null}
+      {selectedFrame?.exact && selectedFrame.nodes.length ? <p className="mt-2 text-[10px] text-foreground-subtle">Brief includes exact source layout values for {Math.min(selectedFrame.nodes.length, 300)} elements and {Math.min(nodeTokenBindings.length, 300)} token bindings in {selectedFrame.name}.</p> : null}
+      {error ? <p role="alert" className="mt-3 rounded-control border border-[#8a6a38] bg-[#3c3020] px-2.5 py-2 text-[11px] leading-4 text-[#f0c77d]">{error}</p> : null}
+      {notice ? <p role="status" className="mt-3 text-[11px] leading-4 text-foreground-muted">{notice}</p> : null}
       {brief ? (
-        <details className="mt-4 rounded-[5px] border border-[#3d3d3d] bg-[#252525]">
-          <summary className="cursor-pointer px-3 py-2.5 text-[11px] font-medium text-[#c9c9c9] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">Preview copied brief</summary>
-          <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words border-t border-[#3b3b3b] p-3 font-mono text-[10px] leading-4 text-[#bcbcbc]">{brief}</pre>
+        <details className="mt-4 rounded-control border border-border bg-surface-muted">
+          <summary className="cursor-pointer px-3 py-2.5 text-[11px] font-medium text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Preview copied brief</summary>
+          <pre className="max-h-72 overflow-auto whitespace-pre-wrap break-words border-t border-border p-3 font-mono text-[10px] leading-4 text-foreground-muted">{brief}</pre>
         </details>
       ) : null}
     </section>

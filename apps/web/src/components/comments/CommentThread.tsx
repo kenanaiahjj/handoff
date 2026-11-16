@@ -71,7 +71,7 @@ function CommentComposer({
       <textarea
         autoFocus={autoFocus}
         aria-describedby={error ? `${inputId}-error` : undefined}
-        className="min-h-20 w-full resize-y rounded-[6px] border border-[#414141] bg-[#191919] px-3 py-2 text-[12px] leading-5 text-[#eee] placeholder:text-[#888] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+        className="min-h-20 w-full resize-y rounded-control border border-border-strong bg-surface-inset px-3 py-2 text-[12px] leading-5 text-foreground placeholder:text-foreground-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
         id={inputId}
         maxLength={4000}
         onChange={(event) => setBody(event.target.value)}
@@ -81,8 +81,8 @@ function CommentComposer({
       />
       {error ? <p className="text-[11px] text-[#efaa4a]" id={`${inputId}-error`} role="alert">{error}</p> : null}
       <div className="flex items-center justify-between gap-3">
-        <span className="font-mono text-[10px] text-[#888]">{body.length}/4000</span>
-        <button className="min-h-8 rounded-[5px] bg-[#dedede] px-3 text-[11px] font-medium text-[#202020] disabled:cursor-not-allowed disabled:opacity-50" disabled={!body.trim() || saving} type="submit">
+        <span className="font-mono text-[10px] text-foreground-subtle">{body.length}/4000</span>
+        <button className="min-h-8 rounded-control bg-primary px-3 text-[11px] font-medium text-primary-foreground disabled:cursor-not-allowed disabled:opacity-50" disabled={!body.trim() || saving} type="submit">
           {saving ? "Saving…" : submitLabel}
         </button>
       </div>
@@ -117,39 +117,39 @@ export function CommentThread({
   const frameName = (frameId: string) => frameId === overviewCanvasFrameId ? "Canvas" : frames.find((frame) => frame.id === frameId)?.name ?? "Screen";
 
   return (
-    <section aria-labelledby="comments-title" className="text-[#d5d5d5]">
+    <section aria-labelledby="comments-title" className="text-foreground-muted">
       <div className="flex items-center justify-between gap-2">
-        <h2 className="text-[14px] font-semibold text-[#ededed]" id="comments-title">Comments</h2>
+        <h2 className="text-[14px] font-semibold text-foreground" id="comments-title">Comments</h2>
         {canWrite ? <button
           aria-pressed={commentMode}
-          className="min-h-8 rounded-[5px] px-2.5 text-[11px] text-[#c8c8c8] hover:bg-[#353535] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+          className="min-h-8 rounded-control px-2.5 text-[11px] text-foreground-muted hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
           onClick={onStartComment}
           type="button"
         >
           {commentMode ? "Cancel" : "Add comment"}
         </button> : null}
       </div>
-      <p className="mt-1 text-[11px] text-[#969696]">{openCount} open · {roots.length} total</p>
-      {commentIdentity ? <p className="mt-2 rounded-[5px] bg-[#303030] px-2.5 py-2 text-[10px] leading-4 text-[#bcbcbc]">Comments will appear as {commentIdentity.label} · {commentIdentity.role.toUpperCase()}. Anyone with this invite link can post using that label.</p> : null}
+      <p className="mt-1 text-[11px] text-foreground-subtle">{openCount} open · {roots.length} total</p>
+      {commentIdentity ? <p className="mt-2 rounded-control bg-surface-raised px-2.5 py-2 text-[10px] leading-4 text-foreground-muted">Comments will appear as {commentIdentity.label} · {commentIdentity.role.toUpperCase()}. Anyone with this invite link can post using that label.</p> : null}
 
-      <div aria-label="Comment status" className="mt-4 flex gap-1 border-b border-[#3b3b3b]" role="group">
+      <div aria-label="Comment status" className="mt-4 flex gap-1 border-b border-border" role="group">
         {(["open", "resolved"] as const).map((tab) => (
           <button
             aria-pressed={activeTab === tab}
-            className={"border-b-2 px-2.5 py-2 text-[11px] capitalize " + (activeTab === tab ? "border-[#ddd] text-white" : "border-transparent text-[#999] hover:text-white")}
+            className={"border-b-2 px-2.5 py-2 text-[11px] capitalize " + (activeTab === tab ? "border-foreground-muted text-white" : "border-transparent text-foreground-subtle hover:text-white")}
             key={tab}
             onClick={() => setActiveTab(tab)}
             type="button"
           >
-            {tab} <span className="ml-1 font-mono text-[10px] text-[#888]">{roots.filter((comment) => tab === "resolved" ? Boolean(comment.resolvedAt) : !comment.resolvedAt).length}</span>
+            {tab} <span className="ml-1 font-mono text-[10px] text-foreground-subtle">{roots.filter((comment) => tab === "resolved" ? Boolean(comment.resolvedAt) : !comment.resolvedAt).length}</span>
           </button>
         ))}
       </div>
 
-      <label className="flex min-h-9 items-center gap-2 text-[11px] text-[#aaa]">
+      <label className="flex min-h-9 items-center gap-2 text-[11px] text-foreground-muted">
         <input
           checked={showResolvedPins}
-          className="size-3.5 accent-[#aaa]"
+          className="size-3.5 accent-foreground-muted"
           onChange={(event) => onToggleResolvedPins(event.target.checked)}
           type="checkbox"
         />
@@ -157,67 +157,67 @@ export function CommentThread({
       </label>
 
       {commentMode ? (
-        <div aria-live="polite" className="rounded-[5px] bg-[#343434] px-2.5 py-2 text-[11px] leading-5 text-[#ddd]">
+        <div aria-live="polite" className="rounded-control bg-surface-raised px-2.5 py-2 text-[11px] leading-5 text-foreground">
           <p>Click a frame or empty canvas point to place a comment pin, or use the button to place it at the selected screen center.</p>
           <button
-            className="mt-2 min-h-8 rounded-[5px] border border-[#555] px-2.5 text-[11px] text-[#ddd] hover:bg-[#414141] disabled:cursor-not-allowed disabled:opacity-50"
+            className="mt-2 min-h-8 rounded-control border border-border-strong px-2.5 text-[11px] text-foreground hover:bg-surface-strong disabled:cursor-not-allowed disabled:opacity-50"
             disabled={!hasSelectedScreen}
             onClick={onPlaceAtSelectedScreen}
             type="button"
           >
             Place at center of selected screen
           </button>
-          {!hasSelectedScreen ? <p className="mt-1 text-[#aaa]">Select a screen to enable this option.</p> : null}
+          {!hasSelectedScreen ? <p className="mt-1 text-foreground-muted">Select a screen to enable this option.</p> : null}
         </div>
       ) : null}
       {pendingPoint && canWrite ? (
-        <div className="mt-3 rounded-[6px] border border-[#555] bg-[#292929] p-3">
-          <p className="mb-1 text-[12px] font-medium text-[#eee]">Comment on {frameName(pendingPoint.frameId)}</p>
-          <p className="mb-3 font-mono text-[10px] text-[#969696]">
+        <div className="mt-3 rounded-control border border-border-strong bg-surface-muted p-3">
+          <p className="mb-1 text-[12px] font-medium text-foreground">Comment on {frameName(pendingPoint.frameId)}</p>
+          <p className="mb-3 font-mono text-[10px] text-foreground-subtle">
             {Math.round(pendingPoint.x)}, {Math.round(pendingPoint.y)} source units
             {pendingPoint.sourceNodeId ? " · selected element" : pendingPoint.frameId === overviewCanvasFrameId ? " · canvas point" : " · screen point"}
           </p>
           <CommentComposer autoFocus label="Write a comment" submitLabel="Comment" onSubmit={(body) => onCreate(body, pendingPoint)} />
         </div>
       ) : null}
-      {error ? <p aria-live="assertive" className="mt-3 rounded-[5px] border border-[#76522a] bg-[#332718] p-2.5 text-[11px] text-[#efb45f]">{error}</p> : null}
+      {error ? <p aria-live="assertive" className="mt-3 rounded-control border border-[#76522a] bg-[#332718] p-2.5 text-[11px] text-[#efb45f]">{error}</p> : null}
 
       {visibleRoots.length ? (
-        <ol className="mt-2 divide-y divide-[#393939]">
+        <ol className="mt-2 divide-y divide-border">
           {visibleRoots.map((comment, index) => {
             const replies = comments.filter((reply) => reply.parentCommentId === comment.id);
             const selected = selectedCommentId === comment.id;
             return (
-              <li className={"py-3 " + (selected ? "bg-[#2e2e2e] px-2" : "")} key={comment.id}>
+              <li className={"py-3 " + (selected ? "bg-surface-raised px-2" : "")} key={comment.id}>
                 <article>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <button className="flex min-w-0 items-center gap-2 text-left" onClick={() => onSelect(comment.id)} type="button">
-                      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-[#414141] font-mono text-[10px] text-white">{index + 1}</span>
-                    <span className="truncate text-[11px] font-medium text-[#e3e3e3]">{comment.authorName}{comment.authorRole ? <span className="ml-1 rounded bg-[#3a3a3a] px-1 py-0.5 text-[9px] uppercase tracking-wide text-[#aaa]">{comment.authorRole}</span> : null}</span>
+                      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-surface-strong font-mono text-[10px] text-white">{index + 1}</span>
+                    <span className="truncate text-[11px] font-medium text-foreground">{comment.authorName}{comment.authorRole ? <span className="ml-1 rounded bg-surface-strong px-1 py-0.5 text-[9px] uppercase tracking-wide text-foreground-muted">{comment.authorRole}</span> : null}</span>
                     </button>
-                    <span className="text-[10px] text-[#8c8c8c]">{new Date(comment.createdAt).toLocaleString()}</span>
+                    <span className="text-[10px] text-foreground-subtle">{new Date(comment.createdAt).toLocaleString()}</span>
                   </div>
-                  <button className="ml-7 mt-2 block text-left text-[12px] leading-5 text-[#c2c2c2] hover:text-white" onClick={() => onSelect(comment.id)} type="button">
+                  <button className="ml-7 mt-2 block text-left text-[12px] leading-5 text-foreground-muted hover:text-white" onClick={() => onSelect(comment.id)} type="button">
                     {comment.body}
                   </button>
-                  <p className="ml-7 mt-1.5 text-[10px] text-[#8e8e8e]">{frameName(comment.frameId)}{comment.sourceNodeId ? " · element linked" : ""}</p>
+                  <p className="ml-7 mt-1.5 text-[10px] text-foreground-subtle">{frameName(comment.frameId)}{comment.sourceNodeId ? " · element linked" : ""}</p>
                   <div className="ml-7 mt-2 flex flex-wrap gap-3">
-                    {canResolve ? <button className="min-h-7 text-[10px] text-[#aaa] hover:text-white hover:underline" onClick={() => onResolve(comment.id, !comment.resolvedAt)} type="button">{comment.resolvedAt ? "Reopen" : "Resolve"}</button> : null}
-                    <button className="min-h-7 text-[10px] text-[#aaa] hover:text-white hover:underline" onClick={() => onSelect(comment.id)} type="button">Show pin</button>
+                    {canResolve ? <button className="min-h-7 text-[10px] text-foreground-muted hover:text-white hover:underline" onClick={() => onResolve(comment.id, !comment.resolvedAt)} type="button">{comment.resolvedAt ? "Reopen" : "Resolve"}</button> : null}
+                    <button className="min-h-7 text-[10px] text-foreground-muted hover:text-white hover:underline" onClick={() => onSelect(comment.id)} type="button">Show pin</button>
                   </div>
                   {replies.length ? (
-                    <ol className="ml-7 mt-3 space-y-2 border-l border-[#444] pl-3">
+                    <ol className="ml-7 mt-3 space-y-2 border-l border-border-strong pl-3">
                       {replies.map((reply) => (
                         <li key={reply.id}>
-                          <p className="text-[10px] text-[#8e8e8e]"><span className="font-medium text-[#c7c7c7]">{reply.authorName}{reply.authorRole ? <span className="ml-1 uppercase tracking-wide">{reply.authorRole}</span> : null}</span> · {new Date(reply.createdAt).toLocaleString()}</p>
-                          <p className="mt-1 text-[11px] leading-5 text-[#b9b9b9]">{reply.body}</p>
+                          <p className="text-[10px] text-foreground-subtle"><span className="font-medium text-foreground-muted">{reply.authorName}{reply.authorRole ? <span className="ml-1 uppercase tracking-wide">{reply.authorRole}</span> : null}</span> · {new Date(reply.createdAt).toLocaleString()}</p>
+                          <p className="mt-1 text-[11px] leading-5 text-foreground-muted">{reply.body}</p>
                         </li>
                       ))}
                     </ol>
                   ) : null}
                   {canWrite ? <div className="ml-7 mt-2">
                     <details>
-                      <summary className="min-h-7 cursor-pointer text-[10px] text-[#969696] hover:text-white">Reply</summary>
+                      <summary className="min-h-7 cursor-pointer text-[10px] text-foreground-subtle hover:text-white">Reply</summary>
                       <div className="mt-2"><CommentComposer label={"Reply to " + comment.authorName} submitLabel="Reply" onSubmit={(body) => onReply(comment.id, body)} /></div>
                     </details>
                   </div> : null}
@@ -227,7 +227,7 @@ export function CommentThread({
           })}
         </ol>
       ) : !pendingPoint ? (
-        <p className="mt-4 text-[12px] text-[#999]">{activeTab === "open" ? "No open comments" : "No resolved comments"}</p>
+        <p className="mt-4 text-[12px] text-foreground-subtle">{activeTab === "open" ? "No open comments" : "No resolved comments"}</p>
       ) : null}
     </section>
   );

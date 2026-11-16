@@ -71,7 +71,7 @@ export function ProjectRulesForm({ workspaceId, projectId, initialRules }: Proje
     <form className="space-y-5" onSubmit={save}>
       <div>
         <label className="mb-1.5 block text-xs font-medium text-foreground" htmlFor="allowed-spacing">Approved spacing values</label>
-        <input className="min-h-11 w-full rounded-control border border-border bg-background px-3 font-mono text-xs text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" id="allowed-spacing" onChange={(event) => setSpacing(event.target.value)} placeholder="4, 8, 12, 16" value={spacing} />
+        <input className="min-h-11 w-full rounded-xl border border-border bg-surface-inset px-3 font-mono text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" id="allowed-spacing" onChange={(event) => setSpacing(event.target.value)} placeholder="4, 8, 12, 16" value={spacing} />
         <p className="mt-1 text-[10px] leading-4 text-foreground-subtle">Handoff flags captured padding and layout gaps outside this scale.</p>
       </div>
 
@@ -79,8 +79,8 @@ export function ProjectRulesForm({ workspaceId, projectId, initialRules }: Proje
         <legend className="mb-2 text-xs font-medium text-foreground">Require token bindings</legend>
         <div className="grid gap-2 sm:grid-cols-3">
           {categories.map((category) => (
-            <label className="flex min-h-10 items-center gap-2 rounded-control bg-background px-3 text-xs text-foreground-muted" key={category}>
-              <input checked={requiredTokens.includes(category)} onChange={() => toggleCategory(category)} type="checkbox" />
+            <label className="flex min-h-11 cursor-pointer items-center gap-2 rounded-xl border border-border bg-surface-inset px-3 text-xs text-foreground-muted transition-colors hover:text-foreground has-[:checked]:border-primary/60 has-[:checked]:text-foreground" key={category}>
+              <input checked={requiredTokens.includes(category)} className="size-4 accent-[var(--primary)]" onChange={() => toggleCategory(category)} type="checkbox" />
               <span className="capitalize">{category}</span>
             </label>
           ))}
@@ -94,9 +94,9 @@ export function ProjectRulesForm({ workspaceId, projectId, initialRules }: Proje
           {([[
             "Minimum width", minWidth, setMinWidth,
           ], ["Maximum width", maxWidth, setMaxWidth], ["Minimum height", minHeight, setMinHeight], ["Maximum height", maxHeight, setMaxHeight]] as const).map(([label, value, setter]) => (
-            <label className="grid gap-1 text-[10px] text-foreground-subtle" key={label}>
+            <label className="grid gap-1.5 text-[11px] text-foreground-muted" key={label}>
               {label} (source units)
-              <input className="min-h-10 w-full rounded-control border border-border bg-background px-3 font-mono text-xs text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" min="0" onChange={(event) => setter(event.target.value)} type="number" value={value} />
+              <input className="min-h-11 w-full rounded-xl border border-border bg-surface-inset px-3 font-mono text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" min="0" onChange={(event) => setter(event.target.value)} type="number" value={value} />
             </label>
           ))}
         </div>
@@ -104,7 +104,7 @@ export function ProjectRulesForm({ workspaceId, projectId, initialRules }: Proje
 
       <div className="flex items-center justify-between gap-3">
         <p aria-live="polite" className="text-xs text-foreground-muted">{message}</p>
-        <button className="min-h-10 rounded-control bg-primary px-4 text-xs font-medium text-primary-foreground disabled:opacity-50" disabled={saving} type="submit">{saving ? "Saving…" : "Save rules"}</button>
+        <button className="capture-primary-action min-h-11 shrink-0 rounded-control px-5 text-xs font-semibold" disabled={saving} type="submit">{saving ? "Saving…" : "Save rules"}</button>
       </div>
     </form>
   );

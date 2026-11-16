@@ -75,8 +75,8 @@ Because page and file captures **replace** rather than merge, your page structur
 ### Limits worth knowing
 
 - Up to **50,000 layers** per capture — no fixed artboard count.
-- **100 MiB** of assets per upload; the overview image reserves part of that budget.
-- Individual layer exports cap at **256 files / 20 MiB**. Hitting that cap doesn't drop layer properties or block the frame.
+- **256 MiB** of assets per upload; the overview image reserves part of that budget.
+- Individual layer exports cap at **256 files / 20 MiB total / 5 MiB per asset**. Failed vector SVG exports retry as PNG. Hitting a cap doesn't drop layer properties or block the frame.
 - Frames render at 2× when their area is ≤3 million pixels, 1× above that, with automatic retry at 1× if the budget is tight.
 
 A full-file capture that exceeds the layer or byte limits **stops** — the plugin won't upload a partial file as though it were complete. If you're near the limits, capture by page or by selection instead.

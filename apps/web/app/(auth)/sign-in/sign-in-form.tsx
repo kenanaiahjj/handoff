@@ -43,7 +43,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
       <div className="mx-auto grid w-full max-w-5xl items-center gap-12 lg:grid-cols-[minmax(0,1fr)_420px]">
         <section aria-labelledby="auth-intro-title" className="hidden max-w-xl lg:block">
           <Link href="/" className="inline-flex items-center gap-2 text-xs font-semibold tracking-[0.04em] text-foreground">
-            <Image alt="" aria-hidden="true" className="size-6 rounded-[5px] object-cover" height={24} src="/icons/asbir-handoff-v2-180.png" width={24} />
+            <Image alt="" aria-hidden="true" className="size-6 rounded-control object-cover" height={24} src="/icons/asbir-handoff-v2-180.png" width={24} />
             ASBIR <span className="font-normal text-foreground-subtle">/ HANDOFF</span>
           </Link>
           <div className="mt-20 max-w-[470px]">
@@ -68,7 +68,7 @@ export function SignInForm({ redirectTo }: { redirectTo: string }) {
 
         <section className="mx-auto w-full max-w-[420px] rounded-panel border border-border bg-surface p-6 sm:p-8">
           <Link href="/" className="inline-flex items-center gap-2 text-xs font-semibold tracking-[0.04em] text-foreground lg:hidden">
-            <Image alt="" aria-hidden="true" className="size-6 rounded-[5px] object-cover" height={24} src="/icons/asbir-handoff-v2-180.png" width={24} />
+            <Image alt="" aria-hidden="true" className="size-6 rounded-control object-cover" height={24} src="/icons/asbir-handoff-v2-180.png" width={24} />
             ASBIR <span className="font-normal text-foreground-subtle">/ HANDOFF</span>
           </Link>
           <div className="mt-0 space-y-2 lg:mt-0">

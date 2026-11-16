@@ -68,6 +68,8 @@ export interface ChangelogDraft {
 - [x] Show approved notes in the published canvas and link each citation to its source version, screen, or element. Keep unapproved drafts out of non-designer responses.
 - [x] Run `npm run lint --workspace @asbir/web` and `npm run build --workspace @asbir/web`.
 - [x] Connect Codex to the isolated Handoff MCP endpoint and generate a product, developer, and QA draft from a known two-version fixture. Verify that the saved draft cites only evidence returned for that version pair. Verified 2026-11-12; draft remains unapproved and isolated from user workspaces.
+- [x] Add local-provider regression tests for exact diff/comment evidence, rejection of unsupported evidence, and disclosure when a high-change draft receives only 200 of 206 evidence items. Verified 2026-11-13 with synthetic snapshots; no external model call was made.
+- [x] Add repository coverage proving edits and approval preserve the draft's original version pair and source evidence. Verified 2026-11-13; the in-app edit check remains open.
 - [ ] Manually generate and edit a draft from a two-version fixture with known changes.
 
 ## Task 2: Expose scoped Handoff MCP tools
@@ -102,7 +104,7 @@ export interface HandoffMcpContext {
 - [x] Run a live local Streamable HTTP smoke with an isolated read-only fixture on 2026-11-12: initialize protocol `2025-11-25`, discover all 16 read tools while write tools remain hidden, retrieve exact fractional layout, spacing, and token values, and confirm a mismatched workspace returns HTTP 403.
 - [x] Connect the Codex CLI to the isolated read-only MCP endpoint and retrieve exact fractional measurements, spacing, and token bindings. Verified 2026-11-12 with a `handoffs:read` token and automatic approval in the temporary test environment.
 - [x] Run a disposable multi-MCP Codex workflow with local Asbir Teams, repository, and QA servers alongside a two-version Handoff fixture. Codex matched the captured width and padding, updated a temporary source file, passed QA, created a mock task, and linked it to Version 2 with exact screen, element, revision, and geometry evidence. Verified 2026-11-12; no external service or user workspace was changed.
-- [ ] Connect an AI client to the actual Asbir Teams task tool, repository MCP, and QA MCP. Create an external task, link it through Handoff, and retrieve the exact version link with `list_linked_tasks`. The local mock multi-MCP workflow passed; actual external services remain unverified.
+- [ ] Connect an AI client to the actual Asbir Teams task tool, repository MCP, and QA MCP. Create an external task, link it through Handoff, and retrieve the exact version link with `list_linked_tasks`. The local mock multi-MCP workflow passed; actual external services remain unverified. The Asbir Teams MCP endpoint and Codex CLI setup are documented in `docs/agents/mcp-setup.md`; the live connection is awaiting approval.
 
 ## Task 3: Link tasks created through the AI client's own tools
 
@@ -116,7 +118,7 @@ export interface HandoffMcpContext {
 - [x] Migrate existing task links into the external-link table before dropping legacy task MCP connections and credentials.
 - [x] Add a follow-up migration that removes the obsolete task-MCP connection and task-link tables after preserving their external references.
 - [x] Run a Codex round-trip with isolated local task, repository, and QA MCP servers: update the temporary source from Handoff measurements, pass QA, create a mock Asbir Teams task, then call `link_task` and `list_linked_tasks` with exact Version 2 evidence. Verified 2026-11-12; no real task or repository changed.
-- [ ] Repeat the task round-trip with the actual Asbir Teams MCP and team repository/QA MCP servers. No external task was created during local testing.
+- [ ] Repeat the task round-trip with the actual Asbir Teams MCP and team repository/QA MCP servers. No external task was created during local testing. The Asbir Teams MCP endpoint is `https://teams.asbir.tech/api/team/mcp`; its Codex CLI login steps are documented in `docs/agents/mcp-setup.md`. The live connection is awaiting approval.
 
 ## Task 4: Support coding-agent handoff
 

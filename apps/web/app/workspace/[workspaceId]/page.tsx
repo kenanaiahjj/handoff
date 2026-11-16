@@ -78,47 +78,51 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
       workspace={workspace}
       workspaces={workspaces}
       navSections={navSections}
-      breadcrumbs={[{ label: "Team spaces", href: "/workspace" }, { label: workspace.name }]}
+      breadcrumbs={[{ label: "Workspaces", href: "/workspace" }, { label: workspace.name }]}
     >
-      <main className="mx-auto w-full max-w-6xl px-5 py-7 text-foreground sm:px-8 sm:py-9">
-        <header className="flex flex-wrap items-end justify-between gap-4">
+      <main className="workspace-dashboard mx-auto px-5 py-7 text-foreground sm:px-8 sm:py-9">
+        <header className="workspace-dashboard-heading">
           <div>
-            <h1 className="text-[20px] font-semibold tracking-[-0.02em] text-foreground">{workspace.name}</h1>
-            <p className="mt-1.5 max-w-2xl text-[13px] leading-5 text-foreground-muted">Projects keep source canvases, frozen versions, and review decisions together.</p>
+            <h1 className="font-semibold text-foreground">{workspace.name}</h1>
+            <p className="mt-2 text-[13px] leading-5 text-foreground-muted">Projects keep source canvases, frozen versions, and review decisions together.</p>
           </div>
-          <span className="rounded-control bg-surface-raised px-2.5 py-1.5 text-[10px] capitalize text-foreground-muted">{workspace.role}</span>
+          <span className="workspace-role px-3 py-1.5 text-[11px] capitalize">{workspace.role}</span>
         </header>
 
-        <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <section aria-labelledby="projects-title" className="min-w-0" id="projects">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h2 className="text-[13px] font-semibold text-foreground" id="projects-title">Projects</h2>
-              <span className="font-mono text-[10px] text-foreground-subtle">{projects.length.toString().padStart(2, "0")}</span>
+        <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <section aria-labelledby="projects-title" className="workspace-pane p-5 sm:p-6" id="projects">
+            <div className="workspace-pane-heading">
+              <h2 className="text-[14px] font-semibold text-foreground" id="projects-title">Projects</h2>
+              <span className="workspace-pane-count font-mono text-[11px]">{projects.length.toString().padStart(2, "0")}</span>
             </div>
             {projects.length ? (
-              <ul className="divide-y divide-border">
+              <ul className="workspace-list mt-2">
                 {projects.map((project) => (
-                  <li className="flex min-h-[66px] items-center gap-3 px-2 transition-colors hover:bg-surface-raised/60" key={project.id}>
-                    <Link aria-label={`Open ${project.name}`} className="flex min-w-0 flex-1 items-center gap-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspace.id}/projects/${project.id}`}>
-                      <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-control bg-surface-raised text-foreground-subtle"><svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 16 16"><rect height="10" rx="1.4" stroke="currentColor" strokeWidth="1.2" width="10" x="3" y="3" /><path d="M6 3v10M8.5 5h2.5M8.5 7.5h2.5" stroke="currentColor" strokeLinecap="round" strokeWidth="1.2" /></svg></span>
+                  <li className="py-1" key={project.id}>
+                    <div className="workspace-list-item flex min-h-[72px] items-center gap-3 px-2.5">
+                      <Link aria-label={`Open ${project.name}`} className="flex min-w-0 flex-1 items-center gap-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspace.id}/projects/${project.id}`}>
+                      <span aria-hidden="true" className="workspace-mark grid size-9 shrink-0 place-items-center text-[12px] font-semibold">{project.name.trim().slice(0, 1).toUpperCase() || "P"}</span>
                       <span className="min-w-0 flex-1">
                         <span className="block truncate text-[13px] font-medium text-foreground">{project.name}</span>
-                        <span className="mt-0.5 block text-[11px] text-foreground-subtle">{project.handoffCount} handoffs <span aria-hidden="true">·</span> {project.versionCount} versions</span>
+                        <span className="mt-1 block text-[11px] text-foreground-subtle">{project.handoffCount} handoffs <span aria-hidden="true">·</span> {project.versionCount} versions</span>
                       </span>
                     </Link>
-                    <Link className="shrink-0 rounded-control bg-primary px-2.5 py-1.5 text-[10px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover" href={`/workspace/${workspace.id}/projects/${project.id}#setup-handoff-name`}>Start handoff</Link>
+                    <Link className="capture-primary-action inline-flex min-h-8 shrink-0 items-center justify-center rounded-full px-3 text-[10px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover" href={`/workspace/${workspace.id}/projects/${project.id}#setup-handoff-name`}>Start handoff</Link>
+                    </div>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="border-b border-border px-2 py-7 text-[12px] text-foreground-muted">No projects yet. Create one to start a design handoff.</p>
+              <p className="workspace-empty-state px-2 py-7 text-[12px]">No projects yet. Create one to start a design handoff.</p>
             )}
-            <div className="mt-5 border-t border-border pt-5"><CreateProjectForm workspaceId={workspace.id} /></div>
+            <div className="workspace-create mt-5 pt-5"><CreateProjectForm workspaceId={workspace.id} /></div>
           </section>
 
-          <section aria-labelledby="invite-title" className="border-t border-border pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
-            <h2 className="text-[13px] font-semibold text-foreground" id="invite-title">Invite your team</h2>
-            <div className="mt-3"><CreateInviteForm key={workspace.id} workspaceId={workspace.id} initialInvites={invites} /></div>
+          <section aria-labelledby="invite-title" className="workspace-pane p-5 sm:p-6">
+            <div className="workspace-pane-heading">
+              <h2 className="text-[14px] font-semibold text-foreground" id="invite-title">Invite your team</h2>
+            </div>
+            <div className="mt-4"><CreateInviteForm key={workspace.id} workspaceId={workspace.id} initialInvites={invites} /></div>
           </section>
         </div>
       </main>

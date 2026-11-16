@@ -37,35 +37,35 @@ export default async function WorkspaceHomePage() {
       user={{ name: session.user.name, email: session.user.email }}
       workspaces={workspaceChoices}
       navSections={[{
-        label: "Team spaces",
+        label: "Workspaces",
         items: [{ label: "All workspaces", href: "/workspace", icon: "grid", active: true }],
       }]}
-      breadcrumbs={[{ label: "Team spaces" }]}
+      breadcrumbs={[{ label: "Workspaces" }]}
     >
-      <main className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 sm:py-9">
-        <header className="flex flex-wrap items-end justify-between gap-4">
+      <main className="workspace-dashboard mx-auto px-5 py-7 sm:px-8 sm:py-9">
+        <header className="workspace-dashboard-heading">
           <div>
-            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Your workspaces</h1>
-            <p className="mt-2 max-w-2xl text-sm leading-6 text-foreground-muted">Handoffs, reviews, and implementation notes stay with the team that owns them.</p>
+            <h1 className="font-semibold text-foreground">Workspaces</h1>
+            <p className="mt-2 text-[13px] leading-5 text-foreground-muted">Handoffs, reviews, and implementation notes stay with the team that owns them.</p>
           </div>
-          <span className="font-mono text-xs text-foreground-subtle">{workspaces.length.toString().padStart(2, "0")} spaces</span>
+          <span className="workspace-role px-3 py-1.5 font-mono text-[11px]">{workspaces.length.toString().padStart(2, "0")} {workspaces.length === 1 ? "workspace" : "workspaces"}</span>
         </header>
 
-        <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1fr)_320px]">
-          <section aria-labelledby="workspace-list-title" className="min-w-0">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h2 className="text-sm font-semibold text-foreground" id="workspace-list-title">Available workspaces</h2>
-              <span className="font-mono text-[11px] text-foreground-subtle">{workspaces.length.toString().padStart(2, "0")}</span>
+        <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+          <section aria-labelledby="workspace-list-title" className="workspace-pane p-5 sm:p-6">
+            <div className="workspace-pane-heading">
+              <h2 className="text-[14px] font-semibold text-foreground" id="workspace-list-title">Available workspaces</h2>
+              <span className="workspace-pane-count font-mono text-[11px]">{workspaces.length.toString().padStart(2, "0")}</span>
             </div>
             {workspaces.length ? (
-              <ul className="divide-y divide-border">
+              <ul className="workspace-list mt-2">
                 {workspaces.map((workspace) => (
-                  <li key={workspace.id}>
-                    <Link className="group flex min-h-16 items-center gap-3 px-2 transition-colors hover:bg-surface/70 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspace.id}`}>
-                      <span aria-hidden="true" className="grid size-8 shrink-0 place-items-center rounded-control border border-border bg-surface text-xs font-medium text-foreground-muted">{workspace.name.trim().slice(0, 1).toUpperCase() || "W"}</span>
+                  <li className="py-1" key={workspace.id}>
+                    <Link className="workspace-list-item group flex min-h-[72px] items-center gap-3 px-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspace.id}`}>
+                      <span aria-hidden="true" className="workspace-mark grid size-9 shrink-0 place-items-center text-[12px] font-semibold">{workspace.name.trim().slice(0, 1).toUpperCase() || "W"}</span>
                       <span className="min-w-0 flex-1">
-                        <span className="block truncate text-sm font-medium text-foreground">{workspace.name}</span>
-                        <span className="mt-0.5 block text-xs text-foreground-subtle">{workspace.role === "reviewer" ? "Product manager / reviewer" : workspace.role}</span>
+                        <span className="block truncate text-[13px] font-medium text-foreground">{workspace.name}</span>
+                        <span className="mt-1 block text-[11px] text-foreground-subtle">{workspace.role === "reviewer" ? "Product manager / reviewer" : workspace.role}</span>
                       </span>
                       <svg aria-hidden="true" className="size-4 shrink-0 text-foreground-subtle transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
                     </Link>
@@ -73,13 +73,15 @@ export default async function WorkspaceHomePage() {
                 ))}
               </ul>
             ) : (
-              <p className="border-b border-border px-2 py-8 text-sm text-foreground-muted">No workspaces yet. Create one or open a team invitation link.</p>
+              <p className="workspace-empty-state px-2 py-8 text-sm">No workspaces yet. Create one or open a team invitation link.</p>
             )}
           </section>
 
-          <section aria-labelledby="create-workspace-title" className="border-t border-border pt-5 xl:border-l xl:border-t-0 xl:pl-6 xl:pt-0">
-            <h2 className="text-sm font-semibold text-foreground" id="create-workspace-title">Create a workspace</h2>
-            <p className="mb-4 mt-1.5 text-xs leading-5 text-foreground-muted">Start a team space for a product or project, then invite the people who review and build it.</p>
+          <section aria-labelledby="create-workspace-title" className="workspace-pane p-5 sm:p-6">
+            <div className="workspace-pane-heading">
+              <h2 className="text-[14px] font-semibold text-foreground" id="create-workspace-title">Create a workspace</h2>
+            </div>
+            <p className="mb-4 mt-4 text-[12px] leading-5 text-foreground-muted">Start a team space for a product or project, then invite the people who review and build it.</p>
             <CreateWorkspaceForm />
           </section>
         </div>

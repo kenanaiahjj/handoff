@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { workspaceMcpEndpoint } from "./mcp-configuration";
+import { useConfirm } from "@/src/components/ConfirmDialog";
 
 type McpScope = "handoffs:read" | "comments:write" | "changelog:write" | "tasks:write";
 type TokenRecord = {
@@ -24,6 +25,7 @@ const scopeLabels: Record<McpScope, string> = {
 };
 
 export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: string; canManageAll: boolean }) {
+  const { confirm, dialog } = useConfirm();
   const endpoint = `/api/workspaces/${encodeURIComponent(workspaceId)}/mcp-tokens`;
   const [tokens, setTokens] = useState<TokenRecord[]>([]);
   const [name, setName] = useState("");
@@ -75,6 +77,12 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
   }
 
   async function revokeToken(tokenId: string) {
+    const confirmed = await confirm({
+      title: "Revoke this token?",
+      description: "Any MCP client using it will lose access immediately. This cannot be undone.",
+      confirmLabel: "Revoke token",
+    });
+    if (!confirmed) return;
     setError(null);
     setNotice(null);
     try {
@@ -132,7 +140,7 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
           <fieldset className="space-y-2">
             <legend className="text-xs font-medium text-foreground-muted">Access scopes</legend>
             {(Object.keys(scopeLabels) as McpScope[]).map((scope) => (
-              <label className="flex cursor-pointer items-start gap-2.5 rounded-control bg-surface-raised/70 px-3 py-2.5 text-xs leading-5 text-foreground-muted transition-colors hover:bg-surface-raised" key={scope}>
+              <label className="flex cursor-pointer items-start gap-2.5 rounded-control bg-surface-raised/70 px-3 py-2.5 text-xs leading-5 text-foreground-muted transition-colors hover:bg-surface-strong" key={scope}>
                 <input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)} className="mt-0.5 size-4 accent-[var(--color-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
                 <span><span className="font-mono text-foreground">{scope}</span><span className="mt-0.5 block">{scopeLabels[scope]}</span></span>
               </label>
@@ -192,6 +200,7 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
 
       {error ? <p className="rounded-control border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs leading-5 text-warning" role="alert">{error}</p> : null}
       {notice ? <p className="text-xs text-success" role="status">{notice}</p> : null}
+      {dialog}
     </div>
   );
 }

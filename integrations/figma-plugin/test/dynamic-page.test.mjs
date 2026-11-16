@@ -755,6 +755,36 @@ test("retains downloadable SVG and PNG assets for selected vector and image laye
   assert.equal(nodes.get(image.id)?.sourcePayload.layerExportAssetKey, imageAsset?.key);
 });
 
+test("falls back to a PNG layer asset when Figma cannot export the SVG", async () => {
+  const fixture = installCaptureFixture();
+  const vector = {
+    id: "vector-svg-fallback",
+    type: "VECTOR",
+    name: "Fallback icon",
+    visible: true,
+    absoluteBoundingBox: { x: 20, y: 30, width: 18, height: 18 },
+    fills: [],
+    strokes: [],
+    children: [],
+    parent: fixture.frame,
+    async exportAsync(settings) {
+      if (settings.format === "SVG_STRING") throw new Error("SVG export is unavailable");
+      assert.equal(settings.format, "PNG");
+      return fixture.png;
+    },
+  };
+  fixture.frame.children = [vector];
+
+  const result = await captureFigmaCanvas("selected", () => {});
+  const layerAsset = result.layerRenders.find((asset) => asset.sourceNodeId === vector.id);
+  const capturedNode = result.payload.frames[0].nodes.find((node) => node.sourceNodeId === vector.id);
+
+  assert.equal(layerAsset?.contentType, "image/png");
+  assert.equal(capturedNode?.sourcePayload.layerExportAssetKey, layerAsset?.key);
+  assert.equal(result.payload.sourceMetadata.layerExportFallbackCount, 1);
+  assert.match(result.warnings.join(" "), /1 individual layer export was saved as PNG after Figma’s SVG export failed/);
+});
+
 test("keeps the frame capture when an individual layer export fails", async () => {
   const fixture = installCaptureFixture();
   fixture.frame.children = [{
@@ -775,7 +805,37 @@ test("keeps the frame capture when an individual layer export fails", async () =
   assert.equal(result.renders.length, 1);
   assert.equal(result.payload.frames[0].nodes.length, 2);
   assert.equal(result.layerRenders.length, 0);
-  assert.match(result.warnings.join(" "), /individual layer export was unavailable/);
+  assert.match(result.warnings.join(" "), /individual layer image\/vector export could not be generated.*structured layer data were retained/);
+});
+
+test("reports the per-capture layer asset cap while retaining every structured layer", async () => {
+  const fixture = installCaptureFixture();
+  const exportableLayers = Array.from({ length: 300 }, (_, index) => ({
+    id: `vector-${index}`,
+    type: "VECTOR",
+    name: `Vector ${index}`,
+    visible: true,
+    absoluteBoundingBox: { x: index, y: 20, width: 18, height: 18 },
+    fills: [],
+    strokes: [],
+    children: [],
+    parent: fixture.frame,
+    async exportAsync() {
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><path d="M0 0h18v18H0z" /></svg>';
+    },
+  }));
+  fixture.frame.children = exportableLayers;
+
+  const result = await captureFigmaCanvas("selected", () => {});
+  const capturedNodes = result.payload.frames[0].nodes;
+  const capWarning = result.warnings.find((warning) => warning.includes("eligible layer assets"));
+
+  assert.equal(capturedNodes.length, exportableLayers.length + 1);
+  assert.equal(capturedNodes.filter((node) => node.sourceNodeId.startsWith("vector-")).length, 300);
+  assert.equal(result.layerRenders.length, 256);
+  assert.equal(result.payload.sourceMetadata.layerExportAssetCount, 256);
+  assert.equal(result.payload.sourceMetadata.layerExportSkippedCount, 44);
+  assert.match(capWarning ?? "", /Selected 256 of 300 eligible layer assets.*all 300 layers and their captured properties remain available/i);
 });
 
 test("uses 2x renders for multiple small frames even when their combined area is large", async () => {

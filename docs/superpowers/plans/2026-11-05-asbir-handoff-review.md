@@ -118,6 +118,7 @@ export interface SnapshotDiff {
   - Verified 2026-11-11: exact spacing, measured-margin provenance, missing color/spacing token bindings, and 31,500 elements across 210 screens; the fixture produced 63,000 unique findings in about 102 ms.
 - [x] Keep rule findings distinct from AI-generated notes. Allow assignee, open/resolved status, comment, and export.
 - [x] Scope saved finding state and comments to immutable version IDs in repository queries and API routes. Verified 2026-11-13 in source; no app-level two-version review has been performed.
+- [x] Add repository regression coverage for independent state, notes, and comments on the same finding key across two immutable versions. Verified 2026-11-13; the manual in-app check below remains open.
 - [x] Export source frame images as PNG and JPEG at their stored dimensions. Offer the overview render and individual frame renders separately.
 - [x] Run the full test suite, web lint and isolated production build. Verify comment pins remain on their screens after zooming. Verified 2026-11-12 and 2026-11-13.
 - [ ] In the app, resolve or annotate a finding on one version, then confirm the same finding stays unchanged on a second version.

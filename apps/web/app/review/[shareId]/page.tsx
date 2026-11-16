@@ -106,6 +106,7 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
         publicReviewShareId={shareId}
         publishedVersionId={handoff.publishedVersionId}
         canManageIntegrations={false}
+        canManageSharing={false}
         canAnnotate={access.decision.canWrite}
         canComment={access.decision.canComment}
         commentIdentity={access.invite ? { label: access.invite.email, role: access.invite.role } : null}

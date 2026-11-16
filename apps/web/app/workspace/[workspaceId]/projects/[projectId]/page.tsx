@@ -9,7 +9,7 @@ import { listProjects } from "@/src/server/repositories/projects";
 import { ProjectPdInChargeForm } from "./project-actions";
 import { HandoffSetupForm } from "./handoff-setup-form";
 import { ProjectRulesForm } from "@/src/components/ProjectRulesForm";
-import { DeleteHandoffButton } from "@/src/components/canvas/HandoffLifecycleActions";
+import { DeleteHandoffButton, RenameHandoffButton } from "@/src/components/canvas/HandoffLifecycleActions";
 import { HandoffAccessDialog } from "@/src/components/canvas/HandoffAccessDialog";
 import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
 import { StartHandoffButton } from "./start-handoff-button";
@@ -60,36 +60,34 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       workspace={workspace}
       workspaces={workspaces}
       navSections={navSections}
-      breadcrumbs={[{ label: "Team spaces", href: "/workspace" }, { label: workspace.name, href: `/workspace/${workspaceId}` }, { label: project.name }]}
+      breadcrumbs={[{ label: "Workspaces", href: "/workspace" }, { label: workspace.name, href: `/workspace/${workspaceId}` }, { label: project.name }]}
     >
-      <main className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 sm:py-9">
-        <header>
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">{project.name}</h1>
-          <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-            <p className="max-w-2xl text-sm leading-6 text-foreground-muted">Keep the app’s design canvas and every reviewed version in this project.</p>
-            <StartHandoffButton />
+      <main className="workspace-dashboard mx-auto px-5 py-7 sm:px-8 sm:py-9">
+        <header className="workspace-dashboard-heading">
+          <div>
+            <h1 className="font-semibold text-foreground">{project.name}</h1>
+            <p className="mt-2 text-[13px] leading-5 text-foreground-muted">Keep the app’s design canvas and every reviewed version in this project.</p>
           </div>
+          <StartHandoffButton />
         </header>
 
-        <div className="mt-8 grid gap-8 xl:grid-cols-[minmax(0,1fr)_390px]">
-          <section aria-labelledby="handoff-list-title" className="min-w-0" id="handoffs">
-            <div className="flex items-center justify-between border-b border-border pb-3">
-              <h2 className="text-sm font-semibold text-foreground" id="handoff-list-title">Handoffs</h2>
-              <span className="font-mono text-[11px] text-foreground-subtle">{handoffs.length.toString().padStart(2, "0")}</span>
+        <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_390px]">
+          <section aria-labelledby="handoff-list-title" className="workspace-pane p-5 sm:p-6" id="handoffs">
+            <div className="workspace-pane-heading">
+              <h2 className="text-[14px] font-semibold text-foreground" id="handoff-list-title">Handoffs</h2>
+              <span className="workspace-pane-count font-mono text-[11px]">{handoffs.length.toString().padStart(2, "0")}</span>
             </div>
             {handoffs.length ? (
-              <ul className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <ul className="workspace-handoff-list mt-2">
                 {handoffs.map((handoff) => (
-                  <li className="h-full min-w-0" key={handoff.id}>
-                    <article className="flex h-full min-h-[144px] flex-col rounded-md bg-surface-raised/25 p-3 transition-colors hover:bg-surface-raised/45">
+                  <li className="py-1" key={handoff.id}>
+                    <article className="workspace-handoff-item flex min-h-[104px] flex-col px-2.5 py-3">
                       <Link
                         aria-label={`Open handoff ${handoff.name}`}
                         className="group/link flex min-w-0 items-start gap-3 rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                         href={`/workspace/${workspaceId}/projects/${projectId}/handoffs/${handoff.id}`}
-                        rel="noopener noreferrer"
-                        target="_blank"
                       >
-                        <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center rounded-control bg-surface text-foreground-subtle"><svg className="size-4" fill="none" viewBox="0 0 16 16"><path d="M3 3.5h10v9H3zM5.5 6h5M5.5 8.5h3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.2" /></svg></span>
+                        <span aria-hidden="true" className="workspace-mark grid size-9 shrink-0 place-items-center text-foreground"><svg className="size-4" fill="none" viewBox="0 0 16 16"><path d="M3 3.5h10v9H3zM5.5 6h5M5.5 8.5h3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.2" /></svg></span>
                         <span className="min-w-0 flex-1 pt-0.5">
                           <span className="block truncate text-sm font-medium leading-5 text-foreground">{handoff.name}</span>
                           <span className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] leading-4 text-foreground-subtle">
@@ -103,7 +101,11 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
                         <svg aria-hidden="true" className="mt-1 size-4 shrink-0 text-foreground-subtle transition-transform group-hover/link:translate-x-0.5" fill="none" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
                       </Link>
                       {canManageHandoffs ? (
-                        <div className="mt-auto flex items-center justify-end gap-1 border-t border-border/60 pt-2.5">
+                        <div className="workspace-handoff-actions mt-3 flex flex-wrap items-center justify-end gap-1 pt-2.5">
+                          <RenameHandoffButton
+                            endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoff.id)}`}
+                            handoffName={handoff.name}
+                          />
                           <HandoffAccessDialog
                             endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoff.id)}`}
                             handoffName={handoff.name}
@@ -120,7 +122,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
                 ))}
               </ul>
             ) : (
-              <p className="border-b border-border px-2 py-7 text-sm text-foreground-muted">No handoffs yet. Capture a Figma canvas to create the first version.</p>
+              <p className="workspace-empty-state px-2 py-7 text-sm">No handoffs yet. Capture a Figma canvas to create the first version.</p>
             )}
           </section>
 
@@ -130,8 +132,8 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
           </aside>
         </div>
 
-        <details className="mt-8 border-t border-border pt-4">
-          <summary className="cursor-pointer text-xs font-semibold text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Layout QA rules</summary>
+        <details className="workspace-settings-disclosure mt-6 px-4 py-4">
+          <summary className="flex cursor-pointer list-none items-center gap-2 text-xs font-semibold text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden"><svg aria-hidden="true" className="size-3.5 shrink-0 text-foreground-subtle transition-transform [[open]>summary>&]:rotate-90" fill="none" viewBox="0 0 16 16"><path d="m6 4 4 4-4 4" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>Layout QA rules</summary>
           <p className="mb-5 mt-2 max-w-2xl text-xs leading-5 text-foreground-muted">Set this project’s spacing scale, token requirements, and frame limits. Handoff applies these rules to each structured snapshot.</p>
           <ProjectRulesForm workspaceId={workspaceId} projectId={projectId} initialRules={project.rules} />
         </details>

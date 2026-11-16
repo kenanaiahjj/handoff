@@ -90,6 +90,18 @@ export function deleteHandoff(input: {
   return deleteHandoffInDatabase(getDatabase(), input);
 }
 
+export function renameHandoff(input: {
+  workspaceId: string;
+  projectId: string;
+  handoffId: string;
+  name: string;
+}) {
+  const result = getDatabase()
+    .prepare("UPDATE handoff SET name = ? WHERE id = ? AND workspace_id = ? AND project_id = ?")
+    .run(input.name.trim(), input.handoffId, input.workspaceId, input.projectId);
+  return result.changes > 0;
+}
+
 export function getLatestPublishedReviewShare(input: { workspaceId: string; projectId: string }) {
   return getDatabase()
     .prepare(

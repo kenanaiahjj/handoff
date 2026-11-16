@@ -5,10 +5,26 @@ import type {
   VisualOnlySnapshot,
 } from "./schema";
 
-const utf8 = new TextEncoder();
+const utf8 = typeof TextEncoder === "undefined" ? null : new TextEncoder();
 const maxChunkLength = 16 * 1024;
 
 type CanonicalTask = { kind: "value"; value: unknown } | { kind: "text"; value: string };
+
+function encodeUtf8(value: string): Uint8Array {
+  const encoded = encodeURIComponent(value);
+  const bytes = new Uint8Array(encoded.length);
+  let length = 0;
+  for (let index = 0; index < encoded.length; index += 1) {
+    if (encoded.charCodeAt(index) === 0x25) {
+      bytes[length] = Number.parseInt(encoded.slice(index + 1, index + 3), 16);
+      index += 2;
+    } else {
+      bytes[length] = encoded.charCodeAt(index);
+    }
+    length += 1;
+  }
+  return bytes.subarray(0, length);
+}
 
 export function sha256Hex(bytes: Uint8Array): string {
   return Array.from(sha256(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -16,7 +32,7 @@ export function sha256Hex(bytes: Uint8Array): string {
 
 function writeCanonicalJson(value: unknown) {
   const hash = sha256.create();
-  const writeText = (text: string) => hash.update(utf8.encode(text));
+  const writeText = (text: string) => hash.update(utf8 ? utf8.encode(text) : encodeUtf8(text));
   const writeString = (value: string) => {
     writeText('"');
     let chunkStart = 0;

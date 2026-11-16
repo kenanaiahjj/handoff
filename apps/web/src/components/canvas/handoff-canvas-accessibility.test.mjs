@@ -8,10 +8,10 @@ const toolbarSource = readFileSync(new URL("./CanvasToolbar.tsx", import.meta.ur
 const annotationSource = readFileSync(new URL("./CanvasAnnotationsPanel.tsx", import.meta.url), "utf8");
 const commentSource = readFileSync(new URL("../comments/CommentThread.tsx", import.meta.url), "utf8");
 
-test("review header project link meets the 24px pointer target minimum", () => {
-  const projectLink = source.match(/<Link className="([^"]+)" href={metadata\.projectHref}>/);
-  assert.ok(projectLink, "the project link must exist");
-  assert.match(projectLink[1], /\bmin-h-6\b/);
+test("review header home link meets the 24px pointer target minimum", () => {
+  const homeLink = source.match(/<Link aria-label="Asbir Handoff home" className="([^"]+)"/);
+  assert.ok(homeLink, "the home link must exist");
+  assert.match(homeLink[1], /\bmin-h-(?:6|7|8|9|10|11)\b/);
 });
 
 test("zoom percentage control meets the 24px pointer target minimum", () => {

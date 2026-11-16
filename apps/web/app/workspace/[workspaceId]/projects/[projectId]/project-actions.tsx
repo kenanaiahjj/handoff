@@ -46,7 +46,7 @@ export function ProjectPdInChargeForm({ input }: {
         <option value="">Unassigned</option>
         {input.candidates.map((candidate) => <option key={candidate.id} value={candidate.id}>{candidate.name} · {candidate.role === "owner" ? "Owner" : "Designer"} · {candidate.email}</option>)}
       </select>
-      <button className="mt-4 min-h-10 rounded-full border border-border-strong bg-surface-raised px-4 text-xs font-semibold text-foreground transition-colors hover:bg-surface-raised/80 disabled:cursor-not-allowed disabled:opacity-50" disabled={saving || selectedId === savedId} onClick={() => void save()} type="button">{saving ? "Saving…" : "Save assignment"}</button>
+      <button className="mt-4 min-h-10 rounded-full border border-border-strong bg-surface-raised px-4 text-xs font-semibold text-foreground transition-colors hover:bg-surface-strong/80 disabled:cursor-not-allowed disabled:opacity-50" disabled={saving || selectedId === savedId} onClick={() => void save()} type="button">{saving ? "Saving…" : "Save assignment"}</button>
       {error ? <p className="mt-3 text-xs text-danger" role="alert">{error}</p> : notice ? <p aria-live="polite" className="mt-3 text-xs text-foreground-muted">{notice}</p> : null}
     </section>
   );

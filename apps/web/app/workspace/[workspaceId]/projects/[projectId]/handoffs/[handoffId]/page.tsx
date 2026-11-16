@@ -10,7 +10,7 @@ import { getHandoff, listHandoffVersions } from "@/src/server/repositories/hando
 import { getProject } from "@/src/server/repositories/projects";
 import { getVersion } from "@/src/server/repositories/versions";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
-import { PublishCanvasLink } from "@/src/components/canvas/PublishCanvasLink";
+import { CanvasPublicationStatus } from "@/src/components/canvas/CanvasPublicationStatus";
 import { DeleteHandoffButton, DeleteHandoffVersionButton } from "@/src/components/canvas/HandoffLifecycleActions";
 import { HandoffSetupForm } from "../../handoff-setup-form";
 import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
@@ -97,7 +97,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
   const dockPanels = {
     version: canCreateVersion ? (
       <div className="space-y-3">
-        <section aria-label="Release note and publish" className="rounded-control bg-surface p-3">
+        <section aria-label="Version details" className="rounded-control bg-surface p-3">
           <p className="font-mono text-[9px] uppercase tracking-[0.14em] text-foreground-subtle">Release note</p>
           <p className="mt-2 text-[12px] leading-5 text-foreground">{version.releaseNote || "No release note was provided for this snapshot."}</p>
           <p className="mt-2 font-mono text-[9px] text-foreground-subtle">{visualOnly ? "Visual-only snapshot" : `${nodeCount} captured elements`} · {version.source}</p>
@@ -107,22 +107,12 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
               ? "Uploaded pixels are frozen in this version. Exact padding, margins, and token bindings need a structured Figma capture."
               : "This render and its measurements are pinned to this version. Later source edits do not change it."}
           </p>
-          {canCreateVersion ? (
-            <div className="mt-3">
-              <PublishCanvasLink
-                key={selectedVersion.id}
-                workspaceId={workspaceId}
-                projectId={projectId}
-                handoffId={handoffId}
-                versionId={selectedVersion.id}
-                latestVersionId={versions[0]?.id ?? selectedVersion.id}
-                publishedVersionId={handoff.publishedVersionId}
-                reviewShareId={handoff.reviewShareId}
-                sharingMode={handoff.sharingMode}
-                canManage={canManageHandoffs}
-              />
-            </div>
-          ) : null}
+          <CanvasPublicationStatus
+            versionId={selectedVersion.id}
+            latestVersionId={versions[0]?.id ?? selectedVersion.id}
+            publishedVersionId={handoff.publishedVersionId}
+            canPublish={canManageHandoffs}
+          />
           {canManageHandoffs ? <div className="mt-3 flex justify-end border-t border-border pt-3">
             <DeleteHandoffButton
               endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`}
@@ -181,6 +171,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
         reviewShareId={handoff.reviewShareId}
         publishedVersionId={handoff.publishedVersionId}
         canManageIntegrations={true}
+        canManageSharing={canManageHandoffs}
         canAnnotate={true}
         canUseLocalPreview={true}
         dockPanels={dockPanels}

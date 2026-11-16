@@ -159,7 +159,7 @@ export function HandoffReview({
   }, []);
 
   return (
-    <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-[#202020] text-[#dedede]">
+    <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface text-foreground">
       <HandoffCanvas
         frames={frames}
         commentsEndpoint={commentsEndpoint}

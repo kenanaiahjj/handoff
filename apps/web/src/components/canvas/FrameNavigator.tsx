@@ -96,32 +96,32 @@ export function FrameNavigator({
   }
 
   return (
-    <nav aria-label="Snapshot screens" className="flex h-full min-h-0 min-w-0 flex-col border-r border-[#3a3a3a] bg-[#202020] text-[#c4c4c4]">
+    <nav aria-label="Snapshot screens" className="flex h-full min-h-0 min-w-0 flex-col border-r border-border bg-surface text-foreground-muted">
       <div className="shrink-0 space-y-3 p-3">
         <button
-          className="flex h-9 w-full items-center gap-2 rounded-[7px] border border-[#3b3b3b] bg-[#292929] px-2.5 text-left text-[12px] text-[#c3c3c3] hover:border-[#555] hover:bg-[#303030] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+          className="flex h-9 w-full items-center gap-2 rounded-control border border-border bg-surface-muted px-2.5 text-left text-[12px] text-foreground-muted hover:border-border-strong hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
           id="canvas-search-screens-trigger"
           onClick={onOpenSearch}
-          title="Search captured text, colours, and elements"
+          title="Search captured text, colors, and elements"
           type="button"
         >
-          <svg aria-hidden="true" className="size-3.5 shrink-0 text-[#999]" fill="none" viewBox="0 0 16 16">
+          <svg aria-hidden="true" className="size-3.5 shrink-0 text-foreground-subtle" fill="none" viewBox="0 0 16 16">
             <circle cx="7" cy="7" r="4.5" stroke="currentColor" strokeWidth="1.5" />
             <path d="m10.5 10.5 3 3" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
           </svg>
           <span className="min-w-0 flex-1 truncate">Search all screens</span>
-          <kbd className="rounded-[4px] bg-[#353535] px-1.5 py-0.5 font-mono text-[10px] text-[#aaa]">⌘ F</kbd>
+          <kbd className="rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono text-[10px] text-foreground-muted">⌘ F</kbd>
         </button>
         <input
           aria-label="Filter screens"
-            className="h-9 w-full rounded-[7px] border border-transparent bg-[#303030] px-2.5 text-[13px] text-[#ededed] outline-none placeholder:text-[#a0a0a0] focus:border-[#5b5b5b] focus:bg-[#343434] focus:ring-2 focus:ring-[#8a8a8a]/40"
+            className="h-9 w-full rounded-control border border-transparent bg-surface-raised px-2.5 text-[13px] text-foreground outline-none placeholder:text-foreground-muted focus:border-border-strong focus:bg-surface-raised focus:ring-2 focus:ring-foreground-subtle/40"
           id="review-screen-filter"
           onChange={(event) => setScreenQuery(event.target.value)}
           placeholder="Filter screens"
           type="search"
           value={screenQuery}
         />
-        <label className="flex min-h-7 cursor-pointer items-center gap-2 text-[12px] leading-5 text-[#bdbdbd]">
+        <label className="flex min-h-7 cursor-pointer items-center gap-2 text-[12px] leading-5 text-foreground-muted">
           <input
             checked={changedOnly}
             className="size-3.5 accent-[#d99a32]"
@@ -131,13 +131,13 @@ export function FrameNavigator({
             type="checkbox"
           />
           <span>{comparisonSummary?.onlyInAfterCapture ? "Changed or no before match" : "Changed in this version"}</span>
-          {comparisonSummary ? <span className="ml-auto font-mono text-[10px] text-[#888]">{comparisonSummary.changed + comparisonSummary.added + comparisonSummary.onlyInAfterCapture}</span> : null}
+          {comparisonSummary ? <span className="ml-auto font-mono text-[10px] text-foreground-subtle">{comparisonSummary.changed + comparisonSummary.added + comparisonSummary.onlyInAfterCapture}</span> : null}
         </label>
       </div>
 
       <div className="flex items-center justify-between px-3 pb-2 pt-1">
-        <h2 className="text-[12px] font-semibold text-[#aaa]">Screens</h2>
-          <span className="font-mono text-[10px] text-[#999]">{visibleFrames.length}/{screens.length}</span>
+        <h2 className="text-[12px] font-semibold text-foreground-muted">Screens</h2>
+          <span className="font-mono text-[10px] text-foreground-subtle">{visibleFrames.length}/{screens.length}</span>
       </div>
 
       <ul className="min-h-0 flex-1 space-y-0.5 overflow-y-auto px-2 pb-3">
@@ -145,41 +145,41 @@ export function FrameNavigator({
           const selected = frame.id === activeFrameId;
           const status = frameStatuses[frame.id];
           const statusLabel = status && status !== "unchanged" ? comparisonFrameStatusLabel(status) : null;
-          const statusTone = status === "added" ? "bg-[#183a2d] text-[#67d59a]"
-            : status === "removed" || status === "only-in-before-capture" ? "bg-[#3b2525] text-[#e58b83]"
+          const statusTone = status === "added" ? "bg-[#183a2d] text-success"
+            : status === "removed" || status === "only-in-before-capture" ? "bg-[#3b2525] text-danger"
               : "bg-[#43331f] text-[#efae3d]";
           return (
             <li key={frame.id}>
               <button
                 aria-pressed={selected}
-                className={"flex min-h-9 w-full items-center gap-2 rounded-[5px] border px-2.5 text-left text-[13px] transition-colors " + (selected ? "border-[#454545] bg-[#343434] text-[#f0f0f0]" : "border-transparent text-[#bdbdbd] hover:bg-[#2b2b2b] hover:text-[#f2f2f2]")}
+                className={"flex min-h-9 w-full items-center gap-2 rounded-control border px-2.5 text-left text-[13px] transition-colors " + (selected ? "border-border-strong bg-surface-raised text-foreground" : "border-transparent text-foreground-muted hover:bg-surface-raised hover:text-foreground")}
                 onClick={() => onSelect(frame.id)}
                 title={frame.pageName ? `${frame.name} · ${frame.pageName}` : frame.name}
                 type="button"
               >
                 <span className="min-w-0 flex-1 truncate">
                   {frame.name}
-                  {frame.pageName ? <span className="ml-1.5 text-[10px] text-[#888]">· {frame.pageName}</span> : null}
+                  {frame.pageName ? <span className="ml-1.5 text-[10px] text-foreground-subtle">· {frame.pageName}</span> : null}
                 </span>
                 {statusLabel ? (
-                  <span className={"shrink-0 rounded-[5px] px-1.5 py-0.5 text-[10px] font-medium leading-4 " + statusTone}>{statusLabel}</span>
+                  <span className={"shrink-0 rounded-control px-1.5 py-0.5 text-[10px] font-medium leading-4 " + statusTone}>{statusLabel}</span>
                 ) : null}
                 <span className="sr-only">Screen {index + 1} of {screens.length}</span>
               </button>
             </li>
           );
         })}
-        {!visibleFrames.length ? <li className="px-2 py-3 text-xs text-[#999]">{changedOnly ? "No changed screens match this view." : "No screens match this filter."}</li> : null}
+        {!visibleFrames.length ? <li className="px-2 py-3 text-xs text-foreground-subtle">{changedOnly ? "No changed screens match this view." : "No screens match this filter."}</li> : null}
       </ul>
 
       {activeFrame?.exact && activeFrame.nodes.length ? (
-        <details className="shrink-0 border-t border-[#3a3a3a] px-3 py-2">
-          <summary className="cursor-pointer select-none text-[11px] font-medium text-[#aaa] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">
-            Elements <span className="ml-1 font-mono text-[#888]">{activeFrame.nodes.length}</span>
+        <details className="shrink-0 border-t border-border px-3 py-2">
+          <summary className="cursor-pointer select-none text-[11px] font-medium text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+            Elements <span className="ml-1 font-mono text-foreground-subtle">{activeFrame.nodes.length}</span>
           </summary>
           <input
             aria-label="Filter elements on selected screen"
-            className="mt-2 h-8 w-full rounded-[5px] border border-[#3b3b3b] bg-[#292929] px-2 text-xs text-[#eee] placeholder:text-[#a0a0a0] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+            className="mt-2 h-8 w-full rounded-control border border-border bg-surface-muted px-2 text-xs text-foreground placeholder:text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
             onChange={(event) => setElementQuery(event.target.value)}
             placeholder="Name, type, or source ID"
             type="search"
@@ -190,18 +190,18 @@ export function FrameNavigator({
               <li key={node.sourceNodeId}>
                 <button
                   aria-pressed={node.sourceNodeId === selectedNodeId}
-                  className={"flex min-h-8 w-full items-center gap-2 truncate rounded px-1.5 text-left text-[11px] " + (node.sourceNodeId === selectedNodeId ? "bg-[#343434] text-white" : "text-[#bdbdbd] hover:bg-[#2c2c2c] hover:text-white")}
+                  className={"flex min-h-8 w-full items-center gap-2 truncate rounded px-1.5 text-left text-[11px] " + (node.sourceNodeId === selectedNodeId ? "bg-surface-raised text-white" : "text-foreground-muted hover:bg-surface-raised hover:text-white")}
                   onClick={() => onSelectNode(node.sourceNodeId)}
                   style={{ paddingInlineStart: 6 + depthForNode(node) * 8 }}
                   type="button"
                 >
                   <span aria-hidden="true" className={"size-1.5 shrink-0 rounded-full " + (node.visible ? "bg-[#a0c66b]" : "bg-[#777]")} />
                   <span className="min-w-0 flex-1 truncate">{node.name || node.type}</span>
-                  <span className="shrink-0 font-mono text-[10px] text-[#888]">{node.type}</span>
+                  <span className="shrink-0 font-mono text-[10px] text-foreground-subtle">{node.type}</span>
                 </button>
               </li>
             ))}
-            {!filteredNodes.length ? <li className="px-2 py-2 text-[11px] text-[#888]">No matching elements.</li> : null}
+            {!filteredNodes.length ? <li className="px-2 py-2 text-[11px] text-foreground-subtle">No matching elements.</li> : null}
           </ul>
         </details>
       ) : null}

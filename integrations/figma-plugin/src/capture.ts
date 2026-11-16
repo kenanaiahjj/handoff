@@ -1213,7 +1213,9 @@ export async function captureFigmaCanvas(scope: "selected" | "page" | "file", re
   const layerRenders: LayerExportAssetBytes[] = [];
   let layerExportBytes = 0;
   let layerExportFailures = 0;
-  let layerExportSizeSkips = Math.max(0, layerCandidateCount - selectedLayerCandidates.length);
+  let layerExportFallbacks = 0;
+  const layerCandidateLimitSkips = Math.max(0, layerCandidateCount - selectedLayerCandidates.length);
+  let layerExportSizeSkips = 0;
   let transferBudgetReached = false;
 
   if (selectedLayerCandidates.length) report(`Preparing exports for up to ${selectedLayerCandidates.length} image and vector layers…`);
@@ -1232,9 +1234,19 @@ export async function captureFigmaCanvas(scope: "selected" | "page" | "file", re
         if (imageLayer) {
           return { candidate, rect, contentType: "image/png" as const, bytes: await exportPng(node, 1) };
         }
-        const svg = await node.exportAsync({ format: "SVG_STRING", svgOutlineText: true, svgIdAttribute: true });
-        if (typeof svg !== "string" || !/<svg\b/i.test(svg)) throw new Error("Figma returned an invalid SVG export.");
-        return { candidate, rect, contentType: "image/svg+xml" as const, bytes: encodeUtf8(svg) };
+        try {
+          const svg = await node.exportAsync({ format: "SVG_STRING", svgOutlineText: true, svgIdAttribute: true });
+          if (typeof svg !== "string" || !/<svg\b/i.test(svg)) throw new Error("Figma returned an invalid SVG export.");
+          return { candidate, rect, contentType: "image/svg+xml" as const, bytes: encodeUtf8(svg) };
+        } catch {
+          return {
+            candidate,
+            rect,
+            contentType: "image/png" as const,
+            bytes: await exportPng(node, 1),
+            usedPngFallback: true,
+          };
+        }
       } catch {
         return null;
       }
@@ -1286,6 +1298,7 @@ export async function captureFigmaCanvas(scope: "selected" | "page" | "file", re
       layerRenders.push(asset);
       layerExportBytes += asset.bytes.byteLength;
       totalRenderBytes += asset.bytes.byteLength;
+      if ("usedPngFallback" in result && result.usedPngFallback) layerExportFallbacks += 1;
     }
     if (transferBudgetReached) {
       layerExportSizeSkips += selectedLayerCandidates.length - offset - batch.length;
@@ -1294,9 +1307,14 @@ export async function captureFigmaCanvas(scope: "selected" | "page" | "file", re
   }
 
   sourceMetadata.layerExportAssetCount = layerRenders.length;
-  sourceMetadata.layerExportSkippedCount = layerExportFailures + layerExportSizeSkips;
-  if (layerExportFailures) warnings.push(`${layerExportFailures} individual layer export${layerExportFailures === 1 ? " was" : "s were"} unavailable. Frame renders and inspectable properties were retained.`);
-  if (layerExportSizeSkips) warnings.push(`${layerExportSizeSkips} individual layer export${layerExportSizeSkips === 1 ? " was" : "s were"} skipped to keep the capture within size and performance limits.`);
+  sourceMetadata.layerExportSkippedCount = layerExportFailures + layerExportSizeSkips + layerCandidateLimitSkips;
+  sourceMetadata.layerExportFallbackCount = layerExportFallbacks;
+  if (layerCandidateLimitSkips) {
+    warnings.push(`Selected ${selectedLayerCandidates.length} of ${layerCandidateCount} eligible layer assets because Handoff limits individual layer exports to ${maxLayerExportCount} per capture; all ${layerCandidateCount} layers and their captured properties remain available in the structured snapshot.`);
+  }
+  if (layerExportFallbacks) warnings.push(`${layerExportFallbacks} individual layer export${layerExportFallbacks === 1 ? " was" : "s were"} saved as PNG after Figma’s SVG export failed.`);
+  if (layerExportFailures) warnings.push(`${layerExportFailures} individual layer image/vector export${layerExportFailures === 1 ? " could not be" : "s could not be"} generated. Their frame renders and structured layer data were retained.`);
+  if (layerExportSizeSkips) warnings.push(`${layerExportSizeSkips} individual layer image/vector export${layerExportSizeSkips === 1 ? " exceeded" : "s exceeded"} the per-asset or capture transfer limits. Their frame renders and structured layer data were retained.`);
 
   for (const frame of snapshotFrames) {
     const vectorKey = `${frame.renderAssetKey}-vector`;

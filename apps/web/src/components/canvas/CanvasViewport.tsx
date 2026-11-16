@@ -354,7 +354,7 @@ export function CanvasViewport({
     .join(". ");
 
   return (
-    <section aria-label="Design canvas" className="flex min-h-0 min-w-0 flex-1 flex-col bg-[#1d1d1d]">
+    <section aria-label="Design canvas" className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
       <div
         aria-describedby="canvas-keyboard-help"
         aria-label={interactionMode === "inspect"
@@ -374,7 +374,7 @@ export function CanvasViewport({
         <span className="sr-only" id="canvas-keyboard-help">
           Focus this canvas, then use the arrow keys to pan, plus or minus to zoom, and zero or Home to fit the design. To inspect a layer, expand Elements in the screen sidebar and choose it.
         </span>
-        <span aria-hidden="true" className="pointer-events-none absolute left-3 top-3 z-30 hidden rounded-[4px] border border-[#505050] bg-[#202020]/95 px-2 py-1 text-[10px] font-medium text-[#d7d7d7] group-focus-visible:flex">
+        <span aria-hidden="true" className="pointer-events-none absolute left-3 top-3 z-30 hidden rounded-chip border border-border-strong bg-surface/95 px-2 py-1 text-[10px] font-medium text-foreground-muted group-focus-visible:flex">
           Canvas focus
         </span>
         <div
@@ -456,7 +456,7 @@ export function CanvasViewport({
               >
                   {showLabel ? (
                     <div
-                    className="pointer-events-auto absolute left-0 flex items-center gap-1 whitespace-nowrap"
+                    className="pointer-events-auto absolute left-0 z-20 flex items-center gap-1 whitespace-nowrap"
                   style={{
                     bottom: "100%",
                     marginBottom: 4 * inverseScale,
@@ -466,11 +466,12 @@ export function CanvasViewport({
                     <button
                       aria-label={"Select screen " + screen.name + (label ? ", " + label : "")}
                         aria-pressed={selected}
-                      className="flex max-w-none items-center gap-1.5 rounded-[4px] bg-[#202020]/95 text-left text-[#d7d7d7] shadow-sm hover:bg-[#303030] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+                      className="flex max-w-none items-center gap-1.5 rounded-chip bg-surface/95 text-left text-foreground-muted shadow-sm hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
                       onClick={() => onSelectFrame(screen.id)}
                       style={{
                         minHeight: 24 * inverseScale + "px",
-                        padding: 3 * inverseScale + "px " + 5 * inverseScale + "px",
+                        borderRadius: 7 * inverseScale + "px",
+                        padding: 3 * inverseScale + "px " + 6 * inverseScale + "px",
                         fontSize: 12 * inverseScale + "px",
                         lineHeight: 1.3,
                         border: "1px solid " + borderColor,
@@ -479,14 +480,15 @@ export function CanvasViewport({
                       type="button"
                     >
                       <span className="max-w-[28ch] truncate">{screen.name}</span>
-                        <span className="font-mono text-[#999]" style={{ fontSize: 10 * inverseScale + "px" }}>
+                        <span className="font-mono text-foreground-subtle" style={{ fontSize: 10 * inverseScale + "px" }}>
                         {formatPrecisePixelValue(screen.sourceWidth)}×{formatPrecisePixelValue(screen.sourceHeight)}
                       </span>
                       {label ? (
                         <span
-                          className="rounded-[3px] font-medium"
+                          className="rounded-chip font-medium"
                           style={{
                             padding: 2 * inverseScale + "px " + 4 * inverseScale + "px",
+                            borderRadius: 4 * inverseScale + "px",
                             fontSize: 10 * inverseScale + "px",
                             color: status === "added" ? "#76e0a5" : status === "removed" || status === "only-in-before-capture" ? "#f18b84" : "#ffca71",
                             backgroundColor: status === "added" ? "#173b2b" : status === "removed" || status === "only-in-before-capture" ? "#3b2323" : "#46351e",
@@ -499,9 +501,9 @@ export function CanvasViewport({
                     {canCompare && status === "changed" ? (
                       <button
                         aria-label={"Compare " + screen.name + " before and after this version"}
-                        className="rounded-[4px] border border-[#424242] bg-[#252525]/95 px-1.5 py-0.5 text-[#c6c6c6] shadow-sm hover:bg-[#363636] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+                        className="rounded-chip border border-border-strong bg-surface-muted/95 px-1.5 py-0.5 text-foreground-muted shadow-sm hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
                         onClick={() => onCompareScreen(screen.id)}
-                        style={{ minHeight: 24 * inverseScale + "px", padding: 3 * inverseScale + "px " + 5 * inverseScale + "px", fontSize: 11 * inverseScale + "px" }}
+                        style={{ minHeight: 24 * inverseScale + "px", borderRadius: 7 * inverseScale + "px", padding: 3 * inverseScale + "px " + 6 * inverseScale + "px", fontSize: 11 * inverseScale + "px" }}
                         type="button"
                       >
                         Compare
@@ -606,7 +608,7 @@ export function CanvasViewport({
           {annotationPins.map(({ annotation, x, y }) => (
             <button
               aria-label={`Canvas note: ${annotation.title}. ${annotation.body}`}
-              className={"absolute z-20 max-w-none rounded-[6px] border px-2.5 py-2 text-left shadow-xl " + (annotation.id === selectedAnnotationId ? "border-[#f3ce7e] bg-[#f4d89e] text-[#34260f]" : "border-[#d2b774] bg-[#f3dfb5] text-[#3e321a] hover:bg-[#f7e6c5]")}
+              className={"absolute z-20 max-w-none rounded-control border px-2.5 py-2 text-left shadow-xl " + (annotation.id === selectedAnnotationId ? "border-[#f3ce7e] bg-[#f4d89e] text-[#34260f]" : "border-[#d2b774] bg-[#f3dfb5] text-[#3e321a] hover:bg-[#f7e6c5]")}
               data-canvas-annotation
               key={annotation.id}
               onClick={() => onSelectAnnotation(annotation.id)}

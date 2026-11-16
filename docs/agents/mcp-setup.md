@@ -118,6 +118,19 @@ Handoff rejects evidence IDs that do not belong to the selected version pair. Th
 
 Connect Asbir Handoff to the same AI client that has your task tracker or repository tools. The agent can read the frozen handoff, create work through its connected [Asbir Teams](https://teams.asbir.tech) or ClickUp task tool, and use its repository MCP to inspect or change code. Asbir does not store credentials for those tools or execute code itself.
 
+### Connect Asbir Teams to Codex CLI
+
+Asbir Teams provides a remote MCP endpoint at `https://teams.asbir.tech/api/team/mcp`. Add it to Codex CLI and sign in through the browser:
+
+```sh
+codex mcp add asbir-teams --url https://teams.asbir.tech/api/team/mcp
+codex mcp login asbir-teams
+```
+
+**Connection check (2026-11-13):** `codex mcp add` succeeds, but `codex mcp login` exits during OAuth discovery because the endpoint does not publish usable authorization-server metadata. The public OpenID Connect discovery URL also returns `404`. Treat the server as unauthenticated until Codex reports an authenticated connection.
+
+Review the Asbir Teams workspace and requested permissions before selecting **Allow**. Run `codex mcp list` to confirm the connection. Keep Asbir Teams and Asbir Handoff connected to the same AI client so the agent can create a task in Asbir Teams, then record its link and version evidence in Handoff. The Handoff token needs the `tasks:write` scope to link an externally created task; Handoff does not create the task itself.
+
 After creating an external task, the agent can call `link_task` with the handoff and version IDs, task title, task system, task ID or URL, and optional `frameId` and `sourceNodeId`. Use `list_linked_tasks` to retrieve tasks already recorded for that handoff. Follow its `page.nextOffset` while `page.hasMore` is true.
 
 The endpoint checks that a workspace ID in the URL matches the workspace attached to the token. The token remains the authorization credential; the URL does not grant access on its own.

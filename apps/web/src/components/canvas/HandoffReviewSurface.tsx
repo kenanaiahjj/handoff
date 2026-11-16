@@ -176,6 +176,7 @@ export function HandoffReviewSurface({
   publicReviewShareId,
   publishedVersionId,
   canManageIntegrations,
+  canManageSharing,
   canAnnotate,
   canComment,
   commentIdentity,
@@ -197,6 +198,7 @@ export function HandoffReviewSurface({
   publicReviewShareId?: string;
   publishedVersionId: string | null;
   canManageIntegrations: boolean;
+  canManageSharing: boolean;
   canAnnotate: boolean;
   canComment?: boolean;
   commentIdentity?: CommentIdentity | null;
@@ -230,6 +232,7 @@ export function HandoffReviewSurface({
     versionIsPublished: publishedVersionIndex >= 0 && selectedVersionIndex >= publishedVersionIndex,
     contentHash: selectedVersion.contentHash,
     canManageIntegrations,
+    canManageSharing,
     canAnnotate,
     canComment: canComment ?? canAnnotate,
     commentIdentity: commentIdentity ?? null,

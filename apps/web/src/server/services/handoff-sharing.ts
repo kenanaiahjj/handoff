@@ -73,6 +73,6 @@ export function resolveHandoffReviewAccess(input: {
   const inviteMatches = hashHandoffInviteToken(input.inviteToken) === input.invite.tokenHash;
 
   return inviteIsActive && inviteMatches
-    ? { allowed: true, canWrite: input.isAuthenticated ?? Boolean(input.sessionEmail), canComment: true, reason: "invite-link" }
+    ? { allowed: true, canWrite: false, canComment: true, reason: "invite-link" }
     : { allowed: false, canWrite: false, canComment: false, reason: "invite-invalid" };
 }

@@ -72,31 +72,31 @@ export function PublishedChangelogPanel({
   }, [requestUrl]);
 
   return (
-    <div className="min-h-0 flex-1 overflow-y-auto bg-[#202020] p-3" aria-labelledby="published-changelog-title">
-      <header className="border-b border-[#383838] pb-3">
-        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-[#929292]">Published notes</p>
-        <h2 className="mt-1 text-[13px] font-semibold text-[#ededed]" id="published-changelog-title">Changelog</h2>
-        <p className="mt-1 text-[11px] leading-5 text-[#999]">Approved notes and their source evidence for Version {versionLabel}.</p>
+    <div className="min-h-0 flex-1 overflow-y-auto bg-surface p-3" aria-labelledby="published-changelog-title">
+      <header className="border-b border-border pb-3">
+        <p className="font-mono text-[10px] uppercase tracking-[0.14em] text-foreground-subtle">Published notes</p>
+        <h2 className="mt-1 text-[13px] font-semibold text-foreground" id="published-changelog-title">Changelog</h2>
+        <p className="mt-1 text-[11px] leading-5 text-foreground-subtle">Approved notes and their source evidence for Version {versionLabel}.</p>
       </header>
 
-      {loading ? <p className="py-4 text-[12px] text-[#999]" role="status">Loading changelog…</p> : null}
-      {error ? <p className="mt-3 rounded-[5px] border border-[#70453f] bg-[#32211f] px-3 py-2.5 text-[11px] leading-5 text-[#f0aaa0]" role="alert">{error}</p> : null}
+      {loading ? <p className="py-4 text-[12px] text-foreground-subtle" role="status">Loading changelog…</p> : null}
+      {error ? <p className="mt-3 rounded-control border border-[#70453f] bg-[#32211f] px-3 py-2.5 text-[11px] leading-5 text-danger" role="alert">{error}</p> : null}
       {!loading && !error && drafts.length === 0 ? (
-        <p className="mt-3 rounded-[5px] bg-[#292929] px-3 py-3 text-[11px] leading-5 text-[#999]">No changelog has been approved for this version.</p>
+        <p className="mt-3 rounded-control bg-surface-muted px-3 py-3 text-[11px] leading-5 text-foreground-subtle">No changelog has been approved for this version.</p>
       ) : null}
 
       <div className="mt-3 space-y-3">
         {drafts.map((draft) => {
           const evidenceById = new Map(draft.evidence.map((evidence) => [evidence.id, evidence]));
           return (
-            <article className="border-b border-[#383838] pb-4 last:border-b-0" key={draft.id}>
-              <h3 className="text-[12px] font-semibold leading-5 text-[#e5e5e5]">{draft.title}</h3>
-              <p className="mt-1 text-[11px] leading-5 text-[#aaa]">{draft.summary}</p>
+            <article className="border-b border-border pb-4 last:border-b-0" key={draft.id}>
+              <h3 className="text-[12px] font-semibold leading-5 text-foreground">{draft.title}</h3>
+              <p className="mt-1 text-[11px] leading-5 text-foreground-muted">{draft.summary}</p>
               <div className="mt-3 space-y-3">
                 {draft.statements.map((statement, index) => (
-                  <section className="rounded-[5px] bg-[#292929] p-2.5" key={`${draft.id}-${index}`}>
-                    <h4 className="font-mono text-[9px] uppercase tracking-[0.12em] text-[#929292]">{audienceLabels[statement.audience]}</h4>
-                    <p className="mt-1 text-[11px] leading-5 text-[#d0d0d0]">{statement.text}</p>
+                  <section className="rounded-control bg-surface-muted p-2.5" key={`${draft.id}-${index}`}>
+                    <h4 className="font-mono text-[9px] uppercase tracking-[0.12em] text-foreground-subtle">{audienceLabels[statement.audience]}</h4>
+                    <p className="mt-1 text-[11px] leading-5 text-foreground-muted">{statement.text}</p>
                     {statement.evidence.length ? (
                       <ul className="mt-2 space-y-1.5">
                         {statement.evidence.map((evidenceId) => {
@@ -105,11 +105,11 @@ export function PublishedChangelogPanel({
                           const target = evidence.sourceNodeId ? "element" : "screen";
                           return (
                             <li key={evidence.id}>
-                              <details className="rounded-[4px] bg-[#222] px-2 py-1.5">
-                                <summary className="cursor-pointer text-[10px] font-medium text-[#bcbcbc] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">Evidence · {evidence.label}</summary>
-                                <p className="mt-1.5 text-[10px] leading-4 text-[#999]">{evidence.details}</p>
+                              <details className="rounded-chip bg-surface px-2 py-1.5">
+                                <summary className="cursor-pointer text-[10px] font-medium text-foreground-muted hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Evidence · {evidence.label}</summary>
+                                <p className="mt-1.5 text-[10px] leading-4 text-foreground-subtle">{evidence.details}</p>
                                 <a
-                                  className="mt-2 inline-flex min-h-8 items-center rounded-[4px] px-2 text-[10px] font-medium text-[#d0d0d0] underline decoration-[#666] underline-offset-2 hover:bg-[#343434] hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+                                  className="mt-2 inline-flex min-h-8 items-center rounded-chip px-2 text-[10px] font-medium text-foreground-muted underline decoration-foreground-subtle underline-offset-2 hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                                   href={evidenceCanvasHref(versionHrefPrefix, evidence)}
                                   aria-label={`Open ${evidence.label} ${target} in the canvas`}
                                 >

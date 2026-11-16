@@ -1,8 +1,35 @@
-import { deleteHandoff } from "@/src/server/repositories/handoffs";
+import { z } from "zod";
+import { deleteHandoff, renameHandoff } from "@/src/server/repositories/handoffs";
 import { objectStore } from "@/src/server/storage/local-object-store";
 import { requireWorkspaceRoleStrict, WorkspaceAccessError } from "@/src/server/workspace-access";
 
 type HandoffRoute = { params: Promise<{ workspaceId: string; projectId: string; handoffId: string }> };
+
+const renameSchema = z.object({ name: z.string().trim().min(1).max(100) });
+
+export async function PATCH(request: Request, context: HandoffRoute) {
+  const { workspaceId, projectId, handoffId } = await context.params;
+
+  try {
+    await requireWorkspaceRoleStrict(request, workspaceId, ["owner", "designer"]);
+    const parsed = renameSchema.safeParse(await request.json().catch(() => null));
+    if (!parsed.success) {
+      return Response.json({ error: "Enter a handoff name between 1 and 100 characters." }, { status: 400 });
+    }
+
+    const renamed = renameHandoff({ workspaceId, projectId, handoffId, name: parsed.data.name });
+    if (!renamed) return Response.json({ error: "Handoff not found." }, { status: 404 });
+    return Response.json({ renamed: true, name: parsed.data.name }, { status: 200 });
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return Response.json({ error: error.message }, { status: error.status });
+    }
+    if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+      return Response.json({ error: "A handoff with that name already exists in this project." }, { status: 409 });
+    }
+    throw error;
+  }
+}
 
 export async function DELETE(request: Request, context: HandoffRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;

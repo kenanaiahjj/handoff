@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
+import { useConfirm } from "@/src/components/ConfirmDialog";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/src/client/auth-client";
 
@@ -61,10 +62,10 @@ export function CreateWorkspaceForm() {
   }
 
   return (
-    <form className="flex flex-col gap-3 sm:flex-row" onSubmit={createWorkspace}>
+    <form className="flex flex-wrap gap-3" onSubmit={createWorkspace}>
       <label className="sr-only" htmlFor="workspace-name">Workspace name</label>
       <input
-        className="h-9 min-w-0 flex-1 rounded-control border border-border bg-surface-inset px-3 text-[12px] text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
+        className="h-9 min-w-[12rem] flex-1 basis-48 rounded-control border border-border bg-surface-inset px-3 text-[12px] text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
         id="workspace-name"
         maxLength={80}
         onChange={(event) => setName(event.target.value)}
@@ -73,13 +74,13 @@ export function CreateWorkspaceForm() {
         value={name}
       />
       <button
-        className="h-9 rounded-control bg-primary px-4 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
+        className="capture-primary-action h-9 shrink-0 rounded-full px-4 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
         disabled={pending}
         type="submit"
       >
         {pending ? "Creating…" : "Create workspace"}
       </button>
-      {errorMessage && <p className="text-sm text-danger sm:basis-full" role="alert">{errorMessage}</p>}
+      {errorMessage && <p className="basis-full text-sm text-danger" role="alert">{errorMessage}</p>}
     </form>
   );
 }
@@ -128,7 +129,7 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
         value={name}
       />
       <button
-        className="h-9 rounded-control bg-primary px-4 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
+        className="capture-primary-action h-9 rounded-full px-4 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
         disabled={pending}
         type="submit"
       >
@@ -154,6 +155,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
   const [message, setMessage] = useState("");
   const [pending, setPending] = useState(false);
   const [revokingId, setRevokingId] = useState("");
+  const { confirm, dialog } = useConfirm();
 
   async function createInvite(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -192,6 +194,13 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
   }
 
   async function revokeInvite(inviteId: string) {
+    const invite = invites.find((entry) => entry.id === inviteId);
+    const confirmed = await confirm({
+      title: "Revoke invite link?",
+      description: `Anyone holding this ${invite?.role ?? ""} invite link will no longer be able to join the workspace.`,
+      confirmLabel: "Revoke link",
+    });
+    if (!confirmed) return;
     setRevokingId(inviteId);
     setMessage("");
 
@@ -248,7 +257,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
           </select>
         </label>
         <button
-          className="h-9 self-end rounded-control bg-primary px-3 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60 sm:col-span-2"
+          className="capture-primary-action h-9 self-end rounded-full px-3 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60 sm:col-span-2"
           disabled={pending}
           type="submit"
         >
@@ -287,6 +296,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
         <p className="border-t border-border pt-3 text-[11px] text-foreground-subtle">No active invite links.</p>
       )}
       {message && <p className="text-[11px] text-foreground-muted" role="status">{message}</p>}
+      {dialog}
     </div>
   );
 }

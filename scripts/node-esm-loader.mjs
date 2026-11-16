@@ -29,6 +29,16 @@ export async function resolve(specifier, context, nextResolve) {
     return { url: pathToFileURL(imageMock).href, shortCircuit: true };
   }
 
+  // Next's subpath entry points (next/server, next/headers, …) ship as .js files
+  // without an exports map, so Node's ESM resolver needs the extension spelled out.
+  if (/^next\/[a-z-]+$/.test(specifier)) {
+    try {
+      return await nextResolve(specifier + ".js", context);
+    } catch {
+      // fall through to the default resolver
+    }
+  }
+
   if (specifier.startsWith("@/")) {
     const target = findModule(path.resolve(webRoot, specifier.slice(2)));
     if (target) return { url: pathToFileURL(target).href, shortCircuit: true };

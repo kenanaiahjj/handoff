@@ -3,24 +3,24 @@ import test from "node:test";
 import { formatComparisonValue, formatFrameSize, formatPixelValue, formatPrecisePixelValue, inspectionMeasurementEntries } from "./format-captured-measurement.ts";
 const { inspectionBounds, inspectionGeometryNotice } = await import("./format-captured-measurement.ts");
 
-test("preserves exact Figma pixel values without display rounding", () => {
-  assert.equal(formatPixelValue(106.99979400634766), "106.99979400634766");
-  assert.equal(formatPixelValue(0.25695228576660156), "0.25695228576660156");
-  assert.equal(formatPixelValue(40.975345611572266), "40.975345611572266");
-  assert.equal(formatPixelValue(18.9802188873291), "18.9802188873291");
-  assert.equal(formatPixelValue(35.9844970703125), "35.9844970703125");
-  assert.equal(formatPixelValue(321.15625), "321.15625");
+test("formats Figma pixel values to at most two decimals", () => {
+  assert.equal(formatPixelValue(106.99979400634766), "107");
+  assert.equal(formatPixelValue(0.25695228576660156), "0.26");
+  assert.equal(formatPixelValue(40.975345611572266), "40.98");
+  assert.equal(formatPixelValue(18.9802188873291), "18.98");
+  assert.equal(formatPixelValue(35.9844970703125), "35.98");
+  assert.equal(formatPixelValue(321.15625), "321.16");
   assert.equal(formatPixelValue(321.25), "321.25");
   assert.equal(formatPixelValue(321.5), "321.5");
   assert.equal(formatPixelValue(321.75), "321.75");
   assert.equal(formatPixelValue(-0.1), "-0.1");
-  assert.equal(formatPixelValue(-0.004), "-0.004");
+  assert.equal(formatPixelValue(-0.004), "0");
   assert.equal(formatPixelValue(-321.5), "-321.5");
   assert.equal(formatFrameSize(393.25, 852.49), "393.25 × 852.49 px");
-  assert.equal(formatPrecisePixelValue(35.9844970703125), "35.9844970703125");
+  assert.equal(formatPrecisePixelValue(35.9844970703125), "35.98");
 });
 
-test("preserves nested pixel measurements without changing ratios", () => {
+test("formats nested pixel measurements without changing ratios", () => {
   const value = {
     bounds: { width: { value: 35.9844970703125, unit: "px" } },
     aspectRatio: { value: 0.3333, unit: "ratio" },
@@ -28,9 +28,9 @@ test("preserves nested pixel measurements without changing ratios", () => {
 
   assert.equal(
     formatComparisonValue(value, "layout"),
-    '{"bounds":{"width":{"value":35.9844970703125,"unit":"px"}},"aspectRatio":{"value":0.3333,"unit":"ratio"}}',
+    '{"bounds":{"width":{"value":35.98,"unit":"px"}},"aspectRatio":{"value":0.3333,"unit":"ratio"}}',
   );
-  assert.equal(formatComparisonValue({ value: 35.9844970703125, unit: "px" }, "geometry"), "35.9844970703125 px");
+  assert.equal(formatComparisonValue({ value: 35.9844970703125, unit: "px" }, "geometry"), "35.98 px");
 });
 
 test("keeps unavailable measurements in inspector groups", () => {
@@ -69,7 +69,7 @@ test("identifies snapshots that lack Figma-native layer geometry", () => {
   assert.equal(typeof inspectionGeometryNotice, "function", "the inspector should explain legacy geometry");
   assert.equal(
     inspectionGeometryNotice({ layoutBounds: undefined }),
-    "Figma-native layer geometry is unavailable in this snapshot. Position and size use screen bounds; recapture from Figma for layer-relative values.",
+    "Positions are measured from the screen edge. Recapture from Figma for values relative to the parent layer.",
   );
   assert.equal(inspectionGeometryNotice({ layoutBounds: { x: {}, y: {}, width: {}, height: {} } }), null);
 });

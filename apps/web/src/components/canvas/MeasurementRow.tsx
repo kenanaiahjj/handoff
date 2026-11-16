@@ -4,12 +4,6 @@ import { useState } from "react";
 import type { Measurement } from "@asbir/snapshot-contract";
 import { formatPrecisePixelValue } from "./format-captured-measurement";
 
-const provenanceLabels = {
-  source: "Source value",
-  measured: "Measured distance",
-  unavailable: "Unavailable",
-} as const;
-
 type MeasurementRowProps = {
   label: string;
   measurement: Measurement;
@@ -33,27 +27,24 @@ export function MeasurementRow({ label, measurement }: MeasurementRowProps) {
   }
 
   return (
-    <div className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-x-3 gap-y-1 border-b border-[#3a3a3a]/70 py-2.5 last:border-b-0">
-      <dt className="min-w-0 self-center text-[12px] leading-5 text-[#b8b8b8]">{label}</dt>
-      <dd className="min-w-0 self-center justify-self-end">
+    <div className="flex min-h-8 items-center justify-between gap-3 border-b border-border/60 py-1.5 last:border-b-0">
+      <dt className="flex min-w-0 items-center gap-1.5 text-[12px] leading-5 text-foreground-muted">
+        <span className="truncate">{label}</span>
+        {measurement.provenance === "measured" ? (
+          <span className="shrink-0 rounded-full bg-surface-raised px-1.5 text-[10px] leading-4 text-foreground-subtle" title="Measured from the captured bounds, not a Figma property">measured</span>
+        ) : null}
+      </dt>
+      <dd className="shrink-0">
         <button
           aria-label={"Copy " + label + " value " + displayValue}
-          className="font-mono text-[14px] leading-5 tabular-nums text-[#ededed] hover:text-white hover:underline disabled:cursor-default disabled:hover:no-underline"
+          className="rounded-md px-1.5 py-0.5 font-mono text-[13px] leading-5 tabular-nums text-foreground transition-colors hover:bg-surface-raised disabled:cursor-default disabled:text-foreground-subtle disabled:hover:bg-transparent"
           disabled={measurement.value === null}
           onClick={copyValue}
-          title={copied ? "Copied" : "Click to copy"}
+          title={copied ? "Copied" : measurement.value === null ? "Not available in this capture" : "Click to copy"}
           type="button"
         >
           {copied ? "Copied" : displayValue}
         </button>
-      </dd>
-      <dd className="col-span-2 flex min-w-0 flex-col gap-1 text-[12px] leading-4 text-[#bdbdbd]">
-        <span>{provenanceLabels[measurement.provenance]}</span>
-        {measurement.sourceProperty ? (
-          <code className="block min-w-0 whitespace-normal text-left font-mono text-[12px] leading-4 text-[#bdbdbd] [overflow-wrap:anywhere]" title={measurement.sourceProperty}>
-            {measurement.sourceProperty}
-          </code>
-        ) : null}
       </dd>
     </div>
   );

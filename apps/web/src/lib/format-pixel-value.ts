@@ -1,7 +1,13 @@
+const pixelValueFormatter = new Intl.NumberFormat("en-US", {
+  maximumFractionDigits: 2,
+  useGrouping: false,
+});
+
 export function formatPixelValue(value: number) {
   if (!Number.isFinite(value)) return "—";
 
-  return String(Object.is(value, -0) ? 0 : value);
+  const formatted = pixelValueFormatter.format(value);
+  return Number(formatted) === 0 ? "0" : formatted;
 }
 
 export function formatPrecisePixelValue(value: number) {

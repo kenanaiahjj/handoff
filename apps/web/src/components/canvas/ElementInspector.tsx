@@ -21,6 +21,7 @@ type ElementInspectorProps = {
   onAddComment: () => void;
   onSelectNode: (sourceNodeId: string) => void;
   onCopyLink: () => void | Promise<void>;
+  inspecting?: boolean;
 };
 
 function valueText(value: unknown) {
@@ -94,9 +95,9 @@ function MeasurementGroup({
   if (!entries.length) return null;
 
   return (
-    <section className="border-t border-[#393939] pt-3">
-      <h3 className="mb-1 text-[12px] font-semibold text-[#c8c8c8]">{title}</h3>
-      {description ? <p className="mb-1 text-[11px] leading-4 text-[#a0a0a0]">{description}</p> : null}
+    <section className="border-t border-border pt-3">
+      <h3 className="mb-1 text-[12px] font-semibold text-foreground-muted">{title}</h3>
+      {description ? <p className="mb-1 text-[11px] leading-4 text-foreground-muted">{description}</p> : null}
       <dl>
         {entries.map(([label, measurement]) => (
           <MeasurementRow key={label} label={label} measurement={measurement} />
@@ -147,7 +148,7 @@ function CopyValue({ label, value, displayValue = value, className }: { label: s
   return (
     <button
       aria-label={"Copy " + label}
-      className={className ?? "block min-w-0 max-w-full whitespace-normal break-all text-left font-mono text-[11px] text-[#e1e1e1] [overflow-wrap:anywhere] hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"}
+      className={className ?? "block min-w-0 max-w-full whitespace-normal break-all text-left font-mono text-[11px] text-foreground [overflow-wrap:anywhere] hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"}
       onClick={async () => {
         try {
           await navigator.clipboard.writeText(value);
@@ -181,7 +182,7 @@ function TokenValue({ token }: { token: SnapshotNode["tokens"][number] }) {
   const color = token.category === "color" ? colorTokenValue(token.value) : null;
   return (
     <div className="flex min-w-0 items-start gap-2">
-      {color ? <span aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 rounded-[3px] border border-white/20" style={{ backgroundColor: color.swatch }} /> : null}
+      {color ? <span aria-hidden="true" className="mt-0.5 size-3.5 shrink-0 rounded-chip border border-white/20" style={{ backgroundColor: color.swatch }} /> : null}
       <div className="min-w-0 flex-1"><CopyValue label={token.name} value={color?.text ?? valueText(token.value)} /></div>
     </div>
   );
@@ -191,9 +192,9 @@ function TextStyleRuns({ runs }: { runs: TextStyleRun[] }) {
   if (!runs.length) return null;
 
   return (
-    <details className="mt-3 border-t border-[#393939] pt-3">
-      <summary className="cursor-pointer text-[11px] text-[#c8c8c8] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">
-        Text styles <span className="text-[#8e8e8e]">· {runs.length} {runs.length === 1 ? "run" : "runs"}</span>
+    <details className="mt-3 border-t border-border pt-3">
+      <summary className="cursor-pointer text-[11px] text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+        Text styles <span className="text-foreground-subtle">· {runs.length} {runs.length === 1 ? "run" : "runs"}</span>
       </summary>
       <div className="mt-2 space-y-1.5">
         {runs.map((run, index) => {
@@ -206,17 +207,17 @@ function TextStyleRuns({ runs }: { runs: TextStyleRun[] }) {
             { label: "Letter spacing", value: measurementText(run.letterSpacing) },
           ]);
           return (
-            <details className="rounded-[5px] bg-[#181818] px-2.5 py-2" key={`${run.start}:${run.end}`}>
-              <summary className="flex cursor-pointer items-center justify-between gap-2 text-[10px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">
-                <span className="min-w-0 truncate text-[#d5d5d5]" title={run.characters}>{excerpt}</span>
-                <span className="shrink-0 font-mono text-[#999]">{run.fontSize === null ? `Run ${index + 1}` : `${formatPrecisePixelValue(run.fontSize)}px`}</span>
+            <details className="rounded-control bg-surface-inset px-2.5 py-2" key={`${run.start}:${run.end}`}>
+              <summary className="flex cursor-pointer items-center justify-between gap-2 text-[10px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
+                <span className="min-w-0 truncate text-foreground-muted" title={run.characters}>{excerpt}</span>
+                <span className="shrink-0 font-mono text-foreground-subtle">{run.fontSize === null ? `Run ${index + 1}` : `${formatPrecisePixelValue(run.fontSize)}px`}</span>
               </summary>
               {properties.length ? (
                 <dl className="mt-2 space-y-1.5 text-[10px]">
                   {properties.map((property) => (
                     <div className="flex justify-between gap-3" key={property.label}>
-                      <dt className="text-[#888]">{property.label}</dt>
-                      <dd className={property.label === "Size" || property.label === "Line height" || property.label === "Letter spacing" ? "font-mono break-words text-right text-[#ccc]" : "break-words text-right text-[#ccc]"}>
+                      <dt className="text-foreground-subtle">{property.label}</dt>
+                      <dd className={property.label === "Size" || property.label === "Line height" || property.label === "Letter spacing" ? "font-mono break-words text-right text-foreground-muted" : "break-words text-right text-foreground-muted"}>
                         {property.value}
                       </dd>
                     </div>
@@ -226,14 +227,14 @@ function TextStyleRuns({ runs }: { runs: TextStyleRun[] }) {
               {run.fills.length ? (
                 <div className="mt-2 space-y-1.5">
                   {run.fills.map((fill, fillIndex) => (
-                    <div className="rounded-[4px] border border-[#303030] px-2 py-1.5" key={`${fill.type}:${fillIndex}`}>
+                    <div className="rounded-chip border border-border px-2 py-1.5" key={`${fill.type}:${fillIndex}`}>
                       <div className="flex items-center justify-between gap-2 text-[10px]">
-                        <span className="text-[#888]">Text fill · {fill.type.toLowerCase()}</span>
-                        {fill.opacity !== null ? <span className="font-mono text-[#999]">{Math.round(fill.opacity * 100)}%</span> : null}
+                        <span className="text-foreground-subtle">Text fill · {fill.type.toLowerCase()}</span>
+                        {fill.opacity !== null ? <span className="font-mono text-foreground-subtle">{Math.round(fill.opacity * 100)}%</span> : null}
                       </div>
                       {fill.color ? (
                         <div className="mt-1 flex items-center gap-2">
-                          <span aria-hidden="true" className="size-3.5 shrink-0 rounded-[3px] border border-[#555]" style={{ backgroundColor: fill.color }} />
+                          <span aria-hidden="true" className="size-3.5 shrink-0 rounded-chip border border-border-strong" style={{ backgroundColor: fill.color }} />
                           <CopyValue label={`Text fill ${fillIndex + 1}`} value={fill.color} />
                         </div>
                       ) : null}
@@ -242,8 +243,8 @@ function TextStyleRuns({ runs }: { runs: TextStyleRun[] }) {
                           {fill.gradientStops.map((stop, stopIndex) => (
                             <li className="flex items-center justify-between gap-2" key={stopIndex}>
                               <span className="flex min-w-0 items-center gap-2">
-                                {stop.color ? <span aria-hidden="true" className="size-3.5 shrink-0 rounded-[3px] border border-[#555]" style={{ backgroundColor: stop.color }} /> : null}
-                                <span className="text-[#999]">Stop {stopIndex + 1}{stop.position === null ? "" : ` · ${Math.round(stop.position * 100)}%`}{stop.opacity === null ? "" : ` · ${Math.round(stop.opacity * 100)}%`}</span>
+                                {stop.color ? <span aria-hidden="true" className="size-3.5 shrink-0 rounded-chip border border-border-strong" style={{ backgroundColor: stop.color }} /> : null}
+                                <span className="text-foreground-subtle">Stop {stopIndex + 1}{stop.position === null ? "" : ` · ${Math.round(stop.position * 100)}%`}{stop.opacity === null ? "" : ` · ${Math.round(stop.opacity * 100)}%`}</span>
                               </span>
                               {stop.color ? <CopyValue label={`Gradient stop ${stopIndex + 1}`} value={stop.color} /> : null}
                             </li>
@@ -255,19 +256,19 @@ function TextStyleRuns({ runs }: { runs: TextStyleRun[] }) {
                 </div>
               ) : null}
               {run.tokens.length ? (
-                <ul className="mt-2 space-y-1.5 border-t border-[#303030] pt-2">
+                <ul className="mt-2 space-y-1.5 border-t border-border pt-2">
                   {run.tokens.map((token) => (
                     <li key={token.sourceId + (token.bindingPath ?? "binding")}>
-                      <p className="text-[10px] font-medium text-[#cfcfcf]">{token.name}</p>
-                      {token.bindingPath ? <p className="mt-0.5 break-all font-mono text-[9px] text-[#888]">{token.bindingPath}</p> : null}
+                      <p className="text-[10px] font-medium text-foreground-muted">{token.name}</p>
+                      {token.bindingPath ? <p className="mt-0.5 break-all font-mono text-[9px] text-foreground-subtle">{token.bindingPath}</p> : null}
                       <div className="mt-0.5"><CopyValue label={token.name} value={valueText(token.value)} /></div>
-                      <p className="mt-0.5 text-[9px] text-[#888]">{token.collectionName ?? "Uncategorized"}{token.mode ? ` · ${token.mode}` : ""}</p>
+                      <p className="mt-0.5 text-[9px] text-foreground-subtle">{token.collectionName ?? "Uncategorized"}{token.mode ? ` · ${token.mode}` : ""}</p>
                     </li>
                   ))}
                 </ul>
               ) : null}
               {run.textStyleId || run.fillStyleId ? (
-                <p className="mt-2 break-all border-t border-[#303030] pt-1.5 font-mono text-[9px] text-[#999]">
+                <p className="mt-2 break-all border-t border-border pt-1.5 font-mono text-[9px] text-foreground-subtle">
                   {[run.textStyleId ? `Text style ${run.textStyleId}` : null, run.fillStyleId ? `Fill style ${run.fillStyleId}` : null].filter(Boolean).join(" · ")}
                 </p>
               ) : null}
@@ -291,6 +292,7 @@ export function ElementInspector({
   onAddComment,
   onSelectNode,
   onCopyLink,
+  inspecting = false,
 }: ElementInspectorProps) {
   const [cssCopied, setCssCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -386,28 +388,28 @@ export function ElementInspector({
   }
 
   return (
-    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-[#202020] px-4 py-4 text-[#c5c5c5]">
-      <h2 className="text-[14px] font-semibold text-[#ededed]">Properties</h2>
+    <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-surface px-4 py-4 text-foreground-muted">
+      <h2 className="text-[14px] font-semibold text-foreground">Properties</h2>
 
       {selectedNode ? (
         <div className="mt-4">
           <div className="mb-4 min-w-0">
-            <p className="break-words text-[13px] font-semibold text-[#ededed]">{selectedNode.name || "Unnamed element"}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-[#999]">
-              <span className="rounded-[4px] bg-[#333] px-1.5 py-0.5 font-mono">{selectedNode.type}</span>
+            <p className="break-words text-[13px] font-semibold text-foreground">{selectedNode.name || "Unnamed element"}</p>
+            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-foreground-subtle">
+              <span className="rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono">{selectedNode.type}</span>
               <span>{selectedNode.visible ? "Visible" : "Hidden"}</span>
             </div>
-            <p className="mt-2 break-all font-mono text-[10px] text-[#8b8b8b]">{selectedNode.sourceNodeId}</p>
+            <p className="mt-2 break-all font-mono text-[10px] text-foreground-subtle">{selectedNode.sourceNodeId}</p>
             <div className="mt-3 flex flex-wrap gap-1">
-              <button className="min-h-7 rounded-[4px] px-2 text-[10px] text-[#c3c3c3] hover:bg-[#343434] hover:text-white" onClick={copyCss} type="button">{cssCopied ? "Copied CSS" : "Copy CSS"}</button>
-              <button className="min-h-7 rounded-[4px] px-2 text-[10px] text-[#c3c3c3] hover:bg-[#343434] hover:text-white" onClick={copyLink} type="button">{linkCopied ? "Copied link" : "Copy link"}</button>
+              <button className="min-h-7 rounded-chip px-2 text-[10px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={copyCss} type="button">{cssCopied ? "Copied CSS" : "Copy CSS"}</button>
+              <button className="min-h-7 rounded-chip px-2 text-[10px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={copyLink} type="button">{linkCopied ? "Copied link" : "Copy link"}</button>
               {selectedNode.parentSourceNodeId ? (
-                <button className="min-h-7 rounded-[4px] px-2 text-[10px] text-[#c3c3c3] hover:bg-[#343434] hover:text-white" onClick={() => onSelectNode(selectedNode.parentSourceNodeId!)} type="button">Parent</button>
+                <button className="min-h-7 rounded-chip px-2 text-[10px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={() => onSelectNode(selectedNode.parentSourceNodeId!)} type="button">Parent</button>
               ) : null}
               {layerExport ? (
                 <a
                   aria-label={`Export ${selectedNode.name || "selected layer"} as ${layerExport.contentType === "image/svg+xml" ? "SVG" : "PNG"}`}
-                  className="inline-flex min-h-7 items-center rounded-[4px] bg-[#3a3020] px-2 text-[10px] font-medium text-[#f0c77b] hover:bg-[#514127] hover:text-[#ffe0a4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f0c77b]"
+                  className="inline-flex min-h-7 items-center rounded-chip bg-[#3a3020] px-2 text-[10px] font-medium text-[#f0c77b] hover:bg-[#514127] hover:text-[#ffe0a4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#f0c77b]"
                   download={layerExport.fileName}
                   href={layerExport.downloadUrl}
                   title={`Download ${layerExport.fileName}`}
@@ -415,26 +417,26 @@ export function ElementInspector({
                   Export {layerExport.contentType === "image/svg+xml" ? "SVG" : "PNG"}
                 </a>
               ) : null}
-              {canCompare ? <button className="min-h-7 rounded-[4px] px-2 text-[10px] text-[#c3c3c3] hover:bg-[#343434] hover:text-white" onClick={onCompare} type="button">Compare</button> : null}
+              {canCompare ? <button className="min-h-7 rounded-chip px-2 text-[10px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={onCompare} type="button">Compare</button> : null}
             </div>
           </div>
 
-          <section className="border-t border-[#393939] py-3">
+          <section className="border-t border-border py-3">
             <div className="mb-2 flex items-center justify-between gap-2">
-              <h3 className="text-[12px] font-semibold text-[#c8c8c8]">Comments on this element</h3>
-              <span className="font-mono text-[10px] text-[#8e8e8e]">{comments.length}</span>
+              <h3 className="text-[12px] font-semibold text-foreground-muted">Comments on this element</h3>
+              <span className="font-mono text-[10px] text-foreground-subtle">{comments.length}</span>
             </div>
             {comments.slice(0, 3).map((comment) => (
-              <p className="mb-2 text-[11px] leading-5 text-[#aaa]" key={comment.id}><span className="font-medium text-[#d4d4d4]">{comment.authorName}</span> · {comment.body}</p>
+              <p className="mb-2 text-[11px] leading-5 text-foreground-muted" key={comment.id}><span className="font-medium text-foreground-muted">{comment.authorName}</span> · {comment.body}</p>
             ))}
-            {canComment ? <button className="min-h-8 rounded-[5px] bg-[#353535] px-2.5 text-[11px] text-[#e5e5e5] hover:bg-[#414141]" onClick={onAddComment} type="button">Comment</button> : null}
+            {canComment ? <button className="min-h-8 rounded-control bg-surface-raised px-2.5 text-[11px] text-foreground hover:bg-surface-strong" onClick={onAddComment} type="button">Comment</button> : null}
           </section>
 
             <MeasurementGroup title="Layout" values={selectedBounds ?? selectedNode.bounds} description={inspectionGeometryNotice(selectedNode)} />
-          <section className="border-t border-[#393939] pt-3">
-            <h3 className="mb-2 text-[12px] font-semibold text-[#c8c8c8]">Size and shape</h3>
+          <section className="border-t border-border pt-3">
+            <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Size and shape</h3>
             <dl className="space-y-2 text-[11px]">
-              <div className="flex justify-between gap-3"><dt className="text-[#999]">Aspect ratio</dt><dd className="font-mono text-right text-[#ddd]">{aspectRatio ?? "Unavailable"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Aspect ratio</dt><dd className="font-mono text-right text-foreground">{aspectRatio ?? "Unavailable"}</dd></div>
               {hasCornerRadius ? (
                 <>
                   {radiusDisplayFields.map(({ label, value }) => {
@@ -442,13 +444,13 @@ export function ElementInspector({
                     const isClamped = effectiveValue < value;
                     return (
                       <div className="grid grid-cols-[1fr_auto] items-start gap-x-3" key={label}>
-                        <dt className="text-[#999]">{label}</dt>
+                        <dt className="text-foreground-subtle">{label}</dt>
                         <dd className="text-right"><CopyValue label={`${label.toLowerCase()} radius`} value={`${formatPrecisePixelValue(effectiveValue)}px`} /></dd>
                         {isClamped ? (
-                          <dd className="col-span-2 mt-1 text-right text-[10px] text-[#888]">
+                          <dd className="col-span-2 mt-1 text-right text-[10px] text-foreground-subtle">
                             Figma source: {" "}
                             <CopyValue
-                              className="inline-block max-w-full break-all font-mono text-[10px] text-[#aaa] hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]"
+                              className="inline-block max-w-full break-all font-mono text-[10px] text-foreground-muted hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                               displayValue={`${formatPrecisePixelValue(value)}px`}
                               label={`${label.toLowerCase()} radius source value`}
                               value={`${formatPrecisePixelValue(value)}px`}
@@ -460,48 +462,48 @@ export function ElementInspector({
                     );
                   })}
                 </>
-              ) : <div className="flex justify-between gap-3"><dt className="text-[#999]">Corner radius</dt><dd className="text-right text-[#999]">Unavailable</dd></div>}
-              {finiteNumber(selectedNode.sourcePayload.rotation) !== null ? <div className="flex justify-between gap-3"><dt className="text-[#999]">Rotation</dt><dd className="font-mono text-right text-[#ddd]">{String(finiteNumber(selectedNode.sourcePayload.rotation))}°</dd></div> : null}
-              {finiteNumber(selectedNode.sourcePayload.opacity) !== null ? <div className="flex justify-between gap-3"><dt className="text-[#999]">Opacity</dt><dd className="font-mono text-right text-[#ddd]">{Math.round(finiteNumber(selectedNode.sourcePayload.opacity)! * 100)}%</dd></div> : null}
+              ) : <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Corner radius</dt><dd className="text-right text-foreground-subtle">Unavailable</dd></div>}
+              {finiteNumber(selectedNode.sourcePayload.rotation) !== null ? <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Rotation</dt><dd className="font-mono text-right text-foreground">{String(finiteNumber(selectedNode.sourcePayload.rotation))}°</dd></div> : null}
+              {finiteNumber(selectedNode.sourcePayload.opacity) !== null ? <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Opacity</dt><dd className="font-mono text-right text-foreground">{Math.round(finiteNumber(selectedNode.sourcePayload.opacity)! * 100)}%</dd></div> : null}
             </dl>
-            <p className="mt-2 text-[10px] leading-4 text-[#888]">The aspect ratio is calculated from the captured source bounds.</p>
+            <p className="mt-2 text-[10px] leading-4 text-foreground-subtle">The aspect ratio is calculated from the captured source bounds.</p>
           </section>
           <MeasurementGroup title="Padding" values={selectedNode.padding} />
           <MeasurementGroup title="Measured margins" values={inspectionMargins(selectedNode)} />
           <MeasurementGroup title="Spacing" values={selectedNode.spacing} />
 
-          <section className="border-t border-[#393939] pt-3">
-            <h3 className="mb-2 text-[12px] font-semibold text-[#c8c8c8]">Layout properties</h3>
+          <section className="border-t border-border pt-3">
+            <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Layout properties</h3>
             <dl className="space-y-2 text-[11px]">
-              <div className="flex justify-between gap-3"><dt className="text-[#999]">Mode</dt><dd className="text-right text-[#ddd]">{selectedNode.layout.mode ?? "Unavailable"}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-[#999]">Direction</dt><dd className="text-right text-[#ddd]">{selectedNode.layout.direction ?? "Unavailable"}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-[#999]">Primary alignment</dt><dd className="text-right text-[#ddd]">{selectedNode.layout.primaryAxisAlign ?? "Unavailable"}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-[#999]">Counter alignment</dt><dd className="text-right text-[#ddd]">{selectedNode.layout.counterAxisAlign ?? "Unavailable"}</dd></div>
-              <div className="flex justify-between gap-3"><dt className="text-[#999]">Wrap</dt><dd className="text-right text-[#ddd]">{selectedNode.layout.wrap === null ? "Unavailable" : selectedNode.layout.wrap ? "Enabled" : "Disabled"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Mode</dt><dd className="text-right text-foreground">{selectedNode.layout.mode ?? "Unavailable"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Direction</dt><dd className="text-right text-foreground">{selectedNode.layout.direction ?? "Unavailable"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Primary alignment</dt><dd className="text-right text-foreground">{selectedNode.layout.primaryAxisAlign ?? "Unavailable"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Counter alignment</dt><dd className="text-right text-foreground">{selectedNode.layout.counterAxisAlign ?? "Unavailable"}</dd></div>
+              <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Wrap</dt><dd className="text-right text-foreground">{selectedNode.layout.wrap === null ? "Unavailable" : selectedNode.layout.wrap ? "Enabled" : "Disabled"}</dd></div>
             </dl>
           </section>
 
           {isGridContainer ? (
-            <section className="border-t border-[#393939] pt-3">
-              <h3 className="mb-2 text-[12px] font-semibold text-[#c8c8c8]">Grid layout</h3>
+            <section className="border-t border-border pt-3">
+              <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Grid layout</h3>
               <dl className="space-y-2 text-[11px]">
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Columns</dt><dd className="text-right text-[#ddd]">{valueText(selectedNode.layout.constraints.gridColumnCount)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Rows</dt><dd className="text-right text-[#ddd]">{valueText(selectedNode.layout.constraints.gridRowCount)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Column gap</dt><dd className="text-right text-[#ddd]">{measurementText(selectedNode.spacing.columnGap.value, selectedNode.spacing.columnGap.unit)} {selectedNode.spacing.columnGap.unit}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Row gap</dt><dd className="text-right text-[#ddd]">{measurementText(selectedNode.spacing.rowGap.value, selectedNode.spacing.rowGap.unit)} {selectedNode.spacing.rowGap.unit}</dd></div>
-                {selectedNode.sourcePayload.gridAutoTracks !== undefined ? <div className="flex justify-between gap-3"><dt className="text-[#999]">Automatic rows</dt><dd className="text-right text-[#ddd]">{valueText(selectedNode.sourcePayload.gridAutoTracks)}</dd></div> : null}
-                {selectedNode.sourcePayload.gridItemsPositioning !== undefined ? <div className="flex justify-between gap-3"><dt className="text-[#999]">Item placement</dt><dd className="text-right text-[#ddd]">{valueText(selectedNode.sourcePayload.gridItemsPositioning)}</dd></div> : null}
+                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Columns</dt><dd className="text-right text-foreground">{valueText(selectedNode.layout.constraints.gridColumnCount)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Rows</dt><dd className="text-right text-foreground">{valueText(selectedNode.layout.constraints.gridRowCount)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Column gap</dt><dd className="text-right text-foreground">{measurementText(selectedNode.spacing.columnGap.value, selectedNode.spacing.columnGap.unit)} {selectedNode.spacing.columnGap.unit}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Row gap</dt><dd className="text-right text-foreground">{measurementText(selectedNode.spacing.rowGap.value, selectedNode.spacing.rowGap.unit)} {selectedNode.spacing.rowGap.unit}</dd></div>
+                {selectedNode.sourcePayload.gridAutoTracks !== undefined ? <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Automatic rows</dt><dd className="text-right text-foreground">{valueText(selectedNode.sourcePayload.gridAutoTracks)}</dd></div> : null}
+                {selectedNode.sourcePayload.gridItemsPositioning !== undefined ? <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Item placement</dt><dd className="text-right text-foreground">{valueText(selectedNode.sourcePayload.gridItemsPositioning)}</dd></div> : null}
               </dl>
-              {gridColumnTracks.length ? <p className="mt-2 break-words text-[10px] leading-4 text-[#929292]">Column tracks: {gridColumnTracks.map((track, index) => `${index + 1}. ${formatGridTrack(track)}`).join(" · ")}</p> : null}
-              {gridRowTracks.length ? <p className="mt-1 break-words text-[10px] leading-4 text-[#929292]">Row tracks: {gridRowTracks.map((track, index) => `${index + 1}. ${formatGridTrack(track)}`).join(" · ")}</p> : null}
+              {gridColumnTracks.length ? <p className="mt-2 break-words text-[10px] leading-4 text-foreground-subtle">Column tracks: {gridColumnTracks.map((track, index) => `${index + 1}. ${formatGridTrack(track)}`).join(" · ")}</p> : null}
+              {gridRowTracks.length ? <p className="mt-1 break-words text-[10px] leading-4 text-foreground-subtle">Row tracks: {gridRowTracks.map((track, index) => `${index + 1}. ${formatGridTrack(track)}`).join(" · ")}</p> : null}
             </section>
           ) : null}
 
           {isGridItem ? (
-            <section className="border-t border-[#393939] pt-3">
-              <h3 className="mb-2 text-[12px] font-semibold text-[#c8c8c8]">Grid item</h3>
+            <section className="border-t border-border pt-3">
+              <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Grid item</h3>
               <dl className="space-y-2 text-[11px]">
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Cell</dt><dd className="text-right text-[#ddd]">{[
+                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Cell</dt><dd className="text-right text-foreground">{[
                   gridRowIndex === null ? null : `Row ${Math.trunc(gridRowIndex) + 1}`,
                   gridColumnIndex === null ? null : `Column ${Math.trunc(gridColumnIndex) + 1}`,
                 ].filter(Boolean).join(" · ") || "Unavailable"}</dd></div>
@@ -511,22 +513,22 @@ export function ElementInspector({
                   { label: "Horizontal alignment", value: selectedNode.sourcePayload.gridChildHorizontalAlign },
                   { label: "Vertical alignment", value: selectedNode.sourcePayload.gridChildVerticalAlign },
                 ]).map((property) => (
-                  <div className="flex justify-between gap-3" key={property.label}><dt className="text-[#999]">{property.label}</dt><dd className="text-right text-[#ddd]">{property.value}</dd></div>
+                  <div className="flex justify-between gap-3" key={property.label}><dt className="text-foreground-subtle">{property.label}</dt><dd className="text-right text-foreground">{property.value}</dd></div>
                 ))}
               </dl>
             </section>
           ) : null}
 
           {capturedLayoutGrids(selectedNode).length ? (
-            <section className="border-t border-[#393939] pt-3">
-              <h3 className="mb-2 text-[12px] font-semibold text-[#c8c8c8]">Canvas grids</h3>
+            <section className="border-t border-border pt-3">
+              <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Canvas grids</h3>
               <ul className="space-y-2">
                 {capturedLayoutGrids(selectedNode).map((grid, index) => (
-                  <li className="rounded-[5px] bg-[#181818] p-2.5 text-[10px]" key={`${String(grid.pattern ?? "grid")}-${index}`}>
-                    <p className="font-medium text-[#dedede]">{String(grid.pattern ?? "Grid").toLowerCase().replace(/^./, (letter) => letter.toUpperCase())}{typeof grid.visible === "boolean" && !grid.visible ? " · hidden" : ""}</p>
-                    <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-[#999]">
+                  <li className="rounded-control bg-surface-inset p-2.5 text-[10px]" key={`${String(grid.pattern ?? "grid")}-${index}`}>
+                    <p className="font-medium text-foreground">{String(grid.pattern ?? "Grid").toLowerCase().replace(/^./, (letter) => letter.toUpperCase())}{typeof grid.visible === "boolean" && !grid.visible ? " · hidden" : ""}</p>
+                    <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-foreground-subtle">
                       {(["count", "sectionSize", "gutterSize", "offset", "alignment"] as const).map((key) => grid[key] === undefined ? null : (
-                        <div className="contents" key={key}><dt>{key === "sectionSize" ? "Size" : key === "gutterSize" ? "Gutter" : key === "alignment" ? "Alignment" : key === "offset" ? "Offset" : "Count"}</dt><dd className="truncate text-right text-[#d0d0d0]">{measurementText(grid[key], ["sectionSize", "gutterSize", "offset"].includes(key) ? "px" : "")}{["sectionSize", "gutterSize", "offset"].includes(key) && typeof grid[key] === "number" ? " px" : ""}</dd></div>
+                        <div className="contents" key={key}><dt>{key === "sectionSize" ? "Size" : key === "gutterSize" ? "Gutter" : key === "alignment" ? "Alignment" : key === "offset" ? "Offset" : "Count"}</dt><dd className="truncate text-right text-foreground-muted">{measurementText(grid[key], ["sectionSize", "gutterSize", "offset"].includes(key) ? "px" : "")}{["sectionSize", "gutterSize", "offset"].includes(key) && typeof grid[key] === "number" ? " px" : ""}</dd></div>
                       ))}
                     </dl>
                   </li>
@@ -535,119 +537,119 @@ export function ElementInspector({
             </section>
           ) : null}
 
-          <section className="border-t border-[#393939] pt-3">
-            <h3 className="mb-2 text-[12px] font-semibold text-[#c8c8c8]">Appearance</h3>
+          <section className="border-t border-border pt-3">
+            <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Appearance</h3>
             {appearancePaints.length ? (
               <div className="space-y-1.5">
                 {appearancePaints.map((paint, index) => (
-                  <div className="rounded-[5px] bg-[#181818] px-2.5 py-2" key={paint.label + index}>
+                  <div className="rounded-control bg-surface-inset px-2.5 py-2" key={paint.label + index}>
                     <div className="flex items-center justify-between gap-3">
-                      <span className="flex min-w-0 items-center gap-2 text-[11px] text-[#aaa]">
-                        <span aria-hidden="true" className="size-4 shrink-0 rounded-[3px] border border-[#474747]" style={{ backgroundColor: paint.color ?? "transparent", opacity: paint.opacity ?? 1 }} />
+                      <span className="flex min-w-0 items-center gap-2 text-[11px] text-foreground-muted">
+                        <span aria-hidden="true" className="size-4 shrink-0 rounded-chip border border-border-strong" style={{ backgroundColor: paint.color ?? "transparent", opacity: paint.opacity ?? 1 }} />
                         <span className="truncate">{paint.label} · {paintTypeLabel(paint.type)}</span>
                       </span>
-                      <span className="shrink-0 font-mono text-[10px] text-[#999]">{percentText(paint.opacity)}</span>
+                      <span className="shrink-0 font-mono text-[10px] text-foreground-subtle">{percentText(paint.opacity)}</span>
                     </div>
                     {paint.color ? (
                       <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px]">
-                        <span className="text-[#888]">Color</span>
+                        <span className="text-foreground-subtle">Color</span>
                         <CopyValue label={`${paint.label} color`} value={paint.color} />
                       </div>
                     ) : null}
                     {paint.gradientStops.length ? (
-                      <ul className="mt-1.5 space-y-1 border-t border-[#303030] pt-1.5">
+                      <ul className="mt-1.5 space-y-1 border-t border-border pt-1.5">
                         {paint.gradientStops.map((stop, stopIndex) => (
                           <li className="flex items-center justify-between gap-2" key={stopIndex}>
                             <span className="flex min-w-0 items-center gap-2">
-                              {stop.color ? <span aria-hidden="true" className="size-3.5 shrink-0 rounded-[3px] border border-[#555]" style={{ backgroundColor: stop.color, opacity: stop.opacity ?? 1 }} /> : null}
-                              <span className="truncate text-[10px] text-[#999]">Stop {stopIndex + 1}{stop.position === null ? "" : ` · ${percentText(stop.position)}`}{stop.opacity === null ? "" : ` · ${percentText(stop.opacity)} opacity`}</span>
+                              {stop.color ? <span aria-hidden="true" className="size-3.5 shrink-0 rounded-chip border border-border-strong" style={{ backgroundColor: stop.color, opacity: stop.opacity ?? 1 }} /> : null}
+                              <span className="truncate text-[10px] text-foreground-subtle">Stop {stopIndex + 1}{stop.position === null ? "" : ` · ${percentText(stop.position)}`}{stop.opacity === null ? "" : ` · ${percentText(stop.opacity)} opacity`}</span>
                             </span>
-                            {stop.color ? <CopyValue label={`${paint.label} gradient stop ${stopIndex + 1}`} value={stop.color} /> : <span className="text-[10px] text-[#999]">Color unavailable</span>}
+                            {stop.color ? <CopyValue label={`${paint.label} gradient stop ${stopIndex + 1}`} value={stop.color} /> : <span className="text-[10px] text-foreground-subtle">Color unavailable</span>}
                           </li>
                         ))}
                       </ul>
                     ) : null}
-                    {!paint.color && !paint.gradientStops.length ? <p className="mt-1.5 text-[10px] text-[#888]">No color value for this paint type.</p> : null}
+                    {!paint.color && !paint.gradientStops.length ? <p className="mt-1.5 text-[10px] text-foreground-subtle">No color value for this paint type.</p> : null}
                   </div>
                 ))}
               </div>
-            ) : <p className="text-[11px] text-[#929292]">No fills or strokes captured.</p>}
+            ) : <p className="text-[11px] text-foreground-subtle">No fills or strokes captured.</p>}
             {selectedNode.styleReferences.length ? (
               <ul className="mt-2 space-y-1">
-                {selectedNode.styleReferences.map((style) => <li className="text-[11px] text-[#aaa]" key={style.kind + style.sourceStyleId}>{style.kind}: {style.name ?? style.sourceStyleId}</li>)}
+                {selectedNode.styleReferences.map((style) => <li className="text-[11px] text-foreground-muted" key={style.kind + style.sourceStyleId}>{style.kind}: {style.name ?? style.sourceStyleId}</li>)}
               </ul>
             ) : null}
           </section>
 
-          <section className="border-t border-[#393939] pt-3">
-            <h3 className="mb-2 text-[12px] font-semibold text-[#c8c8c8]">Typography</h3>
+          <section className="border-t border-border pt-3">
+            <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Typography</h3>
             {selectedTypography ? (
               <dl className="space-y-2 text-[11px]">
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Font</dt><dd className="max-w-40 truncate text-right text-[#ddd]">{selectedTypography.fontFamily ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Size</dt><dd className="text-right text-[#ddd]">{selectedTypography.fontSize.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.fontSize)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Weight</dt><dd className="text-right text-[#ddd]">{selectedTypography.fontWeight ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Line height</dt><dd className="text-right text-[#ddd]">{selectedTypography.lineHeight.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.lineHeight)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Letter spacing</dt><dd className="text-right text-[#ddd]">{selectedTypography.letterSpacing.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.letterSpacing)}</dd></div>
-                <div className="flex justify-between gap-3"><dt className="text-[#999]">Alignment</dt><dd className="text-right text-[#ddd]">{selectedTypography.textAlign ?? "Unavailable"}</dd></div>
-                {selectedTypography.content !== null ? <div className="border-t border-[#393939] pt-2"><dt className="text-[#999]">Text content</dt><dd className="mt-1 break-words text-[#ddd]">{selectedTypography.content}</dd></div> : null}
+                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Font</dt><dd className="max-w-40 truncate text-right text-foreground">{selectedTypography.fontFamily ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Size</dt><dd className="text-right text-foreground">{selectedTypography.fontSize.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.fontSize)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Weight</dt><dd className="text-right text-foreground">{selectedTypography.fontWeight ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Line height</dt><dd className="text-right text-foreground">{selectedTypography.lineHeight.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.lineHeight)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Letter spacing</dt><dd className="text-right text-foreground">{selectedTypography.letterSpacing.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.letterSpacing)}</dd></div>
+                <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Alignment</dt><dd className="text-right text-foreground">{selectedTypography.textAlign ?? "Unavailable"}</dd></div>
+                {selectedTypography.content !== null ? <div className="border-t border-border pt-2"><dt className="text-foreground-subtle">Text content</dt><dd className="mt-1 break-words text-foreground">{selectedTypography.content}</dd></div> : null}
               </dl>
-            ) : textStyleRuns.length ? <p className="text-[11px] text-[#929292]">Typography is captured per text run.</p> : <p className="text-[11px] text-[#929292]">No typography data captured.</p>}
+            ) : textStyleRuns.length ? <p className="text-[11px] text-foreground-subtle">Typography is captured per text run.</p> : <p className="text-[11px] text-foreground-subtle">No typography data captured.</p>}
             <TextStyleRuns runs={textStyleRuns} />
           </section>
 
-          <section className="border-t border-[#393939] pt-3">
-            <h3 className="mb-2 text-[12px] font-semibold text-[#c8c8c8]">Bound tokens</h3>
+          <section className="border-t border-border pt-3">
+            <h3 className="mb-2 text-[12px] font-semibold text-foreground-muted">Bound tokens</h3>
             {selectedNode.tokens.length ? (
               <ul className="space-y-2">
                 {selectedNode.tokens.map((token) => (
-                  <li className="rounded-[5px] bg-[#181818] p-2.5" key={token.sourceId + (token.bindingPath ?? "binding")}>
-                    <p className="break-words text-[11px] font-medium text-[#e2e2e2]">{token.name}</p>
-                    {token.bindingPath ? <p className="mt-1 break-all font-mono text-[10px] text-[#8e8e8e]">{token.bindingPath}</p> : null}
+                  <li className="rounded-control bg-surface-inset p-2.5" key={token.sourceId + (token.bindingPath ?? "binding")}>
+                    <p className="break-words text-[11px] font-medium text-foreground">{token.name}</p>
+                    {token.bindingPath ? <p className="mt-1 break-all font-mono text-[10px] text-foreground-subtle">{token.bindingPath}</p> : null}
                     {token.value !== null ? <div className="mt-1"><TokenValue token={token} /></div> : null}
-                    <p className="mt-1 text-[10px] text-[#888]">{token.collectionName ?? "Uncategorized"}{token.mode ? " · " + token.mode : ""}</p>
+                    <p className="mt-1 text-[10px] text-foreground-subtle">{token.collectionName ?? "Uncategorized"}{token.mode ? " · " + token.mode : ""}</p>
                   </li>
                 ))}
               </ul>
-            ) : <p className="text-[11px] text-[#929292]">No bound tokens captured. Matching raw values do not imply a token binding.</p>}
+            ) : <p className="text-[11px] text-foreground-subtle">No bound tokens captured. Matching raw values do not imply a token binding.</p>}
           </section>
 
-          <details className="border-t border-[#393939] pt-3">
-            <summary className="cursor-pointer text-[11px] text-[#a4a4a4] focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#aaa]">Source details</summary>
+          <details className="border-t border-border pt-3">
+            <summary className="cursor-pointer text-[11px] text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Source details</summary>
             <dl className="mt-2 space-y-2 text-[10px]">
-              <div><dt className="text-[#888]">Parent element</dt><dd className="mt-0.5 break-all font-mono text-[#aaa]">{selectedNode.parentSourceNodeId ?? "None"}</dd></div>
-              <div><dt className="text-[#888]">Source frame</dt><dd className="mt-0.5 break-all font-mono text-[#aaa]">{selectedNode.sourceFrameId}</dd></div>
+              <div><dt className="text-foreground-subtle">Parent element</dt><dd className="mt-0.5 break-all font-mono text-foreground-muted">{selectedNode.parentSourceNodeId ?? "None"}</dd></div>
+              <div><dt className="text-foreground-subtle">Source frame</dt><dd className="mt-0.5 break-all font-mono text-foreground-muted">{selectedNode.sourceFrameId}</dd></div>
             </dl>
           </details>
         </div>
       ) : frame.kind === "overview" ? (
-        <div className="mt-5 space-y-5 text-[13px] leading-6 text-[#a0a0a0]">
+        <div className="mt-5 space-y-5 text-[13px] leading-6 text-foreground-muted">
           <p>
-            Switch to Inspect in the top bar, then select a design element to see its size, spacing, colours and type. View keeps layer hit areas out of the way. Hold <kbd className="rounded-[4px] bg-[#333] px-1.5 py-0.5 font-mono text-[11px] text-[#ddd]">Alt</kbd> and hover another element to see pixel distances in the canvas. Click a value to copy it.
+            {inspecting ? "Select a design element to see its size, spacing, colors and type." : "Switch to Inspect in the top bar, then select a design element to see its size, spacing, colors and type. View keeps layer hit areas out of the way."} Hold <kbd className="rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono text-[11px] text-foreground">Alt</kbd> and hover another element to see pixel distances in the canvas. Click a value to copy it.
           </p>
-          <p><kbd className="rounded-[4px] bg-[#333] px-1.5 py-0.5 font-mono text-[11px] text-[#ddd]">⌘ F</kbd> searches text, colours and elements on every screen.</p>
-          <dl className="space-y-2 border-t border-[#393939] pt-3 text-[11px]">
-            <div className="flex justify-between gap-3"><dt className="text-[#969696]">Screens</dt><dd className="font-mono text-[#ddd]">{frameCount}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-[#969696]">Captured elements</dt><dd className="font-mono text-[#ddd]">{totalNodeCount}</dd></div>
+          <p><kbd className="rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono text-[11px] text-foreground">⌘ F</kbd> searches text, colors and elements on every screen.</p>
+          <dl className="space-y-2 border-t border-border pt-3 text-[11px]">
+            <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Screens</dt><dd className="font-mono text-foreground">{frameCount}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Captured elements</dt><dd className="font-mono text-foreground">{totalNodeCount}</dd></div>
           </dl>
-          {!frame.exact ? <p className="text-[11px] leading-5 text-[#888]">This image has no structured source attributes. Upload a structured Figma capture for exact measurements and token bindings.</p> : null}
+          {!frame.exact ? <p className="text-[11px] leading-5 text-foreground-subtle">This image has no structured source attributes. Upload a structured Figma capture for exact measurements and token bindings.</p> : null}
         </div>
       ) : !frame.exact ? (
-        <div className="mt-4 space-y-3 text-[12px] leading-5 text-[#a0a0a0]">
-          <h3 className="font-medium text-[#e0e0e0]">Visual-only screen</h3>
+        <div className="mt-4 space-y-3 text-[12px] leading-5 text-foreground-muted">
+          <h3 className="font-medium text-foreground">Visual-only screen</h3>
           <p>Image pixels do not include exact padding, margins, element bounds, or token bindings.</p>
         </div>
       ) : (
         <div className="mt-4">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="break-words text-[13px] font-medium text-[#e5e5e5]">{frame.name}</h3>
-            {canCompare ? <button className="min-h-8 rounded-[5px] px-2.5 text-[11px] text-[#c7c7c7] hover:bg-[#343434] hover:text-white" onClick={onCompare} type="button">Compare</button> : null}
+            <h3 className="break-words text-[13px] font-medium text-foreground">{frame.name}</h3>
+            {canCompare ? <button className="min-h-8 rounded-control px-2.5 text-[11px] text-foreground-muted hover:bg-surface-raised hover:text-white" onClick={onCompare} type="button">Compare</button> : null}
           </div>
-          <p className="mt-2 text-[12px] leading-5 text-[#999]">Switch to Inspect in the top bar, then select an element to inspect its captured attributes.</p>
-          <dl className="mt-4 space-y-2 border-t border-[#393939] pt-3 text-[11px]">
-            <div className="flex justify-between gap-3"><dt className="text-[#969696]">Size</dt><dd className="font-mono text-[#ddd]">{formatFrameSize(frame.sourceWidth, frame.sourceHeight)}</dd></div>
-            <div className="flex justify-between gap-3"><dt className="text-[#969696]">Elements</dt><dd className="font-mono text-[#ddd]">{frame.nodes.length}</dd></div>
+          <p className="mt-2 text-[12px] leading-5 text-foreground-subtle">{inspecting ? "Select an element to inspect its captured attributes." : "Switch to Inspect in the top bar, then select an element to inspect its captured attributes."}</p>
+          <dl className="mt-4 space-y-2 border-t border-border pt-3 text-[11px]">
+            <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Size</dt><dd className="font-mono text-foreground">{formatFrameSize(frame.sourceWidth, frame.sourceHeight)}</dd></div>
+            <div className="flex justify-between gap-3"><dt className="text-foreground-subtle">Elements</dt><dd className="font-mono text-foreground">{frame.nodes.length}</dd></div>
           </dl>
-          <p className="mt-4 border-t border-[#393939] pt-3 text-[10px] leading-4 text-[#888]">Measurements retain source or measured provenance.</p>
+          <p className="mt-4 border-t border-border pt-3 text-[10px] leading-4 text-foreground-subtle">Measurements retain source or measured provenance.</p>
         </div>
       )}
     </div>

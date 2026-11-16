@@ -14,7 +14,7 @@ export function inspectionBounds(node: Pick<SnapshotNode, "bounds" | "layoutBoun
 export function inspectionGeometryNotice(node: Pick<SnapshotNode, "layoutBounds">) {
   return node.layoutBounds
     ? null
-    : "Figma-native layer geometry is unavailable in this snapshot. Position and size use screen bounds; recapture from Figma for layer-relative values.";
+    : "Positions are measured from the screen edge. Recapture from Figma for values relative to the parent layer.";
 }
 
 export function formatFrameSize(width: number, height: number) {

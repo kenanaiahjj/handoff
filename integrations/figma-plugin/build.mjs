@@ -13,8 +13,8 @@ if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && ["local
 
 await mkdir(outputDirectory, { recursive: true });
 const [, uiBuild] = await Promise.all([
-  build({ entryPoints: [path.join(here, "src/code.ts")], outfile: path.join(outputDirectory, "code.js"), bundle: true, platform: "browser", format: "iife", target: ["es2022"] }),
-  build({ entryPoints: [path.join(here, "src/ui.ts")], outfile: path.join(outputDirectory, "ui.js"), bundle: true, platform: "browser", format: "iife", target: ["es2022"], define: { __ASBIR_HANDOFF_ORIGIN__: JSON.stringify(endpoint.origin) }, write: false }),
+  build({ entryPoints: [path.join(here, "src/code.ts")], outfile: path.join(outputDirectory, "code.js"), bundle: true, platform: "browser", format: "iife", target: ["es2022"], minify: true, legalComments: "none" }),
+  build({ entryPoints: [path.join(here, "src/ui.ts")], outfile: path.join(outputDirectory, "ui.js"), bundle: true, platform: "browser", format: "iife", target: ["es2022"], minify: true, legalComments: "none", define: { __ASBIR_HANDOFF_ORIGIN__: JSON.stringify(endpoint.origin) }, write: false }),
 ]);
 
 const uiSource = await readFile(path.join(here, "src/ui.html"), "utf8");

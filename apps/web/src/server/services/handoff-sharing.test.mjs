@@ -47,22 +47,27 @@ test("workspace members retain review tools when a public link is enabled", () =
   });
 });
 
-test("an active invite link allows anonymous comments without enabling other write tools", () => {
-  const invite = {
-    id: "invite-1",
-    email: "qa.person@example.com",
-    role: "qa",
-    tokenHash: hashHandoffInviteToken("invite-token"),
-    expiresAt: "2026-11-10T12:00:00.000Z",
-    revokedAt: null,
-  };
-  assert.deepEqual(resolveHandoffReviewAccess({
-    mode: "invited",
-    isWorkspaceMember: false,
-    invite,
-    inviteToken: "invite-token",
-    now,
-  }), { allowed: true, canWrite: false, canComment: true, reason: "invite-link" });
+test("active invite links grant identical view and comment access for every role and sign-in state", () => {
+  for (const role of ["pd", "qa", "dev", "exec"]) {
+    for (const isAuthenticated of [false, true]) {
+      const invite = {
+        id: `invite-${role}`,
+        email: `${role}.person@example.com`,
+        role,
+        tokenHash: hashHandoffInviteToken("invite-token"),
+        expiresAt: "2026-11-10T12:00:00.000Z",
+        revokedAt: null,
+      };
+      assert.deepEqual(resolveHandoffReviewAccess({
+        mode: "invited",
+        isWorkspaceMember: false,
+        isAuthenticated,
+        invite,
+        inviteToken: "invite-token",
+        now,
+      }), { allowed: true, canWrite: false, canComment: true, reason: "invite-link" }, `${role} invite with isAuthenticated=${isAuthenticated}`);
+    }
+  }
 });
 
 test("invited mode rejects a missing link, a wrong token, revoked invites, and expired invites", () => {
