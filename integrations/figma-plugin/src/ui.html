@@ -34,9 +34,10 @@
       h1 { margin: 0; font-size: 18px; line-height: 1.3; font-weight: 600; letter-spacing: -0.02em; }
       header p, .hint { margin: 0; color: var(--foreground-subtle); font-size: 12px; }
       .field { display: grid; gap: 6px; }
-      #page-exclusions[hidden] { display: none; }
+      #page-exclusions[hidden], #frame-manifest[hidden], #layer-asset-report[hidden] { display: none; }
       label { color: var(--foreground-muted); font-size: 12px; font-weight: 500; }
       input, select { min-height: 36px; width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 0 10px; color: var(--foreground); background: var(--surface-inset); font: inherit; }
+      input[type="checkbox"] { width: 16px; min-height: 16px; height: 16px; margin: 2px 0 0; padding: 0; accent-color: var(--accent); }
       input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--primary-hover); outline-offset: 2px; }
       button { min-height: 36px; border: 0; border-radius: 6px; padding: 0 12px; background: var(--surface-raised); color: var(--foreground); font: inherit; font-weight: 600; cursor: pointer; transition: background-color 120ms ease; }
       button:hover:not(:disabled) { background: var(--border-strong); }
@@ -50,6 +51,23 @@
       .preview-wrap { display: grid; place-items: center; min-height: 150px; max-height: 230px; padding: 8px; overflow: auto; background-color: var(--background); background-image: radial-gradient(#383838 1px, transparent 1px); background-size: 10px 10px; }
       canvas { display: block; max-width: 100%; max-height: 210px; width: auto; height: auto; object-fit: contain; box-shadow: 0 3px 14px #0008; }
       #capture-summary { min-height: 18px; padding: 8px 11px; color: var(--foreground-muted); font-size: 12px; }
+      #frame-manifest { padding-bottom: 10px; }
+      #frame-manifest-intro, #frame-selection-count, #asset-report-copy { margin: 0; padding: 0 11px 9px; color: var(--foreground-muted); font-size: 12px; }
+      #frame-selection-count { min-height: 18px; padding-top: 8px; color: var(--foreground-subtle); }
+      .frame-actions { display: flex; gap: 8px; padding: 0 11px 9px; }
+      .frame-actions button { min-height: 30px; padding: 0 9px; font-size: 11px; }
+      #frame-list-fieldset { min-width: 0; margin: 0 11px; padding: 0; border: 0; }
+      #frame-list { display: grid; gap: 2px; max-height: 220px; overflow: auto; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-inset); }
+      .frame-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px; border-radius: 4px; cursor: pointer; }
+      .frame-row:hover { background: var(--surface-raised); }
+      .frame-row span { min-width: 0; overflow-wrap: anywhere; color: var(--foreground); font-weight: 500; }
+      .frame-row small { display: block; margin-top: 1px; color: var(--foreground-subtle); font: 11px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace; }
+      .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+      #layer-asset-report { padding-bottom: 9px; }
+      #asset-report-summary { cursor: pointer; padding: 9px 11px; color: var(--foreground-muted); font-weight: 600; }
+      #asset-export-list { display: grid; gap: 4px; max-height: 180px; overflow: auto; margin: 0 11px; padding: 0; list-style: none; }
+      .asset-report-row { padding: 6px 8px; border-radius: 4px; background: var(--surface-raised); overflow-wrap: anywhere; }
+      .asset-report-row small { display: block; margin-top: 1px; color: var(--foreground-subtle); }
       #status { min-height: 36px; padding: 9px 11px; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-raised); color: var(--foreground-muted); overflow-wrap: anywhere; }
       #status[data-kind="error"] { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
       #status[data-kind="warning"] { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
@@ -103,11 +121,40 @@
         <input id="excluded-sections" type="text" value="Assets, Components" autocomplete="off" spellcheck="false" aria-describedby="excluded-sections-help" />
         <p id="excluded-sections-help" class="hint">Enter section names separated by commas.</p>
       </div>
+      <div class="field">
+        <label for="layer-asset-mode">Individual layer assets</label>
+        <select id="layer-asset-mode" aria-describedby="layer-asset-mode-help">
+          <option value="recommended">Recommended assets (up to 256)</option>
+          <option value="raster">Raster images only (up to 256)</option>
+          <option value="none">Skip individual asset exports</option>
+        </select>
+        <p id="layer-asset-mode-help" class="hint">Frame renders and structured layers are always captured. This setting controls separate image and vector files.</p>
+      </div>
       <button id="capture-button" type="button">Capture canvas</button>
       <section class="panel" aria-label="Snapshot overview preview">
         <div class="panel-head"><span>Figma canvas render</span><span>Preview</span></div>
         <div class="preview-wrap"><canvas id="canvas-preview" width="1" height="1" aria-label="Figma-rendered preview with structured layer data"></canvas></div>
         <div id="capture-summary" aria-live="polite"></div>
+      </section>
+      <section id="frame-manifest" class="panel" aria-labelledby="frame-manifest-title" hidden>
+        <div class="panel-head"><span id="frame-manifest-title">Frames for upload</span><span id="frame-manifest-summary"></span></div>
+        <p id="frame-manifest-intro"></p>
+        <div class="frame-actions">
+          <button id="select-all-frames" class="secondary" type="button">Select all</button>
+          <button id="clear-frame-selection" class="secondary" type="button">Select none</button>
+        </div>
+        <fieldset id="frame-list-fieldset" disabled>
+          <legend class="sr-only">Choose frames to include in the upload</legend>
+          <ul id="frame-list"></ul>
+        </fieldset>
+        <p id="frame-selection-count" role="status" aria-live="polite"></p>
+      </section>
+      <section id="layer-asset-report" class="panel" aria-labelledby="asset-report-summary" hidden>
+        <details id="asset-report-details">
+          <summary id="asset-report-summary">Layer asset report</summary>
+          <p id="asset-report-copy"></p>
+          <ul id="asset-export-list"></ul>
+        </details>
       </section>
       <div id="status" role="status" aria-live="polite"></div>
       <section id="replacement-review" class="panel" aria-labelledby="replacement-title" hidden>

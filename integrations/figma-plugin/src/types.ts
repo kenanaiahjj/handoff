@@ -20,6 +20,35 @@ export interface CaptureAssetBytes {
 export interface LayerExportAssetBytes extends CaptureAssetBytes {
   sourceFrameId: string;
   sourceNodeId: string;
+  sourceFrameName: string;
+  sourceLayerName: string;
+}
+
+export type LayerAssetMode = "recommended" | "raster" | "none";
+
+export interface LayerAssetFrameReport {
+  sourceFrameId: string;
+  frameName: string;
+  eligibleCount: number;
+  modeSkippedCount: number;
+  candidateCount: number;
+  limitSkippedCount: number;
+  selectedCount: number;
+  exportedCount: number;
+  exportFailureCount: number;
+  sizeSkippedCount: number;
+  fallbackCount: number;
+}
+
+export interface LayerAssetReport extends Omit<LayerAssetFrameReport, "sourceFrameId" | "frameName"> {
+  mode: LayerAssetMode;
+  limit: number;
+  frames: LayerAssetFrameReport[];
+}
+
+export interface ExcludedSectionCount {
+  name: string;
+  frameCount: number;
 }
 
 export interface CaptureReadyMessage {
@@ -31,6 +60,8 @@ export interface CaptureReadyMessage {
   vectorRenders: CaptureAssetBytes[];
   /** Optional exports for individual vector and image layers. */
   layerRenders: LayerExportAssetBytes[];
+  /** Counts describing eligible, exported, and skipped individual layer assets. */
+  layerAssetReport: LayerAssetReport;
   /** Optional Figma lookups that could not be read without blocking the frame capture. */
   warnings: string[];
   scope: "selected" | "page" | "file";
@@ -38,6 +69,8 @@ export interface CaptureReadyMessage {
   captureAllTopLevel: boolean;
   /** Top-level Figma sections omitted from a current-page capture. */
   excludedTopLevelSections: string[];
+  /** Frame counts omitted under each configured top-level section. */
+  excludedSectionCounts: ExcludedSectionCount[];
 }
 
 export interface CaptureProgressMessage {

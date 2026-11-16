@@ -835,7 +835,10 @@ test("reports the per-capture layer asset cap while retaining every structured l
   assert.equal(result.layerRenders.length, 256);
   assert.equal(result.payload.sourceMetadata.layerExportAssetCount, 256);
   assert.equal(result.payload.sourceMetadata.layerExportSkippedCount, 44);
-  assert.match(capWarning ?? "", /Selected 256 of 300 eligible layer assets.*all 300 layers and their captured properties remain available/i);
+  assert.equal(result.layerAssetReport.eligibleCount, 300);
+  assert.equal(result.layerAssetReport.selectedCount, 256);
+  assert.equal(result.layerAssetReport.limitSkippedCount, 44);
+  assert.match(capWarning ?? "", /Selected 256 of 300 matching eligible layer assets.*all 300 eligible layers and their captured properties remain available/i);
 });
 
 test("uses 2x renders for multiple small frames even when their combined area is large", async () => {
@@ -893,6 +896,120 @@ test("captures five top-level frames in page order without changing the Figma se
     [10, 20, 580, 240],
   );
   assert.deepEqual(fixture.page.selection, originalSelection);
+});
+
+test("excludes configured top-level sections and reports their frame counts", async () => {
+  const fixture = installCaptureFixture();
+  const makeFrame = (id, name, parent, x) => ({
+    ...fixture.frame,
+    id,
+    name,
+    parent,
+    children: [],
+    absoluteBoundingBox: { x, y: 0, width: 100, height: 100 },
+  });
+  const assets = { id: "assets-section", type: "SECTION", name: "Assets", children: [], parent: fixture.page };
+  const components = { id: "components-section", type: "SECTION", name: "Components", children: [], parent: fixture.page };
+  const lowerCaseAssets = { id: "lowercase-assets-section", type: "SECTION", name: "assets", children: [], parent: fixture.page };
+  assets.children.push(makeFrame("asset-logo", "Brand Logo", assets, 120));
+  components.children.push(makeFrame("component-button", "Button", components, 240));
+  lowerCaseAssets.children.push(makeFrame("lowercase-asset", "Lowercase Asset", lowerCaseAssets, 300));
+  const passenger = makeFrame("passenger-home", "Passenger - Home", fixture.page, 360);
+  const lookalike = makeFrame("asset-lookalike", "Assets - Detail", fixture.page, 480);
+  Object.defineProperty(fixture.page, "children", { get: () => [assets, components, lowerCaseAssets, passenger, lookalike] });
+
+  const result = await captureFigmaCanvas("page", () => {}, ["Assets", "Components"]);
+
+  assert.deepEqual(result.payload.frames.map((frame) => frame.sourceFrameId), [lowerCaseAssets.children[0].id, passenger.id, lookalike.id]);
+  assert.deepEqual(result.excludedSectionCounts, [
+    { name: "Assets", frameCount: 1 },
+    { name: "Components", frameCount: 1 },
+  ]);
+});
+
+test("page-merge captures every page root outside the configured sections", async () => {
+  const fixture = installCaptureFixture();
+  const makeFrame = (id, name, parent, x) => ({
+    ...fixture.frame,
+    id,
+    name,
+    parent,
+    children: [],
+    absoluteBoundingBox: { x, y: 0, width: 100, height: 100 },
+  });
+  const assets = { id: "assets-section", type: "SECTION", name: "Assets", children: [], parent: fixture.page };
+  const components = { id: "components-section", type: "SECTION", name: "Components", children: [], parent: fixture.page };
+  assets.children.push(makeFrame("asset-logo", "Brand Logo", assets, 120));
+  components.children.push(makeFrame("component-button", "Button", components, 240));
+  const passenger = makeFrame("passenger-home", "Passenger - Home", fixture.page, 360);
+  const booking = makeFrame("booking-details", "Booking Details", fixture.page, 480);
+  Object.defineProperty(fixture.page, "children", { get: () => [assets, components, passenger, booking] });
+
+  const result = await captureFigmaCanvas("selected", () => {}, ["Assets", "Components"], true);
+
+  assert.deepEqual(result.payload.frames.map((frame) => frame.sourceFrameId), [passenger.id, booking.id]);
+});
+
+test("none layer-asset mode keeps structured layers without exporting individual assets", async () => {
+  const fixture = installCaptureFixture();
+  let vectorExports = 0;
+  fixture.frame.children = [{
+    id: "search-icon",
+    type: "VECTOR",
+    name: "Search icon",
+    visible: true,
+    absoluteBoundingBox: { x: 12, y: 12, width: 18, height: 18 },
+    fills: [],
+    strokes: [],
+    children: [],
+    parent: fixture.frame,
+    async exportAsync() { vectorExports += 1; return '<svg xmlns="http://www.w3.org/2000/svg" />'; },
+  }];
+
+  const result = await captureFigmaCanvas("selected", () => {}, [], false, "none");
+
+  assert.equal(result.layerRenders.length, 0);
+  assert.equal(vectorExports, 0);
+  assert.equal(result.payload.frames[0].nodes.length, 2);
+  assert.equal(result.layerAssetReport.mode, "none");
+  assert.equal(result.layerAssetReport.eligibleCount, 1);
+  assert.equal(result.layerAssetReport.modeSkippedCount, 1);
+});
+
+test("raster-only layer-asset mode skips vector assets", async () => {
+  const fixture = installCaptureFixture();
+  const vector = {
+    id: "search-icon",
+    type: "VECTOR",
+    name: "Search icon",
+    visible: true,
+    absoluteBoundingBox: { x: 12, y: 12, width: 18, height: 18 },
+    fills: [],
+    strokes: [],
+    children: [],
+    parent: fixture.frame,
+    async exportAsync() { return '<svg xmlns="http://www.w3.org/2000/svg" />'; },
+  };
+  const image = {
+    id: "photo",
+    type: "IMAGE",
+    name: "Passenger photo",
+    visible: true,
+    absoluteBoundingBox: { x: 32, y: 12, width: 24, height: 24 },
+    fills: [],
+    strokes: [],
+    children: [],
+    parent: fixture.frame,
+    async exportAsync() { return fixture.png; },
+  };
+  fixture.frame.children = [vector, image];
+
+  const result = await captureFigmaCanvas("selected", () => {}, [], false, "raster");
+
+  assert.deepEqual(result.layerRenders.map((asset) => asset.sourceNodeId), [image.id]);
+  assert.equal(result.payload.frames[0].nodes.length, 3);
+  assert.equal(result.layerAssetReport.modeSkippedCount, 1);
+  assert.equal(result.layerAssetReport.exportedCount, 1);
 });
 
 test("rejects an oversized layer payload before exporting frame images", async () => {

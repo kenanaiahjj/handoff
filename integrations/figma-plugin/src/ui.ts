@@ -15,7 +15,9 @@ import type {
   CaptureErrorMessage,
   CaptureProgressMessage,
   CaptureReadyMessage,
+  LayerAssetMode,
 } from "./types";
+import { filterCaptureToFrameIds } from "./capture-selection";
 import { isRejectedSvgAssetResponse, makeRasterOnlyFallback } from "./raster-fallback";
 import { frameRenderCrop } from "./render-crop";
 import { availableOverviewBudget } from "./transfer-budget";
@@ -30,11 +32,24 @@ const scopeInput = document.querySelector<HTMLSelectElement>("#capture-scope")!;
 const pageExclusions = document.querySelector<HTMLElement>("#page-exclusions")!;
 const scopeHelp = document.querySelector<HTMLElement>("#scope-help")!;
 const excludedSectionsInput = document.querySelector<HTMLInputElement>("#excluded-sections")!;
+const layerAssetModeInput = document.querySelector<HTMLSelectElement>("#layer-asset-mode")!;
 const captureButton = document.querySelector<HTMLButtonElement>("#capture-button")!;
 const uploadButton = document.querySelector<HTMLButtonElement>("#upload-button")!;
 const status = document.querySelector<HTMLElement>("#status")!;
 const preview = document.querySelector<HTMLCanvasElement>("#canvas-preview")!;
 const summary = document.querySelector<HTMLElement>("#capture-summary")!;
+const frameManifest = document.querySelector<HTMLElement>("#frame-manifest")!;
+const frameManifestSummary = document.querySelector<HTMLElement>("#frame-manifest-summary")!;
+const frameManifestIntro = document.querySelector<HTMLElement>("#frame-manifest-intro")!;
+const frameList = document.querySelector<HTMLUListElement>("#frame-list")!;
+const frameListFieldset = document.querySelector<HTMLFieldSetElement>("#frame-list-fieldset")!;
+const frameSelectionCount = document.querySelector<HTMLElement>("#frame-selection-count")!;
+const selectAllFramesButton = document.querySelector<HTMLButtonElement>("#select-all-frames")!;
+const clearFrameSelectionButton = document.querySelector<HTMLButtonElement>("#clear-frame-selection")!;
+const layerAssetReportPanel = document.querySelector<HTMLElement>("#layer-asset-report")!;
+const layerAssetReportSummary = document.querySelector<HTMLElement>("#asset-report-summary")!;
+const layerAssetReportCopy = document.querySelector<HTMLElement>("#asset-report-copy")!;
+const layerAssetExportList = document.querySelector<HTMLUListElement>("#asset-export-list")!;
 const result = document.querySelector<HTMLElement>("#result")!;
 const resultLink = document.querySelector<HTMLAnchorElement>("#result-link")!;
 const resultProjectId = document.querySelector<HTMLElement>("#result-project-id")!;
@@ -86,6 +101,7 @@ type CaptureMergeContext = {
 };
 type PendingUpload = {
   snapshot: SnapshotEnvelope;
+  renders: CaptureAssetBytes[];
   baselineVersionId: string | null;
   mergeContext?: CaptureMergeContext;
   token: string;
@@ -93,11 +109,13 @@ type PendingUpload = {
 };
 
 let currentCapture: CaptureReadyMessage | null = null;
+let fullCapture: CaptureReadyMessage | null = null;
 let overviewBytes: Uint8Array | null = null;
 let overviewWidth = 0;
 let overviewHeight = 0;
 let pendingUpload: PendingUpload | null = null;
 let busy = false;
+let previewGeneration = 0;
 
 function setStatus(message: string, kind: "plain" | "error" | "success" | "warning" = "plain") {
   status.textContent = message;
@@ -123,7 +141,215 @@ function setBusy(isBusy: boolean) {
   busy = isBusy;
   captureButton.disabled = isBusy;
   uploadButton.disabled = isBusy || !currentCapture || !overviewBytes;
+  layerAssetModeInput.disabled = isBusy || Boolean(fullCapture);
+  frameListFieldset.disabled = isBusy || !fullCapture || Boolean(pendingUpload);
+  selectAllFramesButton.disabled = isBusy || !fullCapture || Boolean(pendingUpload);
+  clearFrameSelectionButton.disabled = isBusy || !fullCapture || Boolean(pendingUpload);
   updateReplacementActions();
+}
+
+function selectedFrameIds() {
+  return new Set(Array.from(frameList.querySelectorAll<HTMLInputElement>("input[data-frame-id]:checked"))
+    .map((checkbox) => checkbox.dataset.frameId!)
+    .filter(Boolean));
+}
+
+function updateFrameManifestSummary(capture: CaptureReadyMessage) {
+  const selectedCount = selectedFrameIds().size;
+  const manifestCapture = fullCapture ?? capture;
+  const frameCount = manifestCapture.payload.frames.length;
+  frameManifestSummary.textContent = `${selectedCount} of ${frameCount} selected`;
+  frameSelectionCount.textContent = `${selectedCount} of ${frameCount} captured frames are selected for upload.`;
+  const excluded = manifestCapture.excludedSectionCounts.filter((section) => section.frameCount > 0);
+  const excludedSummary = excluded.length
+    ? `Excluded sections: ${excluded.map(({ name, frameCount: count }) => `${name} (${count} frame${count === 1 ? "" : "s"})`).join(", ")}.`
+    : "No top-level frames were excluded by section name.";
+  const selectionSummary = manifestCapture.captureAllTopLevel
+    ? "Merge mode keeps unchecked frames from the previous Handoff version."
+    : manifestCapture.scope === "page" || manifestCapture.scope === "file"
+      ? "Replace scope uploads only checked frames; unchecked frames won't be part of this replacement capture."
+      : "Selected scope uploads only checked frames.";
+  frameManifestIntro.textContent = `${excludedSummary} ${selectionSummary}`;
+}
+
+function renderFrameManifest(capture: CaptureReadyMessage) {
+  frameList.replaceChildren();
+  capture.payload.frames.forEach((frame, index) => {
+    const item = document.createElement("li");
+    const label = document.createElement("label");
+    const checkbox = document.createElement("input");
+    const title = document.createElement("span");
+    const pageId = document.createElement("small");
+    checkbox.type = "checkbox";
+    checkbox.checked = true;
+    checkbox.dataset.frameId = frame.sourceFrameId;
+    checkbox.id = `capture-frame-${index}`;
+    label.className = "frame-row";
+    title.textContent = frame.name || "Untitled frame";
+    pageId.textContent = `Page ${frame.sourcePageId} · Frame ${frame.sourceFrameId}`;
+    title.append(pageId);
+    label.htmlFor = checkbox.id;
+    label.append(checkbox, title);
+    item.append(label);
+    frameList.append(item);
+    checkbox.addEventListener("change", () => { void updateSelectedCapture(); });
+  });
+  frameManifest.hidden = false;
+  updateFrameManifestSummary(capture);
+}
+
+function updateLayerAssetReport(capture: CaptureReadyMessage) {
+  const report = capture.layerAssetReport;
+  const modeLabel: Record<LayerAssetMode, string> = {
+    recommended: "Recommended priority",
+    raster: "Raster images only",
+    none: "Individual asset exports off",
+  };
+  const notes = [
+    `${report.exportedCount} exported`,
+    `${report.eligibleCount} eligible`,
+    report.modeSkippedCount ? `${report.modeSkippedCount} excluded by mode` : "",
+    report.limitSkippedCount ? `${report.limitSkippedCount} skipped by the 256-item cap` : "",
+    report.sizeSkippedCount ? `${report.sizeSkippedCount} skipped by size limits` : "",
+    report.exportFailureCount ? `${report.exportFailureCount} failed` : "",
+    report.fallbackCount ? `${report.fallbackCount} used PNG fallback` : "",
+  ].filter(Boolean);
+  layerAssetReportSummary.textContent = `Layer assets: ${report.exportedCount} exported`;
+  layerAssetReportCopy.textContent = capture.payload.frames.length === 0
+    ? "Select at least one frame to see the layer assets for upload."
+    : report.eligibleCount
+    ? `${modeLabel[report.mode]}. ${notes.join(" · ")}. Structured layers remain available even when separate assets are omitted.`
+    : "No eligible individual layer assets were found. Frame renders and structured layers are still included.";
+  layerAssetExportList.replaceChildren();
+  if (capture.layerRenders.length) {
+    for (const asset of capture.layerRenders) {
+      const item = document.createElement("li");
+      const name = document.createElement("strong");
+      const detail = document.createElement("small");
+      item.className = "asset-report-row";
+      name.textContent = asset.sourceLayerName || asset.fileName;
+      detail.textContent = `${asset.sourceFrameName} · ${asset.contentType === "image/png" ? "PNG" : "SVG"} · ${asset.fileName}`;
+      item.append(name, detail);
+      layerAssetExportList.append(item);
+    }
+  } else {
+    const item = document.createElement("li");
+    item.className = "asset-report-row";
+    item.textContent = "No separate layer assets will be uploaded.";
+    layerAssetExportList.append(item);
+  }
+  layerAssetReportPanel.hidden = false;
+}
+
+function updateCaptureSummary(capture: CaptureReadyMessage, width: number, height: number) {
+  const nodeCount = capture.payload.frames.reduce((count, frame) => count + frame.nodes.length, 0);
+  const frameCount = capture.payload.frames.length;
+  const pageCount = Array.isArray(capture.payload.sourceMetadata.pageLayout)
+    ? capture.payload.sourceMetadata.pageLayout.length
+    : 0;
+  const renderScale = capture.payload.sourceMetadata.renderScale === 2 ? "2×" : "1×";
+  const vectorSourceCount = capture.vectorRenders.length;
+  const fallbackFrameIds = Array.isArray(capture.payload.sourceMetadata.renderScaleFallbackFrameIds)
+    ? capture.payload.sourceMetadata.renderScaleFallbackFrameIds.filter((frameId): frameId is string => typeof frameId === "string")
+    : [];
+  const vectorSummary = vectorSourceCount === frameCount
+    ? "SVG sources retained"
+    : `${vectorSourceCount}/${frameCount} SVG sources retained`;
+  const scaleSummary = fallbackFrameIds.length === frameCount
+    ? "1× Figma render"
+    : fallbackFrameIds.length
+      ? `${renderScale} Figma render · ${fallbackFrameIds.length} frame${fallbackFrameIds.length === 1 ? "" : "s"} rendered at 1×`
+      : `${renderScale} Figma render`;
+  const duplicateFrameNames = findDuplicateFrameNames(capture.payload.frames);
+  const blankFrameNameCount = countBlankFrameNames(capture.payload.frames);
+  const warningSummary = capture.warnings.length ? ` · ${capture.warnings.length} capture warning${capture.warnings.length === 1 ? "" : "s"}` : "";
+  const duplicateNameSummary = duplicateFrameNames.length
+    ? ` · ${duplicateFrameNames.length} duplicate screen name${duplicateFrameNames.length === 1 ? "" : "s"}`
+    : "";
+  const layerExportCount = capture.layerRenders.length;
+  const pageSummary = capture.scope === "file" ? ` · ${pageCount} pages` : "";
+  const captureScopeSummary = capture.captureAllTopLevel
+    ? "All top-level frames and components on the current page (merge)"
+    : formatFigmaCaptureScope(capture.scope);
+  const scopeSummary = captureScopeSummary ? `Capture scope: ${captureScopeSummary} · ` : "";
+  const excludedSections = capture.excludedSectionCounts.filter((section) => section.frameCount > 0);
+  const exclusionSummary = excludedSections.length
+    ? ` · excluded sections: ${excludedSections.map(({ name, frameCount }) => `${name} (${frameCount})`).join(", ")}`
+    : "";
+  summary.textContent = `${scopeSummary}${frameCount} frame${frameCount === 1 ? "" : "s"}${pageSummary}${exclusionSummary} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary} · ${vectorSummary} · ${layerExportCount} individual layer asset${layerExportCount === 1 ? "" : "s"}${warningSummary}${duplicateNameSummary}`;
+  const duplicateNameMessage = duplicateFrameNames.length
+    ? `This capture contains duplicate screen names: ${duplicateFrameNames.slice(0, 4).map(({ name, count }) => `${name} (${count})`).join(", ")}${duplicateFrameNames.length > 4 ? `, and ${duplicateFrameNames.length - 4} more` : ""}. Matching these screens by name may be ambiguous.`
+    : "";
+  const blankNameMessage = blankFrameNameCount
+    ? `${blankFrameNameCount} screen${blankFrameNameCount === 1 ? " has" : "s have"} no name. Handoff may not match these screens by name across versions.`
+    : "";
+  const captureWarningMessage = capture.warnings.length
+    ? `Capture warnings: ${capture.warnings.join(" ")} Review the Figma-rendered preview and layer data before uploading.`
+    : "";
+  const nameWarningMessage = [blankNameMessage, duplicateNameMessage].filter(Boolean).join(" ");
+  const statusMessage = [
+    nameWarningMessage ? `${nameWarningMessage} You can still upload.` : "",
+    captureWarningMessage,
+  ].filter(Boolean).join(" ") || "Review the Figma-rendered preview and frame list, then upload this snapshot.";
+  setStatus(statusMessage, duplicateFrameNames.length || blankFrameNameCount || capture.warnings.length ? "warning" : "plain");
+}
+
+async function prepareSelectedCapture(capture: CaptureReadyMessage) {
+  const generation = ++previewGeneration;
+  currentCapture = null;
+  overviewBytes = null;
+  overviewWidth = 0;
+  overviewHeight = 0;
+  setBusy(true);
+  setStatus("Preparing the selected frame preview and layer asset report…");
+  try {
+    const overview = await createOverviewPng(capture);
+    if (generation !== previewGeneration) return;
+    currentCapture = capture;
+    overviewBytes = overview.bytes;
+    overviewWidth = overview.width;
+    overviewHeight = overview.height;
+    preview.width = overview.width;
+    preview.height = overview.height;
+    const context = preview.getContext("2d", { alpha: true });
+    if (!context) throw new Error("The browser could not create the canvas preview.");
+    const pixelPreview = await loadImage(overview.bytes, "image/png");
+    if (generation !== previewGeneration) return;
+    context.clearRect(0, 0, preview.width, preview.height);
+    context.drawImage(pixelPreview, 0, 0, preview.width, preview.height);
+    updateFrameManifestSummary(capture);
+    updateLayerAssetReport(capture);
+    updateCaptureSummary(capture, overview.width, overview.height);
+    setBusy(false);
+  } catch (error) {
+    if (generation !== previewGeneration) return;
+    currentCapture = null;
+    overviewBytes = null;
+    setStatus(error instanceof Error ? error.message : "The canvas overview could not be prepared.", "error");
+    setBusy(false);
+  }
+}
+
+async function updateSelectedCapture() {
+  if (!fullCapture) return;
+  const includedFrameIds = selectedFrameIds();
+  updateFrameManifestSummary(fullCapture);
+  if (includedFrameIds.size === 0) {
+    previewGeneration += 1;
+    currentCapture = null;
+    overviewBytes = null;
+    overviewWidth = 0;
+    overviewHeight = 0;
+    preview.width = 1;
+    preview.height = 1;
+    summary.textContent = "No frames selected for upload.";
+    updateLayerAssetReport(filterCaptureToFrameIds(fullCapture, includedFrameIds));
+    setStatus("Select at least one frame before uploading.", "warning");
+    setBusy(false);
+    return;
+  }
+  const selectedCapture = filterCaptureToFrameIds(fullCapture, includedFrameIds);
+  await prepareSelectedCapture(selectedCapture);
 }
 
 function pluginMessage(data: unknown) {
@@ -520,7 +746,7 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
       const overviewDescriptor = snapshot.assets.find((asset) => asset.key === snapshot.overviewAssetKey);
       if (!overviewDescriptor) throw new Error("The snapshot overview asset is missing.");
       form.append(`asset:${snapshot.overviewAssetKey}`, assetBlob(overviewAssetBytes, "image/png"), overviewDescriptor.fileName);
-      currentCapture!.renders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
+      pending.renders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
       vectorRenders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
       layerRenders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
       if (pending.baselineVersionId) form.append("baselineVersionId", pending.baselineVersionId);
@@ -583,10 +809,15 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
         ? `Snapshot imported with ${frameMatches.length} confirmed frame ${frameMatches.length === 1 ? "replacement" : "replacements"}.`
         : "Snapshot imported. Open the frozen canvas in Asbir Handoff.", "success");
     currentCapture = null;
+    fullCapture = null;
     overviewBytes = null;
     overviewWidth = 0;
     overviewHeight = 0;
     pendingUpload = null;
+    frameManifest.hidden = true;
+    frameList.replaceChildren();
+    layerAssetReportPanel.hidden = true;
+    layerAssetExportList.replaceChildren();
     replacementReview.hidden = true;
     uploadButton.hidden = false;
     setBusy(false);
@@ -627,8 +858,9 @@ async function uploadCapture() {
   pendingUpload = null;
   setStatus("Preparing the captured version…");
   try {
-    const frameDimensions = currentCapture.renders.map(dimensionsOf);
-    const renderMetadata = await mapWithConcurrency(currentCapture.renders, 8, async (render, index) =>
+    const frameRenders = await Promise.all(currentCapture.renders.map(cropFrameRender));
+    const frameDimensions = frameRenders.map(dimensionsOf);
+    const renderMetadata = await mapWithConcurrency(frameRenders, 8, async (render, index) =>
       assetMetadata(render, frameDimensions[index], await sha256(render.bytes)),
     );
     const vectorDimensions = currentCapture.vectorRenders.map(dimensionsOf);
@@ -681,6 +913,7 @@ async function uploadCapture() {
     }
     pendingUpload = {
       snapshot: parsed.data,
+      renders: frameRenders,
       baselineVersionId: previewBody.baselineVersionId ?? null,
       mergeContext: previewBody.mergeContext,
       token,
@@ -702,11 +935,17 @@ async function uploadCapture() {
 }
 
 captureButton.addEventListener("click", () => {
+  previewGeneration += 1;
   currentCapture = null;
+  fullCapture = null;
   overviewBytes = null;
   overviewWidth = 0;
   overviewHeight = 0;
   pendingUpload = null;
+  frameManifest.hidden = true;
+  frameList.replaceChildren();
+  layerAssetReportPanel.hidden = true;
+  layerAssetExportList.replaceChildren();
   replacementReview.hidden = true;
   replacementList.replaceChildren();
   uploadButton.hidden = false;
@@ -719,7 +958,23 @@ captureButton.addEventListener("click", () => {
   setStatus("Reading the Figma canvas…");
   const captureAllTopLevel = scopeInput.value === "page-merge";
   const scope = captureAllTopLevel ? "selected" : scopeInput.value;
-  pluginMessage({ type: "capture", scope, captureAllTopLevel, excludedTopLevelSections: excludedTopLevelSections() });
+  pluginMessage({
+    type: "capture",
+    scope,
+    captureAllTopLevel,
+    excludedTopLevelSections: excludedTopLevelSections(),
+    layerAssetMode: layerAssetModeInput.value as LayerAssetMode,
+  });
+});
+
+selectAllFramesButton.addEventListener("click", () => {
+  frameList.querySelectorAll<HTMLInputElement>("input[data-frame-id]").forEach((checkbox) => { checkbox.checked = true; });
+  void updateSelectedCapture();
+});
+
+clearFrameSelectionButton.addEventListener("click", () => {
+  frameList.querySelectorAll<HTMLInputElement>("input[data-frame-id]").forEach((checkbox) => { checkbox.checked = false; });
+  void updateSelectedCapture();
 });
 
 uploadButton.addEventListener("click", () => { void uploadCapture(); });
@@ -740,81 +995,10 @@ window.onmessage = (event: MessageEvent) => {
     return;
   }
   if (data.type !== "capture-ready") return;
-  currentCapture = data;
-  setStatus("Preparing the Figma-rendered overview and inspectable layer data…");
-  void Promise.resolve().then(async () => {
-    const overview = await createOverviewPng(data);
-    const renders = await Promise.all(data.renders.map(cropFrameRender));
-    currentCapture = { ...data, renders };
-    return { overview, data };
-  }).then(async ({ overview, data: capture }) => {
-    const { bytes, width, height } = overview;
-    overviewBytes = bytes;
-    overviewWidth = width;
-    overviewHeight = height;
-    preview.width = width;
-    preview.height = height;
-    const context = preview.getContext("2d", { alpha: true });
-    if (!context) throw new Error("The browser could not create the canvas preview.");
-    const pixelPreview = await loadImage(bytes, "image/png");
-    context.clearRect(0, 0, preview.width, preview.height);
-    context.drawImage(pixelPreview, 0, 0, preview.width, preview.height);
-    const nodeCount = capture.payload.frames.reduce((count, frame) => count + frame.nodes.length, 0);
-    const frameCount = capture.payload.frames.length;
-    const pageCount = Array.isArray(capture.payload.sourceMetadata.pageLayout)
-      ? capture.payload.sourceMetadata.pageLayout.length
-      : 0;
-    const renderScale = capture.payload.sourceMetadata.renderScale === 2 ? "2×" : "1×";
-    const vectorSourceCount = capture.vectorRenders.length;
-    const layerExportCount = capture.layerRenders.length;
-    const fallbackFrameIds = Array.isArray(capture.payload.sourceMetadata.renderScaleFallbackFrameIds)
-      ? capture.payload.sourceMetadata.renderScaleFallbackFrameIds.filter((frameId): frameId is string => typeof frameId === "string")
-      : [];
-    const vectorSummary = vectorSourceCount === frameCount
-      ? "SVG sources retained"
-      : `${vectorSourceCount}/${frameCount} SVG sources retained`;
-    const scaleSummary = fallbackFrameIds.length === frameCount
-      ? "1× Figma render"
-      : fallbackFrameIds.length
-        ? `${renderScale} Figma render · ${fallbackFrameIds.length} frame${fallbackFrameIds.length === 1 ? "" : "s"} rendered at 1×`
-        : `${renderScale} Figma render`;
-    const duplicateFrameNames = findDuplicateFrameNames(capture.payload.frames);
-    const blankFrameNameCount = countBlankFrameNames(capture.payload.frames);
-    const warningSummary = capture.warnings.length ? ` · ${capture.warnings.length} capture warning${capture.warnings.length === 1 ? "" : "s"}` : "";
-    const duplicateNameSummary = duplicateFrameNames.length
-      ? ` · ${duplicateFrameNames.length} duplicate screen name${duplicateFrameNames.length === 1 ? "" : "s"}`
-      : "";
-    const layerExportSummary = layerExportCount ? ` · ${layerExportCount} layers ready to export` : "";
-    const pageSummary = capture.scope === "file" ? ` · ${pageCount} pages` : "";
-    const captureScopeSummary = capture.captureAllTopLevel
-      ? "All top-level frames and components on the current page (merge)"
-      : formatFigmaCaptureScope(capture.scope);
-    const scopeSummary = captureScopeSummary ? `Capture scope: ${captureScopeSummary} · ` : "";
-    const exclusionSummary = data.excludedTopLevelSections.length ? ` · excluded sections: ${data.excludedTopLevelSections.join(", ")}` : "";
-    summary.textContent = `${scopeSummary}${frameCount} frame${frameCount === 1 ? "" : "s"}${pageSummary}${exclusionSummary} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary} · ${vectorSummary}${layerExportSummary}${warningSummary}${duplicateNameSummary}`;
-    const duplicateNameMessage = duplicateFrameNames.length
-      ? `This capture contains duplicate screen names: ${duplicateFrameNames.slice(0, 4).map(({ name, count }) => `${name} (${count})`).join(", ")}${duplicateFrameNames.length > 4 ? `, and ${duplicateFrameNames.length - 4} more` : ""}. Matching these screens by name may be ambiguous.`
-      : "";
-    const blankNameMessage = blankFrameNameCount
-      ? `${blankFrameNameCount} screen${blankFrameNameCount === 1 ? " has" : "s have"} no name. Handoff may not match these screens by name across versions.`
-      : "";
-    const captureWarningMessage = capture.warnings.length
-      ? `Capture warnings: ${capture.warnings.join(" ")} Review the Figma-rendered preview and layer data before uploading.`
-      : "";
-    const nameWarningMessage = [blankNameMessage, duplicateNameMessage].filter(Boolean).join(" ");
-    const statusMessage = [
-      nameWarningMessage ? `${nameWarningMessage} You can still upload.` : "",
-      captureWarningMessage,
-    ].filter(Boolean).join(" ")
-      || "Review the Figma-rendered preview and layer count, then upload this snapshot.";
-    setStatus(statusMessage, duplicateFrameNames.length || blankFrameNameCount || capture.warnings.length ? "warning" : "plain");
-    setBusy(false);
-  }).catch((error: unknown) => {
-    currentCapture = null;
-    overviewBytes = null;
-    setStatus(error instanceof Error ? error.message : "The canvas overview could not be prepared.", "error");
-    setBusy(false);
-  });
+  fullCapture = data;
+  renderFrameManifest(data);
+  const includedFrameIds = selectedFrameIds();
+  void prepareSelectedCapture(filterCaptureToFrameIds(data, includedFrameIds));
 };
 
 setBusy(false);

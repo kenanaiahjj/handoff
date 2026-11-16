@@ -8,7 +8,8 @@ import { MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES } from "../../../packa
 import { typographyFromTextSegments } from "../../../packages/snapshot-contract/src/text-typography.ts";
 import { encodeUtf8 } from "../../../packages/snapshot-contract/src/utf8.ts";
 import { jsonByteLength } from "./json-byte-length.ts";
-import type { CaptureAssetBytes, DraftSnapshot, LayerExportAssetBytes } from "./types";
+import { aggregateLayerAssetReport, withLayerAssetWarnings } from "./capture-selection";
+import type { CaptureAssetBytes, DraftSnapshot, LayerAssetFrameReport, LayerAssetMode, LayerExportAssetBytes } from "./types";
 export { findDuplicateFrameNames } from "./frame-names.ts";
 
 const allowedRootTypes = new Set(["FRAME", "COMPONENT", "INSTANCE", "COMPONENT_SET"]);
@@ -918,6 +919,7 @@ export async function captureFigmaCanvas(
   report: (message: string) => void,
   excludedTopLevelSections: readonly string[] = [],
   captureAllTopLevel = false,
+  layerAssetMode: LayerAssetMode = "recommended",
 ) {
   const sourceFileId = figma.fileKey?.trim();
   if (!sourceFileId) {
@@ -926,6 +928,7 @@ export async function captureFigmaCanvas(
 
   const pages = scope === "file" ? [...figma.root.children] : [figma.currentPage];
   const pageCaptures: PageCapture[] = [];
+  const excludedSectionFrameCounts = new Map<string, number>();
   const seenRootIds = new Set<string>();
   let rootIndex = 0;
   for (const [pageIndex, page] of pages.entries()) {
@@ -948,7 +951,12 @@ export async function captureFigmaCanvas(
       artboards = [];
       const excluded = new Set(scope === "page" || captureAllTopLevel ? excludedTopLevelSections : []);
       for (const child of page.children) {
-        if (child.type === "SECTION" && excluded.has(child.name)) continue;
+        if (child.type === "SECTION" && excluded.has(child.name)) {
+          const excludedArtboards: SceneNode[] = [];
+          findTopLevelArtboards(child, excludedArtboards);
+          excludedSectionFrameCounts.set(child.name, (excludedSectionFrameCounts.get(child.name) ?? 0) + excludedArtboards.length);
+          continue;
+        }
         findTopLevelArtboards(child, artboards);
       }
     }
@@ -991,8 +999,23 @@ export async function captureFigmaCanvas(
   const sourceFileName = figma.root.name || "Untitled Figma file";
   const snapshotFrames: SnapshotFrame[] = [];
   const layerCandidates: LayerExportCandidate[] = [];
-  let layerCandidateCount = 0;
   let layerCandidateOrder = 0;
+  const layerFrameReports = new Map<string, LayerAssetFrameReport>();
+  for (const entry of roots) {
+    layerFrameReports.set(entry.root.id, {
+      sourceFrameId: entry.root.id,
+      frameName: entry.root.name || "Untitled frame",
+      eligibleCount: 0,
+      modeSkippedCount: 0,
+      candidateCount: 0,
+      limitSkippedCount: 0,
+      selectedCount: 0,
+      exportedCount: 0,
+      exportFailureCount: 0,
+      sizeSkippedCount: 0,
+      fallbackCount: 0,
+    });
+  }
   for (const [index, entry] of roots.entries()) {
     if (index === 0 || (index + 1) % 10 === 0 || index === roots.length - 1) {
       report(`Reading layers and properties from frame ${index + 1} of ${roots.length}: ${entry.root.name || "Untitled frame"}…`);
@@ -1044,7 +1067,14 @@ export async function captureFigmaCanvas(
       const name = nodeProperty(item.node, "name");
       const rect = safeRectOf(item.node);
       if (sourceNodeId === entry.root.id || typeof sourceNodeId !== "string" || !canExportLayer(item.node) || !rect || rect.width <= 0 || rect.height <= 0) continue;
-      layerCandidateCount += 1;
+      const frameReport = layerFrameReports.get(entry.root.id)!;
+      frameReport.eligibleCount += 1;
+      const imageLayer = hasImageFill(item.node) || nodeProperty(item.node, "type") === "IMAGE";
+      if (layerAssetMode === "none" || (layerAssetMode === "raster" && !imageLayer)) {
+        frameReport.modeSkippedCount += 1;
+        continue;
+      }
+      frameReport.candidateCount += 1;
       retainLayerExportCandidate(layerCandidates, {
         entry,
         item,
@@ -1221,16 +1251,19 @@ export async function captureFigmaCanvas(
   const selectedLayerCandidates = layerCandidates.sort(compareLayerExportCandidates);
   const layerRenders: LayerExportAssetBytes[] = [];
   let layerExportBytes = 0;
-  let layerExportFailures = 0;
-  let layerExportFallbacks = 0;
-  const layerCandidateLimitSkips = Math.max(0, layerCandidateCount - selectedLayerCandidates.length);
-  let layerExportSizeSkips = 0;
   let transferBudgetReached = false;
+  for (const candidate of selectedLayerCandidates) {
+    layerFrameReports.get(candidate.entry.root.id)!.selectedCount += 1;
+  }
+  for (const frameReport of layerFrameReports.values()) {
+    frameReport.limitSkippedCount = frameReport.candidateCount - frameReport.selectedCount;
+  }
 
   if (selectedLayerCandidates.length) report(`Preparing exports for up to ${selectedLayerCandidates.length} image and vector layers…`);
   for (let offset = 0; offset < selectedLayerCandidates.length; offset += layerExportBatchSize) {
     if (transferBudgetReached || layerExportBytes >= maxLayerExportBytes || totalRenderBytes >= maxRenderBytes) {
-      layerExportSizeSkips += selectedLayerCandidates.length - offset;
+      const remainingCandidates = selectedLayerCandidates.slice(offset);
+      for (const candidate of remainingCandidates) layerFrameReports.get(candidate.entry.root.id)!.sizeSkippedCount += 1;
       break;
     }
     const batch = selectedLayerCandidates.slice(offset, offset + layerExportBatchSize);
@@ -1257,25 +1290,26 @@ export async function captureFigmaCanvas(
           };
         }
       } catch {
-        return null;
+        return { candidate, failed: true as const };
       }
     }));
 
     for (const result of results) {
+      const frameReport = layerFrameReports.get(result.candidate.entry.root.id)!;
       if (transferBudgetReached) {
-        layerExportSizeSkips += 1;
+        frameReport.sizeSkippedCount += 1;
         continue;
       }
-      if (!result) {
-        layerExportFailures += 1;
+      if ("failed" in result) {
+        frameReport.exportFailureCount += 1;
         continue;
       }
       if (result.bytes.byteLength === 0 || result.bytes.byteLength > maxSingleLayerExportBytes || layerExportBytes + result.bytes.byteLength > maxLayerExportBytes) {
-        layerExportSizeSkips += 1;
+        frameReport.sizeSkippedCount += 1;
         continue;
       }
       if (totalRenderBytes + result.bytes.byteLength > maxRenderBytes) {
-        layerExportSizeSkips += 1;
+        frameReport.sizeSkippedCount += 1;
         transferBudgetReached = true;
         continue;
       }
@@ -1295,11 +1329,13 @@ export async function captureFigmaCanvas(
         sourceHeight: result.rect.height,
         sourceFrameId: result.candidate.entry.root.id,
         sourceNodeId: result.candidate.sourceNodeId,
+        sourceFrameName: result.candidate.entry.root.name || "Untitled frame",
+        sourceLayerName: result.candidate.name,
       };
       const frame = snapshotFrames.find((item) => item.sourceFrameId === asset.sourceFrameId);
       const snapshotNode = frame?.nodes.find((item) => item.sourceNodeId === asset.sourceNodeId);
       if (!snapshotNode) {
-        layerExportFailures += 1;
+        frameReport.exportFailureCount += 1;
         continue;
       }
       snapshotNode.sourcePayload.layerExportAssetKey = asset.key;
@@ -1307,23 +1343,25 @@ export async function captureFigmaCanvas(
       layerRenders.push(asset);
       layerExportBytes += asset.bytes.byteLength;
       totalRenderBytes += asset.bytes.byteLength;
-      if ("usedPngFallback" in result && result.usedPngFallback) layerExportFallbacks += 1;
+      frameReport.exportedCount += 1;
+      if ("usedPngFallback" in result && result.usedPngFallback) {
+        frameReport.fallbackCount += 1;
+      }
     }
     if (transferBudgetReached) {
-      layerExportSizeSkips += selectedLayerCandidates.length - offset - batch.length;
+      const remainingCandidates = selectedLayerCandidates.slice(offset + batch.length);
+      for (const candidate of remainingCandidates) layerFrameReports.get(candidate.entry.root.id)!.sizeSkippedCount += 1;
       break;
     }
   }
 
+  const layerAssetReport = aggregateLayerAssetReport(layerAssetMode, [...layerFrameReports.values()], maxLayerExportCount);
   sourceMetadata.layerExportAssetCount = layerRenders.length;
-  sourceMetadata.layerExportSkippedCount = layerExportFailures + layerExportSizeSkips + layerCandidateLimitSkips;
-  sourceMetadata.layerExportFallbackCount = layerExportFallbacks;
-  if (layerCandidateLimitSkips) {
-    warnings.push(`Selected ${selectedLayerCandidates.length} of ${layerCandidateCount} eligible layer assets because Handoff limits individual layer exports to ${maxLayerExportCount} per capture; all ${layerCandidateCount} layers and their captured properties remain available in the structured snapshot.`);
-  }
-  if (layerExportFallbacks) warnings.push(`${layerExportFallbacks} individual layer export${layerExportFallbacks === 1 ? " was" : "s were"} saved as PNG after Figma’s SVG export failed.`);
-  if (layerExportFailures) warnings.push(`${layerExportFailures} individual layer image/vector export${layerExportFailures === 1 ? " could not be" : "s could not be"} generated. Their frame renders and structured layer data were retained.`);
-  if (layerExportSizeSkips) warnings.push(`${layerExportSizeSkips} individual layer image/vector export${layerExportSizeSkips === 1 ? " exceeded" : "s exceeded"} the per-asset or capture transfer limits. Their frame renders and structured layer data were retained.`);
+  sourceMetadata.layerExportSkippedCount = layerAssetReport.limitSkippedCount + layerAssetReport.exportFailureCount + layerAssetReport.sizeSkippedCount;
+  sourceMetadata.layerExportFallbackCount = layerAssetReport.fallbackCount;
+  const captureWarnings = withLayerAssetWarnings(warnings, layerAssetReport);
+  warnings.splice(0, warnings.length, ...captureWarnings);
+  sourceMetadata.captureWarnings = warnings;
 
   for (const frame of snapshotFrames) {
     const vectorKey = `${frame.renderAssetKey}-vector`;
@@ -1334,5 +1372,6 @@ export async function captureFigmaCanvas(
   sourceMetadata.vectorSourceFrameCount = vectorRenders.length;
   const finalPayloadBytes = jsonByteLength(payload);
   if (finalPayloadBytes > maxStructuredPayloadBytes) throw structuredPayloadLimitError(finalPayloadBytes);
-  return { payload, renders: frameRenders, vectorRenders, layerRenders, warnings };
+  const excludedSectionCounts = [...excludedSectionFrameCounts].map(([name, frameCount]) => ({ name, frameCount }));
+  return { payload, renders: frameRenders, vectorRenders, layerRenders, layerAssetReport, excludedSectionCounts, warnings };
 }
