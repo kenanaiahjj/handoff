@@ -1,0 +1,12 @@
+# Continuous SQLite backups to any S3-compatible bucket (AWS S3, Cloudflare R2, Backblaze B2...).
+# Set LITESTREAM_REPLICA_URL (e.g. s3://bucket/asbir-handoff), LITESTREAM_ACCESS_KEY_ID and
+# LITESTREAM_SECRET_ACCESS_KEY; for R2 or B2 also LITESTREAM_ENDPOINT.
+dbs:
+  - path: ${ASBIR_DATA_DIR}/asbir-handoff.sqlite
+    replicas:
+      - url: ${LITESTREAM_REPLICA_URL}
+        endpoint: ${LITESTREAM_ENDPOINT}
+        access-key-id: ${LITESTREAM_ACCESS_KEY_ID}
+        secret-access-key: ${LITESTREAM_SECRET_ACCESS_KEY}
+        retention: 720h
+        sync-interval: 10s

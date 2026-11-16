@@ -21,6 +21,7 @@ database.exec(`
     UNIQUE (id, workspace_id),
     FOREIGN KEY (handoff_id, workspace_id) REFERENCES handoff (id, workspace_id) ON DELETE CASCADE
   );
+  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BLOB NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
 `);
 database.exec(readFileSync(new URL("../migrations/0013_node_replacements.sql", import.meta.url), "utf8"));
 globalThis.__asbirDatabase = database;

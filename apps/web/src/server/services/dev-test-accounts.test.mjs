@@ -16,6 +16,7 @@ database.exec(`
   CREATE TABLE handoff_comment (id TEXT, created_by_user_id TEXT REFERENCES "user" (id) ON DELETE RESTRICT);
   CREATE TABLE handoff (id TEXT PRIMARY KEY, workspace_id TEXT, created_by_user_id TEXT, created_at TEXT);
   CREATE TABLE handoff_version (id TEXT PRIMARY KEY, handoff_id TEXT, created_at TEXT);
+  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BLOB NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
   CREATE TABLE handoff_invite (id TEXT PRIMARY KEY, workspace_id TEXT, handoff_id TEXT, email TEXT, token_hash TEXT, expires_at TEXT,
     revoked_at TEXT, invited_by_user_id TEXT, created_at TEXT, role TEXT, UNIQUE (handoff_id, email));
   CREATE TABLE handoff_view (user_id TEXT REFERENCES "user" (id) ON DELETE CASCADE, workspace_id TEXT, handoff_id TEXT,

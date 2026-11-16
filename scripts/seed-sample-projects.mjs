@@ -13,6 +13,7 @@ process.chdir(path.resolve("apps/web"));
 const { getDatabase } = await import("@/src/server/db.ts");
 const { localReviewerUser } = await import("@/src/server/auth-session.ts");
 const { createSnapshotEnvelope, removeFramesFromSnapshot } = await import("@asbir/snapshot-contract");
+const { readSnapshotJson, storeCompressedSnapshot } = await import("@/src/server/storage/snapshot-store.ts");
 
 const database = getDatabase();
 const DAY = 86_400_000;
@@ -55,10 +56,15 @@ const owner = database
 if (!owner) throw new Error("No workspace owner found. Sign in and create a workspace first.");
 
 const base = database
-  .prepare(`SELECT * FROM handoff_version WHERE visual_only = 0 AND source = 'figma' ORDER BY length(snapshot_json) DESC LIMIT 1`)
+  .prepare(
+    `SELECT handoff_version.* FROM handoff_version
+     LEFT JOIN handoff_version_snapshot ON handoff_version_snapshot.version_id = handoff_version.id
+     WHERE visual_only = 0 AND source = 'figma'
+     ORDER BY COALESCE(handoff_version_snapshot.raw_bytes, length(handoff_version.snapshot_json)) DESC LIMIT 1`,
+  )
   .get();
 if (!base) throw new Error("No Figma capture found to build samples from. Upload one first.");
-const baseSnapshot = JSON.parse(base.snapshot_json);
+const baseSnapshot = JSON.parse(readSnapshotJson(database, base.id, base.workspace_id));
 const baseAssets = new Map(
   database.prepare("SELECT * FROM handoff_asset WHERE handoff_version_id = ?").all(base.id).map((asset) => [asset.asset_key, asset]),
 );
@@ -140,8 +146,9 @@ for (const sample of samples) {
         insert.version.run(
           versionId, workspaceId, handoffId, version.label, `Sample data: ${version.snapshot.frames.length} screens.`,
           base.source, base.source_file_id, base.source_revision_id, versionCreatedAt, version.snapshot.contentHash,
-          JSON.stringify(version.snapshot), owner.id, versionCreatedAt,
+          "{}", owner.id, versionCreatedAt,
         );
+        storeCompressedSnapshot(database, versionId, JSON.stringify(version.snapshot));
         for (const asset of version.snapshot.assets) {
           const stored = baseAssets.get(asset.key);
           if (!stored) throw new Error(`Image ${asset.key} is missing from the source capture.`);

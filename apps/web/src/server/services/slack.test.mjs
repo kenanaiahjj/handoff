@@ -15,6 +15,7 @@ database.exec(`
   CREATE TABLE handoff_invite (id TEXT, workspace_id TEXT, handoff_id TEXT, email TEXT, revoked_at TEXT, expires_at TEXT);
   CREATE TABLE viewer_pin (user_id TEXT, kind TEXT, target_id TEXT, created_at TEXT);
   CREATE TABLE handoff_version (id TEXT PRIMARY KEY, handoff_id TEXT, version_label TEXT, created_by_user_id TEXT, created_at TEXT, snapshot_json TEXT);
+  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BLOB NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
   CREATE TABLE handoff_asset (handoff_version_id TEXT, asset_key TEXT, object_key TEXT);
 `);
 database.prepare(`INSERT INTO "user" VALUES ('designer', 'Dee Designer', 'dee@lmf.ventures'), ('pd', 'Pat Lead', 'pat@lmf.ventures'), ('fan', 'Fay Follower', 'fay@lmf.ventures')`).run();

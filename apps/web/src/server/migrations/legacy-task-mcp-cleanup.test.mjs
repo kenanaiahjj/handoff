@@ -28,6 +28,7 @@ function createLegacyDatabase() {
       workspace_id TEXT NOT NULL,
       UNIQUE (id, workspace_id)
     );
+  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BLOB NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
     CREATE TABLE task_mcp_connection (
       id TEXT PRIMARY KEY,
       workspace_id TEXT NOT NULL REFERENCES workspace (id) ON DELETE CASCADE,

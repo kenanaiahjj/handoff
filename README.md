@@ -24,12 +24,12 @@ Run the unit and integration suites with `npm test`.
 The Docker Compose setup runs the app behind Caddy, which provides HTTPS for a public domain. Point the domain at the server and allow inbound TCP ports 80 and 443 before starting the stack.
 
 1. Copy `deployment.env.example` to `.env`.
-2. Set `ASBIR_DOMAIN` and create a unique secret with `openssl rand -base64 32`. Put the result in `BETTER_AUTH_SECRET`.
+2. Set `ASBIR_DOMAIN`, the Google OAuth client ID and secret, and create a unique secret with `openssl rand -base64 32`. Put the result in `BETTER_AUTH_SECRET`.
 3. Add `OPENAI_API_KEY` if you want server-generated changelog drafts.
 4. Start the app with `docker compose up -d --build`.
-5. Open `https://<your-domain>` and create the workspace owner account.
+5. Open `https://<your-domain>` and sign in with Google. The first person to sign in becomes the owner and an admin.
 
-The `asbir_data` volume stores the SQLite database and captured design assets. This stack runs one app instance because it uses local SQLite storage. Caddy stores its TLS certificates in `caddy_data`. `docker compose down` keeps these named volumes. Do not add `--volumes` unless you intend to delete the team's handoffs and certificates. Rebuild an updated app with `docker compose up -d --build`.
+The `asbir_data` volume stores the SQLite database and captured design assets. For backups and other hosts (Railway, any Docker host), see `deploy/README.md`. This stack runs one app instance because it uses local SQLite storage. Caddy stores its TLS certificates in `caddy_data`. `docker compose down` keeps these named volumes. Do not add `--volumes` unless you intend to delete the team's handoffs and certificates. Rebuild an updated app with `docker compose up -d --build`.
 
 If an MCP client sends an `Origin` header, set `ASBIR_MCP_ALLOWED_ORIGINS` in `.env` to a comma-separated list of trusted origins before starting the stack. Keep `.env` private; it contains the authentication secret and may contain the AI API key.
 
@@ -37,7 +37,7 @@ If an MCP client sends an `Origin` header, set `ASBIR_MCP_ALLOWED_ORIGINS` in `.
 
 Deploy Asbir Handoff over HTTPS, then choose **Install app** from the app or the install option in Chrome or Microsoft Edge. On macOS Sonoma 14 or later, Safari users can choose **File → Add to Dock**. The installed app opens in its own window and accesses the same workspace data. Depending on the browser, you might need to sign in again in the installed app.
 
-The app needs a network connection when installed. Its service worker passes requests through to the server and does not cache screens or handoff data for offline use.
+The app needs a network connection when installed. Its service worker keeps screen images and per-screen details on the device so handoffs reopen quickly, and clears them on sign-out; pages and sign-in always go to the server.
 
 For local flow testing, set `ASBIR_AUTH_BYPASS=1` in `apps/web/.env.local` to skip sign-in and use the first local account. The bypass only runs in development and remains disabled in production.
 

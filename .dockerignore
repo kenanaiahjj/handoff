@@ -17,3 +17,6 @@ work
 coverage
 test-results
 *.log
+.claude
+pnpm-lock.yaml
+**/.DS_Store

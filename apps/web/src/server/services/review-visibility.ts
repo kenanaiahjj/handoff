@@ -180,7 +180,9 @@ function screenFingerprints(versionId: string) {
     .prepare(
       `SELECT COALESCE(json_extract(frame.value, '$.sourceFrameId'), json_extract(frame.value, '$.name')) AS name,
               handoff_asset.object_key AS objectKey
-       FROM handoff_version, json_each(handoff_version.snapshot_json, '$.frames') AS frame
+       FROM handoff_version
+       LEFT JOIN handoff_version_snapshot ON handoff_version_snapshot.version_id = handoff_version.id,
+       json_each(COALESCE(handoff_version_snapshot.frame_index, json_extract(handoff_version.snapshot_json, '$.frames'))) AS frame
        LEFT JOIN handoff_asset ON handoff_asset.handoff_version_id = handoff_version.id
          AND handoff_asset.asset_key = json_extract(frame.value, '$.renderAssetKey')
        WHERE handoff_version.id = ?`,

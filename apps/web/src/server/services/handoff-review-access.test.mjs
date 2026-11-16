@@ -55,6 +55,7 @@ database.exec(`
     created_by_user_id TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BLOB NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
   CREATE TABLE handoff_asset (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,

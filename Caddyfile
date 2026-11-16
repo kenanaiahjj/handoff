@@ -1,4 +1,13 @@
 {$ASBIR_DOMAIN} {
 	encode zstd gzip
-	reverse_proxy app:3000
+	# Figma captures arrive as one large upload (up to ~400 MB) that can take minutes.
+	request_body {
+		max_size 512MB
+	}
+	reverse_proxy app:3000 {
+		transport http {
+			read_timeout 10m
+			write_timeout 10m
+		}
+	}
 }

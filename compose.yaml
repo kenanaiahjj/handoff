@@ -1,6 +1,9 @@
 services:
   app:
-    build: .
+    build:
+      context: .
+      args:
+        ASBIR_BUILD_ID: ${ASBIR_BUILD_ID:-dev}
     restart: unless-stopped
     environment:
       NODE_ENV: production
@@ -10,6 +13,16 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-astra}
       ASBIR_MCP_ALLOWED_ORIGINS: ${ASBIR_MCP_ALLOWED_ORIGINS:-}
+      ASBIR_AUTH_BYPASS: "0"
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID:?Set GOOGLE_CLIENT_ID in .env}
+      GOOGLE_CLIENT_SECRET: ${GOOGLE_CLIENT_SECRET:?Set GOOGLE_CLIENT_SECRET in .env}
+      ASBIR_ALLOWED_EMAIL_DOMAINS: ${ASBIR_ALLOWED_EMAIL_DOMAINS:-lmf.ventures,plxrmedia.com}
+      ASBIR_COMPANY_NAME: ${ASBIR_COMPANY_NAME:-Asbir Tech}
+      SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
+      LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-}
+      LITESTREAM_ENDPOINT: ${LITESTREAM_ENDPOINT:-}
+      LITESTREAM_ACCESS_KEY_ID: ${LITESTREAM_ACCESS_KEY_ID:-}
+      LITESTREAM_SECRET_ACCESS_KEY: ${LITESTREAM_SECRET_ACCESS_KEY:-}
     volumes:
       - asbir_data:/var/lib/asbir-handoff
     expose:
@@ -19,11 +32,11 @@ services:
         - CMD
         - node
         - -e
-        - fetch('http://127.0.0.1:3000/sign-in').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))
+        - fetch('http://127.0.0.1:3000/api/health').then(response => process.exit(response.ok ? 0 : 1)).catch(() => process.exit(1))
       interval: 30s
       timeout: 5s
       retries: 3
-      start_period: 30s
+      start_period: 40s
 
   caddy:
     image: caddy:2-alpine

@@ -15,6 +15,7 @@ function createDatabase() {
       handoff_id TEXT NOT NULL REFERENCES handoff (id) ON DELETE CASCADE,
       version_label TEXT NOT NULL
     );
+  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BLOB NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
   `);
 
   let migrationSql = "";

@@ -8,6 +8,7 @@ import {
   type VisualOnlySnapshot,
 } from "@asbir/snapshot-contract";
 import { getDatabase } from "../db";
+import { readSnapshotJson, storeCompressedSnapshot } from "../storage/snapshot-store";
 import { objectStore } from "../storage/local-object-store";
 import {
   assertReusableAssetReferences,
@@ -263,10 +264,12 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
           snapshot.capturedAt,
           contentHash,
           isVisualOnly(snapshot) ? 1 : 0,
-          JSON.stringify(snapshot),
+          "{}",
           input.createdBy,
           now,
         );
+      // The capture itself is stored compressed beside the row (verified to read back identically).
+      storeCompressedSnapshot(database, versionId, JSON.stringify(snapshot));
 
       const insertAsset = database.prepare(
         `INSERT INTO handoff_asset
@@ -619,10 +622,15 @@ function cachedSnapshot(database: object, key: string, load: () => StoredSnapsho
   return snapshot;
 }
 
-/** Stored size of a version's snapshot JSON in bytes, without loading or parsing it. */
+/** Size of a version's snapshot JSON in bytes (uncompressed), without loading or parsing it. */
 export function getVersionSnapshotSize(input: { workspaceId: string; versionId: string }) {
   const row = getDatabase()
-    .prepare("SELECT length(CAST(snapshot_json AS BLOB)) AS sizeBytes FROM handoff_version WHERE id = ? AND workspace_id = ?")
+    .prepare(
+      `SELECT COALESCE(handoff_version_snapshot.raw_bytes, length(CAST(handoff_version.snapshot_json AS BLOB))) AS sizeBytes
+       FROM handoff_version
+       LEFT JOIN handoff_version_snapshot ON handoff_version_snapshot.version_id = handoff_version.id
+       WHERE handoff_version.id = ? AND handoff_version.workspace_id = ?`,
+    )
     .get(input.versionId, input.workspaceId) as { sizeBytes: number } | undefined;
   return row?.sizeBytes ?? 0;
 }
@@ -671,9 +679,7 @@ export function getVersion(input: { workspaceId: string; versionId: string }) {
     .all(input.versionId, input.workspaceId) as StoredVersionAsset[];
 
   const snapshot = cachedSnapshot(database, `${row.id}:${row.contentHash}`, () => {
-    const { snapshotJson } = database
-      .prepare("SELECT snapshot_json AS snapshotJson FROM handoff_version WHERE id = ? AND workspace_id = ?")
-      .get(input.versionId, input.workspaceId) as { snapshotJson: string };
+    const snapshotJson = readSnapshotJson(database, input.versionId, input.workspaceId) ?? "{}";
     const snapshotValue = JSON.parse(snapshotJson) as StoredSnapshot;
     return ("visualOnly" in snapshotValue && snapshotValue.visualOnly
       ? visualOnlySnapshotSchema
