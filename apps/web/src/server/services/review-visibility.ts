@@ -79,16 +79,20 @@ export function handoffNewness(userId: string, handoffIds: string[]): Map<string
               (SELECT id FROM handoff_version
                  WHERE handoff_version.handoff_id = handoff.id
                  ORDER BY created_at DESC, id DESC LIMIT 1) AS latestVersionId,
+              (SELECT created_by_user_id FROM handoff_version
+                 WHERE handoff_version.handoff_id = handoff.id
+                 ORDER BY created_at DESC, id DESC LIMIT 1) AS latestCreatedBy,
               handoff_view.last_seen_version_id AS seenVersionId
        FROM handoff
        LEFT JOIN handoff_view ON handoff_view.handoff_id = handoff.id AND handoff_view.user_id = ?
        WHERE handoff.id IN (${placeholders})`,
     )
-    .all(userId, ...handoffIds) as Array<{ handoffId: string; latestVersionId: string | null; seenVersionId: string | null }>;
+    .all(userId, ...handoffIds) as Array<{ handoffId: string; latestVersionId: string | null; latestCreatedBy: string | null; seenVersionId: string | null }>;
   for (const row of rows) {
     result.set(row.handoffId, {
       latestVersionId: row.latestVersionId,
-      isNew: Boolean(row.latestVersionId) && row.latestVersionId !== row.seenVersionId,
+      // A version you uploaded yourself isn't news to you.
+      isNew: Boolean(row.latestVersionId) && row.latestVersionId !== row.seenVersionId && row.latestCreatedBy !== userId,
     });
   }
   return result;
@@ -123,6 +127,7 @@ export function listViewerUpdates(workspaceId: string, viewer: Viewer): ViewerUp
       `SELECT project.id AS projectId, project.name AS projectName,
               handoff.id AS handoffId, handoff.name AS handoffName,
               latest.id AS versionId, latest.version_label AS versionLabel, latest.created_at AS createdAt,
+              latest.created_by_user_id AS createdBy,
               handoff_view.last_seen_version_id AS seenVersionId
        FROM handoff
        JOIN project ON project.id = handoff.project_id AND project.workspace_id = handoff.workspace_id
@@ -135,10 +140,10 @@ export function listViewerUpdates(workspaceId: string, viewer: Viewer): ViewerUp
        WHERE handoff.workspace_id = ?
        ORDER BY latest.created_at DESC`,
     )
-    .all(viewer.id, workspaceId) as Array<ViewerUpdate & { versionId: string; seenVersionId: string | null }>;
+    .all(viewer.id, workspaceId) as Array<ViewerUpdate & { versionId: string; createdBy: string; seenVersionId: string | null }>;
   return rows
-    .filter((row) => row.versionId !== row.seenVersionId && (!visible || visible.has(row.handoffId)))
-    .map(({ versionId: _versionId, seenVersionId: _seenVersionId, ...update }) => update);
+    .filter((row) => row.versionId !== row.seenVersionId && row.createdBy !== viewer.id && (!visible || visible.has(row.handoffId)))
+    .map(({ versionId: _versionId, createdBy: _createdBy, seenVersionId: _seenVersionId, ...update }) => update);
 }
 
 export function countUpdatesByProject(updates: ViewerUpdate[]) {

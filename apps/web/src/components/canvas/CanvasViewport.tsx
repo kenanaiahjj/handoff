@@ -18,6 +18,26 @@ import { getCanvasFrameLabelMaxWidth, shouldShowCanvasFrameLabel } from "./canva
 import { getElementDistanceGuides, type ElementRect } from "./element-distance-guides";
 import { formatPrecisePixelValue } from "./format-captured-measurement";
 
+/** CSS mask that hides the given rectangles of an image (xor/exclude of a full layer and each rect). */
+function cutOutMaskStyle(rects: CanvasFrameOption["maskRects"]) {
+  if (!rects?.length) return {};
+  const layers = ["linear-gradient(#000 0 0)", ...rects.map(() => "linear-gradient(#000 0 0)")].join(", ");
+  const sizes = ["100% 100%", ...rects.map((rect) => `${rect.width}px ${rect.height}px`)].join(", ");
+  const positions = ["0 0", ...rects.map((rect) => `${rect.x}px ${rect.y}px`)].join(", ");
+  return {
+    maskImage: layers,
+    WebkitMaskImage: layers,
+    maskSize: sizes,
+    WebkitMaskSize: sizes,
+    maskPosition: positions,
+    WebkitMaskPosition: positions,
+    maskRepeat: "no-repeat",
+    WebkitMaskRepeat: "no-repeat",
+    maskComposite: "exclude",
+    WebkitMaskComposite: "xor",
+  } as const;
+}
+
 export type CanvasViewportControls = {
   scale: number;
   fitToFrame: () => void;
@@ -433,7 +453,7 @@ export function CanvasViewport({
               height={frame.pixelHeight}
               priority
               src={frame.imageSrc}
-              style={{ width: frame.sourceWidth, height: frame.sourceHeight }}
+              style={{ width: frame.sourceWidth, height: frame.sourceHeight, ...cutOutMaskStyle(frame.maskRects) }}
               unoptimized
               width={frame.pixelWidth}
             />

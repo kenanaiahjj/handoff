@@ -27,6 +27,9 @@ declare const __ASBIR_HANDOFF_ORIGIN__: string;
 const appUrlInput = document.querySelector<HTMLInputElement>("#app-url")!;
 const tokenInput = document.querySelector<HTMLInputElement>("#capture-token")!;
 const scopeInput = document.querySelector<HTMLSelectElement>("#capture-scope")!;
+const pageExclusions = document.querySelector<HTMLElement>("#page-exclusions")!;
+const scopeHelp = document.querySelector<HTMLElement>("#scope-help")!;
+const excludedSectionsInput = document.querySelector<HTMLInputElement>("#excluded-sections")!;
 const captureButton = document.querySelector<HTMLButtonElement>("#capture-button")!;
 const uploadButton = document.querySelector<HTMLButtonElement>("#upload-button")!;
 const status = document.querySelector<HTMLElement>("#status")!;
@@ -44,6 +47,26 @@ const confirmReplacementsButton = document.querySelector<HTMLButtonElement>("#co
 const skipReplacementsButton = document.querySelector<HTMLButtonElement>("#skip-replacements-button")!;
 appUrlInput.value = __ASBIR_HANDOFF_ORIGIN__;
 appUrlInput.readOnly = true;
+
+function excludedTopLevelSections() {
+  if (scopeInput.value !== "page" && scopeInput.value !== "page-merge") return [];
+  return [...new Set(excludedSectionsInput.value.split(",").map((name) => name.trim()).filter(Boolean))];
+}
+
+function updatePageExclusionsVisibility() {
+  const isPageScope = scopeInput.value === "page" || scopeInput.value === "page-merge";
+  pageExclusions.hidden = !isPageScope;
+  scopeHelp.textContent = scopeInput.value === "page-merge"
+    ? "Merge the current page into the latest Handoff version. Uncaptured frames stay in the canvas."
+    : scopeInput.value === "page"
+      ? "Replace the current page’s frames in the latest Handoff version."
+      : scopeInput.value === "file"
+        ? "Capture every page in the Figma file. This can take longer."
+        : "Selected captures use their containing frames.";
+}
+
+scopeInput.addEventListener("change", updatePageExclusionsVisibility);
+updatePageExclusionsVisibility();
 
 type FrameReplacementCandidate = {
   beforeFrameId: string;
@@ -694,7 +717,9 @@ captureButton.addEventListener("click", () => {
   preview.height = 1;
   setBusy(true);
   setStatus("Reading the Figma canvas…");
-  pluginMessage({ type: "capture", scope: scopeInput.value });
+  const captureAllTopLevel = scopeInput.value === "page-merge";
+  const scope = captureAllTopLevel ? "selected" : scopeInput.value;
+  pluginMessage({ type: "capture", scope, captureAllTopLevel, excludedTopLevelSections: excludedTopLevelSections() });
 });
 
 uploadButton.addEventListener("click", () => { void uploadCapture(); });
@@ -761,9 +786,12 @@ window.onmessage = (event: MessageEvent) => {
       : "";
     const layerExportSummary = layerExportCount ? ` · ${layerExportCount} layers ready to export` : "";
     const pageSummary = capture.scope === "file" ? ` · ${pageCount} pages` : "";
-    const captureScopeSummary = formatFigmaCaptureScope(capture.scope);
+    const captureScopeSummary = capture.captureAllTopLevel
+      ? "All top-level frames and components on the current page (merge)"
+      : formatFigmaCaptureScope(capture.scope);
     const scopeSummary = captureScopeSummary ? `Capture scope: ${captureScopeSummary} · ` : "";
-    summary.textContent = `${scopeSummary}${frameCount} frame${frameCount === 1 ? "" : "s"}${pageSummary} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary} · ${vectorSummary}${layerExportSummary}${warningSummary}${duplicateNameSummary}`;
+    const exclusionSummary = data.excludedTopLevelSections.length ? ` · excluded sections: ${data.excludedTopLevelSections.join(", ")}` : "";
+    summary.textContent = `${scopeSummary}${frameCount} frame${frameCount === 1 ? "" : "s"}${pageSummary}${exclusionSummary} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary} · ${vectorSummary}${layerExportSummary}${warningSummary}${duplicateNameSummary}`;
     const duplicateNameMessage = duplicateFrameNames.length
       ? `This capture contains duplicate screen names: ${duplicateFrameNames.slice(0, 4).map(({ name, count }) => `${name} (${count})`).join(", ")}${duplicateFrameNames.length > 4 ? `, and ${duplicateFrameNames.length - 4} more` : ""}. Matching these screens by name may be ambiguous.`
       : "";

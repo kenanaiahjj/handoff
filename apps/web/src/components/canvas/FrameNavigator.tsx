@@ -21,6 +21,8 @@ type CanvasFrameOption = {
   /** Lightweight element summaries; full details load per screen (see useFrameNodeDetails). */
   nodes: CanvasNodeSummary[];
   overlayNodes?: CanvasOverlayNode[];
+  /** Areas of this frame's image to cut out (screens removed after the image was rendered). */
+  maskRects?: Array<{ x: number; y: number; width: number; height: number }>;
   layerExports?: Record<string, { downloadUrl: string; fileName: string; contentType: "image/png" | "image/svg+xml" }>;
   exact: boolean;
   kind: "overview" | "frame";
@@ -139,7 +141,7 @@ export function FrameNavigator({
 
       <div className="flex items-center justify-between px-3 pb-2 pt-1">
         <h2 className="dial-section-title">Screens</h2>
-          <span className="font-mono text-[10px] text-foreground-subtle">{visibleFrames.length}/{screens.length}</span>
+        <span className="font-mono text-[10px] text-foreground-subtle">{visibleFrames.length}/{screens.length}</span>
       </div>
 
       <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">

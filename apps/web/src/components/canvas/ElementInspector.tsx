@@ -26,6 +26,9 @@ type ElementInspectorProps = {
   frameNodes?: SnapshotNode[] | null;
   /** The selected element's summary, shown while its full details load. */
   pendingNode?: { name: string; type: string; detailStatus: "idle" | "loading" | "error" | "ready" } | null;
+  /** Owners and designers on the latest version can remove the selected screen. */
+  onRemoveScreen?: () => void;
+  removingScreen?: boolean;
 };
 
 function valueText(value: unknown) {
@@ -299,6 +302,8 @@ export function ElementInspector({
   inspecting = false,
   frameNodes = null,
   pendingNode = null,
+  onRemoveScreen,
+  removingScreen = false,
 }: ElementInspectorProps) {
   const [cssCopied, setCssCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -665,8 +670,15 @@ export function ElementInspector({
       ) : (
         <div className="mt-4">
           <div className="flex items-center justify-between gap-2">
-            <h3 className="break-words text-[13px] font-medium text-foreground">{frame.name}</h3>
-            {canCompare ? <button className="dial-button min-h-8 px-2.5 text-[12px]" onClick={onCompare} type="button">Compare</button> : null}
+            <h3 className="min-w-0 break-words text-[13px] font-medium text-foreground">{frame.name}</h3>
+            <span className="flex shrink-0 items-center gap-1.5">
+              {canCompare ? <button className="dial-button min-h-8 px-2.5 text-[12px]" onClick={onCompare} type="button">Compare</button> : null}
+              {onRemoveScreen ? (
+                <button className="dial-button min-h-8 px-2.5 text-[12px] !text-danger hover:!bg-danger/15" disabled={removingScreen} onClick={onRemoveScreen} type="button">
+                  {removingScreen ? "Removing…" : "Remove screen"}
+                </button>
+              ) : null}
+            </span>
           </div>
           <p className="mt-2 text-[12px] leading-5 text-foreground-subtle">{inspecting ? "Select an element to inspect its captured attributes." : "Switch to Inspect in the top bar, then select an element to inspect its captured attributes."}</p>
           <dl className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3 text-[12px]">

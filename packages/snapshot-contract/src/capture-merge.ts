@@ -364,6 +364,9 @@ export function mergeFigmaCaptureSnapshots(input: {
     mergeScope: plan.scope,
     mergedFrameIds: input.incoming.frames.map((frame) => frame.sourceFrameId),
   };
+  // The merged version takes the incoming overview image, so cut-outs for screens removed
+  // from the old overview no longer apply.
+  delete sourceMetadata.removedFrames;
 
   return {
     snapshot: {
@@ -382,5 +385,83 @@ export function mergeFigmaCaptureSnapshots(input: {
     incomingAssetKeyMap,
     inheritedAssetKeys: baselineAssets.map((asset) => asset.key),
     replacedFrameIds: plan.replacedFrameIds,
+  };
+}
+
+
+export type RemovedFrameRecord = {
+  sourceFrameId: string;
+  name: string;
+  sourcePageId: string | null;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+};
+
+/** Screens removed from this version's overview image, kept so the canvas can cut them out. */
+export function removedFrameRecords(sourceMetadata: Record<string, unknown>): RemovedFrameRecord[] {
+  const value = sourceMetadata.removedFrames;
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((entry) => {
+    if (typeof entry !== "object" || entry === null) return [];
+    const record = entry as Record<string, unknown>;
+    const numbers = ["x", "y", "width", "height"].map((key) => record[key]);
+    if (typeof record.sourceFrameId !== "string" || numbers.some((number) => typeof number !== "number" || !Number.isFinite(number))) return [];
+    return [{
+      sourceFrameId: record.sourceFrameId,
+      name: typeof record.name === "string" ? record.name : record.sourceFrameId,
+      sourcePageId: typeof record.sourcePageId === "string" ? record.sourcePageId : null,
+      x: numbers[0] as number,
+      y: numbers[1] as number,
+      width: numbers[2] as number,
+      height: numbers[3] as number,
+    }];
+  });
+}
+
+/**
+ * A copy of a captured version without the given screens, for when a screen no longer applies
+ * but partial recaptures keep carrying it forward. Keeps the overview image (removed screens
+ * are recorded in sourceMetadata.removedFrames and cut out when drawn) and only the assets the
+ * remaining screens still reference.
+ */
+export function removeFramesFromSnapshot(baseline: SnapshotEnvelope, frameIds: readonly string[]): {
+  snapshot: SnapshotPayload;
+  removed: RemovedFrameRecord[];
+} {
+  const removing = new Set(frameIds);
+  const removedFrames = baseline.frames.filter((frame) => removing.has(frame.sourceFrameId));
+  if (removedFrames.length !== removing.size) throw new Error("Some of these screens are not in this version.");
+  const frames = baseline.frames.filter((frame) => !removing.has(frame.sourceFrameId));
+  if (!frames.length) throw new Error("A version needs at least one screen. Keep at least one.");
+
+  const references = referencedAssetKeys(frames);
+  references.add(baseline.overviewAssetKey);
+  // Render bounds include shadows and effects drawn outside the frame, like the plugin's own cut-outs.
+  const removed: RemovedFrameRecord[] = removedFrames.map((frame) => {
+    const bounds = frame.renderBounds ?? frame.bounds;
+    return {
+      sourceFrameId: frame.sourceFrameId,
+      name: frame.name,
+      sourcePageId: frame.sourcePageId,
+      x: bounds.x.value ?? 0,
+      y: bounds.y.value ?? 0,
+      width: bounds.width.value ?? 0,
+      height: bounds.height.value ?? 0,
+    };
+  });
+  const { contentHash: _contentHash, ...payload } = baseline;
+  return {
+    snapshot: {
+      ...payload,
+      frames,
+      assets: baseline.assets.filter((asset) => references.has(asset.key)),
+      sourceMetadata: {
+        ...baseline.sourceMetadata,
+        removedFrames: [...removedFrameRecords(baseline.sourceMetadata), ...removed],
+      },
+    },
+    removed,
   };
 }

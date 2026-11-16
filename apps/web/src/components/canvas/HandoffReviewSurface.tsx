@@ -5,7 +5,7 @@ import type { CommentIdentity } from "../comments/CommentPin";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import type { VersionOption } from "./VersionCompare";
 import type { CompareRouteState } from "./compare-state";
-import { formatFigmaCaptureScope } from "@asbir/snapshot-contract";
+import { formatFigmaCaptureScope, removedFrameRecords } from "@asbir/snapshot-contract";
 import { HandoffReview } from "./HandoffReview";
 import { getVersion, type StoredVersionAsset } from "@/src/server/repositories/versions";
 import { summarizeCanvasNode } from "./canvas-node-summary";
@@ -32,6 +32,7 @@ type AssetFrameInput = {
   sourceY: number;
   nodes: SnapshotNode[];
   overlayNodes?: CanvasFrameOption["overlayNodes"];
+  maskRects?: CanvasFrameOption["maskRects"];
   exact: boolean;
   kind: "overview" | "frame";
 };
@@ -111,6 +112,18 @@ function buildCanvasFrames(version: StoredVersion, publicReviewShareId?: string)
     nodes: [],
     // Built in the browser from the screen summaries (see buildOverviewOverlayFromScreens).
     overlayNodes: [],
+    // Screens removed after this overview image was rendered are cut out of it.
+    maskRects: overviewExact && structuredSnapshot
+      ? removedFrameRecords(structuredSnapshot.sourceMetadata).map((removed) => {
+          const offset = pageOffsets.get(removed.sourcePageId ?? "");
+          return {
+            x: removed.x + (offset?.offsetX ?? 0) - (overviewBounds?.x.value ?? 0),
+            y: removed.y + (offset?.offsetY ?? 0) - (overviewBounds?.y.value ?? 0),
+            width: removed.width,
+            height: removed.height,
+          };
+        })
+      : undefined,
     exact: overviewExact,
     kind: "overview",
   });

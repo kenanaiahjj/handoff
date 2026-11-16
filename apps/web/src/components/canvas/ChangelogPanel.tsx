@@ -37,7 +37,20 @@ type ChangelogPanelProps = {
   versions: Array<{ id: string; versionLabel: string }>;
   selectedVersionId: string;
   versionHrefPrefix: string;
+  /** IDs for the prompt people paste into their own AI client, which drafts over MCP. */
+  mcp: { projectId: string; handoffId: string; handoffName: string; integrationsHref: string | null };
 };
+
+function mcpDraftPrompt(input: { projectId: string; handoffId: string; handoffName: string; from?: { id: string; versionLabel: string }; to?: { id: string; versionLabel: string } }) {
+  const ids = `projectId "${input.projectId}", handoffId "${input.handoffId}"${input.from ? `, fromVersionId "${input.from.id}"` : ""}${input.to ? `, toVersionId "${input.to.id}"` : ""}`;
+  return [
+    `Use the Asbir Handoff MCP tools to draft a changelog for "${input.handoffName}"${input.from && input.to ? ` (version ${input.from.versionLabel} → ${input.to.versionLabel})` : ""}.`,
+    `1. Call list_changed_screens with ${ids} to see which screens changed.`,
+    `2. Call get_changelog_evidence with the same IDs and read every page of evidence.`,
+    `3. Write short statements for product, developers, and QA. Cite evidence IDs for every statement and don't claim anything the evidence doesn't show.`,
+    `4. Save it with save_changelog_draft so the team can review and approve it in Handoff.`,
+  ].join("\n");
+}
 
 /** The stream route answers failures with a JSON `{ error }` body; useObject surfaces it as the message. */
 function generationErrorMessage(cause: Error) {
@@ -56,7 +69,8 @@ const audienceLabels: Record<Audience, string> = {
   qa: "QA",
 };
 
-export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionHrefPrefix }: ChangelogPanelProps) {
+export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionHrefPrefix, mcp }: ChangelogPanelProps) {
+  const [promptCopied, setPromptCopied] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [configured, setConfigured] = useState<boolean | null>(null);
   const [loading, setLoading] = useState(true);
@@ -155,6 +169,21 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
   const generating = generation.isLoading;
   const streamed = generation.object;
 
+  async function copyPrompt() {
+    const prompt = mcpDraftPrompt({
+      ...mcp,
+      from: versions.find((version) => version.id === fromVersionId),
+      to: versions.find((version) => version.id === toVersionId),
+    });
+    try {
+      await navigator.clipboard.writeText(prompt);
+      setPromptCopied(true);
+      window.setTimeout(() => setPromptCopied(false), 1800);
+    } catch {
+      setError("Couldn’t copy the prompt. Select it from the preview instead.");
+    }
+  }
+
   function generateDraft() {
     setError(null);
     setNotice(null);
@@ -195,59 +224,76 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
     <section className="rounded-panel border border-border bg-surface p-3" aria-labelledby="changelog-title">
       <div className="flex flex-col justify-between gap-3">
         <div>
-          <p className="text-[12px] font-medium text-foreground-subtle">AI-assisted · evidence linked</p>
+          <p className="text-[12px] font-medium text-foreground-subtle">Drafted by your AI · evidence linked</p>
           <h2 className="mt-1 text-base font-semibold text-foreground" id="changelog-title">Changelog</h2>
           <p className="mt-1 max-w-2xl text-xs leading-5 text-foreground-muted">
-            Drafts cite screen changes, layout findings, and team comments. Generate one here or save a draft from your connected AI through MCP; review every statement before approval.
+            Your own AI client drafts the changelog through MCP, so Handoff doesn’t need an AI key. Paste the prompt into your AI; its draft appears here for the team to review and approve.
           </p>
         </div>
         <div className="flex items-center gap-2">
           <button type="button" className="dial-button min-h-8 px-2.5 text-xs" disabled={loading} onClick={() => void refreshDrafts()}>
             {loading ? "Refreshing…" : "Refresh"}
           </button>
-          <span className="rounded-pill bg-surface-raised px-2.5 py-1 text-[12px] font-medium text-foreground-subtle">
+          <span className="rounded-control bg-surface-inset px-2.5 py-1 text-[12px] font-medium text-foreground-subtle">
             {drafts.length.toString().padStart(2, "0")} drafts
           </span>
         </div>
       </div>
 
       {versions.length >= 2 ? (
-        <div className="mt-4 grid gap-2 rounded-control bg-surface-raised p-2">
-          <label className="block text-xs font-medium text-foreground-muted">
-            Before
-            <select className="mt-1.5 block min-h-10 w-full rounded-control border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" value={fromVersionId} onChange={(event) => setVersionPair({ selectedVersionId, fromVersionId: event.target.value, toVersionId })}>
-              {versions.map((version) => <option key={version.id} value={version.id}>{version.versionLabel}</option>)}
-            </select>
-          </label>
-          <label className="block text-xs font-medium text-foreground-muted">
-            After
-            <select className="mt-1.5 block min-h-10 w-full rounded-control border border-border bg-surface px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" value={toVersionId} onChange={(event) => setVersionPair({ selectedVersionId, fromVersionId, toVersionId: event.target.value })}>
-              {versions.map((version) => <option key={version.id} value={version.id}>{version.versionLabel}</option>)}
-            </select>
-          </label>
+        <div className="mt-4 grid gap-2">
+          <div className="grid grid-cols-2 gap-2">
+            <label className="block text-xs font-medium text-foreground-muted">
+              Before
+              <select className="mt-1.5 block min-h-9 w-full rounded-control px-3 text-[13px] text-foreground" value={fromVersionId} onChange={(event) => setVersionPair({ selectedVersionId, fromVersionId: event.target.value, toVersionId })}>
+                {versions.map((version) => <option key={version.id} value={version.id}>{version.versionLabel}</option>)}
+              </select>
+            </label>
+            <label className="block text-xs font-medium text-foreground-muted">
+              After
+              <select className="mt-1.5 block min-h-9 w-full rounded-control px-3 text-[13px] text-foreground" value={toVersionId} onChange={(event) => setVersionPair({ selectedVersionId, fromVersionId, toVersionId: event.target.value })}>
+                {versions.map((version) => <option key={version.id} value={version.id}>{version.versionLabel}</option>)}
+              </select>
+            </label>
+          </div>
           <button
             type="button"
-            className="min-h-10 rounded-control bg-primary px-4 text-xs font-semibold text-primary-foreground transition hover:bg-primary/90 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50"
-            onClick={generateDraft}
-            disabled={!configured || loading || generating || versions.length < 2 || !fromVersionId || !toVersionId || fromVersionId === toVersionId}
+            className="capture-primary-action min-h-9 px-4 text-[13px]"
+            onClick={() => void copyPrompt()}
+            disabled={!fromVersionId || !toVersionId || fromVersionId === toVersionId}
           >
-            {generating ? "Writing draft…" : "Generate draft"}
+            {promptCopied ? "Prompt copied" : "Copy prompt for your AI"}
           </button>
-          {generating ? (
-            <button type="button" className="min-h-9 rounded-control px-3 text-xs text-foreground-muted hover:bg-surface hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" onClick={generation.stop}>
-              Stop
-            </button>
+          <details className="rounded-control bg-surface-inset px-3 py-2 text-xs text-foreground-muted">
+            <summary className="cursor-pointer font-medium">Preview prompt</summary>
+            <pre className="mt-2 whitespace-pre-wrap break-words font-mono text-[11px] leading-5 text-foreground-muted">{mcpDraftPrompt({
+              ...mcp,
+              from: versions.find((version) => version.id === fromVersionId),
+              to: versions.find((version) => version.id === toVersionId),
+            })}</pre>
+          </details>
+          <p className="text-[11px] leading-4 text-foreground-subtle">
+            Your AI needs an MCP token with <code className="font-mono text-foreground-muted">handoffs:read</code> and <code className="font-mono text-foreground-muted">changelog:write</code>.
+            {mcp.integrationsHref ? <> <a className="text-foreground-muted underline underline-offset-2 hover:text-foreground" href={mcp.integrationsHref}>Set up MCP</a></> : null}
+          </p>
+          {configured ? (
+            <div className="flex flex-wrap items-center gap-2 border-t border-white/[0.06] pt-2">
+              <button
+                type="button"
+                className="dial-button min-h-8 px-3 text-xs"
+                onClick={generateDraft}
+                disabled={loading || generating || fromVersionId === toVersionId}
+              >
+                {generating ? "Writing draft…" : "Or generate here"}
+              </button>
+              {generating ? <button type="button" className="dial-button min-h-8 px-3 text-xs" onClick={generation.stop}>Stop</button> : null}
+            </div>
           ) : null}
         </div>
       ) : (
-        <p className="mt-4 rounded-control bg-surface-raised px-3 py-3 text-xs leading-5 text-foreground-muted">Add a second snapshot version to generate a changelog.</p>
+        <p className="mt-4 rounded-control bg-surface-inset px-3 py-3 text-xs leading-5 text-foreground-muted">Add a second snapshot version to draft a changelog.</p>
       )}
 
-      {configured === false ? (
-        <p className="mt-3 rounded-control border border-border bg-surface-raised px-3 py-3 text-xs leading-5 text-foreground-muted">
-          One-click drafting uses <code className="font-mono text-foreground">OPENAI_API_KEY</code> on the server. You can draft with your connected AI instead: give its MCP token <code className="font-mono text-foreground">handoffs:read</code> and <code className="font-mono text-foreground">changelog:write</code>, then have it call <code className="font-mono text-foreground">get_changelog_evidence</code> and <code className="font-mono text-foreground">save_changelog_draft</code>. Return here and select Refresh to review the saved draft.
-        </p>
-      ) : null}
       {loading ? <p className="mt-3 text-xs text-foreground-subtle" role="status">Loading changelogs…</p> : null}
       {error ? <p className="mt-3 rounded-control border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs leading-5 text-warning" role="alert">{error}</p> : null}
       {notice ? <p className="mt-3 text-xs text-success" role="status">{notice}</p> : null}
@@ -339,7 +385,7 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
             </div>
           </article>
         ))}
-        {!loading && drafts.length === 0 && configured !== false ? <p className="rounded-control bg-surface-raised px-3 py-3 text-xs leading-5 text-foreground-subtle">No changelog drafts yet.</p> : null}
+        {!loading && drafts.length === 0 ? <p className="rounded-control bg-surface-raised px-3 py-3 text-xs leading-5 text-foreground-subtle">No changelog drafts yet.</p> : null}
       </div>
     </section>
   );

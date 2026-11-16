@@ -34,6 +34,10 @@ export interface CaptureReadyMessage {
   /** Optional Figma lookups that could not be read without blocking the frame capture. */
   warnings: string[];
   scope: "selected" | "page" | "file";
+  /** Whether the capture included all current-page roots in selected merge mode. */
+  captureAllTopLevel: boolean;
+  /** Top-level Figma sections omitted from a current-page capture. */
+  excludedTopLevelSections: string[];
 }
 
 export interface CaptureProgressMessage {

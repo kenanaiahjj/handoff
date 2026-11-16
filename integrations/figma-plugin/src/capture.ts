@@ -913,7 +913,12 @@ async function loadVariablesAndStyles(nodes: readonly { node: SceneNode }[], tex
   return { variables, styles: new Map(styleEntries), collections: collectionsById, warnings };
 }
 
-export async function captureFigmaCanvas(scope: "selected" | "page" | "file", report: (message: string) => void) {
+export async function captureFigmaCanvas(
+  scope: "selected" | "page" | "file",
+  report: (message: string) => void,
+  excludedTopLevelSections: readonly string[] = [],
+  captureAllTopLevel = false,
+) {
   const sourceFileId = figma.fileKey?.trim();
   if (!sourceFileId) {
     throw new Error("Figma did not provide a unique file key for this capture. Rebuild and reload the local development plugin, then try again.");
@@ -937,11 +942,15 @@ export async function captureFigmaCanvas(scope: "selected" | "page" | "file", re
     }
 
     let artboards: SceneNode[];
-    if (scope === "selected") {
+    if (scope === "selected" && !captureAllTopLevel) {
       artboards = selectedArtboards(page.selection);
     } else {
       artboards = [];
-      for (const child of page.children) findTopLevelArtboards(child, artboards);
+      const excluded = new Set(scope === "page" || captureAllTopLevel ? excludedTopLevelSections : []);
+      for (const child of page.children) {
+        if (child.type === "SECTION" && excluded.has(child.name)) continue;
+        findTopLevelArtboards(child, artboards);
+      }
     }
 
     const distinct = [...new Map(artboards.map((node) => [node.id, node])).values()]

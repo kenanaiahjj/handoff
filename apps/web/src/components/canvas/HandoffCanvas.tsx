@@ -1,10 +1,12 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
 import { buildOverviewOverlayFromScreens, type CanvasNodeSummary } from "./canvas-node-summary";
 import { useFrameNodeDetails } from "./useFrameNodeDetails";
+import { useConfirm } from "@/src/components/ConfirmDialog";
 import { CommentThread, type PendingCommentPoint } from "../comments/CommentThread";
 import type { CommentIdentity, HandoffComment } from "../comments/CommentPin";
 import { CanvasToolbar } from "./CanvasToolbar";
@@ -69,6 +71,8 @@ type HandoffCanvasProps = {
   canCompare: boolean;
   onCompareScreen: (frameId: string) => void;
   onOpenComparison: (frameId?: string) => void;
+  /** Opens the list of changed screens with before/after renders. */
+  onOpenChangesList?: () => void;
   comparisonOpen: boolean;
   metadata: ReviewMetadata;
   dockPanels: ReviewDockPanels;
@@ -131,6 +135,7 @@ export function HandoffCanvas({
   canCompare,
   onCompareScreen,
   onOpenComparison,
+  onOpenChangesList,
   comparisonOpen,
   metadata,
   dockPanels,
@@ -143,6 +148,11 @@ export function HandoffCanvas({
     ? `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`
     : null;
   const overviewFrame = frames.find((frame) => frame.kind === "overview") ?? frames[0];
+  const latestVersion = metadata.versions[0];
+  const canRemoveScreens = Boolean(sharingEndpoint) && !metadata.visualOnly && latestVersion?.id === metadata.selectedVersionId;
+  const [removingScreen, setRemovingScreen] = useState(false);
+  const router = useRouter();
+  const { confirm: confirmRemoval, dialog: removalDialog } = useConfirm();
   const screens = useMemo(() => frames.filter((frame) => frame.kind === "frame"), [frames]);
   const exportTargets = useMemo(() => frames.map((frame) => ({
     id: frame.id,
@@ -616,6 +626,37 @@ export function HandoffCanvas({
     return <p className="p-6 text-sm text-foreground-muted">This snapshot has no frames to display.</p>;
   }
 
+  // Removing a screen publishes a new version without it (versions never change), so the
+  // comparison and changelog then list it as removed.
+  async function removeSelectedScreen() {
+    if (!canRemoveScreens || !sharingEndpoint || !latestVersion || !selectedFrame || selectedFrame.kind !== "frame" || removingScreen) return;
+    const confirmed = await confirmRemoval({
+      title: `Remove “${selectedFrame.name}”?`,
+      description: "This publishes a new version of the canvas without this screen. Earlier versions keep it, and the comparison and changelog will list it as removed.",
+      confirmLabel: "Remove screen",
+    });
+    if (!confirmed) return;
+    setRemovingScreen(true);
+    try {
+      const response = await fetch(`${sharingEndpoint}/versions/remove-screens`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ baseVersionId: latestVersion.id, frameIds: [selectedFrame.id] }),
+      });
+      const payload = await response.json() as { versionId?: string; error?: string };
+      if (!response.ok || !payload.versionId) throw new Error(payload.error ?? "Could not remove this screen.");
+      router.push(`${metadata.versionHrefPrefix}?versionId=${encodeURIComponent(payload.versionId)}`);
+    } catch (cause) {
+      await confirmRemoval({
+        title: "Couldn’t remove this screen",
+        description: cause instanceof Error ? cause.message : "Try again.",
+        confirmLabel: "OK",
+        tone: "default",
+      });
+      setRemovingScreen(false);
+    }
+  }
+
   function selectFrame(frameId: string) {
     setSelectedFrameId(frameId);
     setSelectedNodeId(null);
@@ -1029,6 +1070,12 @@ export function HandoffCanvas({
             {comparisonSummary.changeCount ? ` · ${formatComparisonChangeCount(comparisonSummary.changeCount, comparisonSummary.visualChangeCount)}` : ""}
             {` since ${comparisonSummary.earlierVersionLabel}`}
           </p>
+          <span className="flex shrink-0 items-center gap-1.5">
+          {onOpenChangesList ? (
+            <button className="dial-button shrink-0 px-3 py-1.5 text-[12px]" onClick={() => { setCommentMode(false); setSearchOpen(false); onOpenChangesList(); }} type="button">
+              List view
+            </button>
+          ) : null}
           <button
             className="capture-primary-action shrink-0 px-3 py-1.5 text-[12px]"
             onClick={() => {
@@ -1041,6 +1088,7 @@ export function HandoffCanvas({
           >
             Review changes
           </button>
+          </span>
         </div>
       ) : null}
 
@@ -1372,10 +1420,13 @@ export function HandoffCanvas({
             onSelectNode={selectNode}
             onCopyLink={() => navigator.clipboard?.writeText(window.location.href)}
             inspecting={canvasMode === "inspect"}
+            onRemoveScreen={canRemoveScreens && selectedFrame?.kind === "frame" ? () => void removeSelectedScreen() : undefined}
+            removingScreen={removingScreen}
           />
           ) : null}
         </aside>
       </div>
+      {removalDialog}
 
     </div>
   );

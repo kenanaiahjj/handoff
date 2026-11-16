@@ -69,6 +69,8 @@ test("selected captures replace captured frames and retain every untouched frame
     frame("settings", "page-1", "frame-002-settings", 360),
   ], "selected frames and components");
   incoming.assets.find((item) => item.key === "frame-001-checkout").sha256 = "updated-checkout-render";
+  // Cut-outs for screens removed from the old overview image don't apply to the new one.
+  baseline.sourceMetadata.removedFrames = [{ sourceFrameId: "old", name: "Old", sourcePageId: "page-1", x: 0, y: 0, width: 10, height: 10 }];
 
   const merged = mergeFigmaCaptureSnapshots({
     baseline,
@@ -89,6 +91,7 @@ test("selected captures replace captured frames and retain every untouched frame
   assert.equal(merged.snapshot.sourceMetadata.mergedFromVersionId, "version-1");
   assert.equal(merged.snapshot.sourceMetadata.captureScope, baseline.sourceMetadata.captureScope);
   assert.equal(merged.snapshot.sourceMetadata.lastCaptureScope, "selected frames and components");
+  assert.equal("removedFrames" in merged.snapshot.sourceMetadata, false);
 
   const diff = diffSnapshots(
     { versionId: "version-1", snapshot: baseline },

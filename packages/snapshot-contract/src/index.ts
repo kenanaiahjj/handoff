@@ -17,6 +17,9 @@ export {
   getFigmaCaptureOverviewClearRects,
   mergeFigmaCaptureSnapshots,
   normalizeFigmaCaptureScope,
+  removedFrameRecords,
+  removeFramesFromSnapshot,
+  type RemovedFrameRecord,
 } from "./capture-merge";
 export { formatFigmaCaptureScope } from "./figma-capture-scope";
 export { countBlankFrameNames, findDuplicateFrameNames } from "./frame-names";

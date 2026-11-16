@@ -162,6 +162,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
           versions={versions.map(({ id, versionLabel }) => ({ id, versionLabel }))}
           selectedVersionId={selectedVersion.id}
           versionHrefPrefix={routePath}
+          mcp={{ projectId, handoffId, handoffName: handoff.name, integrationsHref: `/workspace/${encodeURIComponent(workspaceId)}/integrations` }}
         />
         {canManageHandoffs ? <HandoffSetupForm mode="handoff" input={{ workspaceId, projectId, handoffs: [{ id: handoffId, name: handoff.name }], initialHandoffId: handoffId }} /> : null}
       </div>

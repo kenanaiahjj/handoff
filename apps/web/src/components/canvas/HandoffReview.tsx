@@ -6,6 +6,7 @@ import { HandoffCanvas, type ReviewDockPanels, type ReviewMetadata } from "./Han
 import type { CanvasFrameChangeStatus, CanvasFrameOption, FrameComparisonSummary } from "./FrameNavigator";
 import { VersionCompare, type CompareResult, type VersionOption } from "./VersionCompare";
 import { updateCompareRouteUrl, type CompareRouteState } from "./compare-state";
+import { ChangesListView } from "./ChangesListView";
 
 type HandoffReviewProps = {
   frames: CanvasFrameOption[];
@@ -158,6 +159,14 @@ export function HandoffReview({
     setCompareScreenRequest(null);
   }, []);
 
+  const [changesListOpen, setChangesListOpen] = useState(false);
+  const closeChangesList = useCallback(() => setChangesListOpen(false), []);
+  const compareFromList = useCallback((frameId: string) => {
+    setChangesListOpen(false);
+    handleCompareScreen(frameId);
+    openComparison(frameId);
+  }, [handleCompareScreen, openComparison]);
+
   return (
     <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface text-foreground">
       <HandoffCanvas
@@ -171,10 +180,20 @@ export function HandoffReview({
         canCompare={versions.length > 1}
         onCompareScreen={handleCompareScreen}
         onOpenComparison={openComparison}
+        onOpenChangesList={previousVersion ? () => setChangesListOpen(true) : undefined}
         comparisonOpen={comparisonOpen}
         metadata={metadata}
         dockPanels={dockPanels}
       />
+      {changesListOpen && previousVersion ? (
+        <ChangesListView
+          fromLabel={previousVersion.versionLabel}
+          onClose={closeChangesList}
+          onCompareScreen={compareFromList}
+          result={visibleInitialCompareResult}
+          toLabel={versions.find((version) => version.id === selectedVersionId)?.versionLabel ?? ""}
+        />
+      ) : null}
       {comparisonOpen ? (
         <VersionCompare
           key={selectedVersionId}
