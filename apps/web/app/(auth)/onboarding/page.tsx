@@ -4,6 +4,9 @@ import { getSessionForHeaders } from "@/src/server/auth-session";
 import { jobRoles, joinableWorkspaces, needsOnboarding } from "@/src/server/services/onboarding";
 import { syncSuperadminAccess } from "@/src/server/services/superadmins";
 import { OnboardingForm } from "./onboarding-form";
+import { isDevelopmentAuthBypassActive } from "@/src/server/auth-session";
+import { isDevTestAccount } from "@/src/server/services/dev-test-accounts";
+import { DevOnboardingBar } from "@/src/components/shell/DevAccountActions";
 
 export const instant = false;
 
@@ -19,11 +22,15 @@ export default async function OnboardingPage() {
     emailVerified: session.user.emailVerified,
   });
   const roles = Object.entries(jobRoles).map(([id, role]) => ({ id, label: role.label, description: role.description, manages: role.workspaceRole === "designer" }));
+  const testing = isDevTestAccount(session.user.id) && (await isDevelopmentAuthBypassActive());
   return (
+    <>
     <OnboardingForm
       roles={roles}
       user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
       workspaceNames={workspaces.map((workspace) => workspace.name)}
     />
+    {testing ? <DevOnboardingBar email={session.user.email} /> : null}
+    </>
   );
 }

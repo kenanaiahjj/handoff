@@ -3,6 +3,7 @@
 import { type FormEvent, useState } from "react";
 import { authClient } from "@/src/client/auth-client";
 import { AuthShell } from "../auth-shell";
+import { FreshAccountButton } from "@/src/components/shell/DevAccountActions";
 
 type SignInFormProps = { redirectTo: string; googleEnabled: boolean; googleError: boolean; companyDomains: string[]; devBypassAvailable?: boolean };
 
@@ -175,6 +176,8 @@ export function SignInForm({ redirectTo, googleEnabled, googleError, companyDoma
           <button className="underline decoration-border-strong underline-offset-4 hover:text-foreground" onClick={switchToLocalDevAccount} type="button">
             Use local dev account
           </button>
+          <span aria-hidden="true"> · </span>
+          <FreshAccountButton className="underline decoration-border-strong underline-offset-4 hover:text-foreground" />
         </p>
       ) : null}
 

@@ -1,7 +1,7 @@
 import Link from "next/link";
 import type { ReactNode } from "react";
 import { SignOutButton } from "@/app/workspace/workspace-actions";
-import { isDevelopmentAuthBypassActive, localReviewerUser } from "@/src/server/auth-session";
+import { isDevelopmentAuthBypassActive, viewAsModeFor } from "@/src/server/auth-session";
 import { ViewAsSwitcher } from "./ViewAsSwitcher";
 import { InstallAppButton } from "./InstallAppButton";
 import { BrandMark } from "./BrandMark";
@@ -143,7 +143,7 @@ async function SidebarContents({ user, workspace, workspaces, navSections }: Omi
       </nav>
       {devBypass && (workspace?.id ?? workspaces?.[0]?.id) ? (
         <ViewAsSwitcher
-          current={user.email === localReviewerUser.email ? "reviewer" : "owner"}
+          current={viewAsModeFor(user)}
           workspaceId={(workspace?.id ?? workspaces?.[0]?.id)!}
         />
       ) : null}

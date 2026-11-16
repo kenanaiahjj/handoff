@@ -7,7 +7,7 @@ import { needsOnboarding } from "@/src/server/services/onboarding";
 import { listViewerHomeAcrossWorkspaces } from "@/src/server/services/review-visibility";
 import { ViewerHome } from "@/src/components/shell/ViewerHome";
 import { ViewAsSwitcher } from "@/src/components/shell/ViewAsSwitcher";
-import { isDevelopmentAuthBypassActive, localReviewerUser } from "@/src/server/auth-session";
+import { isDevelopmentAuthBypassActive, viewAsModeFor } from "@/src/server/auth-session";
 import { listSuperadmins, syncSuperadminAccess } from "@/src/server/services/superadmins";
 import { CreateWorkspaceForm } from "./workspace-actions";
 import { SuperadminsPanel } from "./superadmins-panel";
@@ -44,7 +44,7 @@ export default async function WorkspaceHomePage() {
     const devBypass = await isDevelopmentAuthBypassActive();
     return (
       <ViewerHome
-        devTools={devBypass ? <ViewAsSwitcher current={session.user.email === localReviewerUser.email ? "reviewer" : "owner"} workspaceId={workspaces[0].id} /> : null}
+        devTools={devBypass ? <ViewAsSwitcher current={viewAsModeFor(session.user)} workspaceId={workspaces[0].id} /> : null}
         homeHref="/workspace"
         projects={listViewerHomeAcrossWorkspaces(session.user, workspaces)}
         devBypass={devBypass}

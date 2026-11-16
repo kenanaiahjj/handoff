@@ -109,3 +109,10 @@ export async function getSessionForHeaders(headers: Headers) {
   }
   return auth.api.getSession({ headers });
 }
+
+/** Which "View as" choice is showing: the owner, the seeded reviewer, or a throwaway test account. */
+export function viewAsModeFor(user: { email: string }): "owner" | "reviewer" | "test" {
+  // Throwaway accounts from "Use fresh account" look like "alex.test.1a2b3c@company.com".
+  if (/\.test\.[0-9a-f]{6}@/.test(user.email)) return "test";
+  return user.email === localReviewerUser.email ? "reviewer" : "owner";
+}

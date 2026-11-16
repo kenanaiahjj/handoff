@@ -10,7 +10,7 @@ import { NewVersionBadge } from "@/src/components/shell/NewVersionBadge";
 import { canSeeWholeWorkspace, countUpdatesByProject, filterProjectsForViewer, listViewerHome, listViewerUpdates } from "@/src/server/services/review-visibility";
 import { ViewerHome } from "@/src/components/shell/ViewerHome";
 import { ViewAsSwitcher } from "@/src/components/shell/ViewAsSwitcher";
-import { isDevelopmentAuthBypassActive, localReviewerUser } from "@/src/server/auth-session";
+import { isDevelopmentAuthBypassActive, viewAsModeFor } from "@/src/server/auth-session";
 import { WorkspaceShell, type WorkspaceChoice } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 
@@ -57,7 +57,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
     const devBypass = await isDevelopmentAuthBypassActive();
     return (
       <ViewerHome
-        devTools={devBypass ? <ViewAsSwitcher current={session.user.email === localReviewerUser.email ? "reviewer" : "owner"} workspaceId={workspace.id} /> : null}
+        devTools={devBypass ? <ViewAsSwitcher current={viewAsModeFor(session.user)} workspaceId={workspace.id} /> : null}
         projects={listViewerHome(workspace.id, viewer)}
         devBypass={devBypass}
         user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}

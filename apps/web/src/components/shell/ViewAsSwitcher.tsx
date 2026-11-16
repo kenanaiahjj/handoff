@@ -1,11 +1,12 @@
 "use client";
 
 import { useState } from "react";
+import { clearDevTestAccounts, FreshAccountButton } from "./DevAccountActions";
 
 type ViewAsMode = "owner" | "reviewer";
 
 /** Development-only toggle between the workspace owner and a seeded reviewer account. */
-export function ViewAsSwitcher({ current, workspaceId }: { current: ViewAsMode; workspaceId: string }) {
+export function ViewAsSwitcher({ current, workspaceId }: { current: ViewAsMode | "test"; workspaceId: string }) {
   const [pending, setPending] = useState<ViewAsMode | null>(null);
   const [error, setError] = useState("");
 
@@ -46,6 +47,16 @@ export function ViewAsSwitcher({ current, workspaceId }: { current: ViewAsMode; 
           </button>
         ))}
       </div>
+      {current === "test" ? (
+        <button
+          className="mt-1.5 w-full rounded-control px-2 py-1.5 text-left text-[12px] text-foreground-subtle transition-colors hover:bg-surface-raised hover:text-foreground"
+          onClick={() => void clearDevTestAccounts()}
+          type="button"
+        >
+          Done testing (remove test accounts)
+        </button>
+      ) : null}
+      <FreshAccountButton className="mt-1.5 w-full rounded-control px-2 py-1.5 text-left text-[12px] text-foreground-subtle transition-colors hover:bg-surface-raised hover:text-foreground" label="+ Fresh account (onboarding)" />
       {error ? <p className="mt-1 text-[10px] text-danger" role="alert">{error}</p> : null}
     </div>
   );
