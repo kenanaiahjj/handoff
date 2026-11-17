@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useState } from "react";
 import type { OpenMention } from "@/src/server/services/mentions";
+import { refreshAppBadge } from "./AppBadgeSync";
 
 const relativeTime = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
@@ -24,6 +25,7 @@ export function NeedsYou({ initial, className = "" }: { initial: OpenMention[]; 
     setMentions((current) => current.filter((mention) => mention.commentId !== commentId));
     const response = await fetch(`/api/me/mentions/${encodeURIComponent(commentId)}`, { method: "DELETE" }).catch(() => null);
     if (!response?.ok) setMentions(previous);
+    else refreshAppBadge();
   }
 
   if (!mentions.length) return null;

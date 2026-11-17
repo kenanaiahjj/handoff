@@ -166,6 +166,8 @@ export type ViewerHandoff = {
   seenVersionId: string | null;
   /** For a new version this person has seen an earlier one of: what changed since. */
   changesSinceSeen: ScreenChanges | null;
+  /** Who published the newest version. */
+  publishedBy: { name: string; image: string | null } | null;
 };
 
 // Versions never change, so a comparison between two of them can be kept for the server's lifetime.
@@ -239,6 +241,7 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
               handoff.id AS handoffId, handoff.name AS handoffName, handoff.created_at AS handoffCreatedAt,
               latest.id AS versionId, latest.version_label AS versionLabel, latest.created_at AS versionCreatedAt,
               latest.created_by_user_id AS createdBy,
+              publisher.name AS publisherName, publisher.image AS publisherImage,
               handoff_view.last_seen_version_id AS seenVersionId,
               (SELECT object_key FROM handoff_asset
                  WHERE handoff_asset.handoff_version_id = latest.id AND handoff_asset.content_type LIKE 'image/%'
@@ -259,6 +262,7 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
          WHERE handoff_version.handoff_id = handoff.id
          ORDER BY created_at DESC, id DESC LIMIT 1
        )
+       LEFT JOIN "user" AS publisher ON publisher.id = latest.created_by_user_id
        LEFT JOIN handoff_view ON handoff_view.handoff_id = handoff.id AND handoff_view.user_id = ?
        WHERE handoff.workspace_id = ?`,
     )
@@ -273,6 +277,8 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
       versionLabel: string | null;
       versionCreatedAt: string | null;
       createdBy: string | null;
+      publisherName: string | null;
+      publisherImage: string | null;
       seenVersionId: string | null;
       previewKey: string | null;
     }>;
@@ -290,6 +296,7 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
       latestVersionId: row.versionId,
       seenVersionId: row.seenVersionId,
       changesSinceSeen: null,
+      publishedBy: row.publisherName ? { name: row.publisherName, image: row.publisherImage } : null,
     };
     if (handoff.isNew && row.seenVersionId && row.versionId) {
       try {

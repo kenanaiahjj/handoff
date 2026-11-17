@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import test, { after } from "node:test";
 
@@ -18,6 +19,7 @@ database.exec(`
   CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BLOB NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
   CREATE TABLE handoff_asset (handoff_version_id TEXT, asset_key TEXT, object_key TEXT);
 `);
+database.exec(readFileSync(new URL("../migrations/0023_notification_preferences.sql", import.meta.url), "utf8"));
 database.prepare(`INSERT INTO "user" VALUES ('designer', 'Dee Designer', 'dee@lmf.ventures'), ('pd', 'Pat Lead', 'pat@lmf.ventures'), ('fan', 'Fay Follower', 'fay@lmf.ventures')`).run();
 database.prepare("INSERT INTO workspace_membership VALUES ('ws', 'designer', 'designer'), ('ws', 'pd', 'reviewer'), ('ws', 'fan', 'reviewer')").run();
 database.prepare("INSERT INTO project VALUES ('p', 'ws', 'Maayo', 'pd')").run();
@@ -90,4 +92,19 @@ test("mentions DM the person with the comment and a link to the thread", async (
   assert.equal(messages[0].channel, "U-pat@lmf.ventures");
   assert.match(messages[0].blocks[0].text.text, /Can you check this @Pat Lead\?/);
   assert.match(messages[0].blocks[1].elements[0].url, /comment=c1/);
+});
+
+test("each person's Slack setting filters who gets messaged", async () => {
+  const { filterBySlackPreference, setSlackPreference, getSlackPreference } = await import("./notification-preferences.ts");
+  const emails = ["dee@lmf.ventures", "pat@lmf.ventures", "fay@lmf.ventures", "outsider@lmf.ventures"];
+  assert.equal(getSlackPreference("pd"), "all");
+  setSlackPreference("pd", "mentions");
+  setSlackPreference("fan", "off");
+  // Versions: only "all" (and people without an account) hear about them.
+  assert.deepEqual(filterBySlackPreference(emails, "version"), ["dee@lmf.ventures", "outsider@lmf.ventures"]);
+  // Mentions: "mentions only" still gets them; "off" never does.
+  assert.deepEqual(filterBySlackPreference(emails, "mention"), ["dee@lmf.ventures", "pat@lmf.ventures", "outsider@lmf.ventures"]);
+  setSlackPreference("pd", "all");
+  setSlackPreference("fan", "all");
+  assert.equal(getSlackPreference("fan"), "all");
 });

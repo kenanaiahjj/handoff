@@ -1,5 +1,6 @@
 import { getDatabase } from "../db";
 import { plainCommentText } from "./mentions";
+import { filterBySlackPreference } from "./notification-preferences";
 import { screenChangesBetween } from "./review-visibility";
 
 /**
@@ -135,7 +136,7 @@ export async function notifyNewVersion(input: { workspaceId: string; handoffId: 
   }
   const text = `*${escape(details.publisher ?? "Someone")}* published version *${escape(details.versionLabel)}* of *${escape(details.handoffName)}* in ${escape(details.projectName)}.`;
   return sendSlackDirectMessages(
-    newVersionRecipients(input),
+    filterBySlackPreference(newVersionRecipients(input), "version"),
     messageWithButton(text, detail, previous ? "Review changes" : "Open handoff", url),
     fetcher,
   );
@@ -158,7 +159,7 @@ export async function notifyMentions(
   const text = plainCommentText(input.body).replace(/\s+/g, " ").trim();
   const excerpt = text.length > 280 ? `${text.slice(0, 279)}…` : text;
   return sendSlackDirectMessages(
-    input.mentioned.map((person) => person.email),
+    filterBySlackPreference(input.mentioned.map((person) => person.email), "mention"),
     messageWithButton(
       `*${escape(details.author ?? "Someone")}* mentioned you in *${escape(details.handoffName)}* · ${escape(details.projectName)}`,
       `> ${escape(excerpt)}`,

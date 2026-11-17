@@ -2,15 +2,50 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { lastScreenHash } from "./HandoffTabs";
 import { QuickOpen, type QuickOpenItem } from "./QuickOpen";
 import { NeedsYou } from "./NeedsYou";
+import { refreshAppBadge } from "./AppBadgeSync";
+import { NotificationSettings } from "./NotificationSettings";
 import type { OpenMention } from "@/src/server/services/mentions";
 import { SignOutButton } from "@/app/workspace/workspace-actions";
 import type { ViewerProject } from "@/src/server/services/review-visibility";
 
 type Filter = "all" | "updated";
+type HomeView = "tiles" | "list";
+
+const viewKey = "asbir-home-view";
+const collapsedKey = "asbir-home-collapsed";
+
+function readLocal<T>(key: string, fallback: T): T {
+  try {
+    const raw = localStorage.getItem(key);
+    return raw === null ? fallback : (JSON.parse(raw) as T);
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocal(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage blocked (private window); the choice just isn't remembered.
+  }
+}
+
+/** Small round avatar: the person's Google photo, or their initial. */
+function Avatar({ name, image, size = 16 }: { name: string; image: string | null; size?: number }) {
+  return image ? (
+    // eslint-disable-next-line @next/next/no-img-element -- Google avatar on its own host.
+    <img alt="" className="shrink-0 rounded-full object-cover ring-1 ring-white/10" height={size} referrerPolicy="no-referrer" src={image} style={{ width: size, height: size }} width={size} />
+  ) : (
+    <span aria-hidden="true" className="grid shrink-0 place-items-center rounded-full bg-surface-strong font-semibold text-foreground-muted" style={{ width: size, height: size, fontSize: Math.round(size * 0.55) }}>
+      {name.trim().slice(0, 1).toUpperCase() || "?"}
+    </span>
+  );
+}
 
 type ViewerGroupItem = ViewerProject["handoffs"][number] & { workspaceId: string; projectId: string; projectName: string };
 type ViewerGroup = { key: string; title: string; newCount: number; updatedAt: string; projectCount: number; items: ViewerGroupItem[] };
@@ -127,9 +162,30 @@ export function ViewerHome({
         body: JSON.stringify({ handoffIds }),
       });
       if (!response.ok) throw new Error();
+      refreshAppBadge();
     } catch {
       setSeenIds((current) => new Set([...current].filter((id) => !handoffIds.includes(id))));
     }
+  }
+
+  // Tiles or a dense list, and which groups are folded away: remembered on this device.
+  const [view, setView] = useState<HomeView>("tiles");
+  const [collapsed, setCollapsed] = useState<string[]>([]);
+  useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- read from localStorage, only available after mount.
+    setView(readLocal<HomeView>(viewKey, "tiles") === "list" ? "list" : "tiles");
+    setCollapsed(readLocal<string[]>(collapsedKey, []));
+  }, []);
+  function chooseView(next: HomeView) {
+    setView(next);
+    writeLocal(viewKey, next);
+  }
+  function toggleCollapsed(groupKey: string) {
+    setCollapsed((current) => {
+      const next = current.includes(groupKey) ? current.filter((key) => key !== groupKey) : [...current, groupKey];
+      writeLocal(collapsedKey, next);
+      return next;
+    });
   }
 
   // Tiles reopen each handoff on the screen this person last looked at (remembered on this device).
@@ -210,6 +266,48 @@ export function ViewerHome({
       });
   }, [visibleProjects, showWorkspaceNames, pins]);
 
+  // Keyboard: "/" search, j/k move between handoffs, Enter opens (native), e marks the focused one seen.
+  const searchRef = useRef<HTMLInputElement>(null);
+  const markSeenRef = useRef(markSeen);
+  useEffect(() => {
+    markSeenRef.current = markSeen;
+  });
+  const onShortcut = useCallback((event: KeyboardEvent) => {
+    if (event.metaKey || event.ctrlKey || event.altKey) return;
+    const target = event.target as HTMLElement | null;
+    if (target && (target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))) {
+      if (event.key === "Escape" && target === searchRef.current) searchRef.current?.blur();
+      return;
+    }
+    if (event.key === "/") {
+      event.preventDefault();
+      searchRef.current?.focus();
+      return;
+    }
+    const items = [...document.querySelectorAll<HTMLElement>("[data-home-item]")];
+    if (!items.length) return;
+    const index = items.indexOf(document.activeElement as HTMLElement);
+    if (event.key === "j" || event.key === "k") {
+      event.preventDefault();
+      const next = index === -1 ? 0 : Math.min(Math.max(index + (event.key === "j" ? 1 : -1), 0), items.length - 1);
+      items[next].focus();
+      items[next].scrollIntoView({ block: "nearest" });
+    } else if (event.key === "e" && index !== -1) {
+      const id = items[index].dataset.handoffId;
+      if (id && items[index].dataset.new === "true") void markSeenRef.current([id]);
+    }
+  }, []);
+  useEffect(() => {
+    window.addEventListener("keydown", onShortcut);
+    return () => window.removeEventListener("keydown", onShortcut);
+  }, [onShortcut]);
+
+  const hrefFor = (handoff: ViewerGroupItem) =>
+    handoff.isNew && handoff.changesSinceSeen && handoff.seenVersionId && handoff.latestVersionId
+      ? `/workspace/${handoff.workspaceId}/projects/${handoff.projectId}/handoffs/${handoff.handoffId}?compare=1&compareFrom=${handoff.seenVersionId}&compareTo=${handoff.latestVersionId}&versionId=${handoff.latestVersionId}`
+      : `/workspace/${handoff.workspaceId}/projects/${handoff.projectId}/handoffs/${handoff.handoffId}${resume[handoff.handoffId] ?? ""}`;
+  const versionText = (label: string | null) => (label ? `${/^\d/.test(label) ? "v" : ""}${label}` : "");
+
   return (
     <div className="viewer-home min-h-dvh bg-background text-foreground">
       <header className="viewer-home-bar sticky top-0 z-20 border-b border-border">
@@ -237,11 +335,13 @@ export function ViewerHome({
             {menuOpen ? (
               <>
                 <button aria-hidden="true" className="fixed inset-0 z-10 cursor-default" onClick={() => setMenuOpen(false)} tabIndex={-1} type="button" />
-                <div className="dial-popover absolute right-0 top-10 z-20 w-64 p-1.5" role="menu">
+                <div className="dial-popover absolute right-0 top-10 z-20 w-72 p-1.5" role="menu">
                   <div className="px-2.5 py-2">
                     <p className="truncate text-[13px] font-medium">{user.name}</p>
                     <p className="truncate text-[12px] text-foreground-subtle">{user.email}</p>
                   </div>
+                  <div className="my-1 h-px bg-border" />
+                  <NotificationSettings />
                   <div className="my-1 h-px bg-border" />
                   <div className="px-1 pb-1 pt-1.5 [&>button]:w-full [&>button]:justify-start [&>button]:text-left">
                     <SignOutButton devBypass={devBypass} />
@@ -286,7 +386,8 @@ export function ViewerHome({
                 <input
                   className="h-8 w-full rounded-control border border-border bg-surface-inset pl-8 pr-2.5 text-[13px] outline-none placeholder:text-foreground-subtle focus-visible:border-foreground/30"
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search  ⌘K"
+                  placeholder="Search  /"
+                  ref={searchRef}
                   type="search"
                   value={query}
                 />
@@ -295,6 +396,14 @@ export function ViewerHome({
                 <button aria-pressed={filter === "all"} className="min-h-8 px-2.5 text-[12px]" onClick={() => setFilter("all")} type="button">All</button>
                 <button aria-pressed={filter === "updated"} className="min-h-8 px-2.5 text-[12px]" onClick={() => setFilter("updated")} type="button">
                   New{newTotal ? <span className="ml-1 font-mono text-[11px] text-foreground-subtle">{newTotal}</span> : null}
+                </button>
+              </div>
+              <div aria-label="Layout" className="dial-segmented shrink-0" role="group">
+                <button aria-label="Tiles" aria-pressed={view === "tiles"} className="grid min-h-8 place-items-center px-2" onClick={() => chooseView("tiles")} title="Tiles" type="button">
+                  <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 16 16"><rect height="5" rx="1" width="5" x="2.5" y="2.5" /><rect height="5" rx="1" width="5" x="8.5" y="2.5" /><rect height="5" rx="1" width="5" x="2.5" y="8.5" /><rect height="5" rx="1" width="5" x="8.5" y="8.5" /></svg>
+                </button>
+                <button aria-label="List" aria-pressed={view === "list"} className="grid min-h-8 place-items-center px-2" onClick={() => chooseView("list")} title="List" type="button">
+                  <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" viewBox="0 0 16 16"><path d="M3 4h10M3 8h10M3 12h10" /></svg>
                 </button>
               </div>
             </div>
@@ -324,13 +433,24 @@ export function ViewerHome({
             {groups.map((group) => (
               <section aria-labelledby={`group-${group.key}`} className="viewer-group" data-pinned={pins.includes(pinKeyFor(group.key)) || undefined} key={group.key}>
                 <div className="mb-3 flex min-w-0 items-center gap-2.5">
+                  <button
+                    aria-controls={`group-items-${group.key}`}
+                    aria-expanded={!collapsed.includes(group.key)}
+                    aria-label={collapsed.includes(group.key) ? `Expand ${group.title}` : `Collapse ${group.title}`}
+                    className="-ml-1 grid size-6 shrink-0 place-items-center rounded-[6px] text-foreground-subtle transition-colors hover:bg-surface-inset hover:text-foreground"
+                    onClick={() => toggleCollapsed(group.key)}
+                    type="button"
+                  >
+                    <svg aria-hidden="true" className={"size-3.5 transition-transform " + (collapsed.includes(group.key) ? "-rotate-90" : "")} fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" /></svg>
+                  </button>
                   {showWorkspaceNames ? (
                     <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-[7px] bg-surface-strong text-[11px] font-semibold">
                       {group.title.trim().slice(0, 1).toUpperCase()}
                     </span>
                   ) : null}
                   <h2 className="min-w-0 truncate text-[14px] font-semibold tracking-[-0.01em]" id={`group-${group.key}`}>{group.title}</h2>
-                  {group.newCount ? <span className="viewer-count">{group.newCount} new</span> : null}
+                  {collapsed.includes(group.key) ? <span className="shrink-0 font-mono text-[11px] text-foreground-subtle">{group.items.length}</span> : null}
+                  {group.newCount ? <span className="viewer-count shrink-0 whitespace-nowrap">{group.newCount} new</span> : null}
                   {group.newCount ? (
                     <button
                       className="viewer-mark-seen shrink-0 rounded-[6px] px-1.5 py-0.5 text-[12px] text-foreground-subtle transition-colors hover:bg-surface-inset hover:text-foreground"
@@ -340,7 +460,8 @@ export function ViewerHome({
                       Mark seen
                     </button>
                   ) : null}
-                  <span className="ml-auto shrink-0 text-[12px] text-foreground-subtle" suppressHydrationWarning>Updated {timeAgo(group.updatedAt)}</span>
+                  <span aria-hidden="true" className="flex-1 sm:hidden" />
+                  <span className="ml-auto hidden shrink-0 text-[12px] text-foreground-subtle sm:inline" suppressHydrationWarning>Updated {timeAgo(group.updatedAt)}</span>
                   <button
                     aria-label={pins.includes(pinKeyFor(group.key)) ? `Unpin ${group.title}` : `Pin ${group.title} to the top`}
                     aria-pressed={pins.includes(pinKeyFor(group.key))}
@@ -354,16 +475,47 @@ export function ViewerHome({
                     </svg>
                   </button>
                 </div>
-                <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                {collapsed.includes(group.key) ? null : view === "list" ? (
+                  <ul className="viewer-list overflow-hidden rounded-panel border border-border bg-surface" id={`group-items-${group.key}`}>
+                    {group.items.map((handoff) => (
+                      <li className="border-b border-border last:border-b-0" key={handoff.handoffId}>
+                        <Link
+                          className="viewer-row group flex min-h-12 items-center gap-3 px-3.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-white/40"
+                          data-handoff-id={handoff.handoffId}
+                          data-home-item=""
+                          data-new={handoff.isNew ? "true" : "false"}
+                          href={hrefFor(handoff)}
+                        >
+                          <span aria-hidden="true" className="grid w-2 shrink-0 place-items-center">{handoff.isNew ? <span className="viewer-dot" /> : null}</span>
+                          <span className="min-w-0 flex-1">
+                            <span className="block truncate text-[13px] font-medium">{handoff.handoffName}</span>
+                            {handoff.isNew ? (
+                              <span className="block truncate text-[12px] text-[#ffa264]">{handoff.changesSinceSeen ? changesLabel(handoff.changesSinceSeen) : "New version"}</span>
+                            ) : null}
+                          </span>
+                          <span className="hidden shrink-0 font-mono text-[11px] text-foreground-subtle sm:inline">{versionText(handoff.versionLabel)}</span>
+                          {handoff.publishedBy ? (
+                            <span className="hidden min-w-0 max-w-[10rem] shrink-0 items-center gap-1.5 text-[12px] text-foreground-muted md:flex">
+                              <Avatar image={handoff.publishedBy.image} name={handoff.publishedBy.name} />
+                              <span className="truncate">{handoff.publishedBy.name.split(" ")[0]}</span>
+                            </span>
+                          ) : null}
+                          <span className="w-20 shrink-0 text-right text-[12px] text-foreground-subtle" suppressHydrationWarning>{timeAgo(handoff.updatedAt)}</span>
+                          <svg aria-hidden="true" className="size-4 shrink-0 text-foreground-subtle transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" /></svg>
+                        </Link>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" id={`group-items-${group.key}`}>
                   {group.items.map((handoff) => (
                     <li key={handoff.handoffId}>
                       <Link
                         className="viewer-tile group block overflow-hidden rounded-panel border border-border bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40"
-                        href={
-                          handoff.isNew && handoff.changesSinceSeen && handoff.seenVersionId && handoff.latestVersionId
-                            ? `/workspace/${handoff.workspaceId}/projects/${handoff.projectId}/handoffs/${handoff.handoffId}?compare=1&compareFrom=${handoff.seenVersionId}&compareTo=${handoff.latestVersionId}&versionId=${handoff.latestVersionId}`
-                            : `/workspace/${handoff.workspaceId}/projects/${handoff.projectId}/handoffs/${handoff.handoffId}${resume[handoff.handoffId] ?? ""}`
-                        }
+                        data-handoff-id={handoff.handoffId}
+                        data-home-item=""
+                        data-new={handoff.isNew ? "true" : "false"}
+                        href={hrefFor(handoff)}
                       >
                         <div className="viewer-tile-preview review-dot-grid relative aspect-[16/10] overflow-hidden">
                           {handoff.previewUrl ? (
@@ -382,10 +534,14 @@ export function ViewerHome({
                         <div className="flex items-center gap-2 border-t border-border px-3.5 py-3">
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13px] font-medium">{handoff.handoffName}</span>
-                            <span className="mt-0.5 block truncate text-[12px] text-foreground-subtle" suppressHydrationWarning>
-                              {showWorkspaceNames ? `${handoff.projectName} · ` : ""}
-                              {handoff.versionLabel ? `${/^\d/.test(handoff.versionLabel) ? "v" : ""}${handoff.versionLabel} · ` : ""}
-                              {timeAgo(handoff.updatedAt)}
+                            <span className="mt-1 flex min-w-0 items-center gap-1.5 text-[12px] text-foreground-subtle" suppressHydrationWarning>
+                              {handoff.publishedBy ? <Avatar image={handoff.publishedBy.image} name={handoff.publishedBy.name} /> : null}
+                              <span className="truncate">
+                                {showWorkspaceNames ? `${handoff.projectName} · ` : ""}
+                                {handoff.publishedBy ? `${handoff.publishedBy.name.split(" ")[0]} · ` : ""}
+                                {handoff.versionLabel ? `${versionText(handoff.versionLabel)} · ` : ""}
+                                {timeAgo(handoff.updatedAt)}
+                              </span>
                             </span>
                           </span>
                           <svg aria-hidden="true" className="size-4 shrink-0 text-foreground-subtle transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 16 16">
@@ -396,10 +552,17 @@ export function ViewerHome({
                     </li>
                   ))}
                 </ul>
+                )}
               </section>
             ))}
           </div>
         )}
+        {projects.length ? (
+          <p className="mt-14 hidden text-center text-[12px] text-foreground-subtle sm:block">
+            <kbd className="onboarding-kbd">/</kbd> search · <kbd className="onboarding-kbd">j</kbd> <kbd className="onboarding-kbd">k</kbd> move ·{" "}
+            <kbd className="onboarding-kbd">↵</kbd> open · <kbd className="onboarding-kbd">e</kbd> mark seen · <kbd className="onboarding-kbd">⌘K</kbd> jump to
+          </p>
+        ) : null}
         {devTools ? <div className="mt-16 max-w-xs">{devTools}</div> : null}
       </main>
     </div>

@@ -5,6 +5,7 @@ import { isDevelopmentAuthBypassActive, viewAsModeFor } from "@/src/server/auth-
 import { ViewAsSwitcher } from "./ViewAsSwitcher";
 import { InstallAppButton } from "./InstallAppButton";
 import { BrandMark } from "./BrandMark";
+import { NotificationSettingsButton } from "./NotificationSettingsButton";
 
 export type WorkspaceChoice = {
   id: string;
@@ -114,6 +115,7 @@ async function SidebarContents({ user, workspace, navSections }: Omit<WorkspaceS
             <span className="block truncate text-xs font-medium text-foreground">{user.name}</span>
             <span className="block truncate text-[10px] text-foreground-subtle">{user.email}</span>
           </span>
+          <NotificationSettingsButton />
           <SignOutButton devBypass={devBypass} />
         </div>
       </div>

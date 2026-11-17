@@ -27,7 +27,7 @@ compare versions, comment (with @mentions), and get notified of new versions.
 |---|---|
 | `apps/web` | Next.js 16.4.5 app (App Router, React 19.3, `cacheComponents` on) |
 | `apps/web/src/server` | Server code: `db.ts` (SQLite + migrations), `repositories/`, `services/`, `storage/`, `workspace-access.ts` (all access checks) |
-| `apps/web/src/server/migrations` | SQL migrations, run in filename order on server start (`0001`…`0020`) |
+| `apps/web/src/server/migrations` | SQL migrations, run in filename order on server start (`0001`…`0023`) |
 | `apps/web/src/components` | UI. `canvas/` (handoff canvas, compare, phone view), `shell/` (homes, tabs, quick open, update notice), `comments/` (threads, mentions) |
 | `packages/snapshot-contract` | Capture schema, validation, content fingerprint (`hashSnapshotPayload`), merge and screen removal |
 | `integrations/figma-plugin` | The Figma capture plugin (separate build) |
@@ -53,7 +53,7 @@ find apps -name "*.test.mjs" -path "*\[*" -not -path "*/node_modules/*" | while 
 cd apps/web && npx tsc --noEmit -p . && npx eslint .
 ```
 
-Baseline at handoff: **293 tests passing**, typecheck and lint clean. Keep it that way; never weaken a
+Baseline at handoff: **304 tests passing**, typecheck and lint clean. Keep it that way; never weaken a
 test to make a change pass.
 
 Local verification without real sign-in (development only):
@@ -102,7 +102,9 @@ Local verification without real sign-in (development only):
 - Device caching: immutable image headers with ETag/304, and a service worker that caches only
   images and per-screen details (`public/sw.js`). It must never intercept pages or sign-in: that
   once broke the Google sign-in return in the installed app.
-- "A new version is available" notice (`components/shell/UpdateNotice.tsx`, `/api/app-version`).
+- "Asbir Handoff 2026.11.17 is ready" card (`components/shell/UpdateNotice.tsx`, `/api/app-version`):
+  Update now / What's new / Later. The version label, change count and list come from `git log` at
+  build time (`next.config.ts`); a build without `.git` (the Docker image) shows the card without them.
 - Comparison view: searchable screens list with an All / Changed filter.
 - Compressed captures (database 480 MB → 7 MB), `/api/health`, Litestream backups, deploy kit.
 
@@ -119,6 +121,11 @@ Each item: why, where to start, and when it is done.
 - Capture memory roughly halved: stored captures are read without a second full validation pass.
 - Comparison results are saved (`comparison_cache`, keyed on the confirmed-match fingerprint):
   a repeat comparison takes milliseconds.
+- Reviewer home: tiles or a dense list (remembered), collapsible projects (remembered), the
+  publisher's avatar and name on each handoff, keyboard shortcuts (`/`, `j`/`k`, Enter, `e`), and an
+  app-icon badge in the installed app (new versions + open mentions, `/api/me/badge`).
+- Slack notification setting per person: All updates / Mentions only / Off
+  (`notification_preference`, `/api/me/notifications`; avatar menu for reviewers, bell in the sidebar for managers).
 - Screen change counts use a design fingerprint (layers without names, canvas position, export
   pointers or sub-pixel noise) instead of image bytes: Tripket's rename release went from 199 to 1.
 
@@ -142,8 +149,7 @@ Each item: why, where to start, and when it is done.
 
 ### P2: reviewer and designer experience
 
-10. **Slack**: per-person notification settings (all / mentions only / off) and a daily digest
-    option; verify against a real Slack workspace.
+10. **Slack**: a daily digest option; verify against a real Slack workspace.
 11. **In-app notifications** (bell) mirroring Slack, for people who don't use Slack.
 12. **Phone view**: show and add comments, and start in "Changed only" when opened from a change tile.
 13. **Mentions in public review links** (`/review/[shareId]`) for signed-in members.

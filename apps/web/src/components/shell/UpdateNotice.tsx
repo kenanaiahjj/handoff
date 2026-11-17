@@ -3,15 +3,39 @@
 import { useEffect, useState } from "react";
 
 const loadedBuildId = process.env.NEXT_PUBLIC_ASBIR_BUILD_ID ?? null;
+const loadedCommit = process.env.NEXT_PUBLIC_ASBIR_COMMIT || null;
 const checkEveryMs = 10 * 60 * 1000;
+const laterMs = 60 * 60 * 1000;
+const hiddenKey = "asbir-update-hidden";
+
+type Update = { buildId: string | null; version: string | null; changes: number | null; notes: string[] };
 
 /** A newer deployment is live when the server's build differs from the one this window loaded. */
-async function newBuildAvailable() {
-  if (!loadedBuildId) return false;
-  const response = await fetch("/api/app-version", { cache: "no-store" });
-  if (!response.ok) return false;
-  const { buildId } = (await response.json()) as { buildId: string | null };
-  return Boolean(buildId) && buildId !== loadedBuildId;
+async function newBuild(): Promise<Update | null> {
+  if (!loadedBuildId) return null;
+  const query = loadedCommit ? `?since=${encodeURIComponent(loadedCommit)}` : "";
+  const response = await fetch(`/api/app-version${query}`, { cache: "no-store" });
+  if (!response.ok) return null;
+  const update = (await response.json()) as Update;
+  return update.buildId && update.buildId !== loadedBuildId ? update : null;
+}
+
+/** "Later" hides the card for an hour; the close button hides it until an even newer build. */
+function isHidden(buildId: string | null) {
+  try {
+    const hidden = JSON.parse(sessionStorage.getItem(hiddenKey) ?? "null") as { buildId: string | null; until: number } | null;
+    return Boolean(hidden && hidden.buildId === buildId && hidden.until > Date.now());
+  } catch {
+    return false;
+  }
+}
+
+function hide(buildId: string | null, forMs: number) {
+  try {
+    sessionStorage.setItem(hiddenKey, JSON.stringify({ buildId, until: Date.now() + forMs }));
+  } catch {
+    // Storage blocked: the card is hidden until this window reloads.
+  }
 }
 
 /**
@@ -36,10 +60,11 @@ async function stylesOutOfDate() {
   return false;
 }
 
-/** Shows a small "update available" pill with Reload, for installed apps that have no reload shortcut. */
+/** A "new version is ready" card with what changed, for installed apps that have no reload shortcut. */
 export function UpdateNotice() {
-  const [available, setAvailable] = useState(false);
-  const [dismissed, setDismissed] = useState(false);
+  const [update, setUpdate] = useState<Update | null>(null);
+  const [hidden, setHidden] = useState(false);
+  const [showNotes, setShowNotes] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -48,10 +73,13 @@ export function UpdateNotice() {
       if (checking || document.visibilityState !== "visible") return;
       checking = true;
       try {
-        const outdated = (await newBuildAvailable()) || (process.env.NODE_ENV === "development" && (await stylesOutOfDate()));
-        if (outdated && !cancelled) {
-          setAvailable(true);
-          setDismissed(false);
+        let found = await newBuild();
+        if (!found && process.env.NODE_ENV === "development" && (await stylesOutOfDate())) {
+          found = { buildId: "styles", version: null, changes: null, notes: [] };
+        }
+        if (found && !cancelled) {
+          setUpdate(found);
+          setHidden(isHidden(found.buildId));
         }
       } catch {
         // Offline or mid-restart; try again on the next check.
@@ -74,31 +102,75 @@ export function UpdateNotice() {
     };
   }, []);
 
-  if (!available || dismissed) return null;
+  if (!update || hidden) return null;
+
+  const dismiss = (forMs: number) => {
+    hide(update.buildId, forMs);
+    setHidden(true);
+  };
+  const title = update.version ? `Asbir Handoff ${update.version} is ready` : "A new version of Asbir Handoff is ready";
+  const changes = update.changes ? `${update.changes} ${update.changes === 1 ? "change" : "changes"} since your version. ` : "";
 
   return (
-    <div aria-live="polite" className="update-notice pointer-events-none fixed inset-x-0 top-0 z-[60] flex justify-center px-4 pt-[max(12px,env(safe-area-inset-top))]">
-      <div className="dial-popover pointer-events-auto flex items-center gap-3 py-1.5 pl-3.5 pr-1.5" role="status">
-        <span aria-hidden="true" className="viewer-dot" />
-        <span className="text-[13px] text-foreground">A new version is available</span>
+    <div aria-live="polite" className="update-notice pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-center px-4 pb-[max(16px,env(safe-area-inset-bottom))] sm:justify-end sm:px-6 sm:pb-6">
+      <section aria-labelledby="update-notice-title" className="update-card pointer-events-auto relative w-full max-w-[420px] rounded-[16px] border border-white/[0.09] bg-[#121212] p-5 shadow-[0_24px_64px_-12px_rgb(0_0_0/0.85)]" role="status">
         <button
-          className="h-8 rounded-[8px] bg-[#f4f4f4] px-3 text-[12px] font-medium text-[#161616] transition-colors hover:bg-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
-          onClick={() => window.location.reload()}
+          aria-label="Close"
+          className="absolute right-3 top-3 grid size-8 place-items-center rounded-[8px] text-foreground-subtle transition-colors hover:bg-white/[0.06] hover:text-foreground"
+          onClick={() => dismiss(30 * 24 * laterMs)}
           type="button"
         >
-          Reload
-        </button>
-        <button
-          aria-label="Dismiss"
-          className="grid size-8 place-items-center rounded-[8px] text-foreground-subtle transition-colors hover:bg-surface-inset hover:text-foreground"
-          onClick={() => setDismissed(true)}
-          type="button"
-        >
-          <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16">
+          <svg aria-hidden="true" className="size-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16">
             <path d="m4 4 8 8M12 4l-8 8" />
           </svg>
         </button>
-      </div>
+        <h2 className="pr-8 text-[15px] font-semibold tracking-[-0.01em] text-foreground" id="update-notice-title">{title}</h2>
+        <p className="mt-1.5 text-pretty text-[13px] leading-5 text-foreground-muted">
+          {changes}Reloading takes a moment, and anything you&apos;ve posted is already saved.
+        </p>
+        {showNotes && update.notes.length ? (
+          <ul className="update-notes mt-3 max-h-48 space-y-1.5 overflow-y-auto border-t border-white/[0.07] pt-3 text-[12px] leading-[18px] text-foreground-muted">
+            {update.notes.map((note, index) => (
+              <li className="flex gap-2" key={index}>
+                <span aria-hidden="true" className="mt-[7px] size-1 shrink-0 rounded-full bg-foreground-subtle" />
+                <span>{note}</span>
+              </li>
+            ))}
+            {update.changes && update.changes > update.notes.length ? (
+              <li className="pl-3 text-foreground-subtle">and {update.changes - update.notes.length} more</li>
+            ) : null}
+          </ul>
+        ) : null}
+        <div className="mt-4 flex flex-wrap items-center gap-2">
+          <button
+            className="h-9 rounded-[10px] bg-[#ececec] px-4 text-[13px] font-semibold text-[#141414] transition-[background-color,transform] hover:bg-white active:scale-[0.97] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/60"
+            onClick={() => window.location.reload()}
+            type="button"
+          >
+            Update now
+          </button>
+          {update.notes.length ? (
+            <button
+              aria-expanded={showNotes}
+              className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-white/[0.07] px-3.5 text-[13px] font-medium text-foreground transition-[background-color,transform] hover:bg-white/[0.11] active:scale-[0.97]"
+              onClick={() => setShowNotes((value) => !value)}
+              type="button"
+            >
+              What&apos;s new
+              <svg aria-hidden="true" className={"size-3.5 text-foreground-subtle transition-transform " + (showNotes ? "rotate-90" : "")} fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 16 16">
+                <path d="m6 3.5 4.5 4.5L6 12.5" />
+              </svg>
+            </button>
+          ) : null}
+          <button
+            className="h-9 rounded-[10px] px-3 text-[13px] font-medium text-foreground-muted transition-colors hover:text-foreground"
+            onClick={() => dismiss(laterMs)}
+            type="button"
+          >
+            Later
+          </button>
+        </div>
+      </section>
     </div>
   );
 }
