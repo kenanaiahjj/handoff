@@ -245,7 +245,7 @@ test("resumes an interrupted TUS upload from its saved URL without requesting a 
     PATCH: () => ({ error: true }),
   });
 
-  await assert.rejects(() => uploadCaptureAssets({ intent, snapshotAsset, assets, expectedStorageOrigin: storageUrl, session, xhrFactory: interrupted.xhrFactory }));
+  await assert.rejects(() => uploadCaptureAssets({ intent, snapshotAsset, assets, expectedStorageOrigin: storageUrl, session, xhrFactory: interrupted.xhrFactory, retryDelaysMs: [] }));
   assert.equal(session.resumableUrls.get("large"), `${storageUrl}/storage/v1/upload/resumable/session-2`);
 
   const resumed = FakeXHRFactory({
@@ -322,4 +322,47 @@ test("builds the finalize request from staged object paths only", () => {
     frameMatches: [{ beforeFrameId: "old-frame", afterFrameId: "new-frame" }],
   });
   assert.equal("snapshot" in manifest, false);
+});
+
+test("retries a file after a dropped connection or Storage overload, then finishes the capture", async () => {
+  const intent = {
+    storageUrl,
+    bucket,
+    snapshot: { path: snapshotPath, token: "snapshot-signature" },
+    uploads: [{ assetKey: "render", path: renderPath, token: "render-signature" }],
+  };
+  const snapshotAsset = { fileName: "snapshot.json", contentType: "application/json", sizeBytes: 1, sha256: "1".repeat(64), bytes: new Uint8Array([1]) };
+  const assets = [{ assetKey: "render", fileName: "render.png", contentType: "image/png", sizeBytes: 2, sha256: "2".repeat(64), bytes: new Uint8Array([1, 2]) }];
+  let renderAttempts = 0;
+  const flaky = FakeXHRFactory({
+    PUT: (xhr) => {
+      if (!xhr.url.includes(renderPath)) return { status: 200 };
+      renderAttempts += 1;
+      return renderAttempts === 1 ? { error: true } : renderAttempts === 2 ? { status: 503, responseText: "Service Unavailable" } : { status: 200 };
+    },
+  });
+  const session = createUploadSessionState();
+  const result = await uploadCaptureAssets({ intent, snapshotAsset, assets, expectedStorageOrigin: storageUrl, session, xhrFactory: flaky.xhrFactory, retryDelaysMs: [0, 0, 0] });
+  assert.equal(renderAttempts, 3);
+  assert.equal(result.assets.render, renderPath);
+  assert.ok(session.completedAssetKeys.has("render"));
+});
+
+test("does not retry a rejected upload, and stops retrying after the last attempt", async () => {
+  const intent = {
+    storageUrl,
+    bucket,
+    snapshot: { path: snapshotPath, token: "snapshot-signature" },
+    uploads: [],
+  };
+  const snapshotAsset = { fileName: "snapshot.json", contentType: "application/json", sizeBytes: 1, sha256: "1".repeat(64), bytes: new Uint8Array([1]) };
+  let rejected = 0;
+  const forbidden = FakeXHRFactory({ PUT: () => { rejected += 1; return { status: 403, responseText: "invalid signature" }; } });
+  await assert.rejects(() => uploadCaptureAssets({ intent, snapshotAsset, assets: [], expectedStorageOrigin: storageUrl, session: createUploadSessionState(), xhrFactory: forbidden.xhrFactory, retryDelaysMs: [0, 0, 0] }), /invalid signature/);
+  assert.equal(rejected, 1);
+
+  let dropped = 0;
+  const offline = FakeXHRFactory({ PUT: () => { dropped += 1; return { error: true }; } });
+  await assert.rejects(() => uploadCaptureAssets({ intent, snapshotAsset, assets: [], expectedStorageOrigin: storageUrl, session: createUploadSessionState(), xhrFactory: offline.xhrFactory, retryDelaysMs: [0, 0] }), /network connection was interrupted/);
+  assert.equal(dropped, 3);
 });

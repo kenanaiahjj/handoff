@@ -1,6 +1,7 @@
 "use client";
 
 import Image from "next/image";
+import { RetryingCanvasImage } from "./RetryingImage";
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import type { CanvasFrameChangeStatus, CanvasFrameOption } from "./FrameNavigator";
 import { useCanvasViewport } from "./useCanvasViewport";
@@ -472,7 +473,7 @@ export function CanvasViewport({
           }}
         >
           {imageRenderPlan.showBaseImage ? (
-            <Image
+            <RetryingCanvasImage
               alt={(frame.fileName.toLowerCase().endsWith(".svg") ? "Figma vector render: " : "Frozen design render: ") + frame.name}
               className="pointer-events-none select-none object-fill"
               draggable={false}
@@ -486,7 +487,7 @@ export function CanvasViewport({
           ) : null}
 
           {imageRenderPlan.showFrameImages ? screens.map((screen) => (
-            <Image
+            <RetryingCanvasImage
               alt={(screen.fileName.toLowerCase().endsWith(".svg") ? "Figma vector render: " : "Frozen design render: ") + screen.name}
               className="pointer-events-none absolute select-none object-fill"
               draggable={false}

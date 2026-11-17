@@ -1,5 +1,6 @@
 "use client";
 
+import { RetryingImg } from "./RetryingImage";
 import Link from "next/link";
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -104,8 +105,7 @@ export function MobileReview({
             className="mobile-review-slide h-full w-full shrink-0 overflow-y-auto overscroll-contain px-4 pb-6 pt-3"
             key={screen.id}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element -- served by our cached asset route. */}
-            <img
+            <RetryingImg
               alt={screen.name}
               className="mx-auto block h-auto w-full max-w-[480px] rounded-[10px] shadow-[0_12px_32px_-12px_rgb(0_0_0/0.8)] ring-1 ring-white/10"
               decoding="async"

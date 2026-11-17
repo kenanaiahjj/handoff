@@ -17,8 +17,11 @@ export {
   getFigmaCaptureOverviewClearRects,
   mergeFigmaCaptureSnapshots,
   normalizeFigmaCaptureScope,
+  pageCaptureChoice,
   removedFrameRecords,
   removeFramesFromSnapshot,
+  type PageCaptureChoice,
+  type PageCaptureMode,
   type RemovedFrameRecord,
 } from "./capture-merge";
 export { formatFigmaCaptureScope } from "./figma-capture-scope";

@@ -41,6 +41,7 @@ export type FinalizeManifest = {
   assets: Record<string, string>;
   baselineVersionId: string | null;
   frameMatches: Array<{ beforeFrameId: string; afterFrameId: string }>;
+  pageMode?: "add" | "replace";
 };
 
 type XhrFactory = () => XMLHttpRequest;
@@ -197,6 +198,7 @@ export function buildFinalizeManifest(input: FinalizeManifest): FinalizeManifest
     })),
     baselineVersionId: input.baselineVersionId,
     frameMatches: input.frameMatches,
+    ...(input.pageMode ? { pageMode: input.pageMode } : {}),
   };
 }
 
@@ -388,6 +390,49 @@ async function uploadTusAsset(input: {
   }
 }
 
+/** Waits before retrying a file whose upload hit a passing network or Storage problem. */
+const DEFAULT_RETRY_DELAYS_MS = [1_000, 3_000, 8_000];
+const TRANSIENT_STATUSES = new Set([408, 425, 429, 500, 502, 503, 504]);
+
+function isTransientUploadError(error: unknown, signal?: AbortSignal) {
+  if (signal?.aborted) return false;
+  const candidate = error as { status?: number; message?: string };
+  if (/canceled/i.test(candidate?.message ?? "")) return false;
+  // A dropped connection has no status; Storage overload and gateway errors are worth another try.
+  return candidate?.status === undefined ? /network connection was interrupted/i.test(candidate?.message ?? "") : TRANSIENT_STATUSES.has(candidate.status);
+}
+
+function waitBeforeRetry(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(new Error("Upload canceled."));
+    const timer = setTimeout(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    }, ms);
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(new Error("Upload canceled."));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/**
+ * One capture uploads hundreds of files, so a single dropped request should not fail it. Each file is
+ * retried on transient errors; resumable uploads continue from Storage's offset, and a small upload that
+ * actually landed is accepted as "already exists".
+ */
+async function withUploadRetries<T>(upload: () => Promise<T>, delays: readonly number[], signal?: AbortSignal): Promise<T> {
+  for (let attempt = 0; ; attempt += 1) {
+    try {
+      return await upload();
+    } catch (error) {
+      if (attempt >= delays.length || !isTransientUploadError(error, signal)) throw error;
+      await waitBeforeRetry(delays[attempt], signal);
+    }
+  }
+}
+
 export async function uploadCaptureAssets(input: {
   intent: CaptureUploadIntent;
   snapshotAsset: SnapshotUploadAsset;
@@ -397,6 +442,8 @@ export async function uploadCaptureAssets(input: {
   signal?: AbortSignal;
   xhrFactory?: XhrFactory;
   onProgress?: (uploadedBytes: number, totalBytes: number) => void;
+  /** Delays between retries of one file; tests pass zeros. */
+  retryDelaysMs?: readonly number[];
 }): Promise<{ snapshotPath: string; assets: Record<string, string> }> {
   const intent = validateIntent(input.intent, input.expectedStorageOrigin, input.assets);
   assertSnapshotDescriptor(input.snapshotAsset);
@@ -427,8 +474,9 @@ export async function uploadCaptureAssets(input: {
       continue;
     }
     const progress = (loaded: number) => reportProgress(row.key, loaded);
+    const retryDelays = input.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
     if (intent.uploadProtocol !== "direct" && row.asset.sizeBytes > TUS_THRESHOLD_BYTES) {
-      await uploadTusAsset({
+      await withUploadRetries(() => uploadTusAsset({
         intent,
         path: row.path,
         token: row.token,
@@ -439,9 +487,9 @@ export async function uploadCaptureAssets(input: {
         signal: input.signal,
         xhrFactory,
         onProgress: progress,
-      });
+      }), retryDelays, input.signal);
     } else {
-      await uploadSmallAsset({
+      await withUploadRetries(() => uploadSmallAsset({
         intent,
         path: row.path,
         token: row.token,
@@ -449,7 +497,7 @@ export async function uploadCaptureAssets(input: {
         signal: input.signal,
         xhrFactory,
         onProgress: progress,
-      });
+      }), retryDelays, input.signal);
     }
     reportProgress(row.key, row.asset.sizeBytes);
     if (row.key === snapshotKey) input.session.snapshotComplete = true;

@@ -81,7 +81,13 @@
       #capture-identifiers dt { color: var(--foreground-subtle); font-size: 12px; }
       #capture-identifiers dd { margin: 0; overflow-wrap: anywhere; color: var(--foreground-muted); font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
       .note { padding: 10px 11px; border-radius: 6px; background: var(--surface); color: var(--foreground-muted); font-size: 12px; }
-      #replacement-review { padding-bottom: 10px; }
+      #replacement-review, #page-choice { padding-bottom: 10px; }
+      #page-choice-intro, #page-choice-validation { margin: 0; padding: 0 11px 10px; color: var(--foreground-muted); font-size: 12px; line-height: 1.5; }
+      .page-choice-options { border: 0; margin: 0; padding: 0 11px; display: grid; gap: 8px; font-size: 12px; }
+      .page-choice-option { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; }
+      .page-choice-option span { display: grid; gap: 2px; }
+      .page-choice-option small { opacity: 0.75; }
+      .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
       #replacement-intro { margin: 0; padding: 0 11px 10px; color: var(--foreground-muted); font-size: 12px; line-height: 1.5; }
       #replacement-list { display: grid; gap: 8px; padding: 0 11px; }
       .replacement-row { display: grid; gap: 6px; padding: 10px; border-radius: 6px; background: var(--surface-raised); }
@@ -169,6 +175,19 @@
         <div class="replacement-actions">
           <button id="confirm-replacements-button" class="primary" type="button" disabled>Confirm matches and upload</button>
           <button id="skip-replacements-button" class="secondary" type="button">Upload without matches</button>
+        </div>
+      </section>
+      <section id="page-choice" class="panel" aria-labelledby="page-choice-title" hidden>
+        <div class="panel-head"><span id="page-choice-title">This page is new to the handoff</span></div>
+        <p id="page-choice-intro"></p>
+        <fieldset class="page-choice-options">
+          <legend class="sr-only">How to save this page</legend>
+          <label class="page-choice-option"><input type="radio" name="page-mode" value="replace" /> <span><strong>Make it the new version</strong><small id="page-choice-replace-detail"></small></span></label>
+          <label class="page-choice-option"><input type="radio" name="page-mode" value="add" /> <span><strong>Add it beside the existing screens</strong><small id="page-choice-add-detail"></small></span></label>
+        </fieldset>
+        <p id="page-choice-validation" role="status" aria-live="polite"></p>
+        <div class="replacement-actions">
+          <button id="confirm-page-choice-button" class="primary" type="button">Continue and upload</button>
         </div>
       </section>
       <div class="note">Figma does not store CSS margins. Handoff records source padding and spacing as exact values, and labels geometric gaps as measured margins.</div>

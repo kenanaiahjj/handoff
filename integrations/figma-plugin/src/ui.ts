@@ -8,7 +8,11 @@ import {
   type SnapshotPayload,
   createFigmaCaptureMergePlan,
   getFigmaCaptureOverviewClearRects,
+  MAX_SNAPSHOT_JSON_BYTES,
+  type PageCaptureChoice,
+  type PageCaptureMode,
 } from "@asbir/snapshot-contract";
+import { jsonByteLength } from "./json-byte-length.ts";
 import { encodeUtf8 } from "../../../packages/snapshot-contract/src/utf8";
 import type {
   CaptureAssetBytes,
@@ -75,6 +79,12 @@ const replacementList = document.querySelector<HTMLElement>("#replacement-list")
 const replacementValidation = document.querySelector<HTMLElement>("#replacement-validation")!;
 const confirmReplacementsButton = document.querySelector<HTMLButtonElement>("#confirm-replacements-button")!;
 const skipReplacementsButton = document.querySelector<HTMLButtonElement>("#skip-replacements-button")!;
+const pageChoicePanel = document.querySelector<HTMLElement>("#page-choice")!;
+const pageChoiceIntro = document.querySelector<HTMLElement>("#page-choice-intro")!;
+const pageChoiceReplaceDetail = document.querySelector<HTMLElement>("#page-choice-replace-detail")!;
+const pageChoiceAddDetail = document.querySelector<HTMLElement>("#page-choice-add-detail")!;
+const pageChoiceValidation = document.querySelector<HTMLElement>("#page-choice-validation")!;
+const confirmPageChoiceButton = document.querySelector<HTMLButtonElement>("#confirm-page-choice-button")!;
 appUrlInput.value = __ASBIR_HANDOFF_ORIGIN__;
 appUrlInput.readOnly = true;
 
@@ -119,6 +129,11 @@ type PendingUpload = {
   renders: CaptureAssetBytes[];
   baselineVersionId: string | null;
   mergeContext?: CaptureMergeContext;
+  /** For a page capture of a page the latest version doesn't have: replace the version, or add beside it. */
+  pageMode?: PageCaptureMode;
+  candidates: FrameReplacementCandidate[];
+  incomingBytes: number;
+  retainedBaselineBytesEstimate: number;
   token: string;
   origin: string;
   uploadSessions: Map<string, { intent: CaptureUploadIntent; state: UploadSessionState; renew: boolean }>;
@@ -803,7 +818,11 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
   cancelUploadButton.disabled = false;
   setBusy(true);
   result.hidden = true;
-  setStatus(pending.mergeContext ? "Merging this capture with the previous version…" : "Preparing the captured snapshot for direct upload…");
+  setStatus(pending.mergeContext
+    ? "Merging this capture with the previous version…"
+    : pending.pageMode === "replace"
+      ? "Saving this page as the new version…"
+      : "Preparing the captured snapshot for direct upload…");
 
   try {
     const endpoint = new URL("/api/capture-sessions/snapshot", pending.origin);
@@ -893,6 +912,7 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
           assets: staged.assets,
           baselineVersionId: pending.baselineVersionId,
           frameMatches,
+          ...(pending.pageMode ? { pageMode: pending.pageMode } : {}),
         })),
         mode: "cors",
         credentials: "omit",
@@ -977,6 +997,7 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
     layerAssetReportPanel.hidden = true;
     layerAssetExportList.replaceChildren();
     replacementReview.hidden = true;
+    pageChoicePanel.hidden = true;
     uploadButton.hidden = false;
     setBusy(false);
   } catch (error) {
@@ -990,6 +1011,68 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
     cancelUploadButton.disabled = true;
     if (activeUploadController === controller) activeUploadController = null;
   }
+}
+
+function megabytes(bytes: number) {
+  return `${Math.max(1, Math.round(bytes / (1024 * 1024)))} MB`;
+}
+
+function showPageChoice(choice: PageCaptureChoice & { baselinePageNames?: string[] }) {
+  const pending = pendingUpload;
+  if (!pending) return;
+  const capturedPage = typeof pending.snapshot.sourceMetadata.sourcePageName === "string"
+    ? `“${pending.snapshot.sourceMetadata.sourcePageName}”`
+    : "This page";
+  const previousPages = choice.baselinePageNames?.length ? choice.baselinePageNames.map((name) => `“${name}”`).join(", ") : "other pages";
+  const screens = (count: number) => `${count} ${count === 1 ? "screen" : "screens"}`;
+  pageChoiceIntro.textContent = `${capturedPage} isn’t in the latest version, which has ${screens(choice.retainedFrameCount)} from ${previousPages}.`;
+  pageChoiceReplaceDetail.textContent = `The new version shows only ${capturedPage} (${screens(pending.snapshot.frames.length)}). Earlier versions stay, so you can compare them. Best for a design revision on a new page.`;
+  pageChoiceAddDetail.textContent = `The new version keeps the ${screens(choice.retainedFrameCount)} from ${previousPages} and adds ${capturedPage}.`;
+  for (const input of Array.from(pageChoicePanel.querySelectorAll<HTMLInputElement>("input[name=page-mode]"))) {
+    input.checked = input.value === choice.suggested;
+  }
+  pageChoiceValidation.textContent = "";
+  pageChoicePanel.hidden = false;
+  uploadButton.hidden = true;
+  confirmPageChoiceButton.disabled = false;
+  setStatus("Choose how to save this page, then continue.");
+}
+
+function selectedPageMode(): PageCaptureMode | null {
+  const checked = pageChoicePanel.querySelector<HTMLInputElement>("input[name=page-mode]:checked");
+  return checked?.value === "replace" || checked?.value === "add" ? checked.value : null;
+}
+
+/** Merged captures keep earlier screens; stop before uploading if the result can't fit the snapshot limit. */
+function mergedSizeError(pending: PendingUpload) {
+  if (!pending.mergeContext) return null;
+  const estimate = pending.incomingBytes + pending.retainedBaselineBytesEstimate;
+  if (estimate <= MAX_SNAPSHOT_JSON_BYTES) return null;
+  return `Keeping the earlier screens would make this version about ${megabytes(estimate)}, over Handoff’s ${megabytes(MAX_SNAPSHOT_JSON_BYTES)} limit. ` +
+    (pending.pageMode === "add" ? "Choose “Make it the new version”, or capture fewer frames." : "Capture fewer frames in each update.");
+}
+
+async function continueAfterPreview() {
+  const pending = pendingUpload;
+  if (!pending) return;
+  if (pending.pageMode === "replace") pending.mergeContext = undefined;
+  const sizeError = mergedSizeError(pending);
+  if (sizeError) {
+    if (!pageChoicePanel.hidden) pageChoiceValidation.textContent = sizeError;
+    setStatus(sizeError, "error");
+    setBusy(false);
+    return;
+  }
+  pageChoicePanel.hidden = true;
+  if (pending.candidates.length) {
+    showReplacementReview(pending.candidates);
+    setStatus(pending.mergeContext
+      ? "Review the suggested replacements. This capture will merge into the latest version and keep untouched frames."
+      : "Review the suggested frame replacements before uploading.");
+    setBusy(false);
+    return;
+  }
+  await finishUpload([]);
 }
 
 async function uploadCapture() {
@@ -1019,6 +1102,7 @@ async function uploadCapture() {
   setBusy(true);
   result.hidden = true;
   replacementReview.hidden = true;
+  pageChoicePanel.hidden = true;
   uploadButton.hidden = false;
   pendingUpload = null;
   setStatus("Preparing the captured version…");
@@ -1071,6 +1155,8 @@ async function uploadCapture() {
       baselineVersionId?: string | null;
       candidates?: FrameReplacementCandidate[];
       mergeContext?: CaptureMergeContext;
+      pageChoice?: PageCaptureChoice & { baselinePageNames?: string[] };
+      retainedBaselineBytesEstimate?: number;
     };
     if (!previewResponse.ok || !previewBody.candidates) throw new Error(previewBody.error || `The replacement check failed with status ${previewResponse.status}.`);
     if (previewBody.mergeContext && previewBody.mergeContext.versionId !== previewBody.baselineVersionId) {
@@ -1081,19 +1167,19 @@ async function uploadCapture() {
       renders: frameRenders,
       baselineVersionId: previewBody.baselineVersionId ?? null,
       mergeContext: previewBody.mergeContext,
+      candidates: previewBody.candidates,
+      incomingBytes: jsonByteLength(parsed.data),
+      retainedBaselineBytesEstimate: Number(previewBody.retainedBaselineBytesEstimate) || 0,
       token,
       origin: appUrl.origin,
       uploadSessions: new Map(),
     };
-    if (previewBody.candidates.length) {
-      showReplacementReview(previewBody.candidates);
-      setStatus(previewBody.mergeContext
-        ? "Review the suggested replacements. This capture will merge into the latest version and keep untouched frames."
-        : "Review the suggested frame replacements before uploading.");
+    if (previewBody.pageChoice && previewBody.mergeContext) {
+      showPageChoice(previewBody.pageChoice);
       setBusy(false);
       return;
     }
-    await finishUpload([]);
+    await continueAfterPreview();
   } catch (error) {
     setStatus(error instanceof Error ? error.message : "The snapshot could not be uploaded.", "error");
     setBusy(false);
@@ -1113,6 +1199,7 @@ captureButton.addEventListener("click", () => {
   layerAssetReportPanel.hidden = true;
   layerAssetExportList.replaceChildren();
   replacementReview.hidden = true;
+  pageChoicePanel.hidden = true;
   replacementList.replaceChildren();
   uploadButton.hidden = false;
   uploadButton.disabled = true;
@@ -1147,6 +1234,21 @@ uploadButton.addEventListener("click", () => { void (pendingUpload ? finishUploa
 cancelUploadButton.addEventListener("click", () => activeUploadController?.abort());
 confirmReplacementsButton.addEventListener("click", () => { void finishUpload(selectedFrameMatches()); });
 skipReplacementsButton.addEventListener("click", () => { void finishUpload([]); });
+confirmPageChoiceButton.addEventListener("click", () => {
+  if (!pendingUpload || busy) return;
+  const mode = selectedPageMode();
+  if (!mode) {
+    pageChoiceValidation.textContent = "Choose how to save this page.";
+    return;
+  }
+  pendingUpload.pageMode = mode;
+  confirmPageChoiceButton.disabled = true;
+  void continueAfterPreview().catch((error: unknown) => {
+    setStatus(error instanceof Error ? error.message : "The snapshot could not be uploaded.", "error");
+    confirmPageChoiceButton.disabled = false;
+    setBusy(false);
+  });
+});
 
 window.onmessage = (event: MessageEvent) => {
   const message = (event.data as { pluginMessage?: unknown } | undefined)?.pluginMessage;

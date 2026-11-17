@@ -28,6 +28,8 @@ const finalizeSchema = z.object({
   assets: z.record(z.string().trim().min(1).max(200), objectKeySchema).refine((value) => Object.keys(value).length <= 20_000),
   baselineVersionId: z.string().uuid().nullable().optional(),
   frameMatches: frameMatchesSchema.optional(),
+  /** For a page capture: "replace" makes the captured page the whole new version instead of merging it. */
+  pageMode: z.enum(["add", "replace"]).optional(),
 }).strict();
 
 const corsHeaders = {
@@ -187,7 +189,8 @@ export async function POST(request: Request) {
 
   const baselineVersionId = manifest.baselineVersionId ?? null;
   const captureScope = normalizeFigmaCaptureScope(snapshot.sourceMetadata.captureScope);
-  const isPartialCapture = captureScope === "selected" || captureScope === "page";
+  const replacesWithPage = captureScope === "page" && manifest.pageMode === "replace";
+  const isPartialCapture = captureScope === "selected" || (captureScope === "page" && !replacesWithPage);
   const latest = session.handoffId
     ? (await database
         .prepare(
@@ -199,6 +202,9 @@ export async function POST(request: Request) {
     : undefined;
   if (baselineVersionId && (!session.handoffId || latest?.id !== baselineVersionId)) {
     return jsonResponse({ error: "The handoff changed while you reviewed this capture. Capture again to compare with the latest version." }, { status: 409 });
+  }
+  if (replacesWithPage && latest && !baselineVersionId) {
+    return jsonResponse({ error: "The latest handoff version is required to replace it with this page. Preview the capture again." }, { status: 409 });
   }
   if (isPartialCapture && latest && !baselineVersionId) {
     return jsonResponse({ error: "The latest handoff version is required to merge a selected-frame capture. Preview the capture again." }, { status: 409 });

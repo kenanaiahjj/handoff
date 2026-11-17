@@ -465,3 +465,41 @@ export function removeFramesFromSnapshot(baseline: SnapshotEnvelope, frameIds: r
     removed,
   };
 }
+
+export type PageCaptureMode = "add" | "replace";
+
+export type PageCaptureChoice = {
+  /** Pages in this capture, none of which are in the latest version. */
+  capturedPageIds: string[];
+  /** Pages the latest version's screens come from. */
+  baselinePageIds: string[];
+  /** Screens the latest version would keep if this page is added. */
+  retainedFrameCount: number;
+  /** Replace when the latest version is one other page (a design revision duplicated onto a new page). */
+  suggested: PageCaptureMode;
+};
+
+/**
+ * A page capture normally replaces that page's screens and keeps every other page. When the captured
+ * page isn't in the latest version at all, that would keep the whole previous design beside the new
+ * one: usually a revision duplicated onto a new Figma page (for example "App 2.0.4" → "App 2.0.5"),
+ * where the person wants the new page to become the version. Returns the choice to offer, or null when
+ * there is nothing to decide.
+ */
+export function pageCaptureChoice(input: {
+  scope: FigmaCaptureScope | null;
+  baselineFrames: ReadonlyArray<{ sourcePageId?: string | null }>;
+  incomingFrames: ReadonlyArray<{ sourcePageId?: string | null }>;
+}): PageCaptureChoice | null {
+  if (input.scope !== "page" || !input.baselineFrames.length) return null;
+  const capturedPageIds = [...new Set(input.incomingFrames.flatMap((frame) => frame.sourcePageId ? [frame.sourcePageId] : []))];
+  if (!capturedPageIds.length) return null;
+  const baselinePageIds = [...new Set(input.baselineFrames.flatMap((frame) => frame.sourcePageId ? [frame.sourcePageId] : []))];
+  if (baselinePageIds.some((pageId) => capturedPageIds.includes(pageId))) return null;
+  return {
+    capturedPageIds,
+    baselinePageIds,
+    retainedFrameCount: input.baselineFrames.length,
+    suggested: baselinePageIds.length <= 1 ? "replace" : "add",
+  };
+}

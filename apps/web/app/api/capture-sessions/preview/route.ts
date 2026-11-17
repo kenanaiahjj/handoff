@@ -1,9 +1,21 @@
-import { normalizeFigmaCaptureScope, type SnapshotEnvelope } from "@asbir/snapshot-contract";
+import { normalizeFigmaCaptureScope, pageCaptureChoice, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { getCaptureSession } from "@/src/server/repositories/capture-sessions";
-import { getVersion } from "@/src/server/repositories/versions";
+import { getVersion, getVersionSnapshotSize } from "@/src/server/repositories/versions";
 import { getDatabase } from "@/src/server/db";
 import { unmatchedFrameCandidatesBetween } from "@/src/server/services/diff";
 import { z } from "zod";
+
+/** Names of the Figma pages a version was captured from, for the plugin's choice prompt. */
+function baselinePageNames(sourceMetadata: Record<string, unknown>) {
+  const layout = Array.isArray(sourceMetadata.pageLayout) ? sourceMetadata.pageLayout : [];
+  const names = layout.flatMap((page) =>
+    page && typeof page === "object" && typeof (page as { sourcePageName?: unknown }).sourcePageName === "string"
+      ? [(page as { sourcePageName: string }).sourcePageName]
+      : [],
+  );
+  if (names.length) return [...new Set(names)];
+  return typeof sourceMetadata.sourcePageName === "string" ? [sourceMetadata.sourcePageName] : [];
+}
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -122,9 +134,33 @@ export async function POST(request: Request) {
       })
     : candidates;
 
+  const pageChoice = baseline.snapshot.source === "figma"
+    ? pageCaptureChoice({ scope, baselineFrames: baseline.snapshot.frames, incomingFrames: snapshot.frames })
+    : null;
+  // Lets the plugin stop an add or update that would exceed the snapshot limit before uploading anything.
+  const retainedFrameIds = new Set(
+    baseline.snapshot.source === "figma" && (scope === "selected" || scope === "page")
+      ? baseline.snapshot.frames
+        .filter((frame) => !(scope === "page" && frame.sourcePageId && capturedPageIds.has(frame.sourcePageId)))
+        .filter((frame) => !snapshot.frames.some((incoming) => incoming.sourceFrameId === frame.sourceFrameId))
+        .map((frame) => frame.sourceFrameId)
+      : [],
+  );
+  const baselineFrameCount = baseline.snapshot.frames.length || 1;
+  const retainedBaselineBytesEstimate = retainedFrameIds.size
+    ? Math.ceil((await getVersionSnapshotSize({ workspaceId: session.workspaceId, versionId: baseline.id })) * retainedFrameIds.size / baselineFrameCount)
+    : 0;
+
   return jsonResponse({
     baselineVersionId: baseline.id,
     candidates: replacementCandidates,
     ...(mergeContext ? { mergeContext } : {}),
+    ...(pageChoice ? {
+      pageChoice: {
+        ...pageChoice,
+        baselinePageNames: baselinePageNames(baseline.snapshot.sourceMetadata),
+      },
+    } : {}),
+    retainedBaselineBytesEstimate,
   });
 }
