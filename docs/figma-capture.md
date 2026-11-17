@@ -64,7 +64,7 @@ The web app also accepts a source-agnostic structured ZIP package described in [
 
 - There is no fixed artboard count limit. A capture can contain up to 50,000 layers.
 - Render assets are limited to 256 MiB total. The plugin reserves part of this budget for the overview.
-- Structured snapshot JSON is limited to 128 MiB and uploads directly to Storage, so it does not pass through a Vercel Function request body.
+- Structured snapshot JSON is limited to 256 MiB (the Storage bucket's per-file limit) and uploads directly to Storage, so it does not pass through a Vercel Function request body.
 - Individual layer exports are optional and capped at 256 files, 20 MiB total, and 5 MiB per asset. If Figma cannot export a vector layer as SVG, the plugin retries it as PNG. These limits do not remove layer properties or prevent the frame from being captured.
 - A full-page capture includes top-level frames and components found under sections and groups. Loose page-level text, shapes, and notes outside those artboards are not included.
 - Review the capture preview before uploading. If a full-file capture exceeds the layer or byte limits, reduce the content in the Figma file or capture selected frames.

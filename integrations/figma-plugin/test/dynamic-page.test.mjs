@@ -1031,7 +1031,7 @@ test("rejects an oversized layer payload before exporting frame images", async (
     type: "TEXT",
     name: "Large text layer",
     visible: true,
-    characters: "x".repeat(129 * 1024 * 1024),
+    characters: "x".repeat(257 * 1024 * 1024),
     getStyledTextSegments() { return []; },
     parent: fixture.frame,
   }];
@@ -1039,7 +1039,7 @@ test("rejects an oversized layer payload before exporting frame images", async (
   try {
     await assert.rejects(
       captureFigmaCanvas("selected", () => {}),
-      /structured layer data is .* above Handoff’s 128 MiB limit/,
+      /structured layer data is .* above Handoff’s 256 MiB limit/,
     );
   } finally {
     globalThis.encodeURIComponent = originalEncodeURIComponent;

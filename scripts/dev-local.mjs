@@ -52,6 +52,10 @@ process.env.ASBIR_LOCAL_DEV_MODE = "1";
 process.env.ASBIR_DATA_DIR = dataDirectory;
 process.env.ASBIR_LOCAL_STORAGE_SECRET = secret;
 process.env.DATABASE_URL = `postgresql://postgres:postgres@127.0.0.1:${databasePort}/postgres`;
+// The embedded PGlite server runs every connection through one database session and can interleave
+// the steps of overlapping parameterized queries ("portal does not exist", hangs). It executes one
+// query at a time anyway, so one connection costs nothing locally. Hosted Supabase uses the default.
+process.env.DATABASE_POOL_MAX = "1";
 process.env.BETTER_AUTH_URL = process.env.ASBIR_LOCAL_APP_URL?.trim() || `http://localhost:${appPort}`;
 process.env.BETTER_AUTH_SECRET = secret;
 process.env.ASBIR_AUTH_BYPASS = "1";

@@ -14,7 +14,7 @@
 - Preserve account IDs, password hashes, OAuth account records, workspace permissions, immutable versions, snapshot contracts, partial-capture merge behavior, and public review behavior.
 - Keep database and Supabase service-role credentials in server-side environment variables. Never place them in the Figma bundle or browser code.
 - Keep the Storage bucket private. Require app authorization before issuing signed download links.
-- Do not send large capture or package bytes through Vercel Function request or response bodies. Vercel documents a 4.5 MB body limit; current capture limits allow up to 256 MiB of render assets and 128 MiB of snapshot JSON.
+- Do not send large capture or package bytes through Vercel Function request or response bodies. Vercel documents a 4.5 MB body limit; current capture limits allow up to 256 MiB of render assets and 256 MiB of snapshot JSON.
 - Apply schema changes through versioned Supabase migrations, not during function startup.
 - Keep the SQLite database and local object directory intact until migration verification and the rollback window are complete.
 - Preserve app-route behavior and the snapshot contract while moving persistence.

@@ -30,9 +30,25 @@ export function sha256Hex(bytes: Uint8Array): string {
   return Array.from(sha256(bytes), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+/** Text is hashed in blocks this size: one update per token made a large capture take ~13 s to hash. */
+const hashBufferLength = 16 * 1024;
+
 function writeCanonicalJson(value: unknown) {
   const hash = sha256.create();
-  const writeText = (text: string) => hash.update(utf8 ? utf8.encode(text) : encodeUtf8(text));
+  // Same bytes as hashing each piece separately, so the hash is unchanged. Pieces never end inside a
+  // surrogate pair (writeString keeps pairs together), so joining them never splits a character.
+  let pending = "";
+  const flush = () => {
+    if (!pending) return;
+    hash.update(utf8 ? utf8.encode(pending) : encodeUtf8(pending));
+    pending = "";
+  };
+  // Never encode more than hashBufferLength characters at once (keeps memory flat inside Figma).
+  const writeText = (text: string) => {
+    if (pending.length + text.length > hashBufferLength) flush();
+    if (text.length >= hashBufferLength) hash.update(utf8 ? utf8.encode(text) : encodeUtf8(text));
+    else pending += text;
+  };
   const writeString = (value: string) => {
     writeText('"');
     let chunkStart = 0;
@@ -118,6 +134,7 @@ function writeCanonicalJson(value: unknown) {
     }
   }
 
+  flush();
   return hash.digest();
 }
 

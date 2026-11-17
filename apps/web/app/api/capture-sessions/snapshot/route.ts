@@ -270,7 +270,7 @@ export async function POST(request: Request) {
         return jsonResponse({ error: "The merged capture does not match the structured snapshot format.", issues: finalized.error.issues.slice(0, 30) }, { status: 400 });
       }
       if (Buffer.byteLength(JSON.stringify(finalized.data), "utf8") > MAX_SNAPSHOT_JSON_BYTES) {
-        return jsonResponse({ error: "The merged structured snapshot exceeds Handoff’s 128 MiB JSON limit. Capture fewer frames in each update." }, { status: 413 });
+        return jsonResponse({ error: `The merged structured snapshot exceeds Handoff’s ${Math.round(MAX_SNAPSHOT_JSON_BYTES / (1024 * 1024))} MiB JSON limit. Capture fewer frames in each update.` }, { status: 413 });
       }
 
       versionSnapshot = finalized.data;
@@ -289,10 +289,11 @@ export async function POST(request: Request) {
         const uploaded = sourceKey ? uploadedByKey.get(sourceKey) : undefined;
         if (!uploaded?.bytes || !uploaded.uploadedObjectKey) throw new Error(`The captured asset "${asset.fileName}" could not be matched to its upload.`);
         const duplicate = findReusableAsset(asset, baseline.assets);
-        const { bytes, uploadedObjectKey, ...metadata } = uploaded;
+        // The merged snapshot renames incoming assets ("overview" → "merge-…-overview"); the version's
+        // asset rows must use the merged key, as before the migration, with the uploaded bytes.
         return duplicate
-          ? { ...metadata, reuseObjectKey: duplicate.objectKey }
-          : { ...metadata, bytes, uploadedObjectKey };
+          ? { ...asset, reuseObjectKey: duplicate.objectKey }
+          : { ...asset, bytes: uploaded.bytes, uploadedObjectKey: uploaded.uploadedObjectKey };
       });
     }
 

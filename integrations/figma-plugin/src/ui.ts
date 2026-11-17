@@ -13,6 +13,7 @@ import {
   type PageCaptureMode,
 } from "@asbir/snapshot-contract";
 import { jsonByteLength } from "./json-byte-length.ts";
+import { withNetworkDiagnostics } from "./network-errors";
 import { encodeUtf8 } from "../../../packages/snapshot-contract/src/utf8";
 import type {
   CaptureAssetBytes,
@@ -42,6 +43,9 @@ import {
 
 declare const __ASBIR_HANDOFF_ORIGIN__: string;
 declare const __ASBIR_STORAGE_ORIGIN__: string;
+
+// Name the unreachable address instead of a bare "Failed to fetch", and retry safe requests once.
+globalThis.fetch = withNetworkDiagnostics(globalThis.fetch.bind(globalThis));
 
 const appUrlInput = document.querySelector<HTMLInputElement>("#app-url")!;
 const tokenInput = document.querySelector<HTMLInputElement>("#capture-token")!;
