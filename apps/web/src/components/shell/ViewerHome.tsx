@@ -363,7 +363,6 @@ export function ViewerHome({
             <p className="mt-1.5 flex items-center gap-2 text-[14px] text-foreground-muted">
               {newTotal ? (
                 <>
-                  <span aria-hidden="true" className="viewer-dot" />
                   {newTotal === 1 ? "1 handoff has a new version" : `${newTotal} handoffs have new versions`}
                   <span aria-hidden="true" className="text-foreground-subtle">·</span>
                   <button className="text-foreground-subtle underline decoration-border-strong underline-offset-4 transition-colors hover:text-foreground" onClick={() => void markSeen(newIds)} type="button">
@@ -484,7 +483,6 @@ export function ViewerHome({
                           data-new={handoff.isNew ? "true" : "false"}
                           href={hrefFor(handoff)}
                         >
-                          <span aria-hidden="true" className="grid w-2 shrink-0 place-items-center">{handoff.isNew ? <span className="viewer-dot" /> : null}</span>
                           <span className="min-w-0 flex-1">
                             <span className="block truncate text-[13px] font-medium">{handoff.handoffName}</span>
                             {handoff.isNew ? (
@@ -515,7 +513,7 @@ export function ViewerHome({
                         data-new={handoff.isNew ? "true" : "false"}
                         href={hrefFor(handoff)}
                       >
-                        <div className="viewer-tile-preview review-dot-grid relative aspect-[16/10] overflow-hidden">
+                        <div className="viewer-tile-preview relative bg-surface-inset aspect-[16/10] overflow-hidden">
                           {handoff.previewUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element -- served by our asset route with its own caching.
                             <img alt="" className="absolute inset-x-0 top-3 mx-auto h-[calc(100%-12px)] w-auto max-w-[85%] rounded-t-[6px] object-cover object-top shadow-lg shadow-black/50 transition-transform duration-300 group-hover:-translate-y-1" decoding="async" loading="lazy" src={handoff.previewUrl} />
@@ -523,8 +521,7 @@ export function ViewerHome({
                             <span className="absolute inset-0 grid place-items-center text-[12px] text-foreground-subtle">No screens yet</span>
                           )}
                           {handoff.isNew ? (
-                            <span className="absolute left-2.5 top-2.5 inline-flex items-center gap-1.5 rounded-full bg-black/70 px-2 py-1 text-[11px] font-medium text-foreground backdrop-blur">
-                              <span aria-hidden="true" className="viewer-dot" />
+                            <span className="absolute left-2.5 top-2.5 inline-flex items-center rounded-[6px] bg-black/75 px-2 py-1 text-[11px] font-medium text-[#ffa264] backdrop-blur">
                               {handoff.changesSinceSeen ? changesLabel(handoff.changesSinceSeen) : "New version"}
                             </span>
                           ) : null}

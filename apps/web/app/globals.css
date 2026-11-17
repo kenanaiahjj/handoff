@@ -875,29 +875,7 @@ html[data-splash="seen"] .app-splash {
   backdrop-filter: blur(16px) saturate(1.4);
   -webkit-backdrop-filter: blur(16px) saturate(1.4);
 }
-.viewer-dot {
-  position: relative;
-  display: inline-block;
-  width: 7px;
-  height: 7px;
-  flex-shrink: 0;
-  border-radius: 9999px;
-  background: #ff8a3d;
-  box-shadow: 0 0 0 3px rgb(255 138 61 / 0.18);
-}
-@media (prefers-reduced-motion: no-preference) {
-  .viewer-dot::after {
-    content: "";
-    position: absolute;
-    inset: 0;
-    border-radius: inherit;
-    background: inherit;
-    animation: viewer-dot-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
-  }
-}
-@keyframes viewer-dot-ping {
-  70%, 100% { transform: scale(2.6); opacity: 0; }
-}
+
 .viewer-count {
   border-radius: 9999px;
   background: rgb(255 138 61 / 0.14);

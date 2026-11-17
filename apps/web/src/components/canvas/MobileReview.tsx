@@ -124,7 +124,7 @@ export function MobileReview({
         </button>
         <div aria-live="polite" className="min-w-0 flex-1 text-center">
           <p className="truncate text-[13px] font-medium">
-            {current?.changed ? <span aria-label="Changed" className="viewer-dot mr-1.5 align-middle" /> : null}
+            {current?.changed ? <span className="mr-1.5 rounded-[5px] bg-[#ffa264]/15 px-1.5 py-0.5 align-middle text-[10px] font-medium text-[#ffa264]">Changed</span> : null}
             {current?.name ?? "No screens"}
           </p>
           <p className="text-[11px] text-foreground-subtle">{visible.length ? `${Math.min(index, visible.length - 1) + 1} / ${visible.length}` : ""}</p>

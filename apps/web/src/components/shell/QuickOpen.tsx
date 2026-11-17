@@ -109,7 +109,7 @@ export function QuickOpen({ items }: { items: QuickOpenItem[] }) {
                   <span className="block truncate text-[13px] font-medium text-foreground">{item.label}</span>
                   <span className="block truncate text-[12px] text-foreground-subtle">{item.detail}</span>
                 </span>
-                {item.isNew ? <span aria-label="New version" className="viewer-dot" /> : null}
+                {item.isNew ? <span className="shrink-0 text-[11px] font-medium text-[#ffa264]">New</span> : null}
               </li>
             ))
           ) : (
