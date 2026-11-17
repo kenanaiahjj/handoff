@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { isStructuredSnapshot } from "@/src/server/services/diff";
 import { createHandoffAnnotation, listHandoffAnnotations } from "@/src/server/repositories/annotations";
-import { getVersion } from "@/src/server/repositories/versions";
+import { getVersion, getVersionRecord } from "@/src/server/repositories/versions";
 import { canvasAnnotationAnchorError } from "@/src/server/services/canvas-annotation-anchor";
 import { requireProjectMember, requireWorkspaceRole, WorkspaceAccessError, workspaceRoles, requireHandoffAccess, } from "@/src/server/workspace-access";
 
@@ -25,7 +25,8 @@ export async function GET(request: Request, context: AnnotationsRoute) {
   const { workspaceId, handoffId, versionId } = await context.params;
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId });
-    if (!(await belongsToHandoff({ workspaceId, handoffId, versionId }))) {
+    const version = await getVersionRecord({ workspaceId, versionId });
+    if (version?.handoffId !== handoffId) {
       return Response.json({ error: "Handoff version not found." }, { status: 404 });
     }
     return Response.json({ annotations: (await listHandoffAnnotations({ workspaceId, versionId })) }, { headers: { "Cache-Control": "no-store" } });

@@ -5,7 +5,7 @@ import { getDatabase } from "@/src/server/db";
 import { getHandoff } from "@/src/server/repositories/handoffs";
 import { createHandoffComment, listHandoffComments } from "@/src/server/repositories/comments";
 import { recordCommentMentions } from "@/src/server/services/mentions";
-import { getVersion, type StoredSnapshot } from "@/src/server/repositories/versions";
+import { getVersion, getVersionRecord, type StoredSnapshot } from "@/src/server/repositories/versions";
 import { isStructuredSnapshot } from "@/src/server/services/diff";
 import type { SnapshotFrame } from "@asbir/snapshot-contract";
 import {
@@ -89,7 +89,7 @@ export async function GET(request: Request, context: CommentsRoute) {
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId });
     const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
-    const version = (await getVersion({ workspaceId, versionId }));
+    const version = (await getVersionRecord({ workspaceId, versionId }));
     if (!handoff || !version || version.handoffId !== handoffId) {
       return Response.json({ error: "Handoff version not found." }, { status: 404 });
     }

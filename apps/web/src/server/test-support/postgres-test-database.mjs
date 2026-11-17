@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { Pool } from "pg";
@@ -30,11 +30,11 @@ export async function createPostgresTestDatabase({ seed = false } = {}) {
       );
     `);
 
-    const migrationPath = path.join(
-      repositoryRoot,
-      "supabase/migrations/20261117000000_asbir_baseline.sql",
-    );
-    await postgres.exec(await readFile(migrationPath, "utf8"));
+    // Every migration in order, like the local runtime and Supabase.
+    const migrationsDirectory = path.join(repositoryRoot, "supabase/migrations");
+    for (const name of (await readdir(migrationsDirectory)).filter((file) => file.endsWith(".sql")).sort()) {
+      await postgres.exec(await readFile(path.join(migrationsDirectory, name), "utf8"));
+    }
 
     if (seed) {
       await postgres.exec(await readFile(path.join(repositoryRoot, "supabase/seed.sql"), "utf8"));

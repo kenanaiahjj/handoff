@@ -701,7 +701,36 @@ export async function getVersionSnapshotSize(input: { workspaceId: string; versi
   return row?.sizeBytes ?? 0;
 }
 
-export async function getVersion(input: { workspaceId: string; versionId: string }) {
+type VersionRow = {
+  id: string;
+  workspaceId: string;
+  handoffId: string;
+  versionLabel: string;
+  releaseNote: string | null;
+  source: string;
+  sourceFileId: string;
+  sourceRevisionId: string | null;
+  capturedAt: string;
+  contentHash: string;
+  visualOnly: boolean;
+  createdBy: string;
+  createdAt: string;
+};
+export type VersionRecord = VersionRow & { assets: StoredVersionAsset[] };
+export type VersionWithSnapshot = VersionRecord & { snapshot: StoredSnapshot };
+
+/**
+ * A version's row and assets without its capture. Loading a large capture costs about a second of
+ * CPU and hundreds of MB on a fresh server, so callers that only check a version exists, is visible,
+ * or owns an asset should use this instead of getVersion.
+ */
+export function getVersionRecord(input: { workspaceId: string; versionId: string }) {
+  return getVersion({ ...input, includeSnapshot: false });
+}
+
+export async function getVersion(input: { workspaceId: string; versionId: string; includeSnapshot: false }): Promise<VersionRecord | null>;
+export async function getVersion(input: { workspaceId: string; versionId: string; includeSnapshot?: true }): Promise<VersionWithSnapshot | null>;
+export async function getVersion(input: { workspaceId: string; versionId: string; includeSnapshot?: boolean }): Promise<VersionRecord | VersionWithSnapshot | null> {
   const database = getDatabase();
   const row = (await database
     .prepare(
@@ -715,21 +744,7 @@ export async function getVersion(input: { workspaceId: string; versionId: string
        FROM handoff_version WHERE id = ? AND workspace_id = ?`,
     )
     .get(input.versionId, input.workspaceId)) as
-    | {
-        id: string;
-        workspaceId: string;
-        handoffId: string;
-        versionLabel: string;
-        releaseNote: string | null;
-        source: string;
-        sourceFileId: string;
-        sourceRevisionId: string | null;
-        capturedAt: string;
-        contentHash: string;
-        visualOnly: boolean;
-        createdBy: string;
-        createdAt: string;
-      }
+    | VersionRow
     | undefined;
 
   if (!row) return null;
@@ -743,6 +758,8 @@ export async function getVersion(input: { workspaceId: string; versionId: string
        ORDER BY asset_key`,
     )
     .all(input.versionId, input.workspaceId)) as StoredVersionAsset[];
+
+  if (input.includeSnapshot === false) return { ...row, assets };
 
   const snapshot = await cachedSnapshot(database, `${row.id}:${row.contentHash}`, async () => {
     const snapshotJson = (await readSnapshotJson(database, input.versionId, input.workspaceId)) ?? "{}";

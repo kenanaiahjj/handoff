@@ -161,7 +161,11 @@ export async function GET(request: Request, context: CompareRoute) {
     // both versions belong to this handoff and the confirmed matches haven't changed since.
     const matchKey = parsedNodeSearch ? null : (await matchStateKey(handoffId));
     if (matchKey && (await versionsBelongToHandoff(workspaceId, handoffId, [fromVersionId, toVersionId]))) {
-      const saved = (await readSavedComparison({ fromVersionId, toVersionId, matchKey }));
+      // The cache only saves time: if it can't be read, compute the comparison as usual.
+      const saved = await readSavedComparison({ fromVersionId, toVersionId, matchKey }).catch((error: unknown) => {
+        console.warn("[compare] Ignoring an unreadable saved comparison:", error);
+        return null;
+      });
       if (saved) return new Response(saved, { headers: { "Content-Type": "application/json" } });
     }
 
@@ -185,7 +189,12 @@ export async function GET(request: Request, context: CompareRoute) {
       }), { headers: { "Cache-Control": "no-store" } });
     }
     const json = JSON.stringify(comparison);
-    if (matchKey) await saveComparison({ handoffId, fromVersionId, toVersionId, matchKey, json });
+    if (matchKey) {
+      // Saved before responding so it persists on serverless, but a failed save never fails the comparison.
+      await saveComparison({ handoffId, fromVersionId, toVersionId, matchKey, json }).catch((error: unknown) => {
+        console.warn("[compare] Could not save the comparison; it will be recomputed next time:", error);
+      });
+    }
     return new Response(json, { headers: { "Content-Type": "application/json" } });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {

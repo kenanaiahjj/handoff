@@ -2,7 +2,7 @@ import type { AuthSession } from "../auth";
 import { getSessionForHeaders } from "../auth-session";
 import { getDatabase } from "../db";
 import { getHandoffInviteByToken, getPublishedHandoffByShareId, listHandoffVersions } from "../repositories/handoffs";
-import { getVersion } from "../repositories/versions";
+import { getVersion, getVersionRecord } from "../repositories/versions";
 import { versionsVisibleToReview } from "./published-review";
 import { resolveHandoffReviewAccess, type HandoffInviteAccess, type HandoffReviewAccessDecision } from "./handoff-sharing";
 
@@ -25,6 +25,13 @@ export async function listVisiblePublishedReviewVersions(handoff: PublishedRevie
 export async function getVisiblePublishedReviewVersion(handoff: PublishedReviewHandoff, versionId: string) {
   if (!(await listVisiblePublishedReviewVersions(handoff)).some((version) => version.id === versionId)) return null;
   const version = (await getVersion({ workspaceId: handoff.workspaceId, versionId }));
+  return version?.handoffId === handoff.id ? version : null;
+}
+
+/** Same check without loading the capture, for requests that don't read it. */
+export async function getVisiblePublishedReviewVersionRecord(handoff: PublishedReviewHandoff, versionId: string) {
+  if (!(await listVisiblePublishedReviewVersions(handoff)).some((version) => version.id === versionId)) return null;
+  const version = (await getVersionRecord({ workspaceId: handoff.workspaceId, versionId }));
   return version?.handoffId === handoff.id ? version : null;
 }
 

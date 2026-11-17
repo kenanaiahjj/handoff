@@ -3,7 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionForHeaders } from "@/src/server/auth-session";
 import { hasPendingHandoffReviewInvite, listVisiblePublishedReviewVersions, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
 import { getProject } from "@/src/server/repositories/projects";
-import { getVersion } from "@/src/server/repositories/versions";
+import { getCanvasVersion } from "@/src/server/services/version-canvas";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
 import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
 
@@ -85,7 +85,7 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
     versions[0];
   if (!selectedVersion) notFound();
 
-  const version = (await getVersion({ workspaceId: handoff.workspaceId, versionId: selectedVersion.id }));
+  const version = (await getCanvasVersion({ workspaceId: handoff.workspaceId, versionId: selectedVersion.id }));
   if (!version || version.handoffId !== handoff.id) notFound();
 
   return (

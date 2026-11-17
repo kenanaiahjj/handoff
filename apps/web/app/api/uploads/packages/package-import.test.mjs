@@ -1,7 +1,4 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import test from "node:test";
 import { PostgresDatabase } from "../../../../src/server/db.ts";
@@ -9,8 +6,6 @@ import { createPostgresTestDatabase } from "../../../../src/server/test-support/
 
 const { createPackageImportHandlers } = await import("./package-import.ts");
 
-const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../../../../");
-const migration = await readFile(path.join(repositoryRoot, "supabase/migrations/20261117010000_package_import_uploads.sql"), "utf8");
 const userId = "package-import-test-user";
 const workspaceId = "package-import-test-workspace";
 const projectId = "package-import-test-project";
@@ -18,7 +13,6 @@ const packageBytes = new TextEncoder().encode("a staged ZIP payload");
 
 async function setup({ authorizeProjectMember } = {}) {
   const fixture = await createPostgresTestDatabase();
-  await fixture.pool.query(migration);
   const database = new PostgresDatabase(fixture.pool);
   await fixture.pool.query(
     `INSERT INTO "user" (id, name, email) VALUES ($1, 'Test User', 'package-import@example.invalid')`,

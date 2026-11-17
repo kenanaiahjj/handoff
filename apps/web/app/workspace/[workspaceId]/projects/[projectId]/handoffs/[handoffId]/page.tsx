@@ -8,7 +8,7 @@ import type { SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { formatFigmaCaptureScope } from "@asbir/snapshot-contract";
 import { getHandoff, listHandoffVersions } from "@/src/server/repositories/handoffs";
 import { getProject } from "@/src/server/repositories/projects";
-import { getVersion } from "@/src/server/repositories/versions";
+import { getCanvasVersion } from "@/src/server/services/version-canvas";
 import { HandoffTabs } from "@/src/components/shell/HandoffTabs";
 import { MentionProvider } from "@/src/components/comments/mentions";
 import { MobileReview, type MobileScreen } from "@/src/components/canvas/MobileReview";
@@ -94,7 +94,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
     : null;
   const requestedVersionId = firstQueryValue(query.versionId) ?? initialCompareRouteState?.toVersionId;
   const selectedVersion = versions.find((version) => version.id === requestedVersionId) ?? versions[0];
-  const version = (await getVersion({ workspaceId, versionId: selectedVersion.id }));
+  const version = (await getCanvasVersion({ workspaceId, versionId: selectedVersion.id }));
   if (!version || version.handoffId !== handoffId) notFound();
 
   const visualOnly = version.visualOnly;

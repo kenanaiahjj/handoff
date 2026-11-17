@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import test from "node:test";
 import { createPostgresTestDatabase } from "@/src/server/test-support/postgres-test-database.mjs";
 import { getDatabasePool, setDatabasePoolForTests } from "@/src/server/db.ts";
@@ -37,11 +36,6 @@ test("local signed uploads accept only declared bytes for the signed object key"
   setObjectStoreForTests(localStore);
 
   try {
-    const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../../..");
-    await database.pool.query(await readFile(
-      path.join(repositoryRoot, "supabase/migrations/20261117010000_package_import_uploads.sql"),
-      "utf8",
-    ));
     const bytes = new Uint8Array([1, 2, 3, 4]);
     const key = "a".repeat(48);
     const now = new Date().toISOString();

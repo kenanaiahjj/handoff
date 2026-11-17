@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { getDatabase } from "@/src/server/db";
 import { createHandoffComment, listHandoffComments } from "@/src/server/repositories/comments";
-import { getVisiblePublishedReviewVersion, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
+import { getVisiblePublishedReviewVersion, getVisiblePublishedReviewVersionRecord, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
 import { isStructuredSnapshot } from "@/src/server/services/diff";
 import type { SnapshotFrame } from "@asbir/snapshot-contract";
 import type { StoredSnapshot } from "@/src/server/repositories/versions";
@@ -67,7 +67,7 @@ export async function GET(request: Request, context: ReviewCommentsRoute) {
   const { shareId, versionId } = await context.params;
   const access = await resolvePublishedReviewAccess(shareId, request.headers);
   if (!access?.decision.allowed) return accessError(access);
-  const version = (await getVisiblePublishedReviewVersion(access.handoff, versionId));
+  const version = (await getVisiblePublishedReviewVersionRecord(access.handoff, versionId));
   if (!version) return Response.json({ error: "Handoff version not found." }, { status: 404 });
   return Response.json({ comments: (await listHandoffComments({ workspaceId: access.handoff.workspaceId, versionId })) }, { headers: { "Cache-Control": "no-store" } });
 }

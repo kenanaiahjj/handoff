@@ -1,7 +1,7 @@
 import { z } from "zod";
 import { getHandoff } from "@/src/server/repositories/handoffs";
 import { setCommentResolved } from "@/src/server/repositories/comments";
-import { getVersion } from "@/src/server/repositories/versions";
+import { getVersionRecord } from "@/src/server/repositories/versions";
 import {
   requireWorkspaceRole,
   WorkspaceAccessError,
@@ -20,7 +20,7 @@ export async function PATCH(request: Request, context: CommentRoute) {
   try {
     const access = await requireHandoffAccess(request, { workspaceId, handoffId });
     const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
-    const version = (await getVersion({ workspaceId, versionId }));
+    const version = (await getVersionRecord({ workspaceId, versionId }));
     if (!handoff || !version || version.handoffId !== handoffId) {
       return Response.json({ error: "Handoff version not found." }, { status: 404 });
     }

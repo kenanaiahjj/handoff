@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { createHandoffAnnotation, listHandoffAnnotations } from "@/src/server/repositories/annotations";
-import { getVisiblePublishedReviewVersion, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
+import { getVisiblePublishedReviewVersion, getVisiblePublishedReviewVersionRecord, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
 import { isStructuredSnapshot } from "@/src/server/services/diff";
 import { canvasAnnotationAnchorError } from "@/src/server/services/canvas-annotation-anchor";
 
@@ -20,7 +20,7 @@ export async function GET(request: Request, context: ReviewAnnotationsRoute) {
   const access = await resolvePublishedReviewAccess(shareId, request.headers);
   if (!access) return Response.json({ error: "Published handoff not found." }, { status: 404 });
   if (!access.decision.allowed) return Response.json({ error: "This handoff is not available to you." }, { status: access.session ? 404 : 401 });
-  const version = (await getVisiblePublishedReviewVersion(access.handoff, versionId));
+  const version = (await getVisiblePublishedReviewVersionRecord(access.handoff, versionId));
   if (!version) return Response.json({ error: "Handoff version not found." }, { status: 404 });
   return Response.json({ annotations: (await listHandoffAnnotations({ workspaceId: access.handoff.workspaceId, versionId })) }, { headers: { "Cache-Control": "no-store" } });
 }

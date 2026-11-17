@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { deleteHandoffAnnotation, updateHandoffAnnotation } from "@/src/server/repositories/annotations";
-import { getVisiblePublishedReviewVersion, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
+import { getVisiblePublishedReviewVersionRecord, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
 
 type ReviewAnnotationRoute = { params: Promise<{ shareId: string; versionId: string; annotationId: string }> };
 const updateSchema = z.object({ title: z.string().trim().min(1).max(120), body: z.string().trim().min(1).max(2000) });
@@ -11,7 +11,7 @@ async function load(request: Request, context: ReviewAnnotationRoute) {
   if (!access) return { response: Response.json({ error: "Published handoff not found." }, { status: 404 }) };
   if (!access.decision.allowed) return { response: Response.json({ error: "This handoff is not available to you." }, { status: access.session ? 404 : 401 }) };
   if (!access.decision.canWrite) return { response: Response.json({ error: "You cannot update canvas notes in this handoff." }, { status: 403 }) };
-  if (!(await getVisiblePublishedReviewVersion(access.handoff, params.versionId))) return { response: Response.json({ error: "Handoff version not found." }, { status: 404 }) };
+  if (!(await getVisiblePublishedReviewVersionRecord(access.handoff, params.versionId))) return { response: Response.json({ error: "Handoff version not found." }, { status: 404 }) };
   return { access, params };
 }
 
