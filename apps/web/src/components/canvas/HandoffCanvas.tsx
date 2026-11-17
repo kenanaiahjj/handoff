@@ -963,26 +963,25 @@ export function HandoffCanvas({
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface text-foreground">
       <header className="canvas-topbar relative z-20 flex min-h-12 min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-border bg-surface px-2.5 py-1.5 text-foreground-muted lg:flex-nowrap lg:py-0">
-        <div className="flex min-w-0 flex-1 items-center gap-2 lg:flex-none">
+        <div className="flex min-w-0 flex-1 items-center gap-2 lg:flex-initial lg:shrink">
           <Link aria-label="Asbir Handoff home" className="flex min-h-9 shrink-0 items-center rounded-lg px-1 transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" href={metadata.projectHref.startsWith("/workspace") ? "/workspace" : metadata.projectHref}>
             <BrandMark compact />
           </Link>
           <span aria-hidden="true" className="h-5 w-px shrink-0 bg-white/[0.08]" />
           <div className="flex min-w-0 items-center gap-1.5" title={metaParts.join(" · ")}>
-            <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em] text-foreground lg:max-w-[220px]">{metadata.handoffName}</span>
+            <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em] text-foreground lg:max-w-[150px] xl:max-w-[220px]">{metadata.handoffName}</span>
             <label className="sr-only" htmlFor="review-version-select">Version</label>
             <span className="relative inline-flex shrink-0 items-center">
               <select
-                className="h-7 appearance-none rounded-[7px] border border-white/[0.08] bg-white/[0.03] py-0 pl-2 pr-6 font-mono text-[11px] text-foreground-muted transition-colors hover:border-white/[0.16] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                className="h-7 max-w-[150px] appearance-none truncate xl:max-w-[240px] rounded-[7px] border border-white/[0.08] bg-white/[0.03] bg-[length:12px] bg-[position:right_7px_center] py-0 pl-2 !pr-7 font-mono text-[11px] text-foreground-muted transition-colors hover:border-white/[0.16] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                 id="review-version-select"
                 onChange={(event) => window.location.assign(metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(event.target.value))}
                 value={metadata.selectedVersionId}
               >
                 {metadata.versions.map((version, index) => (
-                  <option key={version.id} value={version.id}>v{version.versionLabel.replace(/^v/i, "")}{index === 0 ? " · latest" : ""}</option>
+                  <option key={version.id} value={version.id}>{/^\d/.test(version.versionLabel) ? "v" : ""}{version.versionLabel}{index === 0 ? " · latest" : ""}</option>
                 ))}
               </select>
-              <ChevronDownIcon className="pointer-events-none absolute right-1.5 size-3 text-foreground-subtle" />
             </span>
             {canCompare ? (
               <button
@@ -1003,7 +1002,7 @@ export function HandoffCanvas({
           </div>
         </div>
 
-        <nav aria-label="Handoff review tools" className="order-last flex w-full min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] lg:order-none lg:w-auto lg:flex-1 lg:justify-center lg:overflow-visible [&::-webkit-scrollbar]:hidden">
+        <nav aria-label="Handoff review tools" className="order-last flex w-full min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] lg:order-none lg:w-auto lg:flex-1 lg:justify-center [&::-webkit-scrollbar]:hidden">
           <button
             aria-pressed={statesOpen}
             className="canvas-tool shrink-0 border border-white/[0.07] lg:hidden"

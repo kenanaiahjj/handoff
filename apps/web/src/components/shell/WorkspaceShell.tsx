@@ -6,6 +6,7 @@ import { ViewAsSwitcher } from "./ViewAsSwitcher";
 import { InstallAppButton } from "./InstallAppButton";
 import { BrandMark } from "./BrandMark";
 import { ProjectIcon } from "./ProjectIcon";
+import { HandoffTabs } from "./HandoffTabs";
 import { NotificationSettingsButton } from "./NotificationSettingsButton";
 
 export type WorkspaceChoice = {
@@ -154,6 +155,7 @@ export function WorkspaceShell({
           <SidebarContents {...shellContent} />
         </aside>
         <div className="min-w-0">
+          <HandoffTabs current={null} homeHref="/workspace" />
           <header className="workspace-topbar sticky top-2.5 z-20 flex h-12 items-center justify-between gap-3 border-b border-border px-4 sm:top-3 sm:px-6 lg:top-4">
             <div className="flex min-w-0 items-center gap-3">
               <details className="group relative lg:hidden">

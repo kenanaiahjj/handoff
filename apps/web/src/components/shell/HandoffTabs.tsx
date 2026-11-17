@@ -38,11 +38,13 @@ export function lastScreenHash(handoffId: string) {
 }
 
 /** Remembers the screen being viewed in this handoff so tabs and the home reopen there. */
-function useRememberScreen(handoffId: string) {
+function useRememberScreen(handoffId: string | null) {
   useEffect(() => {
+    if (!handoffId) return;
+    const id = handoffId;
     function save() {
       try {
-        if (location.hash.startsWith("#screen=")) localStorage.setItem(lastScreenKey(handoffId), location.hash);
+        if (location.hash.startsWith("#screen=")) localStorage.setItem(lastScreenKey(id), location.hash);
       } catch {
         // Storage blocked; nothing to remember.
       }
@@ -58,20 +60,25 @@ function useRememberScreen(handoffId: string) {
 }
 
 /**
- * Figma-style tabs for handoffs opened on this device. The bar appears once two or more are open,
- * so a single handoff keeps the full canvas height.
+ * Figma-style tabs for handoffs opened on this device. On a handoff the bar appears once two or
+ * more are open (a single handoff keeps the full canvas height); on the home screens (`current`
+ * null, Home is the active tab) it shows whenever any handoff is still open.
  */
-export function HandoffTabs({ current, homeHref }: { current: OpenTab; homeHref: string }) {
+export function HandoffTabs({ current, homeHref }: { current: OpenTab | null; homeHref: string }) {
   const router = useRouter();
   const [tabs, setTabs] = useState<OpenTab[] | null>(null);
-  useRememberScreen(current.id);
+  useRememberScreen(current?.id ?? null);
 
   useEffect(() => {
     const existing = readTabs();
+    if (!current) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- tabs live in localStorage, only readable after mount.
+      setTabs(existing);
+      return;
+    }
     const index = existing.findIndex((tab) => tab.id === current.id);
     const next = index === -1 ? [...existing, current].slice(-maxTabs) : existing.map((tab) => (tab.id === current.id ? current : tab));
     writeTabs(next);
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- tabs live in localStorage, only readable after mount.
     setTabs(next);
   }, [current]);
 
@@ -81,19 +88,20 @@ export function HandoffTabs({ current, homeHref }: { current: OpenTab; homeHref:
     const next = list.filter((tab) => tab.id !== id);
     writeTabs(next);
     setTabs(next);
-    if (id === current.id) {
+    if (current && id === current.id) {
       const neighbour = next[Math.min(index, next.length - 1)];
       router.push(neighbour ? neighbour.href + lastScreenHash(neighbour.id) : homeHref);
     }
   }
 
-  if (!tabs || tabs.length < 2) return null;
+  if (!tabs || tabs.length < (current ? 2 : 1)) return null;
 
   return (
     <nav aria-label="Open handoffs" className="handoff-tabs flex h-9 shrink-0 items-end gap-1 overflow-x-auto border-b border-border bg-background px-1.5">
       <Link
+        aria-current={current ? undefined : "page"}
         aria-label="Home"
-        className="mb-1 grid size-7 shrink-0 place-items-center rounded-[7px] text-foreground-subtle transition-colors hover:bg-surface-inset hover:text-foreground"
+        className={"mb-1 grid size-7 shrink-0 place-items-center rounded-[7px] transition-colors hover:bg-surface-inset hover:text-foreground " + (current ? "text-foreground-subtle" : "bg-surface-inset text-foreground")}
         href={homeHref}
         title="Home"
       >
@@ -102,7 +110,7 @@ export function HandoffTabs({ current, homeHref }: { current: OpenTab; homeHref:
         </svg>
       </Link>
       {tabs.map((tab) => {
-        const active = tab.id === current.id;
+        const active = tab.id === current?.id;
         return (
           <div
             className="handoff-tab group relative flex h-8 min-w-0 max-w-[220px] shrink-0 items-center rounded-t-[8px]"

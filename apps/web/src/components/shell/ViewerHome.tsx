@@ -3,7 +3,7 @@
 import Image from "next/image";
 import Link from "next/link";
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { lastScreenHash } from "./HandoffTabs";
+import { HandoffTabs, lastScreenHash } from "./HandoffTabs";
 import { QuickOpen, type QuickOpenItem } from "./QuickOpen";
 import { NeedsYou } from "./NeedsYou";
 import { ProjectIcon } from "./ProjectIcon";
@@ -313,6 +313,7 @@ export function ViewerHome({
   return (
     <div className="viewer-home min-h-dvh bg-background text-foreground">
       <header className="viewer-home-bar sticky top-0 z-20 border-b border-border">
+        <HandoffTabs current={null} homeHref={homeHref} />
         <div className="mx-auto flex h-14 max-w-5xl items-center gap-3 px-4 sm:px-6">
           <Link aria-label="Asbir Handoff home" className="flex min-w-0 items-center gap-2.5 rounded-[8px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-white/40" href={homeHref}>
             <Image alt="" className="size-7 rounded-[8px]" height={28} src="/icons/asbir-handoff-v2-180.png" width={28} />
