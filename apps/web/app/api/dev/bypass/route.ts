@@ -1,7 +1,9 @@
 import { z } from "zod";
-import { bypassOffCookieName, isDevelopmentAuthBypassConfigured, viewAsCookieName } from "@/src/server/auth-session";
+import { bypassOffCookieName, isDevelopmentAuthBypassConfigured, localReviewerUser, viewAsCookieName } from "@/src/server/auth-session";
+import { getCompanyWorkspace } from "@/src/server/services/company-workspace";
+import { ensureLocalReviewer } from "@/src/server/services/dev-test-accounts";
 
-const bodySchema = z.object({ enabled: z.boolean() });
+const bodySchema = z.object({ enabled: z.boolean(), as: z.enum(["owner", "reviewer"]).optional() });
 
 /**
  * Development only: turns the local sign-in bypass off ("Sign out") or back on for this browser,
@@ -19,7 +21,14 @@ export async function POST(request: Request) {
       ? `${bypassOffCookieName}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly`
       : `${bypassOffCookieName}=1; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly`,
   );
-  // Leaving the bypass also drops any "View as" choice.
-  headers.append("Set-Cookie", `${viewAsCookieName}=; Path=/; Max-Age=0; SameSite=Lax`);
+  // "Use local dev account" opens the populated reviewer home (Riley); "View as" can switch to Owner.
+  const company = parsed.data.enabled && parsed.data.as === "reviewer" ? getCompanyWorkspace() : null;
+  if (company) {
+    ensureLocalReviewer(company.id, localReviewerUser);
+    headers.append("Set-Cookie", `${viewAsCookieName}=${encodeURIComponent(localReviewerUser.id)}; Path=/; HttpOnly; SameSite=Lax`);
+  } else {
+    // Leaving the bypass (or entering as the owner) drops any "View as" choice.
+    headers.append("Set-Cookie", `${viewAsCookieName}=; Path=/; Max-Age=0; SameSite=Lax`);
+  }
   return new Response(JSON.stringify({ enabled: parsed.data.enabled }), { headers });
 }

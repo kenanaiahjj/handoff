@@ -38,6 +38,32 @@ export function createDevTestAccount(input: { name?: string } = {}) {
 }
 
 /**
+ * The seeded dev reviewer ("Riley Reviewer"): makes sure they are a reviewer on the team and, if
+ * nothing is shared with them yet, shares the sample handoffs so the reviewer home has content.
+ * Development only (the caller checks).
+ */
+export function ensureLocalReviewer(workspaceId: string, reviewer: { id: string; name: string; email: string }) {
+  const database = getDatabase();
+  const now = new Date().toISOString();
+  database.transaction(() => {
+    database
+      .prepare('INSERT OR IGNORE INTO "user" (id, name, email, emailVerified, image, createdAt, updatedAt) VALUES (?, ?, ?, 0, NULL, ?, ?)')
+      .run(reviewer.id, reviewer.name, reviewer.email, now, now);
+    database
+      .prepare(
+        `INSERT INTO workspace_membership (workspace_id, user_id, role, created_at)
+         SELECT ?, ?, 'reviewer', ?
+         WHERE NOT EXISTS (SELECT 1 FROM workspace_membership WHERE workspace_id = ? AND user_id = ?)`,
+      )
+      .run(workspaceId, reviewer.id, now, workspaceId, reviewer.id);
+    const shared = database
+      .prepare("SELECT COUNT(*) AS total FROM handoff_invite WHERE email = ? AND revoked_at IS NULL")
+      .get(reviewer.email) as { total: number };
+    if (!shared.total) shareSampleHandoffs(reviewer, now);
+  })();
+}
+
+/**
  * Shares the sample handoffs with a new test account so the reviewer home has something to show
  * after onboarding: the same set the seeded dev reviewer sees (or every handoff if there is none).
  * About half start as already opened, so some show "New version" and some don't.

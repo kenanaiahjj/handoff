@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { isDevelopmentAuthBypassEnabled, localReviewerUser, viewAsCookieName } from "@/src/server/auth-session";
 import { getDatabase } from "@/src/server/db";
+import { ensureLocalReviewer } from "@/src/server/services/dev-test-accounts";
 
 const bodySchema = z.object({
   mode: z.enum(["owner", "reviewer"]),
@@ -27,17 +28,7 @@ export async function POST(request: Request) {
     return new Response(JSON.stringify({ mode }), { headers });
   }
 
-  const now = new Date().toISOString();
-  database
-    .prepare('INSERT OR IGNORE INTO "user" (id, name, email, emailVerified, image, createdAt, updatedAt) VALUES (?, ?, ?, 0, NULL, ?, ?)')
-    .run(localReviewerUser.id, localReviewerUser.name, localReviewerUser.email, now, now);
-  database
-    .prepare(
-      `INSERT INTO workspace_membership (workspace_id, user_id, role, created_at)
-       SELECT ?, ?, 'reviewer', ?
-       WHERE NOT EXISTS (SELECT 1 FROM workspace_membership WHERE workspace_id = ? AND user_id = ?)`,
-    )
-    .run(workspaceId, localReviewerUser.id, now, workspaceId, localReviewerUser.id);
+  ensureLocalReviewer(workspaceId, localReviewerUser);
   headers.append("Set-Cookie", `${viewAsCookieName}=${encodeURIComponent(localReviewerUser.id)}; Path=/; HttpOnly; SameSite=Lax`);
   return new Response(JSON.stringify({ mode }), { headers });
 }

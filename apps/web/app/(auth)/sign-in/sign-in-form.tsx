@@ -50,7 +50,7 @@ export function SignInForm({ redirectTo, googleEnabled, googleError, companyDoma
   }
 
   async function switchToLocalDevAccount() {
-    await fetch("/api/dev/bypass", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: true }) });
+    await fetch("/api/dev/bypass", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: true, as: "reviewer" }) });
     window.location.replace(redirectTo);
   }
 
@@ -174,7 +174,7 @@ export function SignInForm({ redirectTo, googleEnabled, googleError, companyDoma
         <p className="mt-6 text-center text-[12px] text-foreground-subtle">
           Development:{" "}
           <button className="underline decoration-border-strong underline-offset-4 hover:text-foreground" onClick={switchToLocalDevAccount} type="button">
-            Use local dev account
+            Use local dev account (reviewer)
           </button>
           <span aria-hidden="true"> · </span>
           <FreshAccountButton className="underline decoration-border-strong underline-offset-4 hover:text-foreground" />
