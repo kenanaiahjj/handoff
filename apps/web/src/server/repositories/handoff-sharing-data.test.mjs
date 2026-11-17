@@ -70,7 +70,7 @@ test("external invite links are stored by token hash and require no workspace me
     email: "  QA.Person@Example.com ",
     role: "qa",
     token: "secret-invite-token",
-    expiresAt: "2026-11-16T12:00:00.000Z",
+    expiresAt: "2099-11-16T12:00:00.000Z",
     invitedByUserId: "designer-1",
     createdAt: "2026-11-09T12:00:00.000Z",
   });
@@ -80,7 +80,7 @@ test("external invite links are stored by token hash and require no workspace me
     email: "qa.person@example.com",
     role: "qa",
     reviewShareId: "share-1",
-    expiresAt: "2026-11-16T12:00:00.000Z",
+    expiresAt: "2099-11-16T12:00:00.000Z",
     createdAt: "2026-11-09T12:00:00.000Z",
   });
   const stored = database.prepare("SELECT token_hash AS tokenHash FROM handoff_invite WHERE id = ?").get("invite-1");

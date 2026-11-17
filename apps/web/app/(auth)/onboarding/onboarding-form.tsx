@@ -6,7 +6,7 @@ import { authClient } from "@/src/client/auth-client";
 import { clearDeviceCache } from "@/src/client/device-cache";
 import { AuthShell } from "../auth-shell";
 
-export type RoleOption = { id: string; label: string; description: string; manages: boolean };
+export type RoleOption = { id: string; label: string; description: string; requestsApproval: boolean };
 
 type OnboardingUser = { name: string; email: string; image: string | null };
 
@@ -192,8 +192,8 @@ export function OnboardingForm({ roles, user, workspaceNames }: { roles: RoleOpt
         <div className="flex items-center gap-2.5 border-t border-border bg-white/[0.02] px-4 py-3">
           {workspaceNames.length ? (
             <p className="min-w-0 text-[12px] text-foreground-muted">
-              {selected?.manages
-                ? "You’ll be able to create projects and publish handoffs."
+              {selected?.requestsApproval
+                ? "An owner will approve designer access. Until then you’ll see what your team shares with you."
                 : "You’ll see the projects and handoffs your team shares with you."}
             </p>
           ) : (

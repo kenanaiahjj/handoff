@@ -21,7 +21,7 @@ export default async function OnboardingPage() {
     email: session.user.email,
     emailVerified: session.user.emailVerified,
   });
-  const roles = Object.entries(jobRoles).map(([id, role]) => ({ id, label: role.label, description: role.description, manages: role.workspaceRole === "designer" }));
+  const roles = Object.entries(jobRoles).map(([id, role]) => ({ id, label: role.label, description: role.description, requestsApproval: id === "designer" }));
   const testing = isDevTestAccount(session.user.id) && (await isDevelopmentAuthBypassActive());
   return (
     <>

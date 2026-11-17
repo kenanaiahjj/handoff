@@ -61,6 +61,7 @@ export function ViewerHome({
   devTools,
   pinKeys = [],
   mentions = [],
+  designerRequestPending = false,
 }: {
   /** Where the logo goes: this workspace, or the combined home. */
   homeHref: string;
@@ -70,6 +71,8 @@ export function ViewerHome({
   showWorkspaceNames?: boolean;
   user: { name: string; email: string; image: string | null };
   projects: ViewerProject[];
+  /** This person asked for designer access and is waiting for an owner. */
+  designerRequestPending?: boolean;
   /** Comments that mention this person and still need a reply. */
   mentions?: OpenMention[];
   /** This person's pins, "workspace:<id>" or "project:<id>", oldest first. */
@@ -297,6 +300,13 @@ export function ViewerHome({
             </div>
           ) : null}
         </div>
+
+        {designerRequestPending ? (
+          <p className="members-request mt-8 rounded-control px-4 py-3 text-[13px] text-foreground" role="status">
+            <span className="font-medium">Designer access requested.</span>
+            <span className="text-foreground-muted"> An owner will approve it. Until then you can review what’s shared with you.</span>
+          </p>
+        ) : null}
 
         <NeedsYou className="mt-10" initial={mentions} />
 

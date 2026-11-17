@@ -622,6 +622,24 @@ function cachedSnapshot(database: object, key: string, load: () => StoredSnapsho
   return snapshot;
 }
 
+/**
+ * Reads a stored capture. Captures were fully validated (and fingerprinted) when saved and never
+ * change, and validation adds no defaults or conversions, so a full re-validation here would only
+ * build a second deep copy of a large capture (~2x memory). A cheap shape check guards against a
+ * damaged row; anything unexpected falls back to full validation.
+ */
+export function parseStoredSnapshot(snapshotJson: string): StoredSnapshot {
+  const value = JSON.parse(snapshotJson) as StoredSnapshot & { frames?: unknown; assets?: unknown; contentHash?: unknown };
+  const looksValid =
+    value !== null &&
+    typeof value === "object" &&
+    Array.isArray(value.frames) &&
+    Array.isArray(value.assets) &&
+    typeof value.contentHash === "string";
+  if (looksValid) return value;
+  return ("visualOnly" in value && value.visualOnly ? visualOnlySnapshotSchema : snapshotEnvelopeSchema).parse(value);
+}
+
 /** Size of a version's snapshot JSON in bytes (uncompressed), without loading or parsing it. */
 export function getVersionSnapshotSize(input: { workspaceId: string; versionId: string }) {
   const row = getDatabase()
@@ -680,11 +698,7 @@ export function getVersion(input: { workspaceId: string; versionId: string }) {
 
   const snapshot = cachedSnapshot(database, `${row.id}:${row.contentHash}`, () => {
     const snapshotJson = readSnapshotJson(database, input.versionId, input.workspaceId) ?? "{}";
-    const snapshotValue = JSON.parse(snapshotJson) as StoredSnapshot;
-    return ("visualOnly" in snapshotValue && snapshotValue.visualOnly
-      ? visualOnlySnapshotSchema
-      : snapshotEnvelopeSchema
-    ).parse(snapshotValue);
+    return parseStoredSnapshot(snapshotJson);
   });
 
   return { ...row, visualOnly: row.visualOnly === 1, snapshot, assets };

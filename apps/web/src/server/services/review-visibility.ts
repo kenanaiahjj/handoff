@@ -172,14 +172,15 @@ export type ViewerHandoff = {
 const screenChangesCache = new Map<string, ScreenChanges>();
 
 /**
- * Each screen's Figma frame id (stable across renames) and the fingerprint (stored object key) of its
- * render, read inside SQLite so the large snapshot never has to be parsed in JavaScript.
+ * Each screen's Figma frame id (stable across renames) and its fingerprint: the design hash (layer
+ * data without names) when the capture has design data, otherwise the render image's stored key.
+ * Read inside SQLite so the large snapshot never has to be parsed in JavaScript.
  */
 function screenFingerprints(versionId: string) {
   const rows = getDatabase()
     .prepare(
       `SELECT COALESCE(json_extract(frame.value, '$.sourceFrameId'), json_extract(frame.value, '$.name')) AS name,
-              handoff_asset.object_key AS objectKey
+              COALESCE(json_extract(frame.value, '$.designHash'), handoff_asset.object_key) AS objectKey
        FROM handoff_version
        LEFT JOIN handoff_version_snapshot ON handoff_version_snapshot.version_id = handoff_version.id,
        json_each(COALESCE(handoff_version_snapshot.frame_index, json_extract(handoff_version.snapshot_json, '$.frames'))) AS frame

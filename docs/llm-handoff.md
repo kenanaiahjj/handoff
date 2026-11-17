@@ -110,45 +110,35 @@ Local verification without real sign-in (development only):
 
 Each item: why, where to start, and when it is done.
 
+### Done since this document was first written
+
+- Member management (owners change roles and remove people; Members panel on the Projects page).
+- Designer requests need an owner's approval (`user_profile.requested_role`, Approve / Decline in Members).
+- Figma plugin network access covers all capture routes (`/api/capture-sessions/`), so a production
+  build can call preview and baseline-overview as well as upload.
+- Capture memory roughly halved: stored captures are read without a second full validation pass.
+- Comparison results are saved (`comparison_cache`, keyed on the confirmed-match fingerprint):
+  a repeat comparison takes milliseconds.
+- Screen change counts use a design fingerprint (layers without names, canvas position, export
+  pointers or sub-pixel noise) instead of image bytes: Tripket's rename release went from 199 to 1.
+
 ### P0: needed to go live
 
 1. **Build and run the Docker image once.** It was written on a machine without Docker.
    Start: `docker compose up -d --build` with a filled `.env` (see `deployment.env.example`).
    Done when: the image builds, `/api/health` returns `{"ok":true}`, Google sign-in works on the
    real domain, a capture from the Figma plugin lands, and a restart keeps the data.
-2. **Point the Figma plugin at production.** `integrations/figma-plugin/manifest.template.json`
-   only allows `http://localhost:3000`; `build.mjs` reads `HANDOFF_PUBLIC_URL`.
-   Done when: `HANDOFF_PUBLIC_URL=https://<domain> npm run build` in the plugin produces a manifest
-   allowing the production origin, and a 200-screen capture uploads through Caddy (limits already
-   raised to 512 MB / 10 min).
-3. **Member management.** There is no UI or API to change someone's role or remove them (only invite
-   links and onboarding). Add owner/admin-only routes and a Members panel on the Projects page.
-   Done when: an owner can change a role or remove a member; a reviewer gets 403; removing someone
-   also stops their Slack notifications and hides everything from them on next request; tests cover it.
-4. **Approve self-chosen designers.** Picking "Product designer" in onboarding grants manager rights
-   immediately. Make it a pending request an owner or admin approves (viewer access until then).
-   Done when: a fresh account choosing designer lands as a viewer with "Waiting for approval", and
-   an owner can approve it from Members.
+2. **Rebuild the Figma plugin for the real domain** once it is chosen:
+   `HANDOFF_PUBLIC_URL=https://<domain> npm run build` in `integrations/figma-plugin`, then load
+   `manifest.json` in Figma. Done when: a 200-screen capture uploads to production.
 
-### P1: performance and quality
+### P1: quality
 
-5. **Cut capture memory in half.** Loading a 200-screen capture uses ~950 MB because
-   `getVersion` JSON-parses 125 MB and then runs full zod validation (a second deep copy).
-   Captures are validated and fingerprinted on write and immutable, so reads could trust the stored
-   data, or better, store per-screen node data separately and load it on demand (the canvas already
-   loads node details per screen via `frames/[frameId]/nodes`).
-   Done when: opening Tripket stays under ~400 MB in production, all tests pass, fingerprints unchanged.
-6. **Persist comparison results.** Version pairs never change, so cache `diffSnapshots` results on
-   disk/DB keyed by `from:to`. Today a cold 200-screen comparison takes ~8 s.
-   Done when: the second open of the same comparison after a restart is under 1 s.
-7. **Accurate "screens changed" counts.** Counts compare render image fingerprints, so a full
-   re-capture marks every screen as changed (Tripket shows 199). Compare a hash of each frame's
-   node data instead (or both). Start: `screenChangesBetween` / `screenFingerprints` in
-   `services/review-visibility.ts`.
-   Done when: a re-capture with no design changes shows 0 changed.
-8. **End-to-end tests** (Playwright) for: sign-in (bypass), onboarding, reviewer can't see unshared
-   handoffs, comment with mention → Needs you, compare, phone view.
-9. **Error tracking and logs** (for example Sentry) on the server and client.
+3. **End-to-end tests** (Playwright) for: sign-in (bypass), onboarding, reviewer can't see unshared
+   handoffs, comment with mention → Needs you, compare, phone view, member removal.
+4. **Error tracking and logs** (for example Sentry) on the server and client. Needs an account.
+5. **Further memory cut** if 200+ screen files become common: store per-screen node data separately
+   and load it on demand (the canvas already fetches node details per screen).
 
 ### P2: reviewer and designer experience
 

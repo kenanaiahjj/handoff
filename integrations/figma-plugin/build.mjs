@@ -29,10 +29,13 @@ await Promise.all([
 ]);
 
 const manifest = JSON.parse(await readFile(path.join(here, "manifest.template.json"), "utf8"));
-const captureEndpoint = `${endpoint.origin}/api/capture-sessions/snapshot`;
+// The plugin calls three capture routes: preview (merge check), baseline-overview (the previous
+// canvas image) and snapshot (the upload). A trailing slash lets Figma allow everything under it;
+// listing only /snapshot would block the other two outside local development.
+const captureRoutes = `${endpoint.origin}/api/capture-sessions/`;
 manifest.networkAccess = {
-  allowedDomains: [captureEndpoint],
-  reasoning: "Upload one captured Figma canvas to the configured Asbir Handoff workspace.",
+  allowedDomains: [captureRoutes],
+  reasoning: "Send captured Figma canvases to the configured Asbir Handoff server.",
   devAllowedDomains: endpoint.hostname === "localhost" || endpoint.hostname === "127.0.0.1" || endpoint.hostname === "[::1]"
     ? [endpoint.origin]
     : [],

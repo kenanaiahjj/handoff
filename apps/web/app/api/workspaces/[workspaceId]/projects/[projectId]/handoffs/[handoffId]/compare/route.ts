@@ -1,5 +1,7 @@
 import { z } from "zod";
 import { getHandoff } from "@/src/server/repositories/handoffs";
+import { getDatabase } from "@/src/server/db";
+import { matchStateKey, readSavedComparison, saveComparison } from "@/src/server/services/comparison-cache";
 import {
   createConfirmedFrameReplacementMatch,
   createConfirmedNodeReplacementMatch,
@@ -111,6 +113,16 @@ function compareVersions(workspaceId: string, handoffId: string, from: CompareVe
   return { diff, frames };
 }
 
+function versionsBelongToHandoff(workspaceId: string, handoffId: string, versionIds: string[]) {
+  const row = getDatabase()
+    .prepare(
+      `SELECT COUNT(DISTINCT id) AS total FROM handoff_version
+       WHERE workspace_id = ? AND handoff_id = ? AND id IN (?, ?)`,
+    )
+    .get(workspaceId, handoffId, versionIds[0], versionIds[1]) as { total: number };
+  return row.total === new Set(versionIds).size;
+}
+
 function isEarlierVersion(left: CompareVersion, right: CompareVersion) {
   return left.createdAt.localeCompare(right.createdAt) < 0 ||
     (left.createdAt === right.createdAt && left.id.localeCompare(right.id) < 0);
@@ -144,6 +156,15 @@ export async function GET(request: Request, context: CompareRoute) {
     await requireHandoffAccess(request, { workspaceId, handoffId });
     const handoff = getHandoff({ workspaceId, projectId, handoffId });
     if (!handoff) return Response.json({ error: "Handoff not found." }, { status: 404 });
+
+    // A saved comparison skips loading both captures and recomputing the diff. It is only used when
+    // both versions belong to this handoff and the confirmed matches haven't changed since.
+    const matchKey = parsedNodeSearch ? null : matchStateKey(handoffId);
+    if (matchKey && versionsBelongToHandoff(workspaceId, handoffId, [fromVersionId, toVersionId])) {
+      const saved = readSavedComparison({ fromVersionId, toVersionId, matchKey });
+      if (saved) return new Response(saved, { headers: { "Content-Type": "application/json" } });
+    }
+
     const fromRow = getVersion({ workspaceId, versionId: fromVersionId });
     const toRow = getVersion({ workspaceId, versionId: toVersionId });
 
@@ -163,7 +184,9 @@ export async function GET(request: Request, context: CompareRoute) {
         limit,
       }), { headers: { "Cache-Control": "no-store" } });
     }
-    return Response.json(comparison);
+    const json = JSON.stringify(comparison);
+    if (matchKey) saveComparison({ handoffId, fromVersionId, toVersionId, matchKey, json });
+    return new Response(json, { headers: { "Content-Type": "application/json" } });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       return Response.json({ error: error.message }, { status: error.status });

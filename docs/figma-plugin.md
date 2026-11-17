@@ -40,7 +40,7 @@ $env:HANDOFF_PUBLIC_URL = "https://your-handoff-domain.example"
 npm run build --workspace @asbir/figma-plugin
 ```
 
-The plugin manifest grants access to the exact capture endpoint. Figma blocks plugin requests to domains that are not listed in `networkAccess.allowedDomains`; see [Figma's plugin manifest documentation](https://developers.figma.com/docs/plugins/manifest/).
+The plugin manifest grants access to the capture routes under `/api/capture-sessions/` (preview, baseline overview and snapshot upload). Build it for production with `HANDOFF_PUBLIC_URL=https://<your-domain> npm run build` in `integrations/figma-plugin`. Figma blocks plugin requests to domains that are not listed in `networkAccess.allowedDomains`; see [Figma's plugin manifest documentation](https://developers.figma.com/docs/plugins/manifest/).
 
 ## Capture a version
 

@@ -2,11 +2,11 @@ import { getDatabase } from "../db";
 import type { WorkspaceRole } from "../workspace-access";
 
 /**
- * The roles a person picks for themselves. Product designers manage handoffs (they upload captures);
- * everyone else sees only the handoffs shared with them.
+ * The roles a person picks for themselves. Product designers manage handoffs (they upload captures)
+ * once an owner approves; everyone else sees only the handoffs shared with them.
  */
 export const jobRoles = {
-  designer: { label: "Product designer", description: "Capture and publish handoffs.", workspaceRole: "designer" },
+  designer: { label: "Product designer", description: "Request access to capture and publish handoffs.", workspaceRole: "reviewer" },
   dev: { label: "Developer", description: "Build from specs and measurements.", workspaceRole: "developer" },
   qa: { label: "QA", description: "Check builds against the design.", workspaceRole: "qa" },
   pm: { label: "Product manager", description: "Review handoffs, lead projects.", workspaceRole: "reviewer" },
@@ -89,6 +89,9 @@ export function completeOnboarding(user: OnboardingUser, jobRole: JobRole) {
     const join = database.prepare(
       "INSERT OR IGNORE INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)",
     );
+    // Designer access lets someone publish and remove screens, so it waits for an owner's approval;
+    // until then they review like everyone else.
+    database.prepare("UPDATE user_profile SET requested_role = ? WHERE user_id = ?").run(jobRole === "designer" ? "designer" : null, user.id);
     for (const workspace of workspaces) join.run(workspace.id, user.id, jobRoles[jobRole].workspaceRole, now);
   })();
   return workspaces;

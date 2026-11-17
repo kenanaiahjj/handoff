@@ -11,7 +11,7 @@ process.env.ASBIR_ALLOWED_EMAIL_DOMAINS = "lmf.ventures, @plxrmedia.com";
 database.exec(`
   CREATE TABLE workspace (id TEXT PRIMARY KEY, name TEXT, created_at TEXT);
   CREATE TABLE workspace_membership (workspace_id TEXT, user_id TEXT, role TEXT, created_at TEXT, PRIMARY KEY (workspace_id, user_id));
-  CREATE TABLE user_profile (user_id TEXT PRIMARY KEY, job_role TEXT NOT NULL, onboarded_at TEXT NOT NULL);
+  CREATE TABLE user_profile (user_id TEXT PRIMARY KEY, job_role TEXT NOT NULL, onboarded_at TEXT NOT NULL, requested_role TEXT);
 `);
 database.prepare("INSERT INTO workspace VALUES ('ws-1', 'LMF', '2026-01-01')").run();
 database.prepare("INSERT INTO workspace_membership VALUES ('ws-1', 'owner', 'owner', '2026-01-01')").run();
@@ -55,8 +55,11 @@ test("owners skip onboarding; new teammates pick a role and join as a non-manage
 
   const designer = { id: "designer-1", email: "pd@lmf.ventures", emailVerified: true };
   completeOnboarding(designer, "designer");
-  assert.equal(database.prepare("SELECT role FROM workspace_membership WHERE user_id = ?").get(designer.id).role, "designer");
+  assert.equal(database.prepare("SELECT role FROM workspace_membership WHERE user_id = ?").get(designer.id).role, "reviewer");
+  // Designer access waits for an owner's approval.
+  assert.equal(database.prepare("SELECT requested_role FROM user_profile WHERE user_id = ?").get(designer.id).requested_role, "designer");
   const marketer = { id: "mkt-1", email: "mkt@lmf.ventures", emailVerified: true };
   completeOnboarding(marketer, "marketing");
   assert.equal(database.prepare("SELECT role FROM workspace_membership WHERE user_id = ?").get(marketer.id).role, "reviewer");
+  assert.equal(database.prepare("SELECT requested_role FROM user_profile WHERE user_id = ?").get(marketer.id).requested_role, null);
 });

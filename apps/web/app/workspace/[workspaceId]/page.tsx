@@ -5,6 +5,8 @@ import { getDatabase } from "@/src/server/db";
 import { listProjects } from "@/src/server/repositories/projects";
 import { CreateInviteForm } from "../workspace-actions";
 import { SuperadminsPanel } from "../superadmins-panel";
+import { MembersPanel } from "../members-panel";
+import { hasPendingDesignerRequest, listMembers } from "@/src/server/services/members";
 import { isSuperadmin, listSuperadmins } from "@/src/server/services/superadmins";
 import { ProjectsPane, type ProjectCard } from "./projects-pane";
 import Link from "next/link";
@@ -67,6 +69,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
         devBypass={devBypass}
         pinKeys={listPinKeys(session.user.id)}
         mentions={listOpenMentions(session.user.id, workspace.id, viewer)}
+        designerRequestPending={hasPendingDesignerRequest(session.user.id)}
         user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
         homeHref="/workspace"
         title={workspace.name}
@@ -84,6 +87,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
        ORDER BY created_at DESC`,
     )
     .all(workspaceId, new Date().toISOString()) as WorkspaceInvite[];
+  const members = listMembers(workspace.id);
   const navSections = createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects, page: "overview" });
 
   return (
@@ -113,6 +117,13 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
                 <h2 className="text-[14px] font-semibold text-foreground" id="invite-title">Invite your team</h2>
               </div>
               <div className="mt-4"><CreateInviteForm key={workspace.id} workspaceId={workspace.id} initialInvites={invites} /></div>
+              <div className="mt-6 border-t border-border pt-5">
+                <div className="mb-3 flex items-center justify-between">
+                  <h3 className="text-[13px] font-semibold text-foreground" id="members-title">Members</h3>
+                  <span className="font-mono text-[11px] text-foreground-subtle">{members.length}</span>
+                </div>
+                <MembersPanel canEdit={workspace.role === "owner"} currentUserId={session.user.id} initial={members} workspaceId={workspace.id} />
+              </div>
               {isSuperadmin(session.user.email) ? (
                 <div className="mt-6 border-t border-border pt-5">
                   <h3 className="text-[13px] font-semibold text-foreground" id="admins-title">Admins</h3>

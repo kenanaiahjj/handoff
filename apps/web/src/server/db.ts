@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { compressStoredSnapshots } from "./storage/snapshot-store";
+import { compressStoredSnapshots, refreshFrameIndexes } from "./storage/snapshot-store";
 import { mkdirSync, readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 
@@ -70,6 +70,7 @@ export function getDatabase() {
   database.pragma("journal_mode = WAL");
   applyMigrations(database);
   compressStoredSnapshots(database);
+  refreshFrameIndexes(database);
 
   globalForDatabase.__asbirDatabase = database;
   return database;
