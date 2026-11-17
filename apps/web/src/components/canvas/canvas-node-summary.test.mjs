@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { buildOverviewOverlayFromScreens, summarizeCanvasNode } from "./canvas-node-summary.ts";
+import { buildOverviewOverlayFromScreens, packCanvasNodes, summarizeCanvasNode, unpackCanvasNodes } from "./canvas-node-summary.ts";
 import { buildOverviewOverlayNodes } from "./overview-overlay-nodes.ts";
 
 const measure = (value, sourceProperty = "x") => ({ value, unit: "px", provenance: "source", sourceProperty });
@@ -63,4 +63,24 @@ test("browser-built overview hit areas match the positions the server used to se
     actual.map((entry) => [entry.sourceNodeId, entry.sourceFrameId, entry.bounds.x.value, entry.bounds.y.value, entry.bounds.width.value, entry.bounds.height.value]),
     expected.map((entry) => [entry.sourceNodeId, entry.sourceFrameId, entry.bounds.x.value, entry.bounds.y.value, entry.bounds.width.value, entry.bounds.height.value]),
   );
+});
+
+test("packed summaries unpack to exactly the summaries the canvas used to receive", () => {
+  const frameId = "1:1";
+  const summaries = [
+    summarizeCanvasNode(node(frameId, frameId, { layoutGrids: [{ pattern: "COLUMNS", count: 4 }] }), frameId),
+    summarizeCanvasNode(node("1:2", frameId), frameId),
+    summarizeCanvasNode({
+      ...node("1:3", frameId),
+      sourceFrameId: "other-frame",
+      visible: false,
+      bounds: { x: measure(null), y: measure(-4.5), width: measure(0), height: measure(null) },
+      typography: { content: null },
+      strokes: [{ color: "#000000", opacity: measure(1), sourceStyleId: null }],
+      tokens: [{ sourceId: "t2", name: "space/4", value: 4, collectionId: null, collectionName: null, mode: null }],
+    }, frameId),
+    summarizeCanvasNode({ ...node("1:4", frameId), name: "", typography: null, fills: [], tokens: [] }, frameId),
+  ];
+  assert.deepEqual(unpackCanvasNodes(JSON.parse(JSON.stringify(packCanvasNodes(summaries, frameId))), frameId), summaries);
+  assert.ok(JSON.stringify(packCanvasNodes(summaries, frameId)).length < JSON.stringify(summaries).length * 0.6);
 });

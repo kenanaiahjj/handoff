@@ -6,9 +6,9 @@ import type { CanvasFrameOption } from "./FrameNavigator";
 import type { VersionOption } from "./VersionCompare";
 import type { CompareRouteState } from "./compare-state";
 import { formatFigmaCaptureScope, removedFrameRecords } from "@asbir/snapshot-contract";
-import { HandoffReview } from "./HandoffReview";
+import { HandoffReview, type PackedCanvasFrameOption } from "./HandoffReview";
 import { getVersion, type StoredVersionAsset } from "@/src/server/repositories/versions";
-import { summarizeCanvasNode } from "./canvas-node-summary";
+import { packCanvasNodes, summarizeCanvasNode } from "./canvas-node-summary";
 
 export type ReviewVersionSummary = VersionOption & {
   id: string;
@@ -62,11 +62,11 @@ function buildCanvasFrames(version: StoredVersion, publicReviewShareId?: string)
     ? `/api/review/${encodeURIComponent(publicReviewShareId)}/assets/${encodeURIComponent(objectKey)}`
     : `/api/assets/${encodeURIComponent(objectKey)}`;
 
-  function assetFrame(input: AssetFrameInput): CanvasFrameOption {
+  function assetFrame({ nodes, ...input }: AssetFrameInput): PackedCanvasFrameOption {
     const asset = assetByKey.get(input.assetKey);
     if (!asset) notFound();
     const layerExports: NonNullable<CanvasFrameOption["layerExports"]> = {};
-    for (const node of input.nodes) {
+    for (const node of nodes) {
       const layerAssetKey = node.sourcePayload.layerExportAssetKey;
       if (typeof layerAssetKey !== "string") continue;
       const layerAsset = assetByKey.get(layerAssetKey);
@@ -79,7 +79,7 @@ function buildCanvasFrames(version: StoredVersion, publicReviewShareId?: string)
     }
     return {
       ...input,
-      nodes: input.nodes.map((node) => summarizeCanvasNode(node, input.id)),
+      packedNodes: packCanvasNodes(nodes.map((node) => summarizeCanvasNode(node, input.id)), input.id),
       pageName: input.kind === "frame" ? pageNames.get(pageIdByFrameId.get(input.id) ?? "") : undefined,
       imageSrc: assetUrl(asset.objectKey),
       fileName: asset.fileName,
@@ -128,7 +128,7 @@ function buildCanvasFrames(version: StoredVersion, publicReviewShareId?: string)
     kind: "overview",
   });
 
-  const frames: CanvasFrameOption[] = [overviewFrame];
+  const frames: PackedCanvasFrameOption[] = [overviewFrame];
   if (structuredSnapshot) {
     for (const frame of structuredSnapshot.frames) {
       const frameAsset = assetByKey.get(frame.renderAssetKey);

@@ -7,9 +7,13 @@ import type { CanvasFrameChangeStatus, CanvasFrameOption, FrameComparisonSummary
 import { VersionCompare, type CompareResult, type VersionOption } from "./VersionCompare";
 import { updateCompareRouteUrl, type CompareRouteState } from "./compare-state";
 import { ChangesListView } from "./ChangesListView";
+import { unpackCanvasNodes, type PackedCanvasNode } from "./canvas-node-summary";
+
+/** A screen as the server sends it: element summaries packed (see packCanvasNodes). */
+export type PackedCanvasFrameOption = Omit<CanvasFrameOption, "nodes"> & { packedNodes: PackedCanvasNode[] };
 
 type HandoffReviewProps = {
-  frames: CanvasFrameOption[];
+  frames: PackedCanvasFrameOption[];
   commentsEndpoint: string;
   versions: VersionOption[];
   workspaceId: string;
@@ -30,7 +34,7 @@ type LoadedComparison = {
 };
 
 export function HandoffReview({
-  frames,
+  frames: packedFrames,
   commentsEndpoint,
   versions,
   workspaceId,
@@ -42,6 +46,11 @@ export function HandoffReview({
   metadata,
   dockPanels = {},
 }: HandoffReviewProps) {
+  // Unpacked once per version; the objects match what the server used to send field for field.
+  const frames = useMemo<CanvasFrameOption[]>(
+    () => packedFrames.map(({ packedNodes, ...frame }) => ({ ...frame, nodes: unpackCanvasNodes(packedNodes, frame.id) })),
+    [packedFrames],
+  );
   const [comparison, setComparison] = useState<LoadedComparison | null>(null);
   const [initialCompareResult, setInitialCompareResult] = useState<CompareResult | null>(null);
   const [compareScreenRequest, setCompareScreenRequest] = useState<{ frameId: string; requestId: number } | null>(null);
