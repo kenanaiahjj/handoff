@@ -1,17 +1,15 @@
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
 import test, { after } from "node:test";
+import { createPostgresTestFixture } from "../../../../../../../../../src/server/test-support/postgres-test-fixture.mjs";
 
-const priorDatabase = globalThis.__asbirDatabase;
 const priorSecret = process.env.BETTER_AUTH_SECRET;
 const priorBaseUrl = process.env.BETTER_AUTH_URL;
-const database = new Database(":memory:");
-database.pragma("foreign_keys = ON");
-globalThis.__asbirDatabase = database;
+const fixture = await createPostgresTestFixture();
+const { pool, database } = fixture;
 process.env.BETTER_AUTH_SECRET ??= "asbir-handoff-sharing-route-test-secret-over-thirty-two-bytes";
 process.env.BETTER_AUTH_URL = "http://localhost:3000";
 
-database.exec(`
+await pool.query(`
   CREATE TABLE workspace_membership (
     workspace_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
@@ -48,43 +46,43 @@ database.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT NOT NULL,
-    emailVerified INTEGER NOT NULL DEFAULT 0,
+    "emailVerified" BOOLEAN NOT NULL DEFAULT false,
     image TEXT,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL
   );
   CREATE TABLE session (
     id TEXT PRIMARY KEY,
-    expiresAt TEXT NOT NULL,
+    "expiresAt" TEXT NOT NULL,
     token TEXT NOT NULL UNIQUE,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL,
-    ipAddress TEXT,
-    userAgent TEXT,
-    userId TEXT NOT NULL
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL,
+    "ipAddress" TEXT,
+    "userAgent" TEXT,
+    "userId" TEXT NOT NULL
   );
   CREATE TABLE account (
     id TEXT PRIMARY KEY,
-    accountId TEXT NOT NULL,
-    providerId TEXT NOT NULL,
-    userId TEXT NOT NULL,
-    accessToken TEXT,
-    refreshToken TEXT,
-    idToken TEXT,
-    accessTokenExpiresAt TEXT,
-    refreshTokenExpiresAt TEXT,
+    "accountId" TEXT NOT NULL,
+    "providerId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "accessToken" TEXT,
+    "refreshToken" TEXT,
+    "idToken" TEXT,
+    "accessTokenExpiresAt" TEXT,
+    "refreshTokenExpiresAt" TEXT,
     scope TEXT,
     password TEXT,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL
   );
   CREATE TABLE verification (
     id TEXT PRIMARY KEY,
     identifier TEXT NOT NULL,
     value TEXT NOT NULL,
-    expiresAt TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL
+    "expiresAt" TEXT NOT NULL,
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL
   );
 `);
 
@@ -94,14 +92,14 @@ const handoffId = "20000000-0000-4000-8000-000000000001";
 const publicShareId = "public-share-before-revoke";
 const now = "2026-11-11T12:00:00.000Z";
 
-database.prepare("INSERT INTO project (id, workspace_id) VALUES (?, ?)").run(projectId, workspaceId);
-database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)")
+await database.prepare("INSERT INTO project (id, workspace_id) VALUES (?, ?)").run(projectId, workspaceId);
+await database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, 'owner', ?)")
   .run(workspaceId, "owner-id", now);
-database.prepare(`INSERT INTO handoff
+await database.prepare(`INSERT INTO handoff
   (id, workspace_id, project_id, name, created_at, review_share_id, published_version_id, published_at, published_by_user_id, sharing_mode)
   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'anyone')`)
   .run(handoffId, workspaceId, projectId, "Test handoff", now, publicShareId, "version-1", now, "owner-id");
-database.prepare(`INSERT INTO handoff_invite
+await database.prepare(`INSERT INTO handoff_invite
   (id, workspace_id, handoff_id, email, token_hash, expires_at, revoked_at, invited_by_user_id, created_at)
   VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?)`)
   .run("invite-1", workspaceId, handoffId, "qa@example.com", "token-hash", "owner-id", now);
@@ -122,11 +120,9 @@ function request(body) {
 
 const context = { params: Promise.resolve({ workspaceId, projectId, handoffId }) };
 
-after(() => {
+after(async () => {
   auth.api.getSession = originalGetSession;
-  database.close();
-  if (priorDatabase === undefined) delete globalThis.__asbirDatabase;
-  else globalThis.__asbirDatabase = priorDatabase;
+  await fixture.close();
   if (priorSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
   else process.env.BETTER_AUTH_SECRET = priorSecret;
   if (priorBaseUrl === undefined) delete process.env.BETTER_AUTH_URL;
@@ -136,8 +132,8 @@ after(() => {
 test("revoking a public link invalidates the old URL and outstanding invitations", async () => {
   const response = await updateSharing(request({ mode: "workspace", revokePublicLink: true }), context);
   const payload = await response.json();
-  const handoff = database.prepare("SELECT review_share_id AS reviewShareId, sharing_mode AS mode FROM handoff WHERE id = ?").get(handoffId);
-  const invite = database.prepare("SELECT revoked_at AS revokedAt FROM handoff_invite WHERE id = ?").get("invite-1");
+  const handoff = await database.prepare("SELECT review_share_id AS reviewShareId, sharing_mode AS mode FROM handoff WHERE id = ?").get(handoffId);
+  const invite = await database.prepare("SELECT revoked_at AS revokedAt FROM handoff_invite WHERE id = ?").get("invite-1");
 
   assert.equal(response.status, 200);
   assert.equal(handoff.mode, "workspace");
@@ -147,18 +143,18 @@ test("revoking a public link invalidates the old URL and outstanding invitations
   assert.deepEqual(payload.invites, []);
 
   await updateSharing(request({ mode: "anyone" }), context);
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM handoff WHERE review_share_id = ?").get(publicShareId).count, 0);
-  assert.equal(database.prepare("SELECT revoked_at FROM handoff_invite WHERE id = ?").get("invite-1").revoked_at !== null, true);
+  assert.equal((await database.prepare("SELECT COUNT(*) AS count FROM handoff WHERE review_share_id = ?").get(publicShareId)).count, 0);
+  assert.equal((await database.prepare("SELECT revoked_at FROM handoff_invite WHERE id = ?").get("invite-1")).revoked_at !== null, true);
 });
 
 test("reviewers cannot rotate a handoff share URL", async () => {
-  const previousShareId = database.prepare("SELECT review_share_id AS id FROM handoff WHERE id = ?").get(handoffId).id;
+  const previousShareId = (await database.prepare("SELECT review_share_id AS id FROM handoff WHERE id = ?").get(handoffId)).id;
   currentSession = { user: { id: "qa-id", email: "qa@example.com" } };
-  database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, 'qa', ?)")
+  await database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, 'qa', ?)")
     .run(workspaceId, "qa-id", now);
 
   const response = await updateSharing(request({ mode: "workspace", revokePublicLink: true }), context);
 
   assert.equal(response.status, 403);
-  assert.equal(database.prepare("SELECT review_share_id AS id FROM handoff WHERE id = ?").get(handoffId).id, previousShareId);
+  assert.equal((await database.prepare("SELECT review_share_id AS id FROM handoff WHERE id = ?").get(handoffId)).id, previousShareId);
 });

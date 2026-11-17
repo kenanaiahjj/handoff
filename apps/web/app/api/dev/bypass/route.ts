@@ -22,9 +22,9 @@ export async function POST(request: Request) {
       : `${bypassOffCookieName}=1; Path=/; Max-Age=31536000; SameSite=Lax; HttpOnly`,
   );
   // "Use local dev account" opens the populated reviewer home (Riley); "View as" can switch to Owner.
-  const company = parsed.data.enabled && parsed.data.as === "reviewer" ? getCompanyWorkspace() : null;
+  const company = parsed.data.enabled && parsed.data.as === "reviewer" ? (await getCompanyWorkspace()) : null;
   if (company) {
-    ensureLocalReviewer(company.id, localReviewerUser);
+    await ensureLocalReviewer(company.id, localReviewerUser);
     headers.append("Set-Cookie", `${viewAsCookieName}=${encodeURIComponent(localReviewerUser.id)}; Path=/; HttpOnly; SameSite=Lax`);
   } else {
     // Leaving the bypass (or entering as the owner) drops any "View as" choice.

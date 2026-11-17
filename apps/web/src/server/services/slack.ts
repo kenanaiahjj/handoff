@@ -78,8 +78,8 @@ const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&l
  * Who hears about a new version: people the handoff is shared with, the project's PD, and anyone who
  * pinned the project — never the person who published it.
  */
-export function newVersionRecipients(input: { workspaceId: string; handoffId: string; createdBy: string }) {
-  const rows = getDatabase()
+export async function newVersionRecipients(input: { workspaceId: string; handoffId: string; createdBy: string }) {
+  const rows = (await getDatabase()
     .prepare(
       `SELECT email FROM handoff_invite
          WHERE handoff_id = ? AND workspace_id = ? AND revoked_at IS NULL
@@ -93,8 +93,8 @@ export function newVersionRecipients(input: { workspaceId: string; handoffId: st
          JOIN workspace_membership ON workspace_membership.user_id = viewer_pin.user_id AND workspace_membership.workspace_id = handoff.workspace_id
          JOIN "user" ON "user".id = viewer_pin.user_id WHERE handoff.id = ?`,
     )
-    .all(input.handoffId, input.workspaceId, new Date().toISOString(), input.handoffId, input.handoffId) as Array<{ email: string }>;
-  const publisher = getDatabase().prepare('SELECT lower(email) AS email FROM "user" WHERE id = ?').get(input.createdBy) as { email: string } | undefined;
+    .all(input.handoffId, input.workspaceId, new Date().toISOString(), input.handoffId, input.handoffId)) as Array<{ email: string }>;
+  const publisher = (await getDatabase().prepare('SELECT lower(email) AS email FROM "user" WHERE id = ?').get(input.createdBy)) as { email: string } | undefined;
   return rows.map((row) => row.email.toLowerCase()).filter((email) => email !== publisher?.email);
 }
 
@@ -102,7 +102,7 @@ export function newVersionRecipients(input: { workspaceId: string; handoffId: st
 export async function notifyNewVersion(input: { workspaceId: string; handoffId: string; versionId: string; createdBy: string }, fetcher?: SlackFetch) {
   if (!isSlackEnabled()) return { sent: 0 };
   const database = getDatabase();
-  const details = database
+  const details = (await database
     .prepare(
       `SELECT handoff.name AS handoffName, handoff.project_id AS projectId, project.name AS projectName,
               handoff_version.version_label AS versionLabel, "user".name AS publisher
@@ -112,20 +112,20 @@ export async function notifyNewVersion(input: { workspaceId: string; handoffId: 
        LEFT JOIN "user" ON "user".id = handoff_version.created_by_user_id
        WHERE handoff_version.id = ?`,
     )
-    .get(input.versionId) as { handoffName: string; projectId: string; projectName: string; versionLabel: string; publisher: string | null } | undefined;
+    .get(input.versionId)) as { handoffName: string; projectId: string; projectName: string; versionLabel: string; publisher: string | null } | undefined;
   if (!details) return { sent: 0 };
-  const previous = database
+  const previous = (await database
     .prepare(
       `SELECT id FROM handoff_version WHERE handoff_id = ? AND id <> ?
        ORDER BY created_at DESC, id DESC LIMIT 1`,
     )
-    .get(input.handoffId, input.versionId) as { id: string } | undefined;
+    .get(input.handoffId, input.versionId)) as { id: string } | undefined;
 
   const base = `/workspace/${input.workspaceId}/projects/${details.projectId}/handoffs/${input.handoffId}`;
   let detail: string | null = null;
   let url = appUrl(`${base}?versionId=${input.versionId}`);
   if (previous) {
-    const changes = screenChangesBetween(previous.id, input.versionId);
+    const changes = (await screenChangesBetween(previous.id, input.versionId));
     const parts = [
       changes.changed ? `${changes.changed} ${changes.changed === 1 ? "screen" : "screens"} changed` : "",
       changes.added ? `${changes.added} new` : "",
@@ -136,7 +136,7 @@ export async function notifyNewVersion(input: { workspaceId: string; handoffId: 
   }
   const text = `*${escape(details.publisher ?? "Someone")}* published version *${escape(details.versionLabel)}* of *${escape(details.handoffName)}* in ${escape(details.projectName)}.`;
   return sendSlackDirectMessages(
-    filterBySlackPreference(newVersionRecipients(input), "version"),
+    (await filterBySlackPreference((await newVersionRecipients(input)), "version")),
     messageWithButton(text, detail, previous ? "Review changes" : "Open handoff", url),
     fetcher,
   );
@@ -148,18 +148,18 @@ export async function notifyMentions(
   fetcher?: SlackFetch,
 ) {
   if (!isSlackEnabled() || !input.mentioned.length) return { sent: 0 };
-  const details = getDatabase()
+  const details = (await getDatabase()
     .prepare(
       `SELECT handoff.name AS handoffName, handoff.project_id AS projectId, project.name AS projectName,
               (SELECT name FROM "user" WHERE id = ?) AS author
        FROM handoff JOIN project ON project.id = handoff.project_id WHERE handoff.id = ?`,
     )
-    .get(input.authorId, input.handoffId) as { handoffName: string; projectId: string; projectName: string; author: string | null } | undefined;
+    .get(input.authorId, input.handoffId)) as { handoffName: string; projectId: string; projectName: string; author: string | null } | undefined;
   if (!details) return { sent: 0 };
   const text = plainCommentText(input.body).replace(/\s+/g, " ").trim();
   const excerpt = text.length > 280 ? `${text.slice(0, 279)}…` : text;
   return sendSlackDirectMessages(
-    filterBySlackPreference(input.mentioned.map((person) => person.email), "mention"),
+    (await filterBySlackPreference(input.mentioned.map((person) => person.email), "mention")),
     messageWithButton(
       `*${escape(details.author ?? "Someone")}* mentioned you in *${escape(details.handoffName)}* · ${escape(details.projectName)}`,
       `> ${escape(excerpt)}`,

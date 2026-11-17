@@ -38,23 +38,23 @@ const selectDraftColumns = `id, handoff_id AS handoffId, from_version_id AS from
   evidence_json AS evidenceJson, model_id AS modelId, status,
   created_by_user_id AS createdBy, created_at AS createdAt, updated_at AS updatedAt`;
 
-export function listChangelogDrafts(input: { workspaceId: string; handoffId: string }) {
-  const rows = getDatabase()
+export async function listChangelogDrafts(input: { workspaceId: string; handoffId: string }) {
+  const rows = (await getDatabase()
     .prepare(`SELECT ${selectDraftColumns} FROM changelog_draft WHERE workspace_id = ? AND handoff_id = ? ORDER BY updated_at DESC LIMIT 20`)
-    .all(input.workspaceId, input.handoffId) as Array<Record<string, unknown>>;
+    .all(input.workspaceId, input.handoffId)) as Array<Record<string, unknown>>;
   return rows.map(parseRow);
 }
 
-export function listApprovedChangelogsForVersion(input: { workspaceId: string; handoffId: string; versionId: string }) {
-  const rows = getDatabase()
+export async function listApprovedChangelogsForVersion(input: { workspaceId: string; handoffId: string; versionId: string }) {
+  const rows = (await getDatabase()
     .prepare(`SELECT ${selectDraftColumns} FROM changelog_draft
       WHERE workspace_id = ? AND handoff_id = ? AND to_version_id = ? AND status = 'approved'
       ORDER BY updated_at DESC LIMIT 20`)
-    .all(input.workspaceId, input.handoffId, input.versionId) as Array<Record<string, unknown>>;
+    .all(input.workspaceId, input.handoffId, input.versionId)) as Array<Record<string, unknown>>;
   return rows.map(parseRow);
 }
 
-export function createChangelogDraft(input: {
+export async function createChangelogDraft(input: {
   workspaceId: string;
   handoffId: string;
   fromVersionId: string;
@@ -68,7 +68,7 @@ export function createChangelogDraft(input: {
 }) {
   const id = randomUUID();
   const now = new Date().toISOString();
-  getDatabase()
+  (await getDatabase()
     .prepare(
       `INSERT INTO changelog_draft
         (id, workspace_id, handoff_id, from_version_id, to_version_id, title,
@@ -90,18 +90,18 @@ export function createChangelogDraft(input: {
       input.createdBy,
       now,
       now,
-    );
+    ));
   return { ...input, id, status: "draft" as const, createdAt: now, updatedAt: now };
 }
 
-export function getChangelogDraft(input: { workspaceId: string; handoffId: string; draftId: string }) {
-  const row = getDatabase()
+export async function getChangelogDraft(input: { workspaceId: string; handoffId: string; draftId: string }) {
+  const row = (await getDatabase()
     .prepare(`SELECT ${selectDraftColumns} FROM changelog_draft WHERE id = ? AND workspace_id = ? AND handoff_id = ?`)
-    .get(input.draftId, input.workspaceId, input.handoffId) as Record<string, unknown> | undefined;
+    .get(input.draftId, input.workspaceId, input.handoffId)) as Record<string, unknown> | undefined;
   return row ? parseRow(row) : null;
 }
 
-export function updateChangelogDraft(input: {
+export async function updateChangelogDraft(input: {
   workspaceId: string;
   handoffId: string;
   draftId: string;
@@ -111,11 +111,11 @@ export function updateChangelogDraft(input: {
   status: "draft" | "approved";
 }) {
   const now = new Date().toISOString();
-  const result = getDatabase()
+  const result = (await getDatabase()
     .prepare(
       `UPDATE changelog_draft SET title = ?, summary = ?, statements_json = ?, status = ?, updated_at = ?
        WHERE id = ? AND workspace_id = ? AND handoff_id = ?`,
     )
-    .run(input.title, input.summary, JSON.stringify(input.statements), input.status, now, input.draftId, input.workspaceId, input.handoffId);
+    .run(input.title, input.summary, JSON.stringify(input.statements), input.status, now, input.draftId, input.workspaceId, input.handoffId));
   return result.changes === 1;
 }

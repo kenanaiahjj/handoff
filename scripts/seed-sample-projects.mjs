@@ -49,31 +49,30 @@ const samples = [
   },
 ];
 
-const owner = database
-  .prepare(`SELECT "user".id FROM workspace_membership JOIN "user" ON "user".id = workspace_membership.user_id
-            WHERE workspace_membership.role = 'owner' ORDER BY workspace_membership.created_at ASC LIMIT 1`)
-  .get();
+const owner = (await database.query(`SELECT "user".id FROM workspace_membership JOIN "user" ON "user".id = workspace_membership.user_id
+            WHERE workspace_membership.role = 'owner' ORDER BY workspace_membership.created_at ASC LIMIT 1`)).rows[0];
 if (!owner) throw new Error("No workspace owner found. Sign in and create a workspace first.");
 
-const base = database
-  .prepare(
-    `SELECT handoff_version.* FROM handoff_version
-     LEFT JOIN handoff_version_snapshot ON handoff_version_snapshot.version_id = handoff_version.id
-     WHERE visual_only = 0 AND source = 'figma'
-     ORDER BY COALESCE(handoff_version_snapshot.raw_bytes, length(handoff_version.snapshot_json)) DESC LIMIT 1`,
-  )
-  .get();
+const base = (await database.query(
+  `SELECT handoff_version.* FROM handoff_version
+   LEFT JOIN handoff_version_snapshot ON handoff_version_snapshot.version_id = handoff_version.id
+   WHERE visual_only IS FALSE AND source = 'figma'
+   ORDER BY COALESCE(handoff_version_snapshot.raw_bytes, length(handoff_version.snapshot_json)) DESC LIMIT 1`,
+)).rows[0];
 if (!base) throw new Error("No Figma capture found to build samples from. Upload one first.");
-const baseSnapshot = JSON.parse(readSnapshotJson(database, base.id, base.workspace_id));
+const baseSnapshot = JSON.parse(await readSnapshotJson(database, base.id, base.workspace_id));
 const baseAssets = new Map(
-  database.prepare("SELECT * FROM handoff_asset WHERE handoff_version_id = ?").all(base.id).map((asset) => [asset.asset_key, asset]),
+  (await database.query("SELECT * FROM handoff_asset WHERE handoff_version_id = $1", [base.id])).rows
+    .map((asset) => [asset.asset_key, asset]),
 );
 
 // Make sure the local reviewer exists (the dev "View as" switcher normally creates it).
 const now = new Date().toISOString();
-database
-  .prepare(`INSERT OR IGNORE INTO "user" (id, name, email, emailVerified, image, createdAt, updatedAt) VALUES (?, ?, ?, 1, NULL, ?, ?)`)
-  .run(localReviewerUser.id, localReviewerUser.name, localReviewerUser.email, now, now);
+await database.query(
+  `INSERT INTO "user" (id, name, email, "emailVerified", image, "createdAt", "updatedAt")
+   VALUES ($1, $2, $3, TRUE, NULL, $4, $5) ON CONFLICT DO NOTHING`,
+  [localReviewerUser.id, localReviewerUser.name, localReviewerUser.email, now, now],
+);
 
 async function sliceSnapshot(prefixes, keep = 1) {
   const matching = baseSnapshot.frames.filter((frame) => prefixes.some((prefix) => frame.name.startsWith(prefix)));
@@ -87,38 +86,54 @@ async function sliceSnapshot(prefixes, keep = 1) {
 }
 
 const insert = {
-  workspace: database.prepare("INSERT INTO workspace (id, name, created_by_user_id, created_at) VALUES (?, ?, ?, ?)"),
-  membership: database.prepare("INSERT OR IGNORE INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)"),
-  project: database.prepare("INSERT INTO project (id, workspace_id, name, created_by_user_id, created_at) VALUES (?, ?, ?, ?, ?)"),
-  handoff: database.prepare(
-    "INSERT INTO handoff (id, workspace_id, project_id, name, created_by_user_id, created_at, sharing_mode) VALUES (?, ?, ?, ?, ?, ?, 'invited')",
+  membership: (workspaceId, userId, role, createdAt) => database.query(
+    `INSERT INTO workspace_membership (workspace_id, user_id, role, created_at)
+     VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING`,
+    [workspaceId, userId, role, createdAt],
   ),
-  version: database.prepare(
+  project: (id, workspaceId, name, createdByUserId, createdAt) => database.query(
+    `INSERT INTO project (id, workspace_id, name, created_by_user_id, created_at)
+     VALUES ($1, $2, $3, $4, $5)`,
+    [id, workspaceId, name, createdByUserId, createdAt],
+  ),
+  handoff: (id, workspaceId, projectId, name, createdByUserId, createdAt) => database.query(
+    `INSERT INTO handoff (id, workspace_id, project_id, name, created_by_user_id, created_at, sharing_mode)
+     VALUES ($1, $2, $3, $4, $5, $6, 'invited')`,
+    [id, workspaceId, projectId, name, createdByUserId, createdAt],
+  ),
+  version: (id, workspaceId, handoffId, label, releaseNote, source, sourceFileId, sourceRevisionId, capturedAt, contentHash, snapshotJson, createdByUserId, createdAt) => database.query(
     `INSERT INTO handoff_version (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id, source_revision_id,
        captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?)`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, FALSE, $11, $12, $13)`,
+    [id, workspaceId, handoffId, label, releaseNote, source, sourceFileId, sourceRevisionId, capturedAt, contentHash, snapshotJson, createdByUserId, createdAt],
   ),
-  asset: database.prepare(
+  asset: (id, workspaceId, versionId, assetKey, objectKey, fileName, contentType, sizeBytes, sha256, width, height, createdAt) => database.query(
     `INSERT INTO handoff_asset (id, workspace_id, handoff_version_id, asset_key, object_key, file_name, content_type, size_bytes, sha256, width, height, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`,
+    [id, workspaceId, versionId, assetKey, objectKey, fileName, contentType, sizeBytes, sha256, width, height, createdAt],
   ),
-  invite: database.prepare(
+  invite: (id, workspaceId, handoffId, email, tokenHash, invitedByUserId, createdAt) => database.query(
     `INSERT INTO handoff_invite (id, workspace_id, handoff_id, email, token_hash, expires_at, revoked_at, invited_by_user_id, created_at, role)
-     VALUES (?, ?, ?, ?, ?, NULL, NULL, ?, ?, 'exec')`,
+     VALUES ($1, $2, $3, $4, $5, NULL, NULL, $6, $7, 'exec')`,
+    [id, workspaceId, handoffId, email, tokenHash, invitedByUserId, createdAt],
   ),
-  seen: database.prepare(
-    `INSERT INTO handoff_view (user_id, workspace_id, handoff_id, last_seen_version_id, seen_at) VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT (user_id, handoff_id) DO UPDATE SET last_seen_version_id = excluded.last_seen_version_id, seen_at = excluded.seen_at`,
+  seen: (userId, workspaceId, handoffId, versionId, seenAt) => database.query(
+    `INSERT INTO handoff_view (user_id, workspace_id, handoff_id, last_seen_version_id, seen_at)
+     VALUES ($1, $2, $3, $4, $5)
+     ON CONFLICT (user_id, handoff_id) DO UPDATE
+     SET last_seen_version_id = EXCLUDED.last_seen_version_id, seen_at = EXCLUDED.seen_at`,
+    [userId, workspaceId, handoffId, versionId, seenAt],
   ),
 };
 
 // Everything lives in the one company workspace (the oldest), as projects.
-const company = database.prepare("SELECT id FROM workspace ORDER BY created_at ASC, id ASC LIMIT 1").get();
+const company = (await database.query("SELECT id FROM workspace ORDER BY created_at ASC, id ASC LIMIT 1")).rows[0];
 if (!company) throw new Error("No workspace yet. Sign in once to set it up.");
-insert.membership.run(company.id, localReviewerUser.id, "reviewer", now);
+await insert.membership(company.id, localReviewerUser.id, "reviewer", now);
 
 for (const sample of samples) {
-  if (database.prepare("SELECT 1 FROM project WHERE workspace_id = ? AND name = ?").get(company.id, sample.project)) {
+  const existing = await database.query("SELECT 1 FROM project WHERE workspace_id = $1 AND name = $2", [company.id, sample.project]);
+  if (existing.rowCount) {
     console.log(`Skipped "${sample.project}" (already exists).`);
     continue;
   }
@@ -133,38 +148,41 @@ for (const sample of samples) {
   const workspaceId = company.id;
   const createdAt = isoDaysAgo(40);
   let shared = 0;
-  database.transaction(() => {
+  await database.transaction(async () => {
     const projectId = randomUUID();
-    insert.project.run(projectId, workspaceId, sample.project, owner.id, createdAt);
+    await insert.project(projectId, workspaceId, sample.project, owner.id, createdAt);
     for (const { handoff, versions } of plan) {
       const handoffId = randomUUID();
-      insert.handoff.run(handoffId, workspaceId, projectId, handoff.name, owner.id, isoDaysAgo(versions[0].daysAgo + 1));
+      await insert.handoff(handoffId, workspaceId, projectId, handoff.name, owner.id, isoDaysAgo(versions[0].daysAgo + 1));
 
-      const versionIds = versions.map((version) => {
+      const versionIds = [];
+      for (const version of versions) {
         const versionId = randomUUID();
         const versionCreatedAt = isoDaysAgo(version.daysAgo);
-        insert.version.run(
+        await insert.version(
           versionId, workspaceId, handoffId, version.label, `Sample data: ${version.snapshot.frames.length} screens.`,
           base.source, base.source_file_id, base.source_revision_id, versionCreatedAt, version.snapshot.contentHash,
           "{}", owner.id, versionCreatedAt,
         );
-        storeCompressedSnapshot(database, versionId, JSON.stringify(version.snapshot));
+        await storeCompressedSnapshot(database, versionId, JSON.stringify(version.snapshot));
         for (const asset of version.snapshot.assets) {
           const stored = baseAssets.get(asset.key);
           if (!stored) throw new Error(`Image ${asset.key} is missing from the source capture.`);
-          insert.asset.run(
+          await insert.asset(
             randomUUID(), workspaceId, versionId, stored.asset_key, stored.object_key, stored.file_name, stored.content_type,
             stored.size_bytes, stored.sha256, stored.width, stored.height, versionCreatedAt,
           );
         }
-        return versionId;
-      });
+        versionIds.push(versionId);
+      }
 
       if (handoff.shared === false) continue;
       shared += 1;
       const tokenHash = createHash("sha256").update(randomBytes(32)).digest("hex");
-      insert.invite.run(randomUUID(), workspaceId, handoffId, localReviewerUser.email, tokenHash, owner.id, createdAt);
-      if (handoff.seen !== null) insert.seen.run(localReviewerUser.id, workspaceId, handoffId, versionIds[handoff.seen], isoDaysAgo(versions[handoff.seen].daysAgo));
+      await insert.invite(randomUUID(), workspaceId, handoffId, localReviewerUser.email, tokenHash, owner.id, createdAt);
+      if (handoff.seen !== null) {
+        await insert.seen(localReviewerUser.id, workspaceId, handoffId, versionIds[handoff.seen], isoDaysAgo(versions[handoff.seen].daysAgo));
+      }
     }
   })();
   console.log(`Created project "${sample.project}": ${plan.length} handoffs, ${shared} shared with ${localReviewerUser.email}.`);

@@ -11,7 +11,7 @@ const bodySchema = z.object({ name: z.string().max(100).optional() }).optional()
 export async function POST(request: Request) {
   if (!isDevelopmentAuthBypassConfigured()) return Response.json({ error: "Not found." }, { status: 404 });
   const parsed = bodySchema.safeParse(await request.json().catch(() => undefined));
-  const user = createDevTestAccount({ name: parsed.success ? parsed.data?.name : undefined });
+  const user = (await createDevTestAccount({ name: parsed.success ? parsed.data?.name : undefined }));
 
   const headers = new Headers({ "Content-Type": "application/json" });
   headers.append("Set-Cookie", `${bypassOffCookieName}=; Path=/; Max-Age=0; SameSite=Lax; HttpOnly`);
@@ -21,7 +21,7 @@ export async function POST(request: Request) {
 
 export async function DELETE() {
   if (!isDevelopmentAuthBypassConfigured()) return Response.json({ error: "Not found." }, { status: 404 });
-  const result = deleteDevTestAccounts();
+  const result = (await deleteDevTestAccounts());
   const headers = new Headers({ "Content-Type": "application/json" });
   headers.append("Set-Cookie", `${viewAsCookieName}=; Path=/; Max-Age=0; SameSite=Lax`);
   return new Response(JSON.stringify({ ...result, redirectTo: "/workspace" }), { headers });

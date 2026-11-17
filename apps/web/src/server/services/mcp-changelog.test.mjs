@@ -122,14 +122,14 @@ test("links an AI-authored draft to evidence generated from its exact version pa
   ]);
 });
 
-test("uses reviewer-confirmed layer matches when building changelog evidence", () => {
+test("uses reviewer-confirmed layer matches when building changelog evidence", async () => {
   const before = syntheticSnapshot("Review booking");
   before.frames[0].nodes[0].sourceNodeId = "node-before";
   const after = syntheticSnapshot("Review your booking");
   after.frames[0].nodes[0].sourceNodeId = "node-after";
   after.frames[0].nodes[0].name = "Page title";
 
-  const evidence = collectChangelogEvidence({
+  const evidence = await collectChangelogEvidence({
     workspaceId: "workspace-synthetic",
     handoffId: "handoff-synthetic",
     from: { id: "version-before", versionLabel: "Before", snapshot: before },
@@ -169,7 +169,7 @@ test("rejects AI statements that cite evidence outside the supplied version pair
   }), /referenced evidence that was not part of this handoff/);
 });
 
-test("does not present one-sided selected screens to AI as design additions or removals", () => {
+test("does not present one-sided selected screens to AI as design additions or removals", async () => {
   const before = syntheticSnapshot("Review");
   before.source = "figma";
   before.sourceMetadata = { captureScope: "selected frames and components", sourcePageId: "page-main" };
@@ -181,7 +181,7 @@ test("does not present one-sided selected screens to AI as design additions or r
   after.frames[0].sourceFrameId = "screen-after";
   after.frames[0].nodes[0].sourceFrameId = "screen-after";
 
-  const evidence = collectChangelogEvidence({
+  const evidence = await collectChangelogEvidence({
     workspaceId: "workspace-synthetic",
     handoffId: "handoff-synthetic",
     from: { id: "version-before", versionLabel: "Before", snapshot: before },
@@ -192,8 +192,8 @@ test("does not present one-sided selected screens to AI as design additions or r
   assert.deepEqual(evidence.filter((item) => item.kind === "frame"), []);
 });
 
-test("collects complete diff evidence for a 210-screen comparison", () => {
-  const evidence = collectChangelogEvidence({
+test("collects complete diff evidence for a 210-screen comparison", async () => {
+  const evidence = await collectChangelogEvidence({
     workspaceId: "workspace-synthetic",
     handoffId: "handoff-synthetic",
     from: { id: "version-before", versionLabel: "Before", snapshot: manyScreenSnapshot("Review") },

@@ -1,17 +1,16 @@
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
 import test, { after, beforeEach } from "node:test";
 import { hashHandoffInviteToken } from "@/src/server/services/handoff-sharing.ts";
+import { createPostgresTestFixture } from "../test-support/postgres-test-fixture.mjs";
 
-const priorDatabase = globalThis.__asbirDatabase;
 const priorSecret = process.env.BETTER_AUTH_SECRET;
 const priorBaseUrl = process.env.BETTER_AUTH_URL;
-const database = new Database(":memory:");
-globalThis.__asbirDatabase = database;
+const fixture = await createPostgresTestFixture();
+const { database, pool } = fixture;
 process.env.BETTER_AUTH_SECRET ??= "asbir-handoff-route-test-secret-with-more-than-thirty-two-bytes";
 process.env.BETTER_AUTH_URL ??= "http://localhost:3000";
 
-database.exec(`
+await pool.query(`
   CREATE TABLE workspace_membership (
     workspace_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
@@ -50,12 +49,12 @@ database.exec(`
     source_revision_id TEXT,
     captured_at TEXT NOT NULL,
     content_hash TEXT NOT NULL,
-    visual_only INTEGER NOT NULL,
+    visual_only BOOLEAN NOT NULL,
     snapshot_json TEXT NOT NULL,
     created_by_user_id TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
-  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BLOB NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BYTEA NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
   CREATE TABLE handoff_asset (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
@@ -103,43 +102,43 @@ database.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT NOT NULL,
-    emailVerified INTEGER NOT NULL DEFAULT 0,
+    "emailVerified" BOOLEAN NOT NULL DEFAULT false,
     image TEXT,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL
   );
   CREATE TABLE session (
     id TEXT PRIMARY KEY,
-    expiresAt TEXT NOT NULL,
+    "expiresAt" TEXT NOT NULL,
     token TEXT NOT NULL UNIQUE,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL,
-    ipAddress TEXT,
-    userAgent TEXT,
-    userId TEXT NOT NULL
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL,
+    "ipAddress" TEXT,
+    "userAgent" TEXT,
+    "userId" TEXT NOT NULL
   );
   CREATE TABLE account (
     id TEXT PRIMARY KEY,
-    accountId TEXT NOT NULL,
-    providerId TEXT NOT NULL,
-    userId TEXT NOT NULL,
-    accessToken TEXT,
-    refreshToken TEXT,
-    idToken TEXT,
-    accessTokenExpiresAt TEXT,
-    refreshTokenExpiresAt TEXT,
+    "accountId" TEXT NOT NULL,
+    "providerId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "accessToken" TEXT,
+    "refreshToken" TEXT,
+    "idToken" TEXT,
+    "accessTokenExpiresAt" TEXT,
+    "refreshTokenExpiresAt" TEXT,
     scope TEXT,
     password TEXT,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL
   );
   CREATE TABLE verification (
     id TEXT PRIMARY KEY,
     identifier TEXT NOT NULL,
     value TEXT NOT NULL,
-    expiresAt TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL
+    "expiresAt" TEXT NOT NULL,
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL
   );
 `);
 
@@ -193,10 +192,10 @@ let currentSession = null;
 const originalGetSession = auth.api.getSession;
 auth.api.getSession = async () => currentSession;
 
-function seedHandoff(mode = "anyone") {
-  database.prepare("INSERT INTO project (id, workspace_id, name, rules_json, created_at) VALUES (?, ?, ?, ?, ?)")
+async function seedHandoff(mode = "anyone") {
+  await database.prepare("INSERT INTO project (id, workspace_id, name, rules_json, created_at) VALUES (?, ?, ?, ?, ?)")
     .run(projectId, workspaceId, "Test project", "{}", now);
-  database.prepare(`INSERT INTO handoff
+  await database.prepare(`INSERT INTO handoff
     (id, workspace_id, project_id, name, created_at, review_share_id, published_version_id, published_at, published_by_user_id, sharing_mode)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(handoffId, workspaceId, projectId, "Test handoff", now, shareId, publishedVersionId, now, "owner-id", mode);
@@ -206,10 +205,10 @@ function seedHandoff(mode = "anyone") {
     [publishedVersionId, "2", "2026-11-08T12:00:00.000Z"],
     [newerDraftVersionId, "3 draft", "2026-11-09T12:00:00.000Z"],
   ]) {
-    database.prepare(`INSERT INTO handoff_version
+    await database.prepare(`INSERT INTO handoff_version
       (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
        source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-      VALUES (?, ?, ?, ?, NULL, 'figma', 'figma-file', NULL, ?, ?, 0, ?, 'owner-id', ?)`)
+      VALUES (?, ?, ?, ?, NULL, 'figma', 'figma-file', NULL, ?, ?, false, ?, 'owner-id', ?)`)
       .run(id, workspaceId, handoffId, label, now, snapshot.contentHash, JSON.stringify(snapshot), createdAt);
   }
 }
@@ -222,8 +221,8 @@ function reviewContext(versionId) {
   return { params: Promise.resolve({ shareId, versionId }) };
 }
 
-beforeEach(() => {
-  database.exec(`
+beforeEach(async () => {
+  await pool.query(`
     DELETE FROM handoff_comment;
     DELETE FROM handoff_invite;
     DELETE FROM handoff_asset;
@@ -234,18 +233,16 @@ beforeEach(() => {
     DELETE FROM "user";
   `);
   currentSession = null;
-  seedHandoff();
+  await seedHandoff();
 });
 
-after(() => {
+after(async () => {
   auth.api.getSession = originalGetSession;
-  database.close();
-  if (priorDatabase === undefined) delete globalThis.__asbirDatabase;
-  else globalThis.__asbirDatabase = priorDatabase;
   if (priorSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
   else process.env.BETTER_AUTH_SECRET = priorSecret;
   if (priorBaseUrl === undefined) delete process.env.BETTER_AUTH_URL;
   else process.env.BETTER_AUTH_URL = priorBaseUrl;
+  await fixture.close();
 });
 
 test("public review reads only the published version and earlier snapshots", async () => {
@@ -276,13 +273,13 @@ test("anonymous public viewers can read comments but cannot add them", async () 
     body: JSON.stringify({ body: "Anonymous write attempt", frameId, x: 10, y: 10 }),
   }), reviewContext(publishedVersionId));
   assert.equal(response.status, 403);
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM handoff_comment").get().count, 0);
+  assert.equal((await database.prepare("SELECT COUNT(*) AS count FROM handoff_comment").get()).count, 0);
 });
 
 test("signed-in workspace members can comment while the canvas link is public", async () => {
-  database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, 'qa', ?)")
+  await database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, 'qa', ?)")
     .run(workspaceId, "qa-user", now);
-  database.prepare(`INSERT INTO "user" (id, name, email, createdAt, updatedAt)
+  await database.prepare(`INSERT INTO "user" (id, name, email, createdAt, updatedAt)
     VALUES ('qa-user', 'QA reviewer', 'qa@example.com', ?, ?)`)
     .run(now, now);
   currentSession = { user: { id: "qa-user", email: "qa@example.com" } };
@@ -293,18 +290,18 @@ test("signed-in workspace members can comment while the canvas link is public", 
     body: JSON.stringify({ body: "Team review comment", frameId, x: 10, y: 10 }),
   }), reviewContext(publishedVersionId));
   assert.equal(response.status, 201);
-  assert.equal(database.prepare("SELECT body FROM handoff_comment").get().body, "Team review comment");
+  assert.equal((await database.prepare("SELECT body FROM handoff_comment").get()).body, "Team review comment");
 });
 
 test("workspace-only review denies unauthenticated reads", async () => {
-  database.prepare("UPDATE handoff SET sharing_mode = 'workspace' WHERE id = ?").run(handoffId);
+  await database.prepare("UPDATE handoff SET sharing_mode = 'workspace' WHERE id = ?").run(handoffId);
   const response = await getLatest(reviewRequest("latest"), { params: Promise.resolve({ shareId }) });
   assert.equal(response.status, 401);
 });
 
 test("invite access is granted by the private link, regardless of signed-in email", async () => {
-  database.prepare("UPDATE handoff SET sharing_mode = 'invited' WHERE id = ?").run(handoffId);
-  database.prepare(`INSERT INTO handoff_invite
+  await database.prepare("UPDATE handoff SET sharing_mode = 'invited' WHERE id = ?").run(handoffId);
+  await database.prepare(`INSERT INTO handoff_invite
     (id, workspace_id, handoff_id, email, token_hash, expires_at, revoked_at, invited_by_user_id, created_at)
     VALUES ('invite-id', ?, ?, 'external@example.com', ?, NULL, NULL, 'owner-id', ?)`)
     .run(workspaceId, handoffId, hashHandoffInviteToken(inviteToken), now);
@@ -320,7 +317,7 @@ test("invite access is granted by the private link, regardless of signed-in emai
 });
 
 test("PD, QA, DEV, and EXEC invite links allow comments with their assigned attribution", async () => {
-  database.prepare("UPDATE handoff SET sharing_mode = 'invited' WHERE id = ?").run(handoffId);
+  await database.prepare("UPDATE handoff SET sharing_mode = 'invited' WHERE id = ?").run(handoffId);
   const roles = ["pd", "qa", "dev", "exec"];
   const insertInvite = database.prepare(`INSERT INTO handoff_invite
     (id, workspace_id, handoff_id, email, role, token_hash, expires_at, revoked_at, invited_by_user_id, created_at)
@@ -331,7 +328,7 @@ test("PD, QA, DEV, and EXEC invite links allow comments with their assigned attr
     const inviteId = `invite-${role}`;
     const email = `${role}@example.com`;
     const token = `review-token-${role}`;
-    insertInvite.run(inviteId, workspaceId, handoffId, email, role, hashHandoffInviteToken(token), now);
+    await insertInvite.run(inviteId, workspaceId, handoffId, email, role, hashHandoffInviteToken(token), now);
     currentSession = index === roles.length - 1
       ? { user: { id: "unrelated-user", email: "someone-else@example.com" } }
       : null;
@@ -348,7 +345,7 @@ test("PD, QA, DEV, and EXEC invite links allow comments with their assigned attr
     postedComments.push(await response.json());
   }
 
-  const stored = database.prepare(`SELECT created_by_user_id AS createdBy,
+  const stored = await database.prepare(`SELECT created_by_user_id AS createdBy,
       created_by_invite_id AS inviteId, author_label AS authorLabel, author_role AS authorRole
     FROM handoff_comment ORDER BY created_at ASC, id ASC`).all();
   assert.equal(stored.length, roles.length);

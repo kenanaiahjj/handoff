@@ -9,7 +9,11 @@ services:
       NODE_ENV: production
       BETTER_AUTH_URL: https://${ASBIR_DOMAIN:?Set ASBIR_DOMAIN in .env}
       BETTER_AUTH_SECRET: ${BETTER_AUTH_SECRET:?Set BETTER_AUTH_SECRET in .env}
-      ASBIR_DATA_DIR: /var/lib/asbir-handoff
+      DATABASE_URL: ${DATABASE_URL:?Set DATABASE_URL to the Supabase transaction-pooler URI in .env}
+      SUPABASE_URL: ${SUPABASE_URL:?Set SUPABASE_URL in .env}
+      SUPABASE_SERVICE_ROLE_KEY: ${SUPABASE_SERVICE_ROLE_KEY:?Set SUPABASE_SERVICE_ROLE_KEY in .env}
+      SUPABASE_STORAGE_BUCKET: ${SUPABASE_STORAGE_BUCKET:-handoff-assets}
+      SUPABASE_STORAGE_URL: ${SUPABASE_STORAGE_URL:-}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-6-astra}
       ASBIR_MCP_ALLOWED_ORIGINS: ${ASBIR_MCP_ALLOWED_ORIGINS:-}
@@ -19,12 +23,6 @@ services:
       ASBIR_ALLOWED_EMAIL_DOMAINS: ${ASBIR_ALLOWED_EMAIL_DOMAINS:-lmf.ventures,plxrmedia.com}
       ASBIR_COMPANY_NAME: ${ASBIR_COMPANY_NAME:-Asbir Tech}
       SLACK_BOT_TOKEN: ${SLACK_BOT_TOKEN:-}
-      LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-}
-      LITESTREAM_ENDPOINT: ${LITESTREAM_ENDPOINT:-}
-      LITESTREAM_ACCESS_KEY_ID: ${LITESTREAM_ACCESS_KEY_ID:-}
-      LITESTREAM_SECRET_ACCESS_KEY: ${LITESTREAM_SECRET_ACCESS_KEY:-}
-    volumes:
-      - asbir_data:/var/lib/asbir-handoff
     expose:
       - "3000"
     healthcheck:
@@ -56,6 +54,5 @@ services:
       - caddy_config:/config
 
 volumes:
-  asbir_data:
   caddy_data:
   caddy_config:

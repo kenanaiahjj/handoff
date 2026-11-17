@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { getDatabase } from "../db";
 import type { HandoffInviteRole } from "../services/handoff-sharing";
 
-export function listHandoffComments(input: { workspaceId: string; versionId: string }) {
-  return getDatabase()
+export async function listHandoffComments(input: { workspaceId: string; versionId: string }) {
+  return (await getDatabase()
     .prepare(
       `SELECT comment.id, comment.workspace_id AS workspaceId,
               comment.handoff_version_id AS versionId, comment.frame_id AS frameId,
@@ -20,15 +20,15 @@ export function listHandoffComments(input: { workspaceId: string; versionId: str
        ORDER BY comment.created_at ASC
        LIMIT 2000`,
     )
-    .all(input.workspaceId, input.versionId);
+    .all(input.workspaceId, input.versionId));
 }
 
-export function listHandoffCommentsPage(input: { workspaceId: string; versionId: string; offset: number; limit: number }) {
+export async function listHandoffCommentsPage(input: { workspaceId: string; versionId: string; offset: number; limit: number }) {
   const database = getDatabase();
-  const total = (database
+  const total = ((await database
     .prepare("SELECT COUNT(*) AS total FROM handoff_comment WHERE workspace_id = ? AND handoff_version_id = ?")
-    .get(input.workspaceId, input.versionId) as { total: number }).total;
-  const items = database
+    .get(input.workspaceId, input.versionId)) as { total: number }).total;
+  const items = (await database
     .prepare(
       `SELECT comment.id, comment.workspace_id AS workspaceId,
               comment.handoff_version_id AS versionId, comment.frame_id AS frameId,
@@ -45,7 +45,7 @@ export function listHandoffCommentsPage(input: { workspaceId: string; versionId:
        ORDER BY comment.created_at ASC, comment.id ASC
        LIMIT ? OFFSET ?`,
     )
-    .all(input.workspaceId, input.versionId, input.limit, input.offset);
+    .all(input.workspaceId, input.versionId, input.limit, input.offset));
 
   return { items, total };
 }
@@ -65,10 +65,10 @@ export type CreateCommentInput = {
   authorRole?: HandoffInviteRole | null;
 };
 
-export function createHandoffComment(input: CreateCommentInput) {
+export async function createHandoffComment(input: CreateCommentInput) {
   const id = randomUUID();
   const now = new Date().toISOString();
-  getDatabase()
+  (await getDatabase()
     .prepare(
       `INSERT INTO handoff_comment
         (id, workspace_id, handoff_version_id, frame_id, source_node_id,
@@ -91,11 +91,11 @@ export function createHandoffComment(input: CreateCommentInput) {
       input.authorLabel ?? null,
       input.authorRole ?? null,
       now,
-    );
+    ));
   return { id, createdAt: now };
 }
 
-export function setCommentResolved(input: {
+export async function setCommentResolved(input: {
   workspaceId: string;
   versionId: string;
   commentId: string;
@@ -103,7 +103,7 @@ export function setCommentResolved(input: {
   /** Null when a link-based invitee resolves without a signed-in account. */
   updatedBy: string | null;
 }) {
-  const result = getDatabase()
+  const result = (await getDatabase()
     .prepare(
       `UPDATE handoff_comment
        SET resolved_at = ?, resolved_by_user_id = ?
@@ -115,6 +115,6 @@ export function setCommentResolved(input: {
       input.commentId,
       input.workspaceId,
       input.versionId,
-    );
+    ));
   return result.changes === 1;
 }

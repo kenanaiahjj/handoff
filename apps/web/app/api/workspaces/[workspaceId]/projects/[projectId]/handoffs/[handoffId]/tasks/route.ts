@@ -37,10 +37,10 @@ export async function GET(request: Request, context: TasksRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId });
-    if (!getHandoff({ workspaceId, projectId, handoffId }) || !getProjectWithRules({ workspaceId, projectId })) {
+    if (!(await getHandoff({ workspaceId, projectId, handoffId })) || !(await getProjectWithRules({ workspaceId, projectId }))) {
       return Response.json({ error: "Handoff not found." }, { status: 404 });
     }
-    return Response.json({ tasks: listLinkedExternalTasks({ workspaceId, handoffId }) });
+    return Response.json({ tasks: (await listLinkedExternalTasks({ workspaceId, handoffId })) });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });
     throw error;
@@ -51,26 +51,26 @@ export async function POST(request: Request, context: TasksRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
   try {
     const actor = await requireHandoffAccess(request, { workspaceId, handoffId });
-    const handoff = getHandoff({ workspaceId, projectId, handoffId });
-    const projectWithRules = getProjectWithRules({ workspaceId, projectId });
+    const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
+    const projectWithRules = (await getProjectWithRules({ workspaceId, projectId }));
     if (!handoff || !projectWithRules) return Response.json({ error: "Handoff not found." }, { status: 404 });
     const parsed = taskLinkRequestSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return Response.json({ error: "Provide an external task ID or URL, a title, and a valid version." }, { status: 400 });
-    const version = getVersion({ workspaceId, versionId: parsed.data.versionId });
+    const version = (await getVersion({ workspaceId, versionId: parsed.data.versionId }));
     if (!version || version.handoffId !== handoffId) return Response.json({ error: "Version not found in this handoff." }, { status: 404 });
     const baseUrl = process.env.BETTER_AUTH_URL || new URL(request.url).origin;
     const canvasPath = handoff.reviewShareId
       ? `/review/${encodeURIComponent(handoff.reviewShareId)}`
       : `/workspace/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`;
     const handoffUrl = new URL(`${canvasPath}?versionId=${encodeURIComponent(version.id)}`, baseUrl).toString();
-    const task = linkExternalTaskToHandoff({
+    const task = (await linkExternalTaskToHandoff({
       workspaceId,
       handoffId,
       version,
       handoffUrl,
       task: parsed.data,
       createdBy: actor.userId,
-    });
+    }));
     return Response.json({ task }, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });
@@ -83,20 +83,20 @@ export async function PATCH(request: Request, context: TasksRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId });
-    if (!getHandoff({ workspaceId, projectId, handoffId })) {
+    if (!(await getHandoff({ workspaceId, projectId, handoffId }))) {
       return Response.json({ error: "Handoff not found." }, { status: 404 });
     }
     const parsed = updateAgentLinksSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return Response.json({ error: "Enter valid agent and pull request URLs." }, { status: 400 });
-    const updated = updateLinkedExternalTaskWorkLinks({
+    const updated = (await updateLinkedExternalTaskWorkLinks({
       workspaceId,
       handoffId,
       taskId: parsed.data.taskId,
       agentRunUrl: parsed.data.agentRunUrl,
       pullRequestUrl: parsed.data.pullRequestUrl,
-    });
+    }));
     if (!updated) return Response.json({ error: "Linked task not found." }, { status: 404 });
-    const task = (listLinkedExternalTasks({ workspaceId, handoffId }) as Array<Record<string, unknown>>)
+    const task = ((await listLinkedExternalTasks({ workspaceId, handoffId })) as Array<Record<string, unknown>>)
       .find((candidate) => candidate.id === parsed.data.taskId);
     return Response.json({ task });
   } catch (error) {

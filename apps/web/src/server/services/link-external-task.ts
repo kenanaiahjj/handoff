@@ -3,7 +3,7 @@ import { createLinkedExternalTask } from "../repositories/linked-external-tasks"
 import type { TaskLinkInput } from "./task-context";
 import { resolveTaskDesignContext, taskCanvasHref } from "./task-context";
 
-export function linkExternalTaskToHandoff(input: {
+export async function linkExternalTaskToHandoff(input: {
   workspaceId: string;
   handoffId: string;
   version: {
@@ -23,7 +23,7 @@ export function linkExternalTaskToHandoff(input: {
     input.task.sourceNodeId,
   );
   const canvasUrl = taskCanvasHref(input.handoffUrl, designContext);
-  return createLinkedExternalTask({
+  return (await createLinkedExternalTask({
     workspaceId: input.workspaceId,
     handoffId: input.handoffId,
     versionId: input.version.id,
@@ -41,5 +41,5 @@ export function linkExternalTaskToHandoff(input: {
       designContext,
     },
     createdBy: input.createdBy,
-  });
+  }));
 }

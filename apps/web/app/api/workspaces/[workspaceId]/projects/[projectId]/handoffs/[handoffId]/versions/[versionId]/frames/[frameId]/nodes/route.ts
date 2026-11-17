@@ -11,8 +11,8 @@ export async function GET(request: Request, context: FrameNodesRoute) {
   const { workspaceId, projectId, handoffId, versionId, frameId } = await context.params;
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId });
-    const handoff = getHandoff({ workspaceId, projectId, handoffId });
-    const version = getVersion({ workspaceId, versionId });
+    const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
+    const version = (await getVersion({ workspaceId, versionId }));
     if (!handoff || !version || version.handoffId !== handoffId) {
       return Response.json({ error: "Handoff version not found." }, { status: 404 });
     }

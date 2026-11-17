@@ -40,11 +40,11 @@ export async function requireWorkspaceRole(
     throw new WorkspaceAccessError("Sign in to continue.", 401);
   }
 
-  const membership = getDatabase()
+  const membership = (await getDatabase()
     .prepare(
       "SELECT role FROM workspace_membership WHERE workspace_id = ? AND user_id = ?",
     )
-    .get(workspaceId, session.user.id) as { role: WorkspaceRole } | undefined;
+    .get(workspaceId, session.user.id)) as { role: WorkspaceRole } | undefined;
 
   if (!membership) {
     throw new WorkspaceAccessError("Workspace not found.", 404);
@@ -75,7 +75,7 @@ export async function requireHandoffAccess(
   input: { workspaceId: string; handoffId: string; manage?: boolean },
 ) {
   const access = await requireWorkspaceRole(request, input.workspaceId, input.manage ? managerRoles : workspaceRoles);
-  const visible = visibleHandoffIds(input.workspaceId, { id: access.userId, email: access.email, role: access.role });
+  const visible = (await visibleHandoffIds(input.workspaceId, { id: access.userId, email: access.email, role: access.role }));
   if (visible && !visible.has(input.handoffId)) throw new WorkspaceAccessError("Handoff not found.", 404);
   return access;
 }
@@ -83,20 +83,20 @@ export async function requireHandoffAccess(
 /** Project access: managers see every project; other roles only projects holding a handoff shared with them. */
 export async function requireProjectMember(request: Request, workspaceId: string, projectId: string, options: { manage?: boolean } = {}) {
   const access = await requireWorkspaceRole(request, workspaceId, options.manage ? managerRoles : workspaceRoles);
-  const project = getDatabase()
+  const project = (await getDatabase()
     .prepare("SELECT 1 FROM project WHERE id = ? AND workspace_id = ?")
-    .get(projectId, workspaceId);
+    .get(projectId, workspaceId));
   if (!project) throw new WorkspaceAccessError("Project not found.", 404);
-  const visible = visibleHandoffIds(workspaceId, { id: access.userId, email: access.email, role: access.role });
+  const visible = (await visibleHandoffIds(workspaceId, { id: access.userId, email: access.email, role: access.role }));
   if (visible) {
-    const handoffIds = getDatabase()
+    const handoffIds = (await getDatabase()
       .prepare("SELECT id FROM handoff WHERE workspace_id = ? AND project_id = ?")
-      .all(workspaceId, projectId) as Array<{ id: string }>;
+      .all(workspaceId, projectId)) as Array<{ id: string }>;
     if (!handoffIds.some((handoff) => visible.has(handoff.id))) throw new WorkspaceAccessError("Project not found.", 404);
   }
   return access;
 }
 
 export async function getSessionForRequest(request: Request) {
-  return getSessionForHeaders(request.headers);
+  return (await getSessionForHeaders(request.headers));
 }

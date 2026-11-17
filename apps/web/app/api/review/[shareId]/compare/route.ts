@@ -7,7 +7,7 @@ import { diffSnapshots, isStructuredSnapshot } from "@/src/server/services/diff"
 import { getVisiblePublishedReviewVersion, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
 
 type ReviewCompareRoute = { params: Promise<{ shareId: string }> };
-type CompareVersion = NonNullable<ReturnType<typeof getVisiblePublishedReviewVersion>>;
+type CompareVersion = NonNullable<Awaited<ReturnType<typeof getVisiblePublishedReviewVersion>>>;
 
 function framePreview(version: CompareVersion, frameId: string, shareId: string) {
   const frame = version.snapshot.frames.find((candidate) => candidate.sourceFrameId === frameId);
@@ -43,22 +43,22 @@ export async function GET(request: Request, context: ReviewCompareRoute) {
     return Response.json({ error: "This handoff is not available to you." }, { status: access.session ? 404 : 401 });
   }
 
-  const from = getVisiblePublishedReviewVersion(access.handoff, fromVersionId);
-  const to = getVisiblePublishedReviewVersion(access.handoff, toVersionId);
+  const from = (await getVisiblePublishedReviewVersion(access.handoff, fromVersionId));
+  const to = (await getVisiblePublishedReviewVersion(access.handoff, toVersionId));
   if (!from || !to || from.id === to.id) return Response.json({ error: "The selected versions were not found in this handoff." }, { status: 404 });
 
-  const frameMatches = getConfirmedFrameMatchesBetweenVersions({
+  const frameMatches = (await getConfirmedFrameMatchesBetweenVersions({
     workspaceId: access.handoff.workspaceId,
     handoffId: access.handoff.id,
     from,
     to,
-  });
-  const nodeMatches = getConfirmedNodeMatchesBetweenVersions({
+  }));
+  const nodeMatches = (await getConfirmedNodeMatchesBetweenVersions({
     workspaceId: access.handoff.workspaceId,
     handoffId: access.handoff.id,
     from,
     to,
-  });
+  }));
   const diff = diffSnapshots(
     { versionId: from.id, snapshot: from.snapshot },
     { versionId: to.id, snapshot: to.snapshot },

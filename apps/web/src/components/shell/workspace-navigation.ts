@@ -4,7 +4,7 @@ import type { WorkspaceNavSection } from "./WorkspaceShell";
 type WorkspaceNavigationProject = { id: string; name: string };
 type WorkspacePage = "overview" | "projects" | "project" | "integrations";
 
-export function createWorkspaceNavigation({
+export async function createWorkspaceNavigation({
   workspaceId,
   companyName,
   projects,
@@ -17,8 +17,8 @@ export function createWorkspaceNavigation({
   projects: WorkspaceNavigationProject[];
   page: WorkspacePage;
   activeProjectId?: string;
-}): WorkspaceNavSection[] {
-  const iconVersions = projects.length ? projectIconVersions(workspaceId) : {};
+}): Promise<WorkspaceNavSection[]> {
+  const iconVersions = projects.length ? await projectIconVersions(workspaceId) : {};
   return [
     {
       label: companyName ?? "Main",

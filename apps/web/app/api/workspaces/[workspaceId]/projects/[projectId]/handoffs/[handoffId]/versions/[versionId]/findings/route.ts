@@ -34,9 +34,9 @@ const createFindingCommentSchema = z.object({
 async function loadFindingContext(request: Request, context: FindingsRoute) {
   const ids = await context.params;
   const access = await requireHandoffAccess(request, { workspaceId: ids.workspaceId, handoffId: ids.handoffId });
-  const handoff = getHandoff({ workspaceId: ids.workspaceId, projectId: ids.projectId, handoffId: ids.handoffId });
-  const project = getProject({ workspaceId: ids.workspaceId, projectId: ids.projectId });
-  const version = getVersion({ workspaceId: ids.workspaceId, versionId: ids.versionId });
+  const handoff = (await getHandoff({ workspaceId: ids.workspaceId, projectId: ids.projectId, handoffId: ids.handoffId }));
+  const project = (await getProject({ workspaceId: ids.workspaceId, projectId: ids.projectId }));
+  const version = (await getVersion({ workspaceId: ids.workspaceId, versionId: ids.versionId }));
   if (!handoff || !project || !version || version.handoffId !== ids.handoffId) return null;
   return { ...ids, access, project, version };
 }
@@ -47,14 +47,14 @@ export async function GET(request: Request, context: FindingsRoute) {
     if (!loaded) return Response.json({ error: "Handoff version not found." }, { status: 404 });
 
     const evaluated = evaluateLayoutRules(loaded.version.snapshot, loaded.project.rules);
-    const states = listFindingStates({ workspaceId: loaded.workspaceId, versionId: loaded.versionId }) as Array<{
+    const states = (await listFindingStates({ workspaceId: loaded.workspaceId, versionId: loaded.versionId })) as Array<{
       findingKey: string;
       status: "open" | "resolved";
       assigneeUserId: string | null;
       note: string | null;
       updatedAt: string;
     }>;
-    const comments = listFindingComments({ workspaceId: loaded.workspaceId, versionId: loaded.versionId });
+    const comments = (await listFindingComments({ workspaceId: loaded.workspaceId, versionId: loaded.versionId }));
     const commentsByFindingKey = new Map<string, typeof comments>();
     for (const comment of comments) {
       const findingComments = commentsByFindingKey.get(comment.findingKey) ?? [];
@@ -69,15 +69,15 @@ export async function GET(request: Request, context: FindingsRoute) {
       note: stateByKey.get(finding.findingKey)?.note ?? null,
       comments: commentsByFindingKey.get(finding.findingKey) ?? [],
     }));
-    const members = getDatabase()
+    const members = (await getDatabase()
       .prepare(
         `SELECT "user".id, "user".name
          FROM workspace_membership
          JOIN "user" ON "user".id = workspace_membership.user_id
          WHERE workspace_membership.workspace_id = ?
-         ORDER BY "user".name`,
+         ORDER BY "user".name COLLATE "C"`,
       )
-      .all(loaded.workspaceId);
+      .all(loaded.workspaceId));
     return Response.json({ findings, unsupportedReason: evaluated.unsupportedReason, members });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });
@@ -98,13 +98,13 @@ export async function POST(request: Request, context: FindingsRoute) {
       .findings.some((finding) => finding.findingKey === findingKey);
     if (!knownFinding) return Response.json({ error: "Finding not found for this snapshot." }, { status: 404 });
 
-    const comment = createFindingComment({
+    const comment = (await createFindingComment({
       workspaceId: loaded.workspaceId,
       versionId: loaded.versionId,
       findingKey,
       authorUserId: loaded.access.userId,
       body: parsed.data.body,
-    });
+    }));
     return Response.json({ comment }, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });
@@ -126,13 +126,13 @@ export async function PATCH(request: Request, context: FindingsRoute) {
     if (!knownFinding) return Response.json({ error: "Finding not found for this snapshot." }, { status: 404 });
     const assigneeUserId = parsed.data.assigneeUserId ?? null;
     if (assigneeUserId) {
-      const isMember = getDatabase()
+      const isMember = (await getDatabase()
         .prepare("SELECT 1 FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
-        .get(loaded.workspaceId, assigneeUserId);
+        .get(loaded.workspaceId, assigneeUserId));
       if (!isMember) return Response.json({ error: "The assignee must belong to this workspace." }, { status: 400 });
     }
 
-    const state = saveFindingState({
+    const state = (await saveFindingState({
       workspaceId: loaded.workspaceId,
       versionId: loaded.versionId,
       findingKey,
@@ -140,7 +140,7 @@ export async function PATCH(request: Request, context: FindingsRoute) {
       assigneeUserId,
       note: parsed.data.note?.trim() || null,
       updatedBy: loaded.access.userId,
-    });
+    }));
     return Response.json(state);
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });

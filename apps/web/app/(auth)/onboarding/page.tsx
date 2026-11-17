@@ -13,14 +13,14 @@ export const instant = false;
 export default async function OnboardingPage() {
   const session = await getSessionForHeaders(await headers());
   if (!session) redirect("/sign-in?redirectTo=/onboarding");
-  syncSuperadminAccess(session.user);
-  if (!needsOnboarding(session.user.id)) redirect("/workspace");
+  (await syncSuperadminAccess(session.user));
+  if (!(await needsOnboarding(session.user.id))) redirect("/workspace");
 
-  const workspaces = joinableWorkspaces({
+  const workspaces = (await joinableWorkspaces({
     id: session.user.id,
     email: session.user.email,
     emailVerified: session.user.emailVerified,
-  });
+  }));
   const roles = Object.entries(jobRoles).map(([id, role]) => ({ id, label: role.label, description: role.description, requestsApproval: id === "designer" }));
   const testing = isDevTestAccount(session.user.id) && (await isDevelopmentAuthBypassActive());
   return (

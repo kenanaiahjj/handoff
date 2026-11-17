@@ -1,21 +1,20 @@
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
 import test, { after } from "node:test";
 import { LATEST_PROTOCOL_VERSION } from "@modelcontextprotocol/server";
 import { POST } from "./route.ts";
 import { createWorkspaceMcpToken } from "../../../src/server/repositories/mcp-tokens.ts";
+import { createPostgresTestFixture } from "../../../src/server/test-support/postgres-test-fixture.mjs";
 
-const priorDatabase = globalThis.__asbirDatabase;
-const database = new Database(":memory:");
-globalThis.__asbirDatabase = database;
+const fixture = await createPostgresTestFixture();
+const { pool, database } = fixture;
 
-database.exec(`
+await pool.query(`
   CREATE TABLE workspace_membership (workspace_id TEXT NOT NULL, user_id TEXT NOT NULL, role TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE workspace_mcp_token (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, created_by_user_id TEXT NOT NULL, name TEXT NOT NULL, token_hash TEXT NOT NULL UNIQUE, scopes_json TEXT NOT NULL, expires_at TEXT NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL);
   CREATE TABLE project (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, name TEXT NOT NULL, rules_json TEXT NOT NULL, pd_in_charge_user_id TEXT, created_at TEXT NOT NULL);
   CREATE TABLE handoff (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, project_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL, review_share_id TEXT, published_version_id TEXT, published_at TEXT, published_by_user_id TEXT, sharing_mode TEXT NOT NULL DEFAULT 'workspace');
-  CREATE TABLE handoff_version (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_id TEXT NOT NULL, version_label TEXT NOT NULL, release_note TEXT, source TEXT NOT NULL, source_file_id TEXT NOT NULL, source_revision_id TEXT, captured_at TEXT NOT NULL, content_hash TEXT NOT NULL, visual_only INTEGER NOT NULL, snapshot_json TEXT NOT NULL, created_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL);
-  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BLOB NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
+  CREATE TABLE handoff_version (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_id TEXT NOT NULL, version_label TEXT NOT NULL, release_note TEXT, source TEXT NOT NULL, source_file_id TEXT NOT NULL, source_revision_id TEXT, captured_at TEXT NOT NULL, content_hash TEXT NOT NULL, visual_only BOOLEAN NOT NULL, snapshot_json TEXT NOT NULL, created_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BYTEA NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
   CREATE TABLE handoff_frame_replacement (handoff_id TEXT NOT NULL, workspace_id TEXT NOT NULL, baseline_version_id TEXT NOT NULL, new_version_id TEXT NOT NULL, before_frame_id TEXT NOT NULL, after_frame_id TEXT NOT NULL, confirmed_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE handoff_node_replacement (handoff_id TEXT NOT NULL, workspace_id TEXT NOT NULL, baseline_version_id TEXT NOT NULL, new_version_id TEXT NOT NULL, before_frame_id TEXT NOT NULL, after_frame_id TEXT NOT NULL, before_node_id TEXT NOT NULL, after_node_id TEXT NOT NULL, confirmed_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE handoff_asset (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_version_id TEXT NOT NULL, asset_key TEXT NOT NULL, object_key TEXT NOT NULL, file_name TEXT NOT NULL, content_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, width INTEGER, height INTEGER);
@@ -240,67 +239,67 @@ for (const [workspaceId, projectId, handoffId] of [
   [workspaceA, projectA, handoffA],
   [workspaceB, projectB, handoffB],
 ]) {
-  database.prepare("INSERT INTO project (id, workspace_id, name, rules_json, created_at) VALUES (?, ?, ?, ?, ?)")
+  await database.prepare("INSERT INTO project (id, workspace_id, name, rules_json, created_at) VALUES (?, ?, ?, ?, ?)")
     .run(projectId, workspaceId, `Project ${workspaceId.slice(-1)}`, emptyRules, now);
-  database.prepare(`INSERT INTO handoff
+  await database.prepare(`INSERT INTO handoff
     (id, workspace_id, project_id, name, created_at, review_share_id)
     VALUES (?, ?, ?, ?, ?, ?)`)
     .run(handoffId, workspaceId, projectId, "Checkout handoff", now, null);
 }
 
-database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)")
+await database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)")
   .run(workspaceA, "designer-a", "designer", now);
-database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)")
+await database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)")
   .run(workspaceB, "designer-b", "designer", now);
-database.prepare(`INSERT INTO handoff_version
+await database.prepare(`INSERT INTO handoff_version
   (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
    source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-  VALUES (?, ?, ?, 'Version 1', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+  VALUES (?, ?, ?, 'Version 1', NULL, 'figma', 'file-a', NULL, ?, ?, false, ?, 'designer-a', ?)`)
   .run(versionA, workspaceA, handoffA, now, "c".repeat(64), JSON.stringify(snapshot), now);
-database.prepare(`INSERT INTO handoff_version
+await database.prepare(`INSERT INTO handoff_version
   (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
    source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-  VALUES (?, ?, ?, 'Version 2', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+  VALUES (?, ?, ?, 'Version 2', NULL, 'figma', 'file-a', NULL, ?, ?, false, ?, 'designer-a', ?)`)
   .run(versionB, workspaceA, handoffA, now, snapshotB.contentHash, JSON.stringify(snapshotB), now);
-database.prepare(`INSERT INTO handoff_version
+await database.prepare(`INSERT INTO handoff_version
   (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
    source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-  VALUES (?, ?, ?, 'Version 3', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+  VALUES (?, ?, ?, 'Version 3', NULL, 'figma', 'file-a', NULL, ?, ?, false, ?, 'designer-a', ?)`)
   .run(versionC, workspaceA, handoffA, now, snapshotC.contentHash, JSON.stringify(snapshotC), now);
-database.prepare(`INSERT INTO handoff_version
+await database.prepare(`INSERT INTO handoff_version
   (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
    source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-  VALUES (?, ?, ?, 'Version 4', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+  VALUES (?, ?, ?, 'Version 4', NULL, 'figma', 'file-a', NULL, ?, ?, false, ?, 'designer-a', ?)`)
   .run(versionD, workspaceA, handoffA, now, snapshotD.contentHash, JSON.stringify(snapshotD), now);
-database.prepare(`INSERT INTO handoff_version
+await database.prepare(`INSERT INTO handoff_version
   (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
    source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-  VALUES (?, ?, ?, 'Version 5', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+  VALUES (?, ?, ?, 'Version 5', NULL, 'figma', 'file-a', NULL, ?, ?, false, ?, 'designer-a', ?)`)
   .run(versionE, workspaceA, handoffA, now, snapshotE.contentHash, JSON.stringify(snapshotE), now);
-database.prepare(`INSERT INTO handoff_version
+await database.prepare(`INSERT INTO handoff_version
   (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
    source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-  VALUES (?, ?, ?, 'Version 6', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+  VALUES (?, ?, ?, 'Version 6', NULL, 'figma', 'file-a', NULL, ?, ?, false, ?, 'designer-a', ?)`)
   .run(versionF, workspaceA, handoffA, now, snapshotF.contentHash, JSON.stringify(snapshotF), now);
-database.prepare(`INSERT INTO handoff_version
+await database.prepare(`INSERT INTO handoff_version
   (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
    source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-  VALUES (?, ?, ?, 'Version 7', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+  VALUES (?, ?, ?, 'Version 7', NULL, 'figma', 'file-a', NULL, ?, ?, false, ?, 'designer-a', ?)`)
   .run(versionG, workspaceA, handoffA, now, snapshotG.contentHash, JSON.stringify(snapshotG), now);
-database.prepare(`INSERT INTO handoff_version
+await database.prepare(`INSERT INTO handoff_version
   (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
    source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-  VALUES (?, ?, ?, 'Version 8', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+  VALUES (?, ?, ?, 'Version 8', NULL, 'figma', 'file-a', NULL, ?, ?, false, ?, 'designer-a', ?)`)
   .run(versionH, workspaceA, handoffA, now, snapshotH.contentHash, JSON.stringify(snapshotH), now);
 
-const issued = createWorkspaceMcpToken({
+const issued = await createWorkspaceMcpToken({
   workspaceId: workspaceA,
   createdBy: "designer-a",
   name: "MCP route integration fixture",
   scopes: ["handoffs:read", "tasks:write", "changelog:write"],
   expiresInDays: 1,
 });
-const readOnlyIssued = createWorkspaceMcpToken({
+const readOnlyIssued = await createWorkspaceMcpToken({
   workspaceId: workspaceA,
   createdBy: "designer-a",
   name: "MCP read-only integration fixture",
@@ -308,10 +307,8 @@ const readOnlyIssued = createWorkspaceMcpToken({
   expiresInDays: 1,
 });
 
-after(() => {
-  database.close();
-  if (priorDatabase === undefined) delete globalThis.__asbirDatabase;
-  else globalThis.__asbirDatabase = priorDatabase;
+after(async () => {
+  await fixture.close();
 });
 
 let requestId = 0;
@@ -428,10 +425,10 @@ test("an MCP client can initialize, discover read-scoped tools, and read an immu
       }],
     },
   };
-  database.prepare(`INSERT INTO handoff_version
+  await database.prepare(`INSERT INTO handoff_version
     (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
      source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-    VALUES (?, ?, ?, 'Typography precision', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+    VALUES (?, ?, ?, 'Typography precision', NULL, 'figma', 'file-a', NULL, ?, ?, false, ?, 'designer-a', ?)`)
     .run(typographyVersionId, workspaceA, handoffA, now, typographySnapshot.contentHash, JSON.stringify(typographySnapshot), now);
   const textElements = parseToolText((await callRpc("tools/call", {
     name: "list_elements",
@@ -439,7 +436,7 @@ test("an MCP client can initialize, discover read-scoped tools, and read an immu
   }, { ...options, protocolVersion: initialized.body.result.protocolVersion })).body);
   assert.equal(textElements.elements[0].typography.lineHeight.value, 19.5);
   assert.equal(textElements.elements[0].typography.letterSpacing.value, 0.32499998807907104);
-  database.prepare("DELETE FROM handoff_version WHERE id = ?").run(typographyVersionId);
+  await database.prepare("DELETE FROM handoff_version WHERE id = ?").run(typographyVersionId);
 
   const measurementsResponse = await callRpc("tools/call", {
     name: "get_measurements",
@@ -547,14 +544,14 @@ test("MCP discovery tools page large project and handoff histories", async () =>
   const insertVersion = database.prepare(`INSERT INTO handoff_version
     (id, workspace_id, handoff_id, version_label, source, source_file_id, captured_at,
      content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-    VALUES (?, ?, ?, ?, 'figma', 'file-a', ?, ?, 0, '{}', 'designer-a', ?)`);
+    VALUES (?, ?, ?, ?, 'figma', 'file-a', ?, ?, false, '{}', 'designer-a', ?)`);
 
   for (let index = 0; index < extraProjects; index += 1) {
     const suffix = String(index + 1).padStart(12, "0");
     const timestamp = new Date(Date.parse(now) + (index + 1) * 1_000).toISOString();
-    insertProject.run(`40000000-0000-4000-8000-${suffix}`, workspaceA, `Large workspace project ${index + 1}`, emptyRules, timestamp);
-    insertHandoff.run(`50000000-0000-4000-8000-${suffix}`, workspaceA, projectA, `Large handoff ${index + 1}`, timestamp);
-    insertVersion.run(`60000000-0000-4000-8000-${suffix}`, workspaceA, handoffA, `Large version ${index + 1}`, timestamp, `${String(index + 1).padStart(64, "0")}`, timestamp);
+    await insertProject.run(`40000000-0000-4000-8000-${suffix}`, workspaceA, `Large workspace project ${index + 1}`, emptyRules, timestamp);
+    await insertHandoff.run(`50000000-0000-4000-8000-${suffix}`, workspaceA, projectA, `Large handoff ${index + 1}`, timestamp);
+    await insertVersion.run(`60000000-0000-4000-8000-${suffix}`, workspaceA, handoffA, `Large version ${index + 1}`, timestamp, `${String(index + 1).padStart(64, "0")}`, timestamp);
   }
 
   const pages = [
@@ -593,17 +590,17 @@ test("MCP screens, comments, findings, and linked tasks page every record", asyn
     name: `Updated screen ${String(index).padStart(3, "0")}`,
   }));
   const changedSnapshot = { ...pagedSnapshot, contentHash: "8".repeat(64), frames: changedFrames };
-  database.prepare(`INSERT INTO handoff_version
+  await database.prepare(`INSERT INTO handoff_version
     (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
      source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-    VALUES (?, ?, ?, 'Version 9', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+    VALUES (?, ?, ?, 'Version 9', NULL, 'figma', 'file-a', NULL, ?, ?, false, ?, 'designer-a', ?)`)
     .run(versionI, workspaceA, handoffA, now, pagedSnapshot.contentHash, JSON.stringify(pagedSnapshot), now);
-  database.prepare(`INSERT INTO handoff_version
+  await database.prepare(`INSERT INTO handoff_version
     (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id,
      source_revision_id, captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-    VALUES (?, ?, ?, 'Version 10', NULL, 'figma', 'file-a', NULL, ?, ?, 0, ?, 'designer-a', ?)`)
+    VALUES (?, ?, ?, 'Version 10', NULL, 'figma', 'file-a', NULL, ?, ?, false, ?, 'designer-a', ?)`)
     .run(versionJ, workspaceA, handoffA, now, changedSnapshot.contentHash, JSON.stringify(changedSnapshot), now);
-  database.prepare("UPDATE project SET rules_json = ? WHERE id = ?")
+  await database.prepare("UPDATE project SET rules_json = ? WHERE id = ?")
     .run(JSON.stringify({ allowedSpacing: [999], requireTokenCategories: [], frameBounds: null }), projectA);
 
   const insertComment = database.prepare(`INSERT INTO handoff_comment
@@ -614,15 +611,15 @@ test("MCP screens, comments, findings, and linked tasks page every record", asyn
     (id, workspace_id, handoff_id, version_id, source_system, external_task_id, external_url,
      title, description, evidence_json, created_by_user_id, created_at)
     VALUES (?, ?, ?, ?, 'Asbir Teams', ?, NULL, ?, '', '{}', 'designer-a', ?)`);
-  database.prepare('INSERT OR IGNORE INTO "user" (id, name) VALUES (?, ?)').run("designer-a", "Designer A");
+  await database.prepare('INSERT INTO "user" (id, name) VALUES (?, ?) ON CONFLICT (id) DO NOTHING').run("designer-a", "Designer A");
   for (let index = 0; index < recordCount; index += 1) {
     const suffix = String(index + 1).padStart(12, "0");
     const timestamp = new Date(Date.parse(now) + (index + 1) * 1_000).toISOString();
-    insertComment.run(`70000000-0000-4000-8000-${suffix}`, workspaceA, versionA, `Comment ${index + 1}`, timestamp);
-    insertComment.run(`71000000-0000-4000-8000-${suffix}`, workspaceA, versionJ, `Latest version comment ${index + 1}`, timestamp);
-    insertTask.run(`80000000-0000-4000-8000-${suffix}`, workspaceA, handoffA, versionA, `asbir-${index + 1}`, `Task ${index + 1}`, timestamp);
+    await insertComment.run(`70000000-0000-4000-8000-${suffix}`, workspaceA, versionA, `Comment ${index + 1}`, timestamp);
+    await insertComment.run(`71000000-0000-4000-8000-${suffix}`, workspaceA, versionJ, `Latest version comment ${index + 1}`, timestamp);
+    await insertTask.run(`80000000-0000-4000-8000-${suffix}`, workspaceA, handoffA, versionA, `asbir-${index + 1}`, `Task ${index + 1}`, timestamp);
   }
-  database.prepare(`INSERT INTO layout_finding_state
+  await database.prepare(`INSERT INTO layout_finding_state
     (id, workspace_id, handoff_version_id, finding_key, status, note, updated_by_user_id, updated_at)
     VALUES (?, ?, ?, ?, 'resolved', 'Reviewed', 'designer-a', ?)`)
     .run(
@@ -692,7 +689,7 @@ test("MCP screens, comments, findings, and linked tasks page every record", asyn
   assert.equal(secondFindings.findings.length, 100);
   assert.equal(secondFindings.findingPage.offset, 100);
 
-  database.prepare("UPDATE project SET rules_json = ? WHERE id = ?").run(JSON.stringify({
+  await database.prepare("UPDATE project SET rules_json = ? WHERE id = ?").run(JSON.stringify({
     allowedSpacing: [],
     requireTokenCategories: [],
     frameBounds: { minWidth: 321, maxWidth: null, minHeight: null, maxHeight: null },
@@ -735,13 +732,13 @@ test("MCP screens, comments, findings, and linked tasks page every record", asyn
   assert.equal(evidence.filter((item) => item.kind === "comment").length, recordCount);
   assert.equal(evidence.filter((item) => item.kind === "finding").length, recordCount);
 
-  database.prepare("DELETE FROM handoff_comment WHERE id LIKE '70000000-0000-4000-8000-%'").run();
-  database.prepare("DELETE FROM handoff_comment WHERE id LIKE '71000000-0000-4000-8000-%'").run();
-  database.prepare("DELETE FROM linked_external_task WHERE id LIKE '80000000-0000-4000-8000-%'").run();
-  database.prepare("DELETE FROM layout_finding_state WHERE id = ?").run("90000000-0000-4000-8000-000000000001");
-  database.prepare("DELETE FROM handoff_version WHERE id = ?").run(versionI);
-  database.prepare("DELETE FROM handoff_version WHERE id = ?").run(versionJ);
-  database.prepare("UPDATE project SET rules_json = ? WHERE id = ?").run(emptyRules, projectA);
+  await database.prepare("DELETE FROM handoff_comment WHERE id LIKE '70000000-0000-4000-8000-%'").run();
+  await database.prepare("DELETE FROM handoff_comment WHERE id LIKE '71000000-0000-4000-8000-%'").run();
+  await database.prepare("DELETE FROM linked_external_task WHERE id LIKE '80000000-0000-4000-8000-%'").run();
+  await database.prepare("DELETE FROM layout_finding_state WHERE id = ?").run("90000000-0000-4000-8000-000000000001");
+  await database.prepare("DELETE FROM handoff_version WHERE id = ?").run(versionI);
+  await database.prepare("DELETE FROM handoff_version WHERE id = ?").run(versionJ);
+  await database.prepare("UPDATE project SET rules_json = ? WHERE id = ?").run(emptyRules, projectA);
 });
 
 test("MCP version diffs default to bounded results and can page a focused screen", async () => {
@@ -923,7 +920,7 @@ test("a connected AI client can save a draft with current version-pair evidence 
   assert.equal(invalidResponse.response.status, 200);
   assert.equal(invalidResponse.body.result.isError, true);
   assert.match(invalidResponse.body.result.content[0].text, /evidence IDs that are not available/);
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM changelog_draft WHERE handoff_id = ?").get(handoffA).count, 1);
+  assert.equal((await database.prepare("SELECT COUNT(*) AS count FROM changelog_draft WHERE handoff_id = ?").get(handoffA)).count, 1);
 });
 
 test("a connected AI client can save evidence from reviewer-confirmed screen and layer matches", async () => {
@@ -949,16 +946,16 @@ test("a connected AI client can save evidence from reviewer-confirmed screen and
         : { ...node, sourceFrameId: afterFrameId }),
     })),
   };
-  database.prepare("UPDATE handoff_version SET snapshot_json = ? WHERE id = ?")
+  await database.prepare("UPDATE handoff_version SET snapshot_json = ? WHERE id = ?")
     .run(JSON.stringify(beforeSnapshot), versionD);
-  database.prepare("UPDATE handoff_version SET snapshot_json = ? WHERE id = ?")
+  await database.prepare("UPDATE handoff_version SET snapshot_json = ? WHERE id = ?")
     .run(JSON.stringify(afterSnapshot), versionE);
-  database.prepare(`INSERT INTO handoff_frame_replacement
+  await database.prepare(`INSERT INTO handoff_frame_replacement
     (handoff_id, workspace_id, baseline_version_id, new_version_id,
      before_frame_id, after_frame_id, confirmed_by_user_id, created_at)
     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`)
     .run(handoffA, workspaceA, versionD, versionE, beforeFrameId, afterFrameId, "designer-a", now);
-  database.prepare(`INSERT INTO handoff_node_replacement
+  await database.prepare(`INSERT INTO handoff_node_replacement
     (handoff_id, workspace_id, baseline_version_id, new_version_id,
      before_frame_id, after_frame_id, before_node_id, after_node_id,
      confirmed_by_user_id, created_at)

@@ -6,7 +6,7 @@ import { getVersion } from "../repositories/versions";
 import { versionsVisibleToReview } from "./published-review";
 import { resolveHandoffReviewAccess, type HandoffInviteAccess, type HandoffReviewAccessDecision } from "./handoff-sharing";
 
-export type PublishedReviewHandoff = NonNullable<ReturnType<typeof getPublishedHandoffByShareId>>;
+export type PublishedReviewHandoff = NonNullable<Awaited<ReturnType<typeof getPublishedHandoffByShareId>>>;
 
 export type PublishedReviewAccess = {
   handoff: PublishedReviewHandoff;
@@ -17,14 +17,14 @@ export type PublishedReviewAccess = {
   decision: HandoffReviewAccessDecision;
 };
 
-export function listVisiblePublishedReviewVersions(handoff: PublishedReviewHandoff) {
-  const versions = listHandoffVersions({ workspaceId: handoff.workspaceId, handoffId: handoff.id }) as Array<{ id: string; versionLabel: string }>;
+export async function listVisiblePublishedReviewVersions(handoff: PublishedReviewHandoff) {
+  const versions = (await listHandoffVersions({ workspaceId: handoff.workspaceId, handoffId: handoff.id })) as Array<{ id: string; versionLabel: string }>;
   return versionsVisibleToReview(versions, handoff.publishedVersionId);
 }
 
-export function getVisiblePublishedReviewVersion(handoff: PublishedReviewHandoff, versionId: string) {
-  if (!listVisiblePublishedReviewVersions(handoff).some((version) => version.id === versionId)) return null;
-  const version = getVersion({ workspaceId: handoff.workspaceId, versionId });
+export async function getVisiblePublishedReviewVersion(handoff: PublishedReviewHandoff, versionId: string) {
+  if (!(await listVisiblePublishedReviewVersions(handoff)).some((version) => version.id === versionId)) return null;
+  const version = (await getVersion({ workspaceId: handoff.workspaceId, versionId }));
   return version?.handoffId === handoff.id ? version : null;
 }
 
@@ -67,17 +67,17 @@ export async function resolvePublishedReviewAccess(
   headers: Headers,
   explicitInviteToken?: string | null,
 ): Promise<PublishedReviewAccess | null> {
-  const handoff = getPublishedHandoffByShareId(shareId);
+  const handoff = (await getPublishedHandoffByShareId(shareId));
   if (!handoff) return null;
 
   const session = await getSessionForHeaders(headers);
   const membership = session
-    ? getDatabase()
+    ? (await getDatabase()
       .prepare("SELECT role FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
-      .get(handoff.workspaceId, session.user.id) as { role: string } | undefined
+      .get(handoff.workspaceId, session.user.id)) as { role: string } | undefined
     : undefined;
   const inviteToken = explicitInviteToken || getHandoffReviewInviteToken(headers, shareId);
-  const invite = inviteToken ? getHandoffInviteByToken(shareId, inviteToken) : null;
+  const invite = inviteToken ? (await getHandoffInviteByToken(shareId, inviteToken)) : null;
   const role = membership?.role ?? null;
 
   return {

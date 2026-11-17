@@ -50,8 +50,17 @@ export function SignInForm({ redirectTo, googleEnabled, googleError, companyDoma
   }
 
   async function switchToLocalDevAccount() {
-    await fetch("/api/dev/bypass", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: true, as: "reviewer" }) });
-    window.location.replace(redirectTo);
+    setErrorMessage("");
+    try {
+      const response = await fetch("/api/dev/bypass", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ enabled: true, as: "reviewer" }) });
+      if (!response.ok) {
+        setErrorMessage(`The local dev account couldn't sign in (HTTP ${response.status}). Check the dev server log.`);
+        return;
+      }
+      window.location.replace(redirectTo);
+    } catch {
+      setErrorMessage("We couldn't reach the local dev server. Is `npm run dev` still running?");
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {

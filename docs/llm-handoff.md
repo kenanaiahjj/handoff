@@ -26,8 +26,9 @@ compare versions, comment (with @mentions), and get notified of new versions.
 | Path | What |
 |---|---|
 | `apps/web` | Next.js 16.4.5 app (App Router, React 19.3, `cacheComponents` on) |
-| `apps/web/src/server` | Server code: `db.ts` (SQLite + migrations), `repositories/`, `services/`, `storage/`, `workspace-access.ts` (all access checks) |
-| `apps/web/src/server/migrations` | SQL migrations, run in filename order on server start (`0001`…`0024`) |
+| `apps/web/src/server` | Server code: `db.ts` (Postgres pool and async query helpers), `repositories/`, `services/`, `storage/`, `workspace-access.ts` (all access checks) |
+| `supabase/migrations` | Versioned Postgres schema migrations, applied through the Supabase CLI |
+| `apps/web/src/server/migrations` | Historical SQLite migrations retained for data-import fixtures |
 | `apps/web/src/components` | UI. `canvas/` (handoff canvas, compare, phone view), `shell/` (homes, tabs, quick open, update notice), `comments/` (threads, mentions) |
 | `packages/snapshot-contract` | Capture schema, validation, content fingerprint (`hashSnapshotPayload`), merge and screen removal |
 | `integrations/figma-plugin` | The Figma capture plugin (separate build) |
@@ -42,6 +43,8 @@ Node 22 (`.nvmrc`). From the repo root:
 ```bash
 npm install
 npm run setup:env            # creates apps/web/.env.local
+npx supabase start
+npx supabase db reset
 npm run dev                  # http://localhost:3000
 ```
 
@@ -106,7 +109,7 @@ Local verification without real sign-in (development only):
   Update now / What's new / Later. The version label, change count and list come from `git log` at
   build time (`next.config.ts`); a build without `.git` (the Docker image) shows the card without them.
 - Comparison view: searchable screens list with an All / Changed filter.
-- Compressed captures (database 480 MB → 7 MB), `/api/health`, Litestream backups, deploy kit.
+- Brotli-compressed captures in Postgres, `/api/health`, Supabase data import and verification scripts.
 
 ## 6. Backlog (highest value first)
 
@@ -165,12 +168,9 @@ Each item: why, where to start, and when it is done.
 
 ### Only if required by company policy
 
-16. **Port to Vercel + Supabase.** See `docs/vercel-deployment.md`. About 170 synchronous SQLite
-    queries become async Postgres, migrations are converted, captures move to Storage as files,
-    and the Figma plugin must upload straight to Storage (Vercel caps requests at 4.5 MB). For this
-    team the single server is as fast or faster; the port buys scaling and stack familiarity.
-    Done when: every existing version's fingerprint matches after migration, all tests pass
-    against Postgres, and a real capture uploads end to end.
+16. **Finish Vercel + Supabase staging.** The code now uses async Postgres, Supabase Storage, and
+    direct Figma uploads. Finish the PostgreSQL test migration, run a staging import and verifier,
+    and validate real Vercel Preview and Figma workflows. See `docs/vercel-deployment.md`.
 
 ## 7. Traps hit before (save yourself the time)
 
@@ -180,14 +180,13 @@ Each item: why, where to start, and when it is done.
   later should be read through a ref.
 - **Dev hot reload can leave a window with stale CSS**, especially the installed app. The update
   notice detects it; production can't hit this.
-- **Tests build their own small SQLite schemas.** If you add a table that core reads join on
-  (as `handoff_version_snapshot` was), add it to those test schemas too.
+- **Tests use isolated PostgreSQL fixtures.** If a service query joins a new table, add the needed
+  table and constraints to its fixture or use the Supabase baseline fixture.
 - **Brackets in route test paths** stop `node --test` globbing; run those files directly.
-- **Migrations run on server start**, and the dev server restarts itself when server files change,
-  so a new migration can apply to your local DB as soon as you save. Back up `apps/web/data` first
-  when a migration rewrites data.
-- **A `Dockerfile`, `compose.yaml` and `Caddyfile` already exist.** Edit them, don't replace them.
-  The data folder in containers is `/var/lib/asbir-handoff`.
+- **Apply schema migrations through the Supabase CLI**, not at app startup. Keep existing SQLite
+  data and object volumes intact until the migration verifier passes and the rollback window ends.
+- **A `Dockerfile`, `compose.yaml` and `Caddyfile` already exist.** Docker and Railway host the app
+  only; Supabase provides Postgres and Storage.
 
 ## 8. Key facts and numbers
 

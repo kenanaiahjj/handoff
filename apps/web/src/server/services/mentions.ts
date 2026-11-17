@@ -16,20 +16,22 @@ export function plainCommentText(body: string) {
 export type Mentionable = { id: string; name: string; email: string };
 
 /** Team members who can open this handoff, so a mention never points at someone who can't see it. */
-export function listMentionables(workspaceId: string, handoffId: string): Mentionable[] {
-  const members = getDatabase()
+export async function listMentionables(workspaceId: string, handoffId: string): Promise<Mentionable[]> {
+  const members = (await getDatabase()
     .prepare(
       `SELECT "user".id, "user".name, "user".email, workspace_membership.role
        FROM workspace_membership JOIN "user" ON "user".id = workspace_membership.user_id
        WHERE workspace_membership.workspace_id = ?
-       ORDER BY "user".name COLLATE NOCASE`,
+       ORDER BY lower("user".name) COLLATE "C"`,
     )
-    .all(workspaceId) as Array<Mentionable & { role: string }>;
-  return members
-    .filter((member) => {
-      const visible = visibleHandoffIds(workspaceId, member);
-      return !visible || visible.has(handoffId);
-    })
+    .all(workspaceId)) as Array<Mentionable & { role: string }>;
+  const visibility = await Promise.all(members.map(async (member) => {
+    const visible = await visibleHandoffIds(workspaceId, member);
+    return { member, visible };
+  }));
+  return visibility
+    .filter(({ visible }) => !visible || visible.has(handoffId))
+    .map(({ member }) => member)
     .map(({ id, name, email }) => ({ id, name, email }));
 }
 
@@ -37,7 +39,7 @@ export function listMentionables(workspaceId: string, handoffId: string): Mentio
  * Records who a new comment mentions (only people who can see the handoff), and closes the author's
  * own open mentions in this thread, since replying answers them. Returns the people newly mentioned.
  */
-export function recordCommentMentions(input: {
+export async function recordCommentMentions(input: {
   workspaceId: string;
   handoffId: string;
   commentId: string;
@@ -47,23 +49,23 @@ export function recordCommentMentions(input: {
 }) {
   const database = getDatabase();
   const now = new Date().toISOString();
-  const allowed = new Map(listMentionables(input.workspaceId, input.handoffId).map((person) => [person.id, person]));
+  const allowed = new Map((await listMentionables(input.workspaceId, input.handoffId)).map((person) => [person.id, person]));
   const mentioned = mentionedUserIds(input.body)
     .filter((id) => id !== input.authorId)
     .map((id) => allowed.get(id))
     .filter((person): person is Mentionable => Boolean(person));
-  database.transaction(() => {
+  await database.transaction(async () => {
     const insert = database.prepare(
-      `INSERT OR IGNORE INTO comment_mention
+      `INSERT INTO comment_mention
         (comment_id, user_id, workspace_id, handoff_id, thread_id, mentioned_by_user_id, created_at, done_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, NULL)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, NULL) ON CONFLICT DO NOTHING`,
     );
     for (const person of mentioned) {
-      insert.run(input.commentId, person.id, input.workspaceId, input.handoffId, input.threadId, input.authorId, now);
+      await insert.run(input.commentId, person.id, input.workspaceId, input.handoffId, input.threadId, input.authorId, now);
     }
-    database
+    (await database
       .prepare("UPDATE comment_mention SET done_at = ? WHERE user_id = ? AND thread_id = ? AND done_at IS NULL")
-      .run(now, input.authorId, input.threadId);
+      .run(now, input.authorId, input.threadId));
   })();
   return mentioned;
 }
@@ -84,8 +86,8 @@ export type OpenMention = {
 };
 
 /** Mentions waiting on this person: not done, not replied to, and the thread still open. */
-export function listOpenMentions(userId: string, workspaceId: string, viewer: { id: string; email: string; role: string }): OpenMention[] {
-  const rows = getDatabase()
+export async function listOpenMentions(userId: string, workspaceId: string, viewer: { id: string; email: string; role: string }): Promise<OpenMention[]> {
+  const rows = (await getDatabase()
     .prepare(
       `SELECT comment_mention.comment_id AS commentId, comment_mention.thread_id AS threadId,
               comment_mention.handoff_id AS handoffId, handoff.name AS handoffName,
@@ -104,8 +106,8 @@ export function listOpenMentions(userId: string, workspaceId: string, viewer: { 
        ORDER BY comment_mention.created_at DESC
        LIMIT 50`,
     )
-    .all(userId, workspaceId) as Array<Omit<OpenMention, "excerpt"> & { body: string }>;
-  const visible = visibleHandoffIds(workspaceId, viewer);
+    .all(userId, workspaceId)) as Array<Omit<OpenMention, "excerpt"> & { body: string }>;
+  const visible = (await visibleHandoffIds(workspaceId, viewer));
   return rows
     .filter((row) => !visible || visible.has(row.handoffId))
     .map(({ body, ...row }) => {
@@ -114,8 +116,8 @@ export function listOpenMentions(userId: string, workspaceId: string, viewer: { 
     });
 }
 
-export function markMentionDone(userId: string, commentId: string) {
-  return getDatabase()
+export async function markMentionDone(userId: string, commentId: string) {
+  return (await getDatabase()
     .prepare("UPDATE comment_mention SET done_at = ? WHERE user_id = ? AND comment_id = ? AND done_at IS NULL")
-    .run(new Date().toISOString(), userId, commentId).changes > 0;
+    .run(new Date().toISOString(), userId, commentId)).changes > 0;
 }

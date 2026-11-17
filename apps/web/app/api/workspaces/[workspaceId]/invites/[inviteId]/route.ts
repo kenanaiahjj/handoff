@@ -12,13 +12,13 @@ export async function DELETE(
   try {
     const access = await requireWorkspaceRole(request, workspaceId, ["owner"]);
     const revokedAt = new Date().toISOString();
-    const result = getDatabase()
+    const result = (await getDatabase()
       .prepare(
         `UPDATE workspace_invite SET revoked_at = ?
          WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL
            AND (expires_at IS NULL OR expires_at > ?)`,
       )
-      .run(revokedAt, inviteId, access.workspaceId, revokedAt);
+      .run(revokedAt, inviteId, access.workspaceId, revokedAt));
     if (result.changes !== 1) return Response.json({ error: "Active invitation not found." }, { status: 404 });
     return Response.json({ revokedAt });
   } catch (error) {

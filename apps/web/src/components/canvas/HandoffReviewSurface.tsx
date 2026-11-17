@@ -20,7 +20,7 @@ export type ReviewVersionSummary = VersionOption & {
   createdBy: string;
 };
 
-type StoredVersion = NonNullable<ReturnType<typeof getVersion>>;
+type StoredVersion = NonNullable<Awaited<ReturnType<typeof getVersion>>>;
 
 type AssetFrameInput = {
   id: string;

@@ -1,59 +1,59 @@
 # Deploying Asbir Handoff
 
-One Node server, with the database and images on a persistent volume at `/var/lib/asbir-handoff`.
-For a single server with HTTPS, the repo's `compose.yaml` + `Caddyfile` (see the main README) is the simplest path. Run exactly one
-instance: SQLite can't be shared between servers.
+Vercel is the primary app host. Docker and Railway can host the same Next.js app with Supabase as the shared database and object store. The app no longer requires a writable local volume.
 
 ## Requirements
 
 | | |
 |---|---|
-| Runtime | Node 22 (in the Docker image) |
-| Memory | 4 GB recommended (2 GB is enough only for small captures). Building needs ~1.6 GB. |
-| Disk | A volume at `/var/lib/asbir-handoff`, 5 GB to start. Today: ~7 MB database + ~172 MB images. |
-| Requests | Capture uploads can reach ~400 MB in one request and take minutes: proxies must allow that. |
-| HTTPS | Required (sign-in cookies, Google OAuth, the installable app). |
+| Runtime | Node.js 22 |
+| Database | Supabase Postgres transaction pooler |
+| Asset store | Private Supabase Storage bucket named `handoff-assets` |
+| Public URL | HTTPS, required for Better Auth cookies and Google OAuth |
 
 ## Environment
 
-Copy `apps/web/.env.example` and fill it in. In production, always:
+Copy `deployment.env.example` to `.env` for Docker Compose. Set:
 
-- `BETTER_AUTH_URL=https://<your-domain>` and a fresh `BETTER_AUTH_SECRET` (`openssl rand -base64 32`)
+- `ASBIR_DOMAIN` and a unique `BETTER_AUTH_SECRET`
+- `DATABASE_URL` to the Supabase transaction-pooler connection string
+- `SUPABASE_URL` and the server-only `SUPABASE_SERVICE_ROLE_KEY`
+- `SUPABASE_STORAGE_BUCKET=handoff-assets`
+- Google OAuth credentials and the allowed company email domains
 - `ASBIR_AUTH_BYPASS=0`
-- `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`, with `https://<your-domain>` and
-  `https://<your-domain>/api/auth/callback/google` added to the Google OAuth client
-- `ASBIR_DATA_DIR=/var/lib/asbir-handoff` (already set in the image)
 
-Optional: `SLACK_BOT_TOKEN`, `OPENAI_API_KEY`, `ASBIR_COMPANY_NAME`.
+Add `OPENAI_API_KEY` or `SLACK_BOT_TOKEN` only when you use those integrations. Keep `.env` private. Never prefix the service-role key with `NEXT_PUBLIC_`.
 
 ## Railway
 
-1. New project → Deploy from GitHub repo. `railway.json` makes it build the `Dockerfile` and check `/api/health`.
-2. Add a **Volume** mounted at `/var/lib/asbir-handoff`.
-3. Add the environment variables above, and `ASBIR_BUILD_ID` = `${{RAILWAY_GIT_COMMIT_SHA}}` so open apps offer a reload after each deploy.
-4. Pick a plan with at least 4 GB of memory for large captures.
+1. Deploy the repository with the included `Dockerfile`.
+2. Set the environment variables above in Railway. Use the same Supabase project for the app and Storage.
+3. Set `BETTER_AUTH_URL` to the public Railway domain and update the Google OAuth callback to `<BETTER_AUTH_URL>/api/auth/callback/google`.
+4. Confirm Railway health checks call `/api/health`.
 
-## Any Docker host
+Do not attach a persistent volume for application data. Keep any old `asbir_data` volume read-only until you have backed it up and verified its import into Supabase.
 
-```bash
-docker build --build-arg ASBIR_BUILD_ID=$(git rev-parse --short HEAD) -t asbir-handoff .
-docker run -d -p 3000:3000 -v asbir-data:/var/lib/asbir-handoff --env-file .env.production --restart unless-stopped asbir-handoff
+## Docker Compose
+
+Copy the environment template, fill it in, then run:
+
+```sh
+cp deployment.env.example .env
+docker compose up -d --build
 ```
 
-Put HTTPS in front (Caddy, Cloudflare, your platform's proxy) with request size and timeout limits
-raised for capture uploads.
+Caddy provides HTTPS for `ASBIR_DOMAIN` and stores its certificates in the `caddy_data` volume. The app reads relational data from Postgres and assets from private Storage. `docker compose down` preserves Caddy's named volumes.
 
-## Backups
+## Backups and rollback
 
-- **Database:** set `LITESTREAM_REPLICA_URL` (for example `s3://bucket/asbir-handoff`) plus
-  `LITESTREAM_ACCESS_KEY_ID`, `LITESTREAM_SECRET_ACCESS_KEY`, and `LITESTREAM_ENDPOINT` for R2 or B2.
-  Changes stream to the bucket every few seconds. A fresh volume restores the latest copy on start.
-- **Images** (`/var/lib/asbir-handoff/objects`): Litestream only covers the database. Use your host's volume
-  snapshots, or a scheduled `rclone sync /var/lib/asbir-handoff/objects <bucket>/objects`. Image files never change
-  once written (names come from their content), so syncing is cheap.
-- Never copy the `.sqlite` file of a running app by hand; use Litestream or `sqlite3 db ".backup file"`.
+Configure database and Storage backups for the Supabase project. Before production cutover, keep a verified copy of the existing SQLite database and object directory. Do not delete the old `asbir_data` volume until the rollback window ends.
+
+Use `scripts/migrate-sqlite-to-supabase.mjs` to import the old data and `scripts/verify-supabase-migration.mjs` to compare rows, references, sizes, and checksums. Follow [the Vercel and Supabase deployment guide](../docs/vercel-deployment.md) for the complete staging and rollback process.
 
 ## Checks after deploying
 
-- `GET /api/health` returns `{"ok":true}`.
-- Sign in with Google, open a handoff, and run one Figma capture to the new URL.
+- `GET /api/health` returns `{"ok":true}` when Postgres is available.
+- Sign in with Google and open an existing handoff.
+- Upload a Figma capture and a structured ZIP package.
+- Open protected assets as a workspace member and a published reviewer.
+- Restart or redeploy the app and confirm handoffs and assets remain available.

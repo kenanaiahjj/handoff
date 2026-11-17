@@ -63,10 +63,10 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
 
   const handoff = access.handoff;
 
-  const project = getProject({ workspaceId: handoff.workspaceId, projectId: handoff.projectId });
+  const project = (await getProject({ workspaceId: handoff.workspaceId, projectId: handoff.projectId }));
   if (!project) notFound();
 
-  const versions = listVisiblePublishedReviewVersions(handoff) as ReviewVersionSummary[];
+  const versions = (await listVisiblePublishedReviewVersions(handoff)) as ReviewVersionSummary[];
   if (!versions.length) notFound();
 
   const comparisonSearch = new URLSearchParams();
@@ -85,7 +85,7 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
     versions[0];
   if (!selectedVersion) notFound();
 
-  const version = getVersion({ workspaceId: handoff.workspaceId, versionId: selectedVersion.id });
+  const version = (await getVersion({ workspaceId: handoff.workspaceId, versionId: selectedVersion.id }));
   if (!version || version.handoffId !== handoff.id) notFound();
 
   return (

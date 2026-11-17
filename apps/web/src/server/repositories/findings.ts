@@ -10,19 +10,19 @@ export type FindingComment = {
   createdAt: string;
 };
 
-export function listFindingStates(input: { workspaceId: string; versionId: string }) {
-  return getDatabase()
+export async function listFindingStates(input: { workspaceId: string; versionId: string }) {
+  return (await getDatabase()
     .prepare(
       `SELECT finding_key AS findingKey, status, assignee_user_id AS assigneeUserId,
               note, updated_by_user_id AS updatedBy, updated_at AS updatedAt
        FROM layout_finding_state
        WHERE workspace_id = ? AND handoff_version_id = ?`,
     )
-    .all(input.workspaceId, input.versionId);
+    .all(input.workspaceId, input.versionId));
 }
 
-export function listFindingComments(input: { workspaceId: string; versionId: string }) {
-  return getDatabase()
+export async function listFindingComments(input: { workspaceId: string; versionId: string }) {
+  return (await getDatabase()
     .prepare(
       `SELECT comment.id, comment.finding_key AS findingKey,
               comment.author_user_id AS authorUserId, "user".name AS authorName,
@@ -32,10 +32,10 @@ export function listFindingComments(input: { workspaceId: string; versionId: str
        WHERE comment.workspace_id = ? AND comment.handoff_version_id = ?
        ORDER BY comment.created_at, comment.id`,
     )
-    .all(input.workspaceId, input.versionId) as FindingComment[];
+    .all(input.workspaceId, input.versionId)) as FindingComment[];
 }
 
-export function createFindingComment(input: {
+export async function createFindingComment(input: {
   workspaceId: string;
   versionId: string;
   findingKey: string;
@@ -45,15 +45,15 @@ export function createFindingComment(input: {
   const id = randomUUID();
   const createdAt = new Date().toISOString();
   const database = getDatabase();
-  database
+  (await database
     .prepare(
       `INSERT INTO layout_finding_comment
         (id, workspace_id, handoff_version_id, finding_key, author_user_id, body, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, input.workspaceId, input.versionId, input.findingKey, input.authorUserId, input.body, createdAt);
+    .run(id, input.workspaceId, input.versionId, input.findingKey, input.authorUserId, input.body, createdAt));
 
-  return database
+  return (await database
     .prepare(
       `SELECT comment.id, comment.finding_key AS findingKey,
               comment.author_user_id AS authorUserId, "user".name AS authorName,
@@ -62,10 +62,10 @@ export function createFindingComment(input: {
        JOIN "user" ON "user".id = comment.author_user_id
        WHERE comment.id = ?`,
     )
-    .get(id) as FindingComment;
+    .get(id)) as FindingComment;
 }
 
-export function saveFindingState(input: {
+export async function saveFindingState(input: {
   workspaceId: string;
   versionId: string;
   findingKey: string;
@@ -75,7 +75,7 @@ export function saveFindingState(input: {
   updatedBy: string;
 }) {
   const now = new Date().toISOString();
-  getDatabase()
+  (await getDatabase()
     .prepare(
       `INSERT INTO layout_finding_state
         (id, workspace_id, handoff_version_id, finding_key, status,
@@ -98,6 +98,6 @@ export function saveFindingState(input: {
       input.note,
       input.updatedBy,
       now,
-    );
+    ));
   return { updatedAt: now };
 }

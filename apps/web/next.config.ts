@@ -33,9 +33,9 @@ const nextConfig: NextConfig = {
   },
   /* config options here */
   distDir: process.env.ASBIR_NEXT_DIST_DIR || ".next",
+  transpilePackages: ["@asbir/snapshot-contract"],
   cacheComponents: true,
   partialPrefetching: true,
-  serverExternalPackages: ["better-sqlite3"],
   turbopack: {
     rules: {
       "*.css": {

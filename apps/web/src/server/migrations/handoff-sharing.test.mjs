@@ -1,56 +1,59 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
 import test from "node:test";
-import Database from "better-sqlite3";
+import { PostgresDatabase } from "../db.ts";
+import { createPostgresTestDatabase } from "../test-support/postgres-test-database.mjs";
 
-function createDatabase() {
-  const database = new Database(":memory:");
-  database.pragma("foreign_keys = ON");
-  database.exec(`
-    CREATE TABLE "user" (id TEXT PRIMARY KEY);
-    CREATE TABLE handoff (
-      id TEXT NOT NULL,
-      workspace_id TEXT NOT NULL,
-      review_share_id TEXT,
-      published_version_id TEXT,
-      UNIQUE (id, workspace_id),
-      PRIMARY KEY (id)
-    );
-  `);
-  database.exec(readFileSync(new URL("./0012_handoff_sharing.sql", import.meta.url), "utf8"));
-  database.prepare('INSERT INTO "user" (id) VALUES (?)').run("designer-1");
-  database.prepare("INSERT INTO handoff (id, workspace_id) VALUES (?, ?)").run("handoff-1", "workspace-1");
-  return database;
+async function createDatabase() {
+  const fixture = await createPostgresTestDatabase();
+  const database = new PostgresDatabase(fixture.pool);
+  await database.prepare(`INSERT INTO "user" (id, name, email, "emailVerified", "createdAt", "updatedAt")
+    VALUES ('designer-1', 'Designer', 'designer@example.invalid', true, now(), now())`).run();
+  await database.prepare("INSERT INTO workspace (id, name, created_by_user_id, created_at) VALUES ('workspace-1', 'Workspace', 'designer-1', now())").run();
+  await database.prepare("INSERT INTO project (id, workspace_id, name, created_by_user_id, created_at) VALUES ('project-1', 'workspace-1', 'Project', 'designer-1', now())").run();
+  await database.prepare(`INSERT INTO handoff (id, workspace_id, project_id, name, created_by_user_id, created_at)
+    VALUES ('handoff-1', 'workspace-1', 'project-1', 'Handoff', 'designer-1', now())`).run();
+  return { fixture, database };
 }
 
-test("sharing migration defaults existing handoffs to workspace access", () => {
-  const database = createDatabase();
+test("sharing defaults to workspace access and accepts only supported modes", async () => {
+  const { fixture, database } = await createDatabase();
 
-  assert.equal(database.prepare("SELECT sharing_mode FROM handoff WHERE id = ?").get("handoff-1").sharing_mode, "workspace");
-  assert.throws(
-    () => database.prepare("UPDATE handoff SET sharing_mode = ? WHERE id = ?").run("private", "handoff-1"),
-    /CHECK constraint failed/,
-  );
-
-  database.close();
+  try {
+    const handoff = await database.prepare("SELECT sharing_mode FROM handoff WHERE id = ?").get("handoff-1");
+    assert.equal(handoff.sharing_mode, "workspace");
+    await assert.rejects(
+      database.transaction(async () => {
+        await database.prepare("UPDATE handoff SET sharing_mode = ? WHERE id = ?").run("private", "handoff-1");
+      })(),
+      /check constraint/,
+    );
+  } finally {
+    await fixture.close();
+  }
 });
 
-test("handoff deletion cascades invite records and tokens are unique", () => {
-  const database = createDatabase();
-  database.prepare(`INSERT INTO handoff_invite
-    (id, workspace_id, handoff_id, email, token_hash, invited_by_user_id, created_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`)
-    .run("invite-1", "workspace-1", "handoff-1", "qa@example.com", "a".repeat(64), "designer-1", "2026-11-09T12:00:00.000Z");
-  assert.throws(
-    () => database.prepare(`INSERT INTO handoff_invite
+test("handoff deletion cascades invite records and tokens are unique", async () => {
+  const { fixture, database } = await createDatabase();
+
+  try {
+    await database.prepare(`INSERT INTO handoff_invite
       (id, workspace_id, handoff_id, email, token_hash, invited_by_user_id, created_at)
       VALUES (?, ?, ?, ?, ?, ?, ?)`)
-      .run("invite-2", "workspace-1", "handoff-1", "dev@example.com", "a".repeat(64), "designer-1", "2026-11-09T12:00:00.000Z"),
-    /UNIQUE constraint failed/,
-  );
+      .run("invite-1", "workspace-1", "handoff-1", "qa@example.com", "a".repeat(64), "designer-1", "2026-11-09T12:00:00.000Z");
+    await assert.rejects(
+      database.transaction(async () => {
+        await database.prepare(`INSERT INTO handoff_invite
+          (id, workspace_id, handoff_id, email, token_hash, invited_by_user_id, created_at)
+          VALUES (?, ?, ?, ?, ?, ?, ?)`)
+          .run("invite-2", "workspace-1", "handoff-1", "dev@example.com", "a".repeat(64), "designer-1", "2026-11-09T12:00:00.000Z");
+      })(),
+      /duplicate key|unique constraint/i,
+    );
 
-  database.prepare("DELETE FROM handoff WHERE id = ?").run("handoff-1");
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM handoff_invite").get().count, 0);
-
-  database.close();
+    await database.prepare("DELETE FROM handoff WHERE id = ?").run("handoff-1");
+    const invites = await database.prepare("SELECT COUNT(*) AS count FROM handoff_invite").get();
+    assert.equal(invites.count, 0);
+  } finally {
+    await fixture.close();
+  }
 });

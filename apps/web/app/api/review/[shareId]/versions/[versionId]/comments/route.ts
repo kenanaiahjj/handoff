@@ -67,9 +67,9 @@ export async function GET(request: Request, context: ReviewCommentsRoute) {
   const { shareId, versionId } = await context.params;
   const access = await resolvePublishedReviewAccess(shareId, request.headers);
   if (!access?.decision.allowed) return accessError(access);
-  const version = getVisiblePublishedReviewVersion(access.handoff, versionId);
+  const version = (await getVisiblePublishedReviewVersion(access.handoff, versionId));
   if (!version) return Response.json({ error: "Handoff version not found." }, { status: 404 });
-  return Response.json({ comments: listHandoffComments({ workspaceId: access.handoff.workspaceId, versionId }) }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({ comments: (await listHandoffComments({ workspaceId: access.handoff.workspaceId, versionId })) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request, context: ReviewCommentsRoute) {
@@ -77,7 +77,7 @@ export async function POST(request: Request, context: ReviewCommentsRoute) {
   const access = await resolvePublishedReviewAccess(shareId, request.headers);
   if (!access?.decision.allowed) return accessError(access);
   if (!access.decision.canComment) return Response.json({ error: "This invitation does not allow comments." }, { status: 403 });
-  const version = getVisiblePublishedReviewVersion(access.handoff, versionId);
+  const version = (await getVisiblePublishedReviewVersion(access.handoff, versionId));
   if (!version) return Response.json({ error: "Handoff version not found." }, { status: 404 });
   const parsed = createCommentSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Enter a comment with at most 4,000 characters." }, { status: 400 });
@@ -85,13 +85,13 @@ export async function POST(request: Request, context: ReviewCommentsRoute) {
   let anchor: CommentAnchor | null;
   let parentCommentId = parsed.data.parentCommentId ?? null;
   if (parentCommentId) {
-    const root = getDatabase()
+    const root = (await getDatabase()
       .prepare(
         `SELECT frame_id AS frameId, source_node_id AS sourceNodeId, x, y
          FROM handoff_comment
          WHERE id = ? AND workspace_id = ? AND handoff_version_id = ? AND parent_comment_id IS NULL`,
       )
-      .get(parentCommentId, access.handoff.workspaceId, versionId) as CommentAnchor | undefined;
+      .get(parentCommentId, access.handoff.workspaceId, versionId)) as CommentAnchor | undefined;
     if (!root) return Response.json({ error: "The comment thread was not found." }, { status: 404 });
     anchor = root;
   } else {
@@ -110,13 +110,13 @@ export async function POST(request: Request, context: ReviewCommentsRoute) {
       : null;
   if (!author) return Response.json({ error: "Open this handoff with a valid invite link to comment." }, { status: 403 });
 
-  const created = createHandoffComment({
+  const created = (await createHandoffComment({
     workspaceId: access.handoff.workspaceId,
     versionId,
     ...anchor,
     parentCommentId,
     body: parsed.data.body,
     ...author,
-  });
+  }));
   return Response.json(created, { status: 201 });
 }

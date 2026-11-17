@@ -29,9 +29,9 @@ type OnboardingUser = { id: string; email: string; emailVerified: boolean | numb
  * Workspaces a new teammate joins on their own. The app serves one company, so a verified email
  * from a company domain joins every workspace; anyone else needs an invite link.
  */
-export function joinableWorkspaces(user: OnboardingUser) {
+export async function joinableWorkspaces(user: OnboardingUser) {
   if (!user.emailVerified || !allowedEmailDomains().includes(emailDomain(user.email))) return [];
-  return getDatabase()
+  return (await getDatabase()
     .prepare(
       `SELECT workspace.id, workspace.name
        FROM workspace
@@ -41,42 +41,42 @@ export function joinableWorkspaces(user: OnboardingUser) {
        )
        ORDER BY workspace.created_at ASC`,
     )
-    .all(user.id) as Array<{ id: string; name: string }>;
+    .all(user.id)) as Array<{ id: string; name: string }>;
 }
 
-export function getJobRole(userId: string): JobRole | null {
-  const row = getDatabase().prepare("SELECT job_role AS jobRole FROM user_profile WHERE user_id = ?").get(userId) as
+export async function getJobRole(userId: string): Promise<JobRole | null> {
+  const row = (await getDatabase().prepare("SELECT job_role AS jobRole FROM user_profile WHERE user_id = ?").get(userId)) as
     | { jobRole: JobRole }
     | undefined;
   return row?.jobRole ?? null;
 }
 
 /** New people with no workspace yet and no role picked go through onboarding first. */
-export function needsOnboarding(userId: string) {
-  if (getJobRole(userId)) return false;
-  const membership = getDatabase().prepare("SELECT 1 FROM workspace_membership WHERE user_id = ? LIMIT 1").get(userId);
+export async function needsOnboarding(userId: string) {
+  if ((await getJobRole(userId))) return false;
+  const membership = (await getDatabase().prepare("SELECT 1 FROM workspace_membership WHERE user_id = ? LIMIT 1").get(userId));
   return !membership;
 }
 
 /** Saves the picked role and joins every workspace open to this person's company domain. */
-export function completeOnboarding(user: OnboardingUser, jobRole: JobRole) {
+export async function completeOnboarding(user: OnboardingUser, jobRole: JobRole) {
   const database = getDatabase();
   const now = new Date().toISOString();
-  const workspaces = joinableWorkspaces(user);
-  database.transaction(() => {
-    database
+  const workspaces = (await joinableWorkspaces(user));
+  await database.transaction(async () => {
+    (await database
       .prepare(
         `INSERT INTO user_profile (user_id, job_role, onboarded_at) VALUES (?, ?, ?)
          ON CONFLICT (user_id) DO UPDATE SET job_role = excluded.job_role`,
       )
-      .run(user.id, jobRole, now);
+      .run(user.id, jobRole, now));
     const join = database.prepare(
-      "INSERT OR IGNORE INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)",
+      "INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?) ON CONFLICT DO NOTHING",
     );
     // Designer access lets someone publish and remove screens, so it waits for an owner's approval;
     // until then they review like everyone else.
-    database.prepare("UPDATE user_profile SET requested_role = ? WHERE user_id = ?").run(jobRole === "designer" ? "designer" : null, user.id);
-    for (const workspace of workspaces) join.run(workspace.id, user.id, jobRoles[jobRole].workspaceRole, now);
+    (await database.prepare("UPDATE user_profile SET requested_role = ? WHERE user_id = ?").run(jobRole === "designer" ? "designer" : null, user.id));
+    for (const workspace of workspaces) await join.run(workspace.id, user.id, jobRoles[jobRole].workspaceRole, now);
   })();
   return workspaces;
 }

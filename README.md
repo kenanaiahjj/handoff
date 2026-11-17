@@ -11,25 +11,35 @@ Asbir Handoff is a standalone web app for sharing versioned design snapshots wit
 
 ```sh
 npm install
-npm run setup:env
 npm run dev
 ```
 
-`npm run setup:env` creates `apps/web/.env.local` with a unique local authentication secret. For self-hosting, set `BETTER_AUTH_URL`, `BETTER_AUTH_SECRET`, and `ASBIR_DATA_DIR` on a server with persistent disk. Add `OPENAI_API_KEY` and optionally `OPENAI_MODEL` to enable AI changelog drafts. The default model is `gpt-6-astra`.
+`npm run dev` starts the app with a persistent local PostgreSQL-compatible database, local file storage, sample workspace and project, and the development sign-in bypass. It does not require Docker or Supabase credentials. The local database and files live under `data/`.
+
+To use a local Supabase stack instead, start its services and run the app against them:
+
+```sh
+npx supabase start
+npx supabase db reset
+npm run setup:env
+npm run dev:supabase
+```
+
+Add `OPENAI_API_KEY` and optionally `OPENAI_MODEL` to enable AI changelog drafts. The default model is `gpt-6-astra`.
 
 Run the unit and integration suites with `npm test`.
 
 ## Self-host for your team
 
-The Docker Compose setup runs the app behind Caddy, which provides HTTPS for a public domain. Point the domain at the server and allow inbound TCP ports 80 and 443 before starting the stack.
+The Docker Compose setup runs the app behind Caddy, which provides HTTPS for a public domain. The app uses Supabase Postgres and Storage, including when Docker or Railway hosts the app server. Point the domain at the server and allow inbound TCP ports 80 and 443 before starting the stack.
 
-1. Copy `deployment.env.example` to `.env`.
-2. Set `ASBIR_DOMAIN`, the Google OAuth client ID and secret, and create a unique secret with `openssl rand -base64 32`. Put the result in `BETTER_AUTH_SECRET`.
-3. Add `OPENAI_API_KEY` if you want server-generated changelog drafts.
+1. Apply the Supabase schema and copy its transaction-pooler URL, project URL, and service-role key.
+2. Copy `deployment.env.example` to `.env` and set the Supabase values, `ASBIR_DOMAIN`, Google OAuth credentials, and a unique `BETTER_AUTH_SECRET` from `openssl rand -base64 32`.
+3. Set `ASBIR_AUTH_BYPASS=0`. Add `OPENAI_API_KEY` if you want server-generated changelog drafts.
 4. Start the app with `docker compose up -d --build`.
 5. Open `https://<your-domain>` and sign in with Google. The first person to sign in becomes the owner and an admin.
 
-The `asbir_data` volume stores the SQLite database and captured design assets. For backups and other hosts (Railway, any Docker host), see `deploy/README.md`. This stack runs one app instance because it uses local SQLite storage. Caddy stores its TLS certificates in `caddy_data`. `docker compose down` keeps these named volumes. Do not add `--volumes` unless you intend to delete the team's handoffs and certificates. Rebuild an updated app with `docker compose up -d --build`.
+The app no longer stores handoff data on a local volume. Keep any old `asbir_data` volume untouched until you have backed it up and verified the Supabase import. Caddy stores its TLS certificates in `caddy_data`; `docker compose down` keeps that volume. Rebuild an updated app with `docker compose up -d --build`.
 
 If an MCP client sends an `Origin` header, set `ASBIR_MCP_ALLOWED_ORIGINS` in `.env` to a comma-separated list of trusted origins before starting the stack. Keep `.env` private; it contains the authentication secret and may contain the AI API key.
 
@@ -41,7 +51,7 @@ The app needs a network connection when installed. Its service worker keeps scre
 
 For local flow testing, set `ASBIR_AUTH_BYPASS=1` in `apps/web/.env.local` to skip sign-in and use the first local account. The bypass only runs in development and remains disabled in production.
 
-The app stores its SQLite database and uploaded assets under `ASBIR_DATA_DIR` (defaults to `apps/web/data`). Keep that directory on persistent storage when you deploy the app.
+The app stores relational data in Supabase Postgres and assets in its private Supabase Storage bucket. See [the Vercel and Supabase deployment guide](docs/vercel-deployment.md) for environment variables, staging verification, migration, and rollback steps.
 
 AI changelog drafting sends version differences, layout findings, and relevant team comments to the OpenAI API. Requests set `store: false`. Do not include sensitive information in comments unless your team is allowed to send it to the configured AI provider.
 
@@ -53,7 +63,7 @@ The Next.js app lives in `apps/web`. Shared handoff data contracts and source in
 
 ## Import a Figma canvas
 
-Build and import the Figma plugin using the [Figma capture setup guide](docs/figma-plugin.md). For local development, the build defaults to `http://localhost:3000`. For a hosted handoff, set `HANDOFF_PUBLIC_URL` to its HTTPS origin before building so the plugin can reach that server.
+Build the plugin for the embedded local app with `npm run plugin:build:local`, then import its manifest using the [Figma capture setup guide](docs/figma-plugin.md). For local Supabase or a hosted handoff, set `HANDOFF_PUBLIC_URL`, `SUPABASE_URL`, and optionally `SUPABASE_STORAGE_URL` before building.
 
 In Asbir Handoff, open a project and create a Figma capture session. The app shows a one-time token that expires after one hour, giving large captures time to finish before upload. Open the plugin, confirm its Handoff server, paste the token, and choose selected artboards, the current page, or the entire Figma file across all pages. Review its overview image and upload the frozen version.
 
@@ -63,4 +73,4 @@ Owners and designers can publish a canvas, choose its sharing mode, invite exter
 
 ## Vercel status
 
-The `asbir-handoff` project exists in the LMF Asbir Tech Vercel team, but it is not connected to GitHub and has not been deployed. The current database and image store use local disk, so review the [Vercel deployment handoff](docs/vercel-deployment.md) before enabling a deployment.
+The code is prepared for Vercel and Supabase, but this branch has not been connected or deployed. Hosted schema, Storage, OAuth, Preview, and data migration still need staging verification. Follow the [Vercel and Supabase deployment guide](docs/vercel-deployment.md).

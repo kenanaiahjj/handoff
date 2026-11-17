@@ -19,8 +19,8 @@ async function load(request: Request, context: ReviewFindingsRoute) {
   const access = await resolvePublishedReviewAccess(shareId, request.headers);
   if (!access) return { response: Response.json({ error: "Published handoff not found." }, { status: 404 }) };
   if (!access.decision.allowed) return { response: Response.json({ error: "This handoff is not available to you." }, { status: access.session ? 404 : 401 }) };
-  const project = getProject({ workspaceId: access.handoff.workspaceId, projectId: access.handoff.projectId });
-  const version = getVisiblePublishedReviewVersion(access.handoff, versionId);
+  const project = (await getProject({ workspaceId: access.handoff.workspaceId, projectId: access.handoff.projectId }));
+  const version = (await getVisiblePublishedReviewVersion(access.handoff, versionId));
   if (!project || !version) return { response: Response.json({ error: "Handoff version not found." }, { status: 404 }) };
   return { access, project, version, versionId };
 }
@@ -30,14 +30,14 @@ export async function GET(request: Request, context: ReviewFindingsRoute) {
   if ("response" in loaded) return loaded.response;
   const workspaceId = loaded.access.handoff.workspaceId;
   const evaluated = evaluateLayoutRules(loaded.version.snapshot, loaded.project.rules);
-  const states = listFindingStates({ workspaceId, versionId: loaded.versionId }) as Array<{
+  const states = (await listFindingStates({ workspaceId, versionId: loaded.versionId })) as Array<{
     findingKey: string;
     status: "open" | "resolved";
     assigneeUserId: string | null;
     note: string | null;
     updatedAt: string;
   }>;
-  const comments = listFindingComments({ workspaceId, versionId: loaded.versionId });
+  const comments = (await listFindingComments({ workspaceId, versionId: loaded.versionId }));
   const commentsByFindingKey = new Map<string, typeof comments>();
   for (const comment of comments) {
     const findingComments = commentsByFindingKey.get(comment.findingKey) ?? [];
@@ -56,15 +56,15 @@ export async function GET(request: Request, context: ReviewFindingsRoute) {
     };
   });
   const members = loaded.access.membershipRole
-    ? getDatabase()
+    ? (await getDatabase()
       .prepare(
         `SELECT "user".id, "user".name
          FROM workspace_membership
          JOIN "user" ON "user".id = workspace_membership.user_id
          WHERE workspace_membership.workspace_id = ?
-         ORDER BY "user".name`,
+         ORDER BY "user".name COLLATE "C"`,
       )
-      .all(workspaceId)
+      .all(workspaceId))
     : [];
   return Response.json({ findings, unsupportedReason: evaluated.unsupportedReason, members }, { headers: { "Cache-Control": "no-store" } });
 }
@@ -80,13 +80,13 @@ export async function POST(request: Request, context: ReviewFindingsRoute) {
   const knownFinding = evaluateLayoutRules(loaded.version.snapshot, loaded.project.rules).findings
     .some((finding) => finding.findingKey === findingKey);
   if (!knownFinding) return Response.json({ error: "Finding not found for this snapshot." }, { status: 404 });
-  const comment = createFindingComment({
+  const comment = (await createFindingComment({
     workspaceId: loaded.access.handoff.workspaceId,
     versionId: loaded.versionId,
     findingKey,
     authorUserId: loaded.access.session.user.id,
     body: parsed.data.body,
-  });
+  }));
   return Response.json({ comment }, { status: 201 });
 }
 
@@ -105,12 +105,12 @@ export async function PATCH(request: Request, context: ReviewFindingsRoute) {
   if (!knownFinding) return Response.json({ error: "Finding not found for this snapshot." }, { status: 404 });
   const assigneeUserId = parsed.data.assigneeUserId ?? null;
   if (assigneeUserId) {
-    const isMember = getDatabase()
+    const isMember = (await getDatabase()
       .prepare("SELECT 1 FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
-      .get(loaded.access.handoff.workspaceId, assigneeUserId);
+      .get(loaded.access.handoff.workspaceId, assigneeUserId));
     if (!isMember) return Response.json({ error: "The assignee must belong to this workspace." }, { status: 400 });
   }
-  const state = saveFindingState({
+  const state = (await saveFindingState({
     workspaceId: loaded.access.handoff.workspaceId,
     versionId: loaded.versionId,
     findingKey,
@@ -118,6 +118,6 @@ export async function PATCH(request: Request, context: ReviewFindingsRoute) {
     assigneeUserId,
     note: parsed.data.note?.trim() || null,
     updatedBy: loaded.access.session.user.id,
-  });
+  }));
   return Response.json(state);
 }

@@ -16,43 +16,43 @@ function sniffType(bytes: Uint8Array): ProjectIconType | null {
   return null;
 }
 
-export function setProjectIcon(input: { projectId: string; bytes: Uint8Array; userId: string }) {
+export async function setProjectIcon(input: { projectId: string; bytes: Uint8Array; userId: string }) {
   if (!input.bytes.length) throw new ProjectIconError("Choose an image.");
   if (input.bytes.length > projectIconMaxBytes) throw new ProjectIconError("Images can be up to 512 KB.");
   const contentType = sniffType(input.bytes);
   if (!contentType) throw new ProjectIconError("Use a PNG, JPEG or WebP image.");
   const sha256 = createHash("sha256").update(input.bytes).digest("hex");
-  getDatabase()
+  (await getDatabase()
     .prepare(
       `INSERT INTO project_icon (project_id, content_type, bytes, sha256, updated_by_user_id, updated_at)
        VALUES (?, ?, ?, ?, ?, ?)
        ON CONFLICT (project_id) DO UPDATE SET content_type = excluded.content_type, bytes = excluded.bytes,
          sha256 = excluded.sha256, updated_by_user_id = excluded.updated_by_user_id, updated_at = excluded.updated_at`,
     )
-    .run(input.projectId, contentType, Buffer.from(input.bytes), sha256, input.userId, new Date().toISOString());
+    .run(input.projectId, contentType, Buffer.from(input.bytes), sha256, input.userId, new Date().toISOString()));
   return { iconVersion: sha256.slice(0, 12) };
 }
 
-export function getProjectIcon(projectId: string) {
-  const row = getDatabase()
+export async function getProjectIcon(projectId: string) {
+  const row = (await getDatabase()
     .prepare("SELECT content_type AS contentType, bytes, sha256 FROM project_icon WHERE project_id = ?")
-    .get(projectId) as { contentType: ProjectIconType; bytes: Buffer; sha256: string } | undefined;
+    .get(projectId)) as { contentType: ProjectIconType; bytes: Buffer; sha256: string } | undefined;
   return row ?? null;
 }
 
-export function deleteProjectIcon(projectId: string) {
-  return getDatabase().prepare("DELETE FROM project_icon WHERE project_id = ?").run(projectId).changes > 0;
+export async function deleteProjectIcon(projectId: string) {
+  return (await getDatabase().prepare("DELETE FROM project_icon WHERE project_id = ?").run(projectId)).changes > 0;
 }
 
 /** Short content fingerprint per project that has an icon; it goes in the URL so caches stay correct. */
-export function projectIconVersions(workspaceId: string) {
-  const rows = getDatabase()
+export async function projectIconVersions(workspaceId: string) {
+  const rows = (await getDatabase()
     .prepare(
       `SELECT project_icon.project_id AS projectId, substr(project_icon.sha256, 1, 12) AS iconVersion
        FROM project_icon JOIN project ON project.id = project_icon.project_id
        WHERE project.workspace_id = ?`,
     )
-    .all(workspaceId) as Array<{ projectId: string; iconVersion: string }>;
+    .all(workspaceId)) as Array<{ projectId: string; iconVersion: string }>;
   return Object.fromEntries(rows.map((row) => [row.projectId, row.iconVersion])) as Record<string, string>;
 }
 

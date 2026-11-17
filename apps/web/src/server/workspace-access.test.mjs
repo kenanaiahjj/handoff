@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
 import test, { after } from "node:test";
+import { createPostgresTestFixture } from "./test-support/postgres-test-fixture.mjs";
 
-const priorDatabase = globalThis.__asbirDatabase;
-const database = new Database(":memory:");
-globalThis.__asbirDatabase = database;
+const fixture = await createPostgresTestFixture();
+const { database, pool } = fixture;
 process.env.BETTER_AUTH_SECRET ??= "asbir-workspace-access-test-secret-over-thirty-two-bytes";
 process.env.BETTER_AUTH_URL ??= "http://localhost:3000";
 
-database.exec(`
+await pool.query(`
+  CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL UNIQUE, "emailVerified" BOOLEAN NOT NULL DEFAULT false, image TEXT, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(), "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now());
+  CREATE TABLE account (id TEXT PRIMARY KEY, "accountId" TEXT NOT NULL, "providerId" TEXT NOT NULL, "userId" TEXT NOT NULL, "accessToken" TEXT, "refreshToken" TEXT, "idToken" TEXT, "accessTokenExpiresAt" TIMESTAMPTZ, "refreshTokenExpiresAt" TIMESTAMPTZ, scope TEXT, password TEXT, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(), "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now());
+  CREATE TABLE session (id TEXT PRIMARY KEY, "expiresAt" TIMESTAMPTZ NOT NULL, token TEXT NOT NULL UNIQUE, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(), "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now(), "ipAddress" TEXT, "userAgent" TEXT, "userId" TEXT NOT NULL);
+  CREATE TABLE verification (id TEXT PRIMARY KEY, identifier TEXT NOT NULL, value TEXT NOT NULL, "expiresAt" TIMESTAMPTZ NOT NULL, "createdAt" TIMESTAMPTZ NOT NULL DEFAULT now(), "updatedAt" TIMESTAMPTZ NOT NULL DEFAULT now());
   CREATE TABLE workspace_membership (workspace_id TEXT, user_id TEXT, role TEXT, created_at TEXT);
   CREATE TABLE project (id TEXT, workspace_id TEXT, pd_in_charge_user_id TEXT);
   CREATE TABLE handoff (id TEXT PRIMARY KEY, workspace_id TEXT, project_id TEXT);
@@ -21,15 +24,15 @@ database.exec(`
 const workspaceId = "ws-1";
 const now = "2026-11-16T00:00:00.000Z";
 for (const [userId, role] of [["owner", "owner"], ["designer", "designer"], ["reviewer", "reviewer"], ["lead", "qa"]]) {
-  database.prepare("INSERT INTO workspace_membership VALUES (?, ?, ?, ?)").run(workspaceId, userId, role, now);
+  await database.prepare("INSERT INTO workspace_membership VALUES (?, ?, ?, ?)").run(workspaceId, userId, role, now);
 }
-database.prepare("INSERT INTO project VALUES (?, ?, ?)").run("project-a", workspaceId, "owner");
-database.prepare("INSERT INTO project VALUES (?, ?, ?)").run("project-b", workspaceId, "lead");
-database.prepare("INSERT INTO handoff VALUES (?, ?, ?)").run("invited", workspaceId, "project-a");
-database.prepare("INSERT INTO handoff VALUES (?, ?, ?)").run("hidden", workspaceId, "project-a");
-database.prepare("INSERT INTO handoff VALUES (?, ?, ?)").run("led", workspaceId, "project-b");
-database.prepare("INSERT INTO handoff_invite VALUES (?, ?, ?, ?, NULL, NULL)").run("i1", workspaceId, "invited", "Reviewer@Example.com");
-database.prepare("INSERT INTO handoff_invite VALUES (?, ?, ?, ?, ?, NULL)").run("i2", workspaceId, "hidden", "reviewer@example.com", now);
+await database.prepare("INSERT INTO project VALUES (?, ?, ?)").run("project-a", workspaceId, "owner");
+await database.prepare("INSERT INTO project VALUES (?, ?, ?)").run("project-b", workspaceId, "lead");
+await database.prepare("INSERT INTO handoff VALUES (?, ?, ?)").run("invited", workspaceId, "project-a");
+await database.prepare("INSERT INTO handoff VALUES (?, ?, ?)").run("hidden", workspaceId, "project-a");
+await database.prepare("INSERT INTO handoff VALUES (?, ?, ?)").run("led", workspaceId, "project-b");
+await database.prepare("INSERT INTO handoff_invite VALUES (?, ?, ?, ?, NULL, NULL)").run("i1", workspaceId, "invited", "Reviewer@Example.com");
+await database.prepare("INSERT INTO handoff_invite VALUES (?, ?, ?, ?, ?, NULL)").run("i2", workspaceId, "hidden", "reviewer@example.com", now);
 
 const { auth } = await import("@/src/server/auth.ts");
 const originalGetSession = auth.api.getSession;
@@ -39,10 +42,9 @@ auth.api.getSession = async () => (currentUser ? { user: { id: currentUser, emai
 
 const { requireWorkspaceRole, requireHandoffAccess, requireProjectMember, managerRoles, WorkspaceAccessError } = await import("./workspace-access.ts");
 
-after(() => {
+after(async () => {
   auth.api.getSession = originalGetSession;
-  globalThis.__asbirDatabase = priorDatabase;
-  database.close();
+  await fixture.close();
 });
 
 const request = new Request("http://localhost:3000/api/test");

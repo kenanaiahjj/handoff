@@ -10,11 +10,11 @@ export async function GET(request: Request, context: PublishedChangelogRoute) {
   if (!access.decision.allowed) return Response.json({ error: "This handoff is not available to you." }, { status: access.session ? 404 : 401 });
   const versionId = new URL(request.url).searchParams.get("versionId");
   if (!versionId) return Response.json({ error: "A version ID is required." }, { status: 400 });
-  if (!listVisiblePublishedReviewVersions(access.handoff).some((version) => version.id === versionId)) {
+  if (!(await listVisiblePublishedReviewVersions(access.handoff)).some((version) => version.id === versionId)) {
     return Response.json({ error: "Version is not included in this published handoff." }, { status: 404 });
   }
 
-  const drafts = listApprovedChangelogsForVersion({ workspaceId: access.handoff.workspaceId, handoffId: access.handoff.id, versionId })
+  const drafts = (await listApprovedChangelogsForVersion({ workspaceId: access.handoff.workspaceId, handoffId: access.handoff.id, versionId }))
     .map(({ id, fromVersionId, toVersionId, title, summary, statements, evidence, createdAt }) => ({
       id,
       fromVersionId,

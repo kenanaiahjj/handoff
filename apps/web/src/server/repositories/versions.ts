@@ -9,7 +9,7 @@ import {
 } from "@asbir/snapshot-contract";
 import { getDatabase } from "../db";
 import { readSnapshotJson, storeCompressedSnapshot } from "../storage/snapshot-store";
-import { objectStore } from "../storage/local-object-store";
+import { objectStore } from "../storage/supabase-object-store";
 import {
   assertReusableAssetReferences,
   deleteHandoffVersionInDatabase,
@@ -39,8 +39,9 @@ export type StoredVersionAsset = {
 };
 
 export type VersionAssetInput = SnapshotAsset & (
-  | { bytes: Uint8Array; reuseObjectKey?: never }
-  | { bytes?: never; reuseObjectKey: string }
+  | { bytes: Uint8Array; reuseObjectKey?: never; uploadedObjectKey?: never }
+  | { bytes: Uint8Array; reuseObjectKey?: never; uploadedObjectKey: string }
+  | { bytes?: never; reuseObjectKey: string; uploadedObjectKey?: never }
 );
 
 export type CreateHandoffVersionInput = {
@@ -56,6 +57,7 @@ export type CreateHandoffVersionInput = {
   assets: VersionAssetInput[];
   reuseAssetsFromVersionId?: string;
   consumeCaptureSessionId?: string;
+  captureUploadPaths?: { snapshotKey: string; assetKeys: Record<string, string> };
   frameReplacementMatches?: {
     baselineVersionId: string;
     matches: Array<{ beforeFrameId: string; afterFrameId: string }>;
@@ -109,6 +111,9 @@ function assertAssetBytes(snapshot: StoredSnapshot, assets: VersionAssetInput[])
       if (asset.sha256 !== digest || uploaded.sha256 !== digest) {
         throw new Error(`Asset checksum does not match for "${asset.key}".`);
       }
+      if (uploaded.uploadedObjectKey && !/^[a-f0-9]{48}$/.test(uploaded.uploadedObjectKey)) {
+        throw new Error(`Uploaded asset path is invalid for "${asset.key}".`);
+      }
     } else if (!uploaded.reuseObjectKey || !/^[a-f0-9]{48}$/.test(uploaded.reuseObjectKey)) {
       throw new Error(`Asset bytes are missing for "${asset.key}".`);
     }
@@ -124,17 +129,17 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
   assertAssetBytes(snapshot, input.assets);
 
   const database = getDatabase();
-  const project = database
+  const project = (await database
     .prepare("SELECT 1 FROM project WHERE id = ? AND workspace_id = ?")
-    .get(input.projectId, input.workspaceId);
+    .get(input.projectId, input.workspaceId));
   if (!project) throw new Error("Project not found in this workspace.");
 
   if (input.handoffId) {
-    const handoff = database
+    const handoff = (await database
       .prepare(
         "SELECT 1 FROM handoff WHERE id = ? AND project_id = ? AND workspace_id = ?",
       )
-      .get(input.handoffId, input.projectId, input.workspaceId);
+      .get(input.handoffId, input.projectId, input.workspaceId));
     if (!handoff) throw new Error("Handoff not found in this project.");
   } else if (!input.handoffName?.trim()) {
     throw new Error("A handoff name is required for the first version.");
@@ -144,30 +149,30 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
   const newHandoffId = input.handoffId ?? randomUUID();
   const versionId = randomUUID();
   const reusedVersion = input.reuseAssetsFromVersionId
-    ? database
+    ? (await database
         .prepare("SELECT handoff_id AS handoffId FROM handoff_version WHERE id = ? AND workspace_id = ?")
-        .get(input.reuseAssetsFromVersionId, input.workspaceId) as { handoffId: string } | undefined
+        .get(input.reuseAssetsFromVersionId, input.workspaceId)) as { handoffId: string } | undefined
     : undefined;
   if (input.reuseAssetsFromVersionId && reusedVersion?.handoffId !== newHandoffId) {
     throw new Error("Reusable assets must belong to an earlier version in this handoff.");
   }
-  const storedAssets = input.assets.map((asset) => {
+  const storedAssets = await Promise.all(input.assets.map(async (asset) => {
     if (asset.bytes) {
       return {
         asset,
         id: randomUUID(),
-        objectKey: randomBytes(24).toString("hex"),
+        objectKey: asset.uploadedObjectKey ?? randomBytes(24).toString("hex"),
       };
     }
     if (!input.reuseAssetsFromVersionId) throw new Error("Reusable assets require a baseline handoff version.");
-    const source = database
+    const source = (await database
       .prepare(
         `SELECT file_name AS fileName, content_type AS contentType,
                 size_bytes AS sizeBytes, sha256, width, height
          FROM handoff_asset
          WHERE workspace_id = ? AND handoff_version_id = ? AND object_key = ?`,
       )
-      .get(input.workspaceId, input.reuseAssetsFromVersionId, asset.reuseObjectKey) as
+      .get(input.workspaceId, input.reuseAssetsFromVersionId, asset.reuseObjectKey)) as
       | { fileName: string; contentType: string; sizeBytes: number; sha256: string; width: number | null; height: number | null }
       | undefined;
     if (!source || source.fileName !== asset.fileName || source.contentType !== asset.contentType ||
@@ -180,26 +185,38 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
       id: randomUUID(),
       objectKey: asset.reuseObjectKey,
     };
-  });
+  }));
   const writtenObjectKeys: string[] = [];
 
   try {
     for (const { asset, objectKey } of storedAssets) {
       if (!asset.bytes) continue;
+      if (asset.uploadedObjectKey) {
+        writtenObjectKeys.push(objectKey);
+        continue;
+      }
       await objectStore.put(objectKey, asset.bytes, asset.contentType);
       writtenObjectKeys.push(objectKey);
     }
 
-    const insertVersion = database.transaction(() => {
+    const insertVersion = database.transaction(async () => {
+      let captureUploadsCount: number | null = null;
+      // SQLite ran one writer at a time. Lock the handoff so concurrent publishes, deletes and asset
+      // reuse checks for the same handoff happen in order instead of both passing their checks.
+      if (input.handoffId) {
+        (await database
+          .prepare("SELECT id FROM handoff WHERE id = ? AND workspace_id = ? FOR UPDATE")
+          .get(input.handoffId, input.workspaceId));
+      }
       if (input.expectedLatestVersionId) {
         const latest = input.handoffId
-          ? database
+          ? (await database
               .prepare(
                 `SELECT id FROM handoff_version
                  WHERE workspace_id = ? AND handoff_id = ?
                  ORDER BY created_at DESC, id DESC LIMIT 1`,
               )
-              .get(input.workspaceId, input.handoffId) as { id: string } | undefined
+              .get(input.workspaceId, input.handoffId)) as { id: string } | undefined
           : undefined;
         if (latest?.id !== input.expectedLatestVersionId) {
           throw new HandoffVersionConflictError();
@@ -207,28 +224,47 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
       }
 
       if (input.reuseAssetsFromVersionId) {
-        assertReusableAssetReferences(database, {
+        (await assertReusableAssetReferences(database, {
           workspaceId: input.workspaceId,
           handoffId: newHandoffId,
           sourceVersionId: input.reuseAssetsFromVersionId,
           objectKeys: input.assets.flatMap((asset) => asset.bytes ? [] : [asset.reuseObjectKey]),
-        });
+        }));
       }
 
       if (input.consumeCaptureSessionId) {
-        const consumed = database
+        if (!input.captureUploadPaths) throw new Error("Capture upload paths are required before finalizing this session.");
+        const declaredUploads = (await database
+          .prepare(
+            `SELECT upload_kind AS kind, asset_key AS assetKey, object_key AS objectKey
+             FROM capture_upload
+             WHERE capture_session_id = ? AND is_current AND finalized_at IS NULL
+             FOR UPDATE`,
+          )
+          .all(input.consumeCaptureSessionId)) as Array<{ kind: string; assetKey: string | null; objectKey: string }>;
+        const snapshotUpload = declaredUploads.find((upload) => upload.kind === "snapshot");
+        const assetUploads = new Map(declaredUploads
+          .filter((upload) => upload.kind === "asset" && upload.assetKey !== null)
+          .map((upload) => [upload.assetKey!, upload.objectKey]));
+        if (snapshotUpload?.objectKey !== input.captureUploadPaths.snapshotKey ||
+            assetUploads.size !== Object.keys(input.captureUploadPaths.assetKeys).length ||
+            Object.entries(input.captureUploadPaths.assetKeys).some(([key, objectKey]) => assetUploads.get(key) !== objectKey)) {
+          throw new Error("The uploaded objects do not match this capture session.");
+        }
+        captureUploadsCount = declaredUploads.length;
+        const consumed = (await database
           .prepare(
             `UPDATE capture_session SET used_at = ?
              WHERE id = ? AND workspace_id = ? AND project_id = ?
                AND (handoff_id IS NULL OR handoff_id = ?)
                AND used_at IS NULL AND expires_at > ?`,
           )
-          .run(now, input.consumeCaptureSessionId, input.workspaceId, input.projectId, newHandoffId, now);
+          .run(now, input.consumeCaptureSessionId, input.workspaceId, input.projectId, newHandoffId, now));
         if (consumed.changes !== 1) throw new Error("Capture session expired, was already used, or no longer matches this handoff.");
       }
 
       if (!input.handoffId) {
-        database
+        (await database
           .prepare(
             `INSERT INTO handoff
               (id, workspace_id, project_id, name, created_by_user_id, created_at)
@@ -241,10 +277,10 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
             input.handoffName!.trim(),
             input.createdBy,
             now,
-          );
+          ));
       }
 
-      database
+      (await database
         .prepare(
           `INSERT INTO handoff_version
             (id, workspace_id, handoff_id, version_label, release_note, source,
@@ -263,13 +299,13 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
           snapshot.sourceRevisionId,
           snapshot.capturedAt,
           contentHash,
-          isVisualOnly(snapshot) ? 1 : 0,
+            isVisualOnly(snapshot),
           "{}",
           input.createdBy,
           now,
-        );
+        ));
       // The capture itself is stored compressed beside the row (verified to read back identically).
-      storeCompressedSnapshot(database, versionId, JSON.stringify(snapshot));
+      (await storeCompressedSnapshot(database, versionId, JSON.stringify(snapshot)));
 
       const insertAsset = database.prepare(
         `INSERT INTO handoff_asset
@@ -279,7 +315,7 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
       );
 
       for (const { asset, id, objectKey } of storedAssets) {
-        insertAsset.run(
+        await insertAsset.run(
           id,
           input.workspaceId,
           versionId,
@@ -296,9 +332,9 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
       }
 
       if (input.frameReplacementMatches?.matches.length) {
-        const baseline = database
+        const baseline = (await database
           .prepare("SELECT id FROM handoff_version WHERE id = ? AND handoff_id = ? AND workspace_id = ?")
-          .get(input.frameReplacementMatches.baselineVersionId, newHandoffId, input.workspaceId);
+          .get(input.frameReplacementMatches.baselineVersionId, newHandoffId, input.workspaceId));
         if (!baseline) throw new Error("The confirmed replacement baseline is no longer in this handoff.");
 
         const insertReplacement = database.prepare(
@@ -308,7 +344,7 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
            VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         );
         for (const match of input.frameReplacementMatches.matches) {
-          insertReplacement.run(
+          await insertReplacement.run(
             newHandoffId,
             input.workspaceId,
             input.frameReplacementMatches.baselineVersionId,
@@ -320,9 +356,16 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
           );
         }
       }
+
+      if (input.consumeCaptureSessionId && captureUploadsCount !== null) {
+        const finalizedUploads = (await database
+          .prepare("UPDATE capture_upload SET finalized_at = ?, version_id = ? WHERE capture_session_id = ? AND is_current AND finalized_at IS NULL")
+          .run(now, versionId, input.consumeCaptureSessionId));
+        if (finalizedUploads.changes !== captureUploadsCount) throw new Error("The capture upload set changed before finalization.");
+      }
     });
 
-    insertVersion.immediate();
+    await insertVersion();
     return { handoffId: newHandoffId, versionId };
   } catch (error) {
     await Promise.all(writtenObjectKeys.map((key) => objectStore.delete(key)));
@@ -352,8 +395,8 @@ type FrameReplacementMatchInput = {
   confirmedByUserId: string;
 };
 
-export function hasConfirmedFrameReplacementMatch(input: Omit<FrameReplacementMatchInput, "confirmedByUserId">) {
-  return Boolean(getDatabase()
+export async function hasConfirmedFrameReplacementMatch(input: Omit<FrameReplacementMatchInput, "confirmedByUserId">) {
+  return Boolean((await getDatabase()
     .prepare(
       `SELECT 1 FROM handoff_frame_replacement
        WHERE workspace_id = ? AND handoff_id = ?
@@ -367,24 +410,24 @@ export function hasConfirmedFrameReplacementMatch(input: Omit<FrameReplacementMa
       input.newVersionId,
       input.beforeFrameId,
       input.afterFrameId,
-    ));
+    )));
 }
 
-export function createConfirmedFrameReplacementMatch(input: FrameReplacementMatchInput) {
+export async function createConfirmedFrameReplacementMatch(input: FrameReplacementMatchInput) {
   const database = getDatabase();
-  const confirmMatch = database.transaction(() => {
-    const versions = database
+  const confirmMatch = database.transaction(async () => {
+    const versions = (await database
       .prepare(
         `SELECT id FROM handoff_version
          WHERE workspace_id = ? AND handoff_id = ? AND id IN (?, ?)
          ORDER BY created_at ASC, id ASC`,
       )
-      .all(input.workspaceId, input.handoffId, input.baselineVersionId, input.newVersionId) as Array<{ id: string }>;
+      .all(input.workspaceId, input.handoffId, input.baselineVersionId, input.newVersionId)) as Array<{ id: string }>;
     if (versions.length !== 2 || versions[0].id !== input.baselineVersionId) {
       throw new Error("Choose two versions in the same handoff, with the earlier version as the baseline.");
     }
 
-    const existing = database
+    const existing = (await database
       .prepare(
         `SELECT baseline_version_id AS baselineVersionId, before_frame_id AS beforeFrameId,
                 after_frame_id AS afterFrameId
@@ -392,7 +435,7 @@ export function createConfirmedFrameReplacementMatch(input: FrameReplacementMatc
          WHERE workspace_id = ? AND handoff_id = ? AND new_version_id = ?
            AND (before_frame_id = ? OR after_frame_id = ?)`,
       )
-      .all(input.workspaceId, input.handoffId, input.newVersionId, input.beforeFrameId, input.afterFrameId) as Array<{
+      .all(input.workspaceId, input.handoffId, input.newVersionId, input.beforeFrameId, input.afterFrameId)) as Array<{
         baselineVersionId: string;
         beforeFrameId: string;
         afterFrameId: string;
@@ -405,7 +448,7 @@ export function createConfirmedFrameReplacementMatch(input: FrameReplacementMatc
     )) return "already-confirmed" as const;
     if (existing.length) throw new FrameReplacementConflictError();
 
-    database
+    (await database
       .prepare(
         `INSERT INTO handoff_frame_replacement
           (handoff_id, workspace_id, baseline_version_id, new_version_id,
@@ -421,35 +464,35 @@ export function createConfirmedFrameReplacementMatch(input: FrameReplacementMatc
         input.afterFrameId,
         input.confirmedByUserId,
         new Date().toISOString(),
-      );
+      ));
     return "created" as const;
   });
 
-  return confirmMatch.immediate();
+  return confirmMatch();
 }
 
-export function getConfirmedFrameMatchesBetweenVersions(input: {
+export async function getConfirmedFrameMatchesBetweenVersions(input: {
   workspaceId: string;
   handoffId: string;
   from: { id: string; snapshot: FrameIdentitySnapshot };
   to: { id: string; snapshot: FrameIdentitySnapshot };
 }) {
   const database = getDatabase();
-  const versions = database
+  const versions = (await database
     .prepare(
       `SELECT id FROM handoff_version
        WHERE workspace_id = ? AND handoff_id = ?
        ORDER BY created_at ASC, id ASC`,
     )
-    .all(input.workspaceId, input.handoffId) as Array<{ id: string }>;
-  const replacements = database
+    .all(input.workspaceId, input.handoffId)) as Array<{ id: string }>;
+  const replacements = (await database
     .prepare(
       `SELECT baseline_version_id AS baselineVersionId, new_version_id AS newVersionId,
               before_frame_id AS beforeFrameId, after_frame_id AS afterFrameId
        FROM handoff_frame_replacement
        WHERE workspace_id = ? AND handoff_id = ?`,
     )
-    .all(input.workspaceId, input.handoffId) as ConfirmedFrameReplacement[];
+    .all(input.workspaceId, input.handoffId)) as ConfirmedFrameReplacement[];
 
   return resolveFrameReplacementMatches({
     versionIds: versions.map((version) => version.id),
@@ -476,8 +519,8 @@ type NodeReplacementMatchInput = ConfirmedNodeReplacement & {
   confirmedByUserId: string;
 };
 
-export function hasConfirmedNodeReplacementMatch(input: Omit<NodeReplacementMatchInput, "confirmedByUserId">) {
-  return Boolean(getDatabase()
+export async function hasConfirmedNodeReplacementMatch(input: Omit<NodeReplacementMatchInput, "confirmedByUserId">) {
+  return Boolean((await getDatabase()
     .prepare(
       `SELECT 1 FROM handoff_node_replacement
        WHERE workspace_id = ? AND handoff_id = ?
@@ -494,24 +537,24 @@ export function hasConfirmedNodeReplacementMatch(input: Omit<NodeReplacementMatc
       input.afterFrameId,
       input.beforeNodeId,
       input.afterNodeId,
-    ));
+    )));
 }
 
-export function createConfirmedNodeReplacementMatch(input: NodeReplacementMatchInput) {
+export async function createConfirmedNodeReplacementMatch(input: NodeReplacementMatchInput) {
   const database = getDatabase();
-  const confirmMatch = database.transaction(() => {
-    const versions = database
+  const confirmMatch = database.transaction(async () => {
+    const versions = (await database
       .prepare(
         `SELECT id FROM handoff_version
          WHERE workspace_id = ? AND handoff_id = ? AND id IN (?, ?)
          ORDER BY created_at ASC, id ASC`,
       )
-      .all(input.workspaceId, input.handoffId, input.baselineVersionId, input.newVersionId) as Array<{ id: string }>;
+      .all(input.workspaceId, input.handoffId, input.baselineVersionId, input.newVersionId)) as Array<{ id: string }>;
     if (versions.length !== 2 || versions[0].id !== input.baselineVersionId) {
       throw new Error("Choose two versions in the same handoff, with the earlier version as the baseline.");
     }
 
-    const existing = database
+    const existing = (await database
       .prepare(
         `SELECT before_frame_id AS beforeFrameId, after_frame_id AS afterFrameId,
                 before_node_id AS beforeNodeId, after_node_id AS afterNodeId
@@ -530,7 +573,7 @@ export function createConfirmedNodeReplacementMatch(input: NodeReplacementMatchI
         input.beforeNodeId,
         input.afterFrameId,
         input.afterNodeId,
-      ) as Array<Pick<ConfirmedNodeReplacement, "beforeFrameId" | "afterFrameId" | "beforeNodeId" | "afterNodeId">>;
+      )) as Array<Pick<ConfirmedNodeReplacement, "beforeFrameId" | "afterFrameId" | "beforeNodeId" | "afterNodeId">>;
 
     if (existing.some((match) =>
       match.beforeFrameId === input.beforeFrameId &&
@@ -540,7 +583,7 @@ export function createConfirmedNodeReplacementMatch(input: NodeReplacementMatchI
     )) return "already-confirmed" as const;
     if (existing.length) throw new NodeReplacementConflictError();
 
-    database
+    (await database
       .prepare(
         `INSERT INTO handoff_node_replacement
           (handoff_id, workspace_id, baseline_version_id, new_version_id,
@@ -559,28 +602,28 @@ export function createConfirmedNodeReplacementMatch(input: NodeReplacementMatchI
         input.afterNodeId,
         input.confirmedByUserId,
         new Date().toISOString(),
-      );
+      ));
     return "created" as const;
   });
 
-  return confirmMatch.immediate();
+  return confirmMatch();
 }
 
-export function getConfirmedNodeMatchesBetweenVersions(input: {
+export async function getConfirmedNodeMatchesBetweenVersions(input: {
   workspaceId: string;
   handoffId: string;
   from: { id: string };
   to: { id: string };
-}): NodeMatch[] {
+}): Promise<NodeMatch[]> {
   const database = getDatabase();
-  const versions = database
+  const versions = (await database
     .prepare(
       `SELECT id FROM handoff_version
        WHERE workspace_id = ? AND handoff_id = ?
        ORDER BY created_at ASC, id ASC`,
     )
-    .all(input.workspaceId, input.handoffId) as Array<{ id: string }>;
-  const replacements = database
+    .all(input.workspaceId, input.handoffId)) as Array<{ id: string }>;
+  const replacements = (await database
     .prepare(
       `SELECT baseline_version_id AS baselineVersionId, new_version_id AS newVersionId,
               before_frame_id AS beforeFrameId, after_frame_id AS afterFrameId,
@@ -588,7 +631,7 @@ export function getConfirmedNodeMatchesBetweenVersions(input: {
        FROM handoff_node_replacement
        WHERE workspace_id = ? AND handoff_id = ?`,
     )
-    .all(input.workspaceId, input.handoffId) as ConfirmedNodeReplacement[];
+    .all(input.workspaceId, input.handoffId)) as ConfirmedNodeReplacement[];
 
   return resolveNodeReplacementMatches({
     versionIds: versions.map((version) => version.id),
@@ -601,10 +644,10 @@ export function getConfirmedNodeMatchesBetweenVersions(input: {
 // Versions are immutable (enforced by a trigger), so a parsed snapshot can be reused across
 // requests. Parsing and validating a large capture takes seconds; keep the two most recent per
 // database, keyed by version and content hash.
-const parsedSnapshotCache = new WeakMap<object, Map<string, StoredSnapshot>>();
+const parsedSnapshotCache = new WeakMap<object, Map<string, Promise<StoredSnapshot>>>();
 const parsedSnapshotCacheSize = 2;
 
-function cachedSnapshot(database: object, key: string, load: () => StoredSnapshot) {
+async function cachedSnapshot(database: object, key: string, load: () => Promise<StoredSnapshot>) {
   let cache = parsedSnapshotCache.get(database);
   if (!cache) {
     cache = new Map();
@@ -616,10 +659,15 @@ function cachedSnapshot(database: object, key: string, load: () => StoredSnapsho
     cache.set(key, hit);
     return hit;
   }
-  const snapshot = load();
+  const snapshot = Promise.resolve().then(load);
   cache.set(key, snapshot);
   while (cache.size > parsedSnapshotCacheSize) cache.delete(cache.keys().next().value!);
-  return snapshot;
+  try {
+    return await snapshot;
+  } catch (error) {
+    if (cache.get(key) === snapshot) cache.delete(key);
+    throw error;
+  }
 }
 
 /**
@@ -641,21 +689,21 @@ export function parseStoredSnapshot(snapshotJson: string): StoredSnapshot {
 }
 
 /** Size of a version's snapshot JSON in bytes (uncompressed), without loading or parsing it. */
-export function getVersionSnapshotSize(input: { workspaceId: string; versionId: string }) {
-  const row = getDatabase()
+export async function getVersionSnapshotSize(input: { workspaceId: string; versionId: string }) {
+  const row = (await getDatabase()
     .prepare(
-      `SELECT COALESCE(handoff_version_snapshot.raw_bytes, length(CAST(handoff_version.snapshot_json AS BLOB))) AS sizeBytes
+      `SELECT COALESCE(handoff_version_snapshot.raw_bytes, octet_length(handoff_version.snapshot_json)) AS sizeBytes
        FROM handoff_version
        LEFT JOIN handoff_version_snapshot ON handoff_version_snapshot.version_id = handoff_version.id
        WHERE handoff_version.id = ? AND handoff_version.workspace_id = ?`,
     )
-    .get(input.versionId, input.workspaceId) as { sizeBytes: number } | undefined;
+    .get(input.versionId, input.workspaceId)) as { sizeBytes: number } | undefined;
   return row?.sizeBytes ?? 0;
 }
 
-export function getVersion(input: { workspaceId: string; versionId: string }) {
+export async function getVersion(input: { workspaceId: string; versionId: string }) {
   const database = getDatabase();
-  const row = database
+  const row = (await database
     .prepare(
       `SELECT id, workspace_id AS workspaceId, handoff_id AS handoffId,
               version_label AS versionLabel, release_note AS releaseNote,
@@ -666,7 +714,7 @@ export function getVersion(input: { workspaceId: string; versionId: string }) {
               created_at AS createdAt
        FROM handoff_version WHERE id = ? AND workspace_id = ?`,
     )
-    .get(input.versionId, input.workspaceId) as
+    .get(input.versionId, input.workspaceId)) as
     | {
         id: string;
         workspaceId: string;
@@ -678,7 +726,7 @@ export function getVersion(input: { workspaceId: string; versionId: string }) {
         sourceRevisionId: string | null;
         capturedAt: string;
         contentHash: string;
-        visualOnly: number;
+        visualOnly: boolean;
         createdBy: string;
         createdAt: string;
       }
@@ -686,7 +734,7 @@ export function getVersion(input: { workspaceId: string; versionId: string }) {
 
   if (!row) return null;
 
-  const assets = getDatabase()
+  const assets = (await getDatabase()
     .prepare(
       `SELECT id, asset_key AS assetKey, object_key AS objectKey,
               file_name AS fileName, content_type AS contentType,
@@ -694,14 +742,14 @@ export function getVersion(input: { workspaceId: string; versionId: string }) {
        FROM handoff_asset WHERE handoff_version_id = ? AND workspace_id = ?
        ORDER BY asset_key`,
     )
-    .all(input.versionId, input.workspaceId) as StoredVersionAsset[];
+    .all(input.versionId, input.workspaceId)) as StoredVersionAsset[];
 
-  const snapshot = cachedSnapshot(database, `${row.id}:${row.contentHash}`, () => {
-    const snapshotJson = readSnapshotJson(database, input.versionId, input.workspaceId) ?? "{}";
+  const snapshot = await cachedSnapshot(database, `${row.id}:${row.contentHash}`, async () => {
+    const snapshotJson = (await readSnapshotJson(database, input.versionId, input.workspaceId)) ?? "{}";
     return parseStoredSnapshot(snapshotJson);
   });
 
-  return { ...row, visualOnly: row.visualOnly === 1, snapshot, assets };
+  return { ...row, snapshot, assets };
 }
 
 export function deleteHandoffVersion(input: {
@@ -713,8 +761,8 @@ export function deleteHandoffVersion(input: {
   return deleteHandoffVersionInDatabase(getDatabase(), input);
 }
 
-export function getAssetByObjectKey(objectKey: string) {
-  return getDatabase()
+export async function getAssetByObjectKey(objectKey: string) {
+  return (await getDatabase()
     .prepare(
       `SELECT handoff_asset.id, handoff_asset.workspace_id AS workspaceId,
               handoff_asset.handoff_version_id AS versionId,
@@ -726,7 +774,7 @@ export function getAssetByObjectKey(objectKey: string) {
        FROM handoff_asset
        WHERE handoff_asset.object_key = ?`,
     )
-    .get(objectKey) as
+    .get(objectKey)) as
     | {
         id: string;
         workspaceId: string;

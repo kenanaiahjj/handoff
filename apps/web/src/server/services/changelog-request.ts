@@ -23,7 +23,7 @@ type ChangelogRequestResult =
       handoffId: string;
       fromVersionId: string;
       toVersionId: string;
-      prepared: ReturnType<typeof prepareChangelogDraft>;
+      prepared: Awaited<ReturnType<typeof prepareChangelogDraft>>;
     };
 
 /** Authorizes and validates a changelog generation request, then collects its evidence. */
@@ -33,8 +33,8 @@ export async function resolveChangelogRequest(
 ): Promise<ChangelogRequestResult> {
   const { workspaceId, projectId, handoffId } = params;
   const actor = await requireHandoffAccess(request, { workspaceId, handoffId });
-  const handoff = getHandoff({ workspaceId, projectId, handoffId });
-  const project = getProject({ workspaceId, projectId });
+  const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
+  const project = (await getProject({ workspaceId, projectId }));
   if (!handoff || !project) return { ok: false, response: Response.json({ error: "Handoff not found." }, { status: 404 }) };
 
   const parsed = generateSchema.safeParse(await request.json().catch(() => null));
@@ -44,21 +44,21 @@ export async function resolveChangelogRequest(
     return { ok: false, response: Response.json({ error: "Choose two different versions." }, { status: 400 }) };
   }
 
-  const from = getVersion({ workspaceId, versionId: fromVersionId });
-  const to = getVersion({ workspaceId, versionId: toVersionId });
+  const from = (await getVersion({ workspaceId, versionId: fromVersionId }));
+  const to = (await getVersion({ workspaceId, versionId: toVersionId }));
   if (!from || !to || from.handoffId !== handoffId || to.handoffId !== handoffId) {
     return { ok: false, response: Response.json({ error: "The selected versions were not found in this handoff." }, { status: 404 }) };
   }
 
-  const prepared = prepareChangelogDraft({
+  const prepared = await prepareChangelogDraft({
     workspaceId,
     handoffId,
     handoffName: handoff.name,
     from: { id: from.id, versionLabel: from.versionLabel, snapshot: from.snapshot },
     to: { id: to.id, versionLabel: to.versionLabel, snapshot: to.snapshot },
     rules: project.rules,
-    frameMatches: getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to }),
-    nodeMatches: getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to }),
+    frameMatches: (await getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to })),
+    nodeMatches: (await getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to })),
   });
 
   return { ok: true, actorId: actor.userId, workspaceId, handoffId, fromVersionId, toVersionId, prepared };

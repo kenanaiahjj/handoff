@@ -25,7 +25,7 @@ export async function GET(
 
   try {
     const access = await requireWorkspaceRole(request, workspaceId, ["owner"]);
-    const invites = getDatabase()
+    const invites = (await getDatabase()
       .prepare(
         `SELECT id, role, job_role AS jobRole, expires_at AS expiresAt, created_at AS createdAt
          FROM workspace_invite
@@ -33,7 +33,7 @@ export async function GET(
            AND (expires_at IS NULL OR expires_at > ?)
          ORDER BY created_at DESC`,
       )
-      .all(access.workspaceId, new Date().toISOString());
+      .all(access.workspaceId, new Date().toISOString()));
     return Response.json({ invites });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
@@ -67,11 +67,11 @@ export async function POST(
       : new Date(createdAt.getTime() + parsed.data.expiresInDays * 24 * 60 * 60 * 1000).toISOString();
     const inviteId = randomUUID();
 
-    getDatabase()
+    (await getDatabase()
       .prepare(
         `INSERT INTO workspace_invite
           (id, workspace_id, invited_by_user_id, token_hash, role, job_role, expires_at, reusable, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, true, ?)`,
       )
       .run(
         inviteId,
@@ -82,7 +82,7 @@ export async function POST(
         jobRole,
         expiresAt,
         createdAt.toISOString(),
-      );
+      ));
 
     const inviteUrl = new URL(`/invite/${token}`, request.url).toString();
     return Response.json({

@@ -1,6 +1,6 @@
 import { betterAuth } from "better-auth";
 import { APIError } from "better-auth/api";
-import { getDatabase } from "./db";
+import { getDatabasePool } from "./db";
 import { allowedEmailDomains, isAllowedEmail } from "./services/onboarding";
 import { isSuperadmin } from "./services/superadmins";
 
@@ -15,7 +15,7 @@ export function isGoogleSignInEnabled() {
 }
 
 export const auth = betterAuth({
-  database: getDatabase(),
+  database: getDatabasePool(),
   baseURL: process.env.BETTER_AUTH_URL,
   secret: process.env.BETTER_AUTH_SECRET,
   emailAndPassword: {
@@ -43,7 +43,7 @@ export const auth = betterAuth({
     user: {
       create: {
         async before(user) {
-          if (!isAllowedEmail(user.email) && !isSuperadmin(user.email)) {
+          if (!isAllowedEmail(user.email) && !(await isSuperadmin(user.email))) {
             throw new APIError("FORBIDDEN", { message: `Sign in with your ${companyDomains.map((domain) => "@" + domain).join(" or ")} account.` });
           }
         },

@@ -19,8 +19,8 @@ export async function PATCH(request: Request, context: CommentRoute) {
   const { workspaceId, projectId, handoffId, versionId, commentId } = await context.params;
   try {
     const access = await requireHandoffAccess(request, { workspaceId, handoffId });
-    const handoff = getHandoff({ workspaceId, projectId, handoffId });
-    const version = getVersion({ workspaceId, versionId });
+    const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
+    const version = (await getVersion({ workspaceId, versionId }));
     if (!handoff || !version || version.handoffId !== handoffId) {
       return Response.json({ error: "Handoff version not found." }, { status: 404 });
     }
@@ -29,13 +29,13 @@ export async function PATCH(request: Request, context: CommentRoute) {
     const parsed = resolutionSchema.safeParse(body);
     if (!parsed.success) return Response.json({ error: "Choose an open or resolved status." }, { status: 400 });
 
-    const updated = setCommentResolved({
+    const updated = (await setCommentResolved({
       workspaceId,
       versionId,
       commentId,
       resolved: parsed.data.resolved,
       updatedBy: access.userId,
-    });
+    }));
     if (!updated) return Response.json({ error: "Comment thread not found." }, { status: 404 });
     return Response.json({ resolved: parsed.data.resolved });
   } catch (error) {

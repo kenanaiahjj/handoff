@@ -14,10 +14,10 @@ export type LinkedExternalTaskInput = {
   createdBy: string;
 };
 
-export function createLinkedExternalTask(input: LinkedExternalTaskInput) {
+export async function createLinkedExternalTask(input: LinkedExternalTaskInput) {
   const id = randomUUID();
   const createdAt = new Date().toISOString();
-  getDatabase()
+  (await getDatabase()
     .prepare(
       `INSERT INTO linked_external_task
         (id, workspace_id, handoff_id, version_id, source_system,
@@ -38,7 +38,7 @@ export function createLinkedExternalTask(input: LinkedExternalTaskInput) {
       JSON.stringify(input.evidence),
       input.createdBy,
       createdAt,
-    );
+    ));
   return {
     id,
     versionId: input.versionId,
@@ -54,8 +54,8 @@ export function createLinkedExternalTask(input: LinkedExternalTaskInput) {
   };
 }
 
-export function listLinkedExternalTasks(input: { workspaceId: string; handoffId: string }) {
-  return getDatabase()
+export async function listLinkedExternalTasks(input: { workspaceId: string; handoffId: string }) {
+  return (await getDatabase()
     .prepare(
       `SELECT id, version_id AS versionId, source_system AS sourceSystem,
               external_task_id AS externalTaskId, external_url AS externalUrl,
@@ -65,7 +65,7 @@ export function listLinkedExternalTasks(input: { workspaceId: string; handoffId:
        WHERE workspace_id = ? AND handoff_id = ?
        ORDER BY created_at DESC LIMIT 100`,
     )
-    .all(input.workspaceId, input.handoffId)
+    .all(input.workspaceId, input.handoffId))
     .map((row) => {
       const record = row as Record<string, unknown>;
       return {
@@ -76,12 +76,12 @@ export function listLinkedExternalTasks(input: { workspaceId: string; handoffId:
     });
 }
 
-export function listLinkedExternalTasksPage(input: { workspaceId: string; handoffId: string; offset: number; limit: number }) {
+export async function listLinkedExternalTasksPage(input: { workspaceId: string; handoffId: string; offset: number; limit: number }) {
   const database = getDatabase();
-  const total = (database
+  const total = ((await database
     .prepare("SELECT COUNT(*) AS total FROM linked_external_task WHERE workspace_id = ? AND handoff_id = ?")
-    .get(input.workspaceId, input.handoffId) as { total: number }).total;
-  const rows = database
+    .get(input.workspaceId, input.handoffId)) as { total: number }).total;
+  const rows = (await database
     .prepare(
       `SELECT id, version_id AS versionId, source_system AS sourceSystem,
               external_task_id AS externalTaskId, external_url AS externalUrl,
@@ -92,7 +92,7 @@ export function listLinkedExternalTasksPage(input: { workspaceId: string; handof
        ORDER BY created_at DESC, id DESC
        LIMIT ? OFFSET ?`,
     )
-    .all(input.workspaceId, input.handoffId, input.limit, input.offset);
+    .all(input.workspaceId, input.handoffId, input.limit, input.offset));
   const items = rows.map((row) => {
     const record = row as Record<string, unknown>;
     return {
@@ -105,19 +105,19 @@ export function listLinkedExternalTasksPage(input: { workspaceId: string; handof
   return { items, total };
 }
 
-export function updateLinkedExternalTaskWorkLinks(input: {
+export async function updateLinkedExternalTaskWorkLinks(input: {
   workspaceId: string;
   handoffId: string;
   taskId: string;
   agentRunUrl: string | null;
   pullRequestUrl: string | null;
 }) {
-  const result = getDatabase()
+  const result = (await getDatabase()
     .prepare(
       `UPDATE linked_external_task
        SET agent_run_url = ?, pull_request_url = ?
        WHERE id = ? AND workspace_id = ? AND handoff_id = ?`,
     )
-    .run(input.agentRunUrl, input.pullRequestUrl, input.taskId, input.workspaceId, input.handoffId);
+    .run(input.agentRunUrl, input.pullRequestUrl, input.taskId, input.workspaceId, input.handoffId));
   return result.changes === 1;
 }

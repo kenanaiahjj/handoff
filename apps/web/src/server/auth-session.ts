@@ -7,7 +7,7 @@ type DatabaseUser = {
   id: string;
   name: string;
   email: string;
-  emailVerified: number;
+  emailVerified: boolean;
   image: string | null;
   createdAt: string;
   updatedAt: string;
@@ -50,34 +50,34 @@ function viewAsUserId(headers: Headers) {
   return match ? decodeURIComponent(match.slice(viewAsCookieName.length + 1)) : null;
 }
 
-function getLocalTestUser(headers: Headers) {
+async function getLocalTestUser(headers: Headers) {
   const database = getDatabase();
   const viewAsId = viewAsUserId(headers);
   if (viewAsId) {
-    const viewAs = database
+    const viewAs = (await database
       .prepare('SELECT id, name, email, emailVerified, image, createdAt, updatedAt FROM "user" WHERE id = ?')
-      .get(viewAsId) as DatabaseUser | undefined;
+      .get(viewAsId)) as DatabaseUser | undefined;
     if (viewAs) return viewAs;
   }
-  const existing = database
+  const existing = (await database
     .prepare('SELECT id, name, email, emailVerified, image, createdAt, updatedAt FROM "user" WHERE id <> ? ORDER BY createdAt ASC, id ASC LIMIT 1')
-    .get(localReviewerUser.id) as DatabaseUser | undefined;
+    .get(localReviewerUser.id)) as DatabaseUser | undefined;
 
   if (existing) return existing;
 
   const now = new Date().toISOString();
   const id = "asbir-local-flow-tester";
-  database
+  (await database
     .prepare('INSERT INTO "user" (id, name, email, emailVerified, image, createdAt, updatedAt) VALUES (?, ?, ?, ?, ?, ?, ?)')
-    .run(id, "Local flow tester", "local-flow-tester@asbir.invalid", 0, null, now, now);
+    .run(id, "Local flow tester", "local-flow-tester@asbir.invalid", false, null, now, now));
 
-  return database
+  return (await database
     .prepare('SELECT id, name, email, emailVerified, image, createdAt, updatedAt FROM "user" WHERE id = ?')
-    .get(id) as DatabaseUser;
+    .get(id)) as DatabaseUser;
 }
 
-function getLocalTestSession(headers: Headers): AuthSession {
-  const user = getLocalTestUser(headers);
+async function getLocalTestSession(headers: Headers): Promise<AuthSession> {
+  const user = (await getLocalTestUser(headers));
   const now = new Date();
 
   return {
@@ -93,7 +93,7 @@ function getLocalTestSession(headers: Headers): AuthSession {
       id: user.id,
       name: user.name,
       email: user.email,
-      emailVerified: Boolean(user.emailVerified),
+      emailVerified: user.emailVerified,
       image: user.image,
       createdAt: new Date(user.createdAt),
       updatedAt: new Date(user.updatedAt),
@@ -105,7 +105,7 @@ export async function getSessionForHeaders(headers: Headers) {
   if (isDevelopmentAuthBypassEnabled(headers)) {
     // The bypass session is built from the clock, so mark the render as request-time.
     await connection();
-    return getLocalTestSession(headers);
+    return (await getLocalTestSession(headers));
   }
   return auth.api.getSession({ headers });
 }

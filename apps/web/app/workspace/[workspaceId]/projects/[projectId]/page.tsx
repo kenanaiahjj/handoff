@@ -38,25 +38,30 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   if (!session) redirect("/sign-in");
 
   const { workspaceId, projectId } = await params;
-  const project = getProject({ workspaceId, projectId });
-  const membership = getDatabase()
-    .prepare("SELECT role FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
-    .get(workspaceId, session.user.id) as { role: string } | undefined;
+  // Independent reads run together: each is a network round trip on hosted PostgreSQL.
+  const [project, membership, allHandoffs, workspace] = await Promise.all([
+    getProject({ workspaceId, projectId }),
+    getDatabase()
+      .prepare("SELECT role FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
+      .get(workspaceId, session.user.id) as Promise<{ role: string } | undefined>,
+    listHandoffs({ workspaceId, projectId }) as Promise<ProjectHandoff[]>,
+    getDatabase()
+      .prepare("SELECT workspace.id, workspace.name, workspace_membership.role FROM workspace JOIN workspace_membership ON workspace_membership.workspace_id = workspace.id WHERE workspace.id = ? AND workspace_membership.user_id = ?")
+      .get(workspaceId, session.user.id) as Promise<WorkspaceChoice | undefined>,
+  ]);
   if (!project || !membership) notFound();
   const canManageHandoffs = membership.role === "owner" || membership.role === "designer";
 
   const viewer = { id: session.user.id, email: session.user.email, role: membership.role };
-  const visible = visibleHandoffIds(workspaceId, viewer);
-  const handoffs = (listHandoffs({ workspaceId, projectId }) as ProjectHandoff[])
-    .filter((handoff) => !visible || visible.has(handoff.id));
+  const visible = (await visibleHandoffIds(workspaceId, viewer));
+  const handoffs = allHandoffs.filter((handoff) => !visible || visible.has(handoff.id));
   if (visible && !handoffs.length) notFound();
-  const newness = handoffNewness(session.user.id, handoffs.map((handoff) => handoff.id));
-  const workspace = getDatabase()
-    .prepare("SELECT workspace.id, workspace.name, workspace_membership.role FROM workspace JOIN workspace_membership ON workspace_membership.workspace_id = workspace.id WHERE workspace.id = ? AND workspace_membership.user_id = ?")
-    .get(workspaceId, session.user.id) as WorkspaceChoice | undefined;
   if (!workspace) notFound();
-  const projects = filterProjectsForViewer(workspaceId, viewer, listProjects(workspaceId) as Array<{ id: string; name: string; handoffCount: number; versionCount: number }>);
-  const navSections = createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects, page: "project", activeProjectId: projectId });
+  const [newness, projects] = await Promise.all([
+    handoffNewness(session.user.id, handoffs.map((handoff) => handoff.id)),
+    listProjects(workspaceId).then((all) => filterProjectsForViewer(workspaceId, viewer, all as Array<{ id: string; name: string; handoffCount: number; versionCount: number }>)),
+  ]);
+  const navSections = await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects, page: "project", activeProjectId: projectId });
 
   return (
     <WorkspaceShell
@@ -69,9 +74,9 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
         <header className="workspace-dashboard-heading">
           <div className="flex items-start gap-4">
             {canManageHandoffs ? (
-              <ProjectIconEditor initialSrc={projectIconUrl(workspaceId, projectId, projectIconVersions(workspaceId)[projectId])} name={project.name} projectId={projectId} workspaceId={workspaceId} />
+              <ProjectIconEditor initialSrc={projectIconUrl(workspaceId, projectId, (await projectIconVersions(workspaceId))[projectId])} name={project.name} projectId={projectId} workspaceId={workspaceId} />
             ) : (
-              <ProjectIcon name={project.name} size={48} src={projectIconUrl(workspaceId, projectId, projectIconVersions(workspaceId)[projectId])} />
+              <ProjectIcon name={project.name} size={48} src={projectIconUrl(workspaceId, projectId, (await projectIconVersions(workspaceId))[projectId])} />
             )}
           <div className="min-w-0">
             <h1 className="font-semibold text-foreground">{project.name}</h1>
@@ -140,7 +145,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
 
           {canManageHandoffs ? (
             <aside aria-label="Start a design handoff" className="space-y-3" id="start-handoff">
-              <ProjectPdInChargeForm input={{ workspaceId, projectId, candidates: listProjectPdCandidates(workspaceId), selectedId: project.pdInChargeUserId }} />
+              <ProjectPdInChargeForm input={{ workspaceId, projectId, candidates: (await listProjectPdCandidates(workspaceId)), selectedId: project.pdInChargeUserId }} />
               <HandoffSetupForm mode="project" input={{ workspaceId, projectId, handoffs: handoffs.map(({ id, name }) => ({ id, name })) }} />
             </aside>
           ) : null}

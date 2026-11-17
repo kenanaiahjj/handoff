@@ -16,8 +16,8 @@ const createSchema = z.object({
   body: z.string().trim().min(1).max(2000),
 });
 
-function belongsToHandoff(input: { workspaceId: string; handoffId: string; versionId: string }) {
-  const version = getVersion({ workspaceId: input.workspaceId, versionId: input.versionId });
+async function belongsToHandoff(input: { workspaceId: string; handoffId: string; versionId: string }) {
+  const version = (await getVersion({ workspaceId: input.workspaceId, versionId: input.versionId }));
   return version?.handoffId === input.handoffId ? version : null;
 }
 
@@ -25,10 +25,10 @@ export async function GET(request: Request, context: AnnotationsRoute) {
   const { workspaceId, handoffId, versionId } = await context.params;
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId });
-    if (!belongsToHandoff({ workspaceId, handoffId, versionId })) {
+    if (!(await belongsToHandoff({ workspaceId, handoffId, versionId }))) {
       return Response.json({ error: "Handoff version not found." }, { status: 404 });
     }
-    return Response.json({ annotations: listHandoffAnnotations({ workspaceId, versionId }) }, { headers: { "Cache-Control": "no-store" } });
+    return Response.json({ annotations: (await listHandoffAnnotations({ workspaceId, versionId })) }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });
     throw error;
@@ -39,7 +39,7 @@ export async function POST(request: Request, context: AnnotationsRoute) {
   const { workspaceId, handoffId, versionId } = await context.params;
   try {
     const access = await requireHandoffAccess(request, { workspaceId, handoffId, manage: true });
-    const version = belongsToHandoff({ workspaceId, handoffId, versionId });
+    const version = (await belongsToHandoff({ workspaceId, handoffId, versionId }));
     if (!version) return Response.json({ error: "Handoff version not found." }, { status: 404 });
     if (!isStructuredSnapshot(version.snapshot)) {
       return Response.json({ error: "Canvas annotations need a structured Figma capture." }, { status: 400 });
@@ -48,7 +48,7 @@ export async function POST(request: Request, context: AnnotationsRoute) {
     if (!parsed.success) return Response.json({ error: "Enter a title and note, then choose a canvas point." }, { status: 400 });
     const anchorError = canvasAnnotationAnchorError(version.snapshot, parsed.data);
     if (anchorError) return Response.json({ error: anchorError }, { status: 400 });
-    const annotation = createHandoffAnnotation({
+    const annotation = (await createHandoffAnnotation({
       workspaceId,
       versionId,
       frameId: parsed.data.frameId,
@@ -58,7 +58,7 @@ export async function POST(request: Request, context: AnnotationsRoute) {
       title: parsed.data.title,
       body: parsed.data.body,
       createdBy: access.userId,
-    });
+    }));
     return Response.json({ annotation }, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });

@@ -17,10 +17,10 @@ export async function GET(request: Request, context: InvitesRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
   try {
     await requireWorkspaceRoleStrict(request, workspaceId, ["owner", "designer"]);
-    if (!getHandoff({ workspaceId, projectId, handoffId })) {
+    if (!(await getHandoff({ workspaceId, projectId, handoffId }))) {
       return Response.json({ error: "Handoff not found." }, { status: 404 });
     }
-    return Response.json({ invites: listHandoffInvites({ workspaceId, handoffId }) }, {
+    return Response.json({ invites: (await listHandoffInvites({ workspaceId, handoffId })) }, {
       headers: { "Cache-Control": "no-store" },
     });
   } catch (error) {
@@ -43,7 +43,7 @@ export async function POST(request: Request, context: InvitesRoute) {
       ? null
       : new Date(now.getTime() + parsed.data.expiresInDays * 24 * 60 * 60 * 1000).toISOString();
     const token = randomBytes(32).toString("base64url");
-    const invite = createHandoffInvite({
+    const invite = await createHandoffInvite({
       workspaceId,
       projectId,
       handoffId,

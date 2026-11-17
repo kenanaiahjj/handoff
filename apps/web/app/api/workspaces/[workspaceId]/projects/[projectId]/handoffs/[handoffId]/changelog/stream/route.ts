@@ -25,14 +25,14 @@ export async function POST(request: Request, context: ChangelogStreamRoute) {
           for await (const chunk of generation.textStream) controller.enqueue(encoder.encode(chunk));
           const content = await generation.output();
           const draft = finalizeChangelogDraft(resolved.prepared, { content, model: generation.model });
-          createChangelogDraft({
+          (await createChangelogDraft({
             workspaceId: resolved.workspaceId,
             handoffId: resolved.handoffId,
             fromVersionId: resolved.fromVersionId,
             toVersionId: resolved.toVersionId,
             ...draft,
             createdBy: resolved.actorId,
-          });
+          }));
           controller.close();
         } catch (error) {
           controller.error(error);

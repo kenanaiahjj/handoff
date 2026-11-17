@@ -14,9 +14,9 @@ export type HandoffNewness = { latestVersionId: string | null; isNew: boolean };
  * Handoffs a reviewer can open: ones with an active invite to their email, plus every handoff
  * in a project where they are the PD in charge. Owners and designers get `null` (no filter).
  */
-export function visibleHandoffIds(workspaceId: string, viewer: Viewer): Set<string> | null {
+export async function visibleHandoffIds(workspaceId: string, viewer: Viewer): Promise<Set<string> | null> {
   if (canSeeWholeWorkspace(viewer.role)) return null;
-  const rows = getDatabase()
+  const rows = (await getDatabase()
     .prepare(
       `SELECT handoff.id
        FROM handoff
@@ -34,20 +34,20 @@ export function visibleHandoffIds(workspaceId: string, viewer: Viewer): Set<stri
            )
          )`,
     )
-    .all(workspaceId, viewer.id, viewer.email, new Date().toISOString()) as Array<{ id: string }>;
+    .all(workspaceId, viewer.id, viewer.email, new Date().toISOString())) as Array<{ id: string }>;
   return new Set(rows.map((row) => row.id));
 }
 
 /** Filters project cards to the ones holding a visible handoff, and recounts handoffs and versions. */
-export function filterProjectsForViewer<T extends { id: string; handoffCount: number; versionCount: number }>(
+export async function filterProjectsForViewer<T extends { id: string; handoffCount: number; versionCount: number }>(
   workspaceId: string,
   viewer: Viewer,
   projects: T[],
-): T[] {
-  const visible = visibleHandoffIds(workspaceId, viewer);
+): Promise<T[]> {
+  const visible = (await visibleHandoffIds(workspaceId, viewer));
   if (!visible) return projects;
   if (!visible.size) return [];
-  const counts = getDatabase()
+  const counts = (await getDatabase()
     .prepare(
       `SELECT handoff.project_id AS projectId, handoff.id AS handoffId, COUNT(handoff_version.id) AS versions
        FROM handoff
@@ -55,7 +55,7 @@ export function filterProjectsForViewer<T extends { id: string; handoffCount: nu
        WHERE handoff.workspace_id = ?
        GROUP BY handoff.id`,
     )
-    .all(workspaceId) as Array<{ projectId: string; handoffId: string; versions: number }>;
+    .all(workspaceId)) as Array<{ projectId: string; handoffId: string; versions: number }>;
   const perProject = new Map<string, { handoffCount: number; versionCount: number }>();
   for (const row of counts) {
     if (!visible.has(row.handoffId)) continue;
@@ -70,11 +70,11 @@ export function filterProjectsForViewer<T extends { id: string; handoffCount: nu
 }
 
 /** For each handoff, whether its newest version is newer than the one this person last opened. */
-export function handoffNewness(userId: string, handoffIds: string[]): Map<string, HandoffNewness> {
+export async function handoffNewness(userId: string, handoffIds: string[]): Promise<Map<string, HandoffNewness>> {
   const result = new Map<string, HandoffNewness>();
   if (!handoffIds.length) return result;
   const placeholders = handoffIds.map(() => "?").join(", ");
-  const rows = getDatabase()
+  const rows = (await getDatabase()
     .prepare(
       `SELECT handoff.id AS handoffId,
               (SELECT id FROM handoff_version
@@ -88,7 +88,7 @@ export function handoffNewness(userId: string, handoffIds: string[]): Map<string
        LEFT JOIN handoff_view ON handoff_view.handoff_id = handoff.id AND handoff_view.user_id = ?
        WHERE handoff.id IN (${placeholders})`,
     )
-    .all(userId, ...handoffIds) as Array<{ handoffId: string; latestVersionId: string | null; latestCreatedBy: string | null; seenVersionId: string | null }>;
+    .all(userId, ...handoffIds)) as Array<{ handoffId: string; latestVersionId: string | null; latestCreatedBy: string | null; seenVersionId: string | null }>;
   for (const row of rows) {
     result.set(row.handoffId, {
       latestVersionId: row.latestVersionId,
@@ -100,15 +100,15 @@ export function handoffNewness(userId: string, handoffIds: string[]): Map<string
 }
 
 /** Records that this person has opened the handoff at its newest version. */
-export function markHandoffSeen(input: { userId: string; workspaceId: string; handoffId: string; latestVersionId: string }) {
-  getDatabase()
+export async function markHandoffSeen(input: { userId: string; workspaceId: string; handoffId: string; latestVersionId: string }) {
+  (await getDatabase()
     .prepare(
       `INSERT INTO handoff_view (user_id, workspace_id, handoff_id, last_seen_version_id, seen_at)
        VALUES (?, ?, ?, ?, ?)
        ON CONFLICT (user_id, handoff_id)
        DO UPDATE SET last_seen_version_id = excluded.last_seen_version_id, seen_at = excluded.seen_at`,
     )
-    .run(input.userId, input.workspaceId, input.handoffId, input.latestVersionId, new Date().toISOString());
+    .run(input.userId, input.workspaceId, input.handoffId, input.latestVersionId, new Date().toISOString()));
 }
 
 export type ViewerUpdate = {
@@ -121,9 +121,9 @@ export type ViewerUpdate = {
 };
 
 /** Handoffs this person can see whose newest version they have not opened, newest first. */
-export function listViewerUpdates(workspaceId: string, viewer: Viewer): ViewerUpdate[] {
-  const visible = visibleHandoffIds(workspaceId, viewer);
-  const rows = getDatabase()
+export async function listViewerUpdates(workspaceId: string, viewer: Viewer): Promise<ViewerUpdate[]> {
+  const visible = (await visibleHandoffIds(workspaceId, viewer));
+  const rows = (await getDatabase()
     .prepare(
       `SELECT project.id AS projectId, project.name AS projectName,
               handoff.id AS handoffId, handoff.name AS handoffName,
@@ -141,7 +141,7 @@ export function listViewerUpdates(workspaceId: string, viewer: Viewer): ViewerUp
        WHERE handoff.workspace_id = ?
        ORDER BY latest.created_at DESC`,
     )
-    .all(viewer.id, workspaceId) as Array<ViewerUpdate & { versionId: string; createdBy: string; seenVersionId: string | null }>;
+    .all(viewer.id, workspaceId)) as Array<ViewerUpdate & { versionId: string; createdBy: string; seenVersionId: string | null }>;
   return rows
     .filter((row) => row.versionId !== row.seenVersionId && row.createdBy !== viewer.id && (!visible || visible.has(row.handoffId)))
     .map(({ versionId: _versionId, createdBy: _createdBy, seenVersionId: _seenVersionId, ...update }) => update);
@@ -177,38 +177,38 @@ const screenChangesCache = new Map<string, ScreenChanges>();
 /**
  * Each screen's Figma frame id (stable across renames) and its fingerprint: the design hash (layer
  * data without names) when the capture has design data, otherwise the render image's stored key.
- * Read inside SQLite so the large snapshot never has to be parsed in JavaScript.
+ * Read from PostgreSQL's JSON operators so the large snapshot never has to be parsed in JavaScript.
  */
-function screenFingerprints(versionId: string) {
-  const rows = getDatabase()
+async function screenFingerprints(versionId: string) {
+  const rows = (await getDatabase()
     .prepare(
-      `SELECT COALESCE(json_extract(frame.value, '$.sourceFrameId'), json_extract(frame.value, '$.name')) AS name,
-              COALESCE(json_extract(frame.value, '$.designHash'), handoff_asset.object_key) AS objectKey
+      `SELECT COALESCE(frame.value ->> 'sourceFrameId', frame.value ->> 'name') AS name,
+              COALESCE(frame.value ->> 'designHash', handoff_asset.object_key) AS objectKey
        FROM handoff_version
-       LEFT JOIN handoff_version_snapshot ON handoff_version_snapshot.version_id = handoff_version.id,
-       json_each(COALESCE(handoff_version_snapshot.frame_index, json_extract(handoff_version.snapshot_json, '$.frames'))) AS frame
+       LEFT JOIN handoff_version_snapshot ON handoff_version_snapshot.version_id = handoff_version.id
+       CROSS JOIN LATERAL jsonb_array_elements(COALESCE(NULLIF(handoff_version_snapshot.frame_index, '[]')::jsonb, handoff_version.snapshot_json::jsonb -> 'frames')) AS frame(value)
        LEFT JOIN handoff_asset ON handoff_asset.handoff_version_id = handoff_version.id
-         AND handoff_asset.asset_key = json_extract(frame.value, '$.renderAssetKey')
+         AND handoff_asset.asset_key = frame.value ->> 'renderAssetKey'
        WHERE handoff_version.id = ?`,
     )
-    .all(versionId) as Array<{ name: string; objectKey: string | null }>;
+    .all(versionId)) as Array<{ name: string; objectKey: string | null }>;
   return new Map(rows.map((row) => [row.name, row.objectKey ?? ""] as const));
 }
 
 /** Frame ids that are new or look different in the later version. */
-export function changedFrameIdsBetween(fromVersionId: string, toVersionId: string) {
-  const before = screenFingerprints(fromVersionId);
-  const after = screenFingerprints(toVersionId);
+export async function changedFrameIdsBetween(fromVersionId: string, toVersionId: string) {
+  const before = (await screenFingerprints(fromVersionId));
+  const after = (await screenFingerprints(toVersionId));
   return [...after].filter(([id, fingerprint]) => before.get(id) !== fingerprint).map(([id]) => id);
 }
 
 /** How many screens changed, were added, or were removed between two versions of a handoff. */
-export function screenChangesBetween(fromVersionId: string, toVersionId: string): ScreenChanges {
+export async function screenChangesBetween(fromVersionId: string, toVersionId: string): Promise<ScreenChanges> {
   const key = `${fromVersionId}:${toVersionId}`;
   const cached = screenChangesCache.get(key);
   if (cached) return cached;
-  const before = screenFingerprints(fromVersionId);
-  const after = screenFingerprints(toVersionId);
+  const before = (await screenFingerprints(fromVersionId));
+  const after = (await screenFingerprints(toVersionId));
   const result: ScreenChanges = { changed: 0, added: 0, removed: 0 };
   for (const [name, fingerprint] of after) {
     if (!before.has(name)) result.added += 1;
@@ -236,9 +236,9 @@ export type ViewerProject = {
  * news to them, and a preview (the first regular screen in that version).
  * Projects with news come first, then the most recently updated.
  */
-export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProject[] {
-  const visible = visibleHandoffIds(workspaceId, viewer);
-  const rows = getDatabase()
+export async function listViewerHome(workspaceId: string, viewer: Viewer): Promise<ViewerProject[]> {
+  const visible = (await visibleHandoffIds(workspaceId, viewer));
+  const rows = (await getDatabase()
     .prepare(
       `SELECT workspace.name AS workspaceName, project.id AS projectId, project.name AS projectName,
               handoff.id AS handoffId, handoff.name AS handoffName, handoff.created_at AS handoffCreatedAt,
@@ -250,11 +250,11 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
                  WHERE handoff_asset.handoff_version_id = latest.id AND handoff_asset.content_type LIKE 'image/%'
                  ORDER BY
                    -- Screen renders ("…frame-NNN-…") first, then the canvas overview as a fallback.
-                   instr(handoff_asset.asset_key, 'frame-') = 0,
+                   strpos(handoff_asset.asset_key, 'frame-') = 0,
                    -- Skip very long scrolling screens; they make poor thumbnails.
                    COALESCE(handoff_asset.height, 0) > COALESCE(handoff_asset.width, 1) * 2.4,
                    -- The earliest screen in the file.
-                   CAST(substr(handoff_asset.asset_key, instr(handoff_asset.asset_key, 'frame-') + 6, 4) AS INTEGER),
+                   COALESCE(substring(handoff_asset.asset_key FROM 'frame-([0-9]{1,9})')::INTEGER, 2147483647),
                    COALESCE(handoff_asset.width, 0) * COALESCE(handoff_asset.height, 0) DESC
                  LIMIT 1) AS previewKey
        FROM handoff
@@ -269,7 +269,7 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
        LEFT JOIN handoff_view ON handoff_view.handoff_id = handoff.id AND handoff_view.user_id = ?
        WHERE handoff.workspace_id = ?`,
     )
-    .all(viewer.id, workspaceId) as Array<{
+    .all(viewer.id, workspaceId)) as Array<{
       workspaceName: string;
       projectId: string;
       projectName: string;
@@ -286,7 +286,7 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
       previewKey: string | null;
     }>;
 
-  const iconVersions = projectIconVersions(workspaceId);
+  const iconVersions = (await projectIconVersions(workspaceId));
   const projects = new Map<string, ViewerProject>();
   for (const row of rows) {
     if (visible && !visible.has(row.handoffId)) continue;
@@ -304,7 +304,7 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
     };
     if (handoff.isNew && row.seenVersionId && row.versionId) {
       try {
-        handoff.changesSinceSeen = screenChangesBetween(row.seenVersionId, row.versionId);
+        handoff.changesSinceSeen = (await screenChangesBetween(row.seenVersionId, row.versionId));
       } catch {
         // A comparison that can't be read just leaves the tile without a count.
       }
@@ -324,9 +324,10 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
 }
 
 /** One combined home across every workspace this person belongs to, projects with news first. */
-export function listViewerHomeAcrossWorkspaces(viewer: { id: string; email: string }, memberships: Array<{ id: string; role: string }>) {
-  return memberships
-    .flatMap((membership) => listViewerHome(membership.id, { ...viewer, role: membership.role }))
+export async function listViewerHomeAcrossWorkspaces(viewer: { id: string; email: string }, memberships: Array<{ id: string; role: string }>) {
+  const homes = await Promise.all(memberships.map((membership) => listViewerHome(membership.id, { ...viewer, role: membership.role })));
+  return homes
+    .flatMap((home) => home)
     .sort((a, b) => Math.min(b.newCount, 1) - Math.min(a.newCount, 1) || b.updatedAt.localeCompare(a.updatedAt));
 }
 
@@ -334,9 +335,9 @@ export function listViewerHomeAcrossWorkspaces(viewer: { id: string; email: stri
  * Marks handoffs as opened at their newest version for this person, skipping any they can't see.
  * Returns how many were marked.
  */
-export function markHandoffsSeenForViewer(viewer: { id: string; email: string }, handoffIds: string[]) {
+export async function markHandoffsSeenForViewer(viewer: { id: string; email: string }, handoffIds: string[]) {
   const database = getDatabase();
-  const rows = database
+  const rows = (await database
     .prepare(
       `SELECT handoff.id, handoff.workspace_id AS workspaceId, workspace_membership.role,
               (SELECT id FROM handoff_version WHERE handoff_version.handoff_id = handoff.id
@@ -345,17 +346,17 @@ export function markHandoffsSeenForViewer(viewer: { id: string; email: string },
        JOIN workspace_membership ON workspace_membership.workspace_id = handoff.workspace_id AND workspace_membership.user_id = ?
        WHERE handoff.id IN (${handoffIds.map(() => "?").join(", ") || "NULL"})`,
     )
-    .all(viewer.id, ...handoffIds) as Array<{ id: string; workspaceId: string; role: string; latestVersionId: string | null }>;
+    .all(viewer.id, ...handoffIds)) as Array<{ id: string; workspaceId: string; role: string; latestVersionId: string | null }>;
   const visibleByWorkspace = new Map<string, Set<string> | null>();
   let marked = 0;
   for (const row of rows) {
     if (!row.latestVersionId) continue;
     if (!visibleByWorkspace.has(row.workspaceId)) {
-      visibleByWorkspace.set(row.workspaceId, visibleHandoffIds(row.workspaceId, { ...viewer, role: row.role }));
+      visibleByWorkspace.set(row.workspaceId, (await visibleHandoffIds(row.workspaceId, { ...viewer, role: row.role })));
     }
     const visible = visibleByWorkspace.get(row.workspaceId);
     if (visible && !visible.has(row.id)) continue;
-    markHandoffSeen({ userId: viewer.id, workspaceId: row.workspaceId, handoffId: row.id, latestVersionId: row.latestVersionId });
+    (await markHandoffSeen({ userId: viewer.id, workspaceId: row.workspaceId, handoffId: row.id, latestVersionId: row.latestVersionId }));
     marked += 1;
   }
   return marked;

@@ -24,13 +24,14 @@ import { filterProjectsForViewer, visibleHandoffIds } from "@/src/server/service
 import { taskLinkFieldsSchema, taskLinkSchema } from "@/src/server/services/task-context";
 import { diffSnapshots, isStructuredSnapshot } from "@/src/server/services/diff";
 import { evaluateLayoutRules } from "@/src/server/services/layout-rules";
-import { objectStore } from "@/src/server/storage/local-object-store";
+import { objectStore } from "@/src/server/storage/supabase-object-store";
 
 const idSchema = z.string().uuid();
 const idInput = z.object({ projectId: idSchema, handoffId: idSchema });
 const versionInput = idInput.extend({ versionId: idSchema });
 const changelogPairInput = idInput.extend({ fromVersionId: idSchema, toVersionId: idSchema });
-const maxInlineImageBytes = 8 * 1024 * 1024;
+// Base64 adds roughly one third to the response body; leave room for MCP JSON metadata under Vercel's limit.
+const maxInlineImageBytes = 2 * 1024 * 1024;
 const maxInlineSnapshotBytes = 1024 * 1024;
 const maxElementsPageSize = 100;
 const maxInventoryPageSize = 100;
@@ -144,10 +145,10 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
   }, async ({ offset, limit }) => {
     if (allowedHandoffIds) {
       // Reviewer tokens only see projects holding a handoff shared with the token's creator.
-      const projects = filterProjectsForViewer(workspaceId, viewer, listProjects(workspaceId) as Array<{ id: string; handoffCount: number; versionCount: number }>);
+      const projects = (await filterProjectsForViewer(workspaceId, viewer, (await listProjects(workspaceId)) as Array<{ id: string; handoffCount: number; versionCount: number }>));
       return textResult(pageItems(projects.slice(offset, offset + limit), projects.length, offset, limit));
     }
-    const result = listProjectsPage(workspaceId, { offset, limit });
+    const result = (await listProjectsPage(workspaceId, { offset, limit }));
     return textResult(pageItems(result.items, result.total, offset, limit));
   });
 
@@ -157,13 +158,13 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     inputSchema: z.object({ projectId: idSchema, ...inventoryPageInput }),
   }, async ({ projectId, offset, limit }) => {
     try {
-      if (!getProject({ workspaceId, projectId })) throw new Error("Project not found in this workspace.");
+      if (!(await getProject({ workspaceId, projectId }))) throw new Error("Project not found in this workspace.");
       if (allowedHandoffIds) {
-        const handoffs = (listHandoffs({ workspaceId, projectId }) as Array<{ id: string }>).filter((handoff) => allowedHandoffIds.has(handoff.id));
+        const handoffs = ((await listHandoffs({ workspaceId, projectId })) as Array<{ id: string }>).filter((handoff) => allowedHandoffIds.has(handoff.id));
         if (!handoffs.length) throw new Error("Project not found in this workspace.");
         return textResult(pageItems(handoffs.slice(offset, offset + limit), handoffs.length, offset, limit));
       }
-      const result = listHandoffsPage({ workspaceId, projectId, offset, limit });
+      const result = (await listHandoffsPage({ workspaceId, projectId, offset, limit }));
       return textResult(pageItems(result.items, result.total, offset, limit));
     } catch (error) { return failure(error); }
   });
@@ -174,8 +175,8 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     inputSchema: idInput.extend(inventoryPageInput),
   }, async ({ projectId, handoffId, offset, limit }) => {
     try {
-      loadHandoff(workspaceId, projectId, handoffId);
-      const result = listHandoffVersionsPage({ workspaceId, handoffId, offset, limit });
+      (await loadHandoff(workspaceId, projectId, handoffId));
+      const result = (await listHandoffVersionsPage({ workspaceId, handoffId, offset, limit }));
       return textResult(pageItems(result.items, result.total, offset, limit));
     } catch (error) { return failure(error); }
   });
@@ -186,7 +187,7 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     inputSchema: versionInput.extend(inventoryPageInput),
   }, async ({ projectId, handoffId, versionId, offset, limit }) => {
     try {
-      const version = loadVersion(workspaceId, { projectId, handoffId, versionId });
+      const version = (await loadVersion(workspaceId, { projectId, handoffId, versionId }));
       const snapshot = version.snapshot;
       const structuredFrames = isStructuredSnapshot(snapshot)
         ? new Map(snapshot.frames.map((frame) => [frame.sourceFrameId, frame]))
@@ -224,7 +225,7 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     inputSchema: versionInput,
   }, async (input) => {
     try {
-      const version = loadVersion(workspaceId, input);
+      const version = (await loadVersion(workspaceId, input));
       const versionSummary = {
         id: version.id,
         versionLabel: version.versionLabel,
@@ -245,7 +246,7 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
           width: asset.width,
           height: asset.height,
         }));
-      const snapshotSizeBytes = getVersionSnapshotSize({ workspaceId, versionId: version.id });
+      const snapshotSizeBytes = (await getVersionSnapshotSize({ workspaceId, versionId: version.id }));
       if (snapshotSizeBytes > maxInlineSnapshotBytes) {
         const elementCount = isStructuredSnapshot(version.snapshot)
           ? version.snapshot.frames.reduce((total, frame) => total + frame.nodes.length, 0)
@@ -274,7 +275,7 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     }),
   }, async ({ projectId, handoffId, versionId, frameId, offset, limit }) => {
     try {
-      const version = loadVersion(workspaceId, { projectId, handoffId, versionId });
+      const version = (await loadVersion(workspaceId, { projectId, handoffId, versionId }));
       if (!isStructuredSnapshot(version.snapshot)) {
         return textResult({ visualOnly: true, supported: false, reason: "This version contains pixels only and has no captured screen elements." });
       }
@@ -322,14 +323,35 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     inputSchema: versionInput,
   }, async (input) => {
     try {
-      const version = loadVersion(workspaceId, input);
+      const version = (await loadVersion(workspaceId, input));
       const assetKey = version.snapshot.overviewAssetKey;
       const asset = version.assets.find((candidate) => candidate.assetKey === assetKey);
       if (!asset) throw new Error("Canvas overview render is unavailable.");
+      if (asset.sizeBytes > maxInlineImageBytes) {
+        const downloadUrl = await objectStore.createSignedDownloadUrl(asset.objectKey, {
+          expiresIn: 300,
+          download: asset.fileName,
+        });
+        return textResult({
+          versionId: version.id,
+          canvasBounds: isStructuredSnapshot(version.snapshot) ? version.snapshot.canvasBounds ?? null : null,
+          visualOnly: version.visualOnly,
+          fileName: asset.fileName,
+          contentType: asset.contentType,
+          sizeBytes: asset.sizeBytes,
+          downloadUrl,
+          expiresInSeconds: 300,
+          imageOmitted: "The render is larger than the 2 MiB MCP inline limit.",
+        });
+      }
       const object = await objectStore.get(asset.objectKey);
       if (!object) throw new Error("Canvas overview render is unavailable.");
       if (object.bytes.byteLength > maxInlineImageBytes) {
-        return textResult({ fileName: asset.fileName, contentType: asset.contentType, sizeBytes: asset.sizeBytes, imageOmitted: "The render is larger than the 8 MiB MCP inline limit." });
+        const downloadUrl = await objectStore.createSignedDownloadUrl(asset.objectKey, {
+          expiresIn: 300,
+          download: asset.fileName,
+        });
+        return textResult({ fileName: asset.fileName, contentType: asset.contentType, sizeBytes: asset.sizeBytes, downloadUrl, expiresInSeconds: 300, imageOmitted: "The render is larger than the 2 MiB MCP inline limit." });
       }
       return {
         content: [
@@ -342,11 +364,11 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
 
   server.registerTool("get_frame", {
     title: "Get frozen frame",
-    description: "Read a frame and its render image when the image is at most 8 MiB. Large element trees are summarized; use list_elements to read them in pages.",
+    description: "Read a frame and its render image when the image is at most 2 MiB. Larger renders return a short-lived download URL. Large element trees are summarized; use list_elements to read them in pages.",
     inputSchema: versionInput.extend({ frameId: z.string().min(1) }),
   }, async ({ projectId, handoffId, versionId, frameId }) => {
     try {
-      const version = loadVersion(workspaceId, { projectId, handoffId, versionId });
+      const version = (await loadVersion(workspaceId, { projectId, handoffId, versionId }));
       const frame = version.snapshot.frames.find((candidate) => candidate.sourceFrameId === frameId);
       if (!frame) throw new Error("Frame not found in this snapshot.");
       const asset = version.assets.find((candidate) => candidate.assetKey === frame.renderAssetKey);
@@ -369,9 +391,22 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
           }
         : frame;
       const details = { frame: frameDetails, visualOnly: version.visualOnly, render: { fileName: asset.fileName, contentType: asset.contentType, sizeBytes: asset.sizeBytes, width: asset.width, height: asset.height } };
+      if (asset.sizeBytes > maxInlineImageBytes) {
+        const downloadUrl = await objectStore.createSignedDownloadUrl(asset.objectKey, {
+          expiresIn: 300,
+          download: asset.fileName,
+        });
+        return textResult({ ...details, downloadUrl, expiresInSeconds: 300, imageOmitted: "The render is larger than the 2 MiB MCP inline limit." });
+      }
       const object = await objectStore.get(asset.objectKey);
       if (!object) return textResult(details);
-      if (object.bytes.byteLength > maxInlineImageBytes) return textResult({ ...details, imageOmitted: "The render is larger than the 8 MiB MCP inline limit." });
+      if (object.bytes.byteLength > maxInlineImageBytes) {
+        const downloadUrl = await objectStore.createSignedDownloadUrl(asset.objectKey, {
+          expiresIn: 300,
+          download: asset.fileName,
+        });
+        return textResult({ ...details, downloadUrl, expiresInSeconds: 300, imageOmitted: "The render is larger than the 2 MiB MCP inline limit." });
+      }
       return {
         content: [
           { type: "text" as const, text: JSON.stringify(details) },
@@ -387,7 +422,7 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     inputSchema: versionInput.extend({ frameId: z.string().min(1), sourceNodeId: z.string().min(1) }),
   }, async ({ projectId, handoffId, versionId, frameId, sourceNodeId }) => {
     try {
-      const version = loadVersion(workspaceId, { projectId, handoffId, versionId });
+      const version = (await loadVersion(workspaceId, { projectId, handoffId, versionId }));
       if (!isStructuredSnapshot(version.snapshot)) return textResult({ visualOnly: true, supported: false, reason: "This version contains pixels only and has no exact source measurements." });
       const frame = version.snapshot.frames.find((candidate) => candidate.sourceFrameId === frameId);
       if (!frame) throw new Error("Frame not found in this snapshot.");
@@ -438,7 +473,7 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     }),
   }, async ({ projectId, handoffId, versionId, frameId, sourceNodeId, offset, limit }) => {
     try {
-      const version = loadVersion(workspaceId, { projectId, handoffId, versionId });
+      const version = (await loadVersion(workspaceId, { projectId, handoffId, versionId }));
       if (!isStructuredSnapshot(version.snapshot)) return textResult({ visualOnly: true, supported: false, reason: "This version contains pixels only and has no token bindings." });
       const frames = version.snapshot.frames.filter((frame) => !frameId || frame.sourceFrameId === frameId);
       const allBindings = frames.flatMap((frame) => frame.nodes
@@ -459,22 +494,22 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     }),
   }, async ({ projectId, handoffId, fromVersionId, toVersionId }) => {
     try {
-      loadHandoff(workspaceId, projectId, handoffId);
-      const versions = listHandoffVersions({ workspaceId, handoffId }) as Array<{ id: string; versionLabel: string }>;
+      (await loadHandoff(workspaceId, projectId, handoffId));
+      const versions = (await listHandoffVersions({ workspaceId, handoffId })) as Array<{ id: string; versionLabel: string }>;
       const toId = toVersionId ?? versions[0]?.id;
       const toIndex = versions.findIndex((version) => version.id === toId);
       const fromId = fromVersionId ?? versions[toIndex + 1]?.id;
       if (!toId || toIndex < 0) throw new Error("Version not found in this handoff.");
       if (!fromId) throw new Error("This handoff has only one version, so there is nothing to compare yet.");
       if (fromId === toId) throw new Error("Choose two different versions.");
-      const from = loadVersion(workspaceId, { projectId, handoffId, versionId: fromId });
-      const to = loadVersion(workspaceId, { projectId, handoffId, versionId: toId });
+      const from = (await loadVersion(workspaceId, { projectId, handoffId, versionId: fromId }));
+      const to = (await loadVersion(workspaceId, { projectId, handoffId, versionId: toId }));
       const diff = diffSnapshots(
         { versionId: from.id, snapshot: from.snapshot },
         { versionId: to.id, snapshot: to.snapshot },
         {
-          frameMatches: getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to }),
-          nodeMatches: getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to }),
+          frameMatches: (await getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to })),
+          nodeMatches: (await getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to })),
         },
       );
       return textResult({
@@ -499,12 +534,12 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     }),
   }, async ({ projectId, handoffId, fromVersionId, toVersionId, frameId, frameOffset, frameLimit, offset, limit }) => {
     try {
-      loadHandoff(workspaceId, projectId, handoffId);
-      const from = getVersion({ workspaceId, versionId: fromVersionId });
-      const to = getVersion({ workspaceId, versionId: toVersionId });
+      (await loadHandoff(workspaceId, projectId, handoffId));
+      const from = (await getVersion({ workspaceId, versionId: fromVersionId }));
+      const to = (await getVersion({ workspaceId, versionId: toVersionId }));
       if (!from || !to || from.handoffId !== handoffId || to.handoffId !== handoffId) throw new Error("Both versions must belong to this handoff.");
-      const frameMatches = getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to });
-      const nodeMatches = getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to });
+      const frameMatches = (await getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to }));
+      const nodeMatches = (await getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to }));
       const diff = diffSnapshots(
         { versionId: from.id, snapshot: from.snapshot },
         { versionId: to.id, snapshot: to.snapshot },
@@ -521,14 +556,14 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
   }, async ({ projectId, handoffId, fromVersionId, toVersionId, offset, limit }) => {
     try {
       if (fromVersionId === toVersionId) throw new Error("Choose two different versions.");
-      const handoff = loadHandoff(workspaceId, projectId, handoffId);
-      const project = getProject({ workspaceId, projectId });
+      const handoff = (await loadHandoff(workspaceId, projectId, handoffId));
+      const project = (await getProject({ workspaceId, projectId }));
       if (!project) throw new Error("Project not found in this workspace.");
-      const from = loadVersion(workspaceId, { projectId, handoffId, versionId: fromVersionId });
-      const to = loadVersion(workspaceId, { projectId, handoffId, versionId: toVersionId });
-      const frameMatches = getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to });
-      const nodeMatches = getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to });
-      const evidence = collectChangelogEvidence({
+      const from = (await loadVersion(workspaceId, { projectId, handoffId, versionId: fromVersionId }));
+      const to = (await loadVersion(workspaceId, { projectId, handoffId, versionId: toVersionId }));
+      const frameMatches = (await getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to }));
+      const nodeMatches = (await getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to }));
+      const evidence = await collectChangelogEvidence({
         workspaceId,
         handoffId,
         from: { id: from.id, versionLabel: from.versionLabel, snapshot: from.snapshot },
@@ -554,8 +589,8 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     inputSchema: versionInput,
   }, async ({ projectId, handoffId, versionId }) => {
     try {
-      const version = loadVersion(workspaceId, { projectId, handoffId, versionId });
-      const changelogs = listApprovedChangelogsForVersion({ workspaceId, handoffId, versionId })
+      const version = (await loadVersion(workspaceId, { projectId, handoffId, versionId }));
+      const changelogs = (await listApprovedChangelogsForVersion({ workspaceId, handoffId, versionId }))
         .map(toMcpApprovedChangelog);
       return textResult({ version: { id: version.id, label: version.versionLabel }, changelogs });
     } catch (error) { return failure(error); }
@@ -567,8 +602,8 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     inputSchema: versionInput.extend(inventoryPageInput),
   }, async ({ projectId, handoffId, versionId, offset, limit }) => {
     try {
-      loadVersion(workspaceId, { projectId, handoffId, versionId });
-      const result = listHandoffCommentsPage({ workspaceId, versionId, offset, limit });
+      (await loadVersion(workspaceId, { projectId, handoffId, versionId }));
+      const result = (await listHandoffCommentsPage({ workspaceId, versionId, offset, limit }));
       return textResult({ comments: result.items, page: pageItems(result.items, result.total, offset, limit).page });
     } catch (error) { return failure(error); }
   });
@@ -579,8 +614,8 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     inputSchema: idInput.extend(inventoryPageInput),
   }, async ({ projectId, handoffId, offset, limit }) => {
     try {
-      loadHandoff(workspaceId, projectId, handoffId);
-      const result = listLinkedExternalTasksPage({ workspaceId, handoffId, offset, limit });
+      (await loadHandoff(workspaceId, projectId, handoffId));
+      const result = (await listLinkedExternalTasksPage({ workspaceId, handoffId, offset, limit }));
       return textResult({ tasks: result.items, page: pageItems(result.items, result.total, offset, limit).page });
     } catch (error) { return failure(error); }
   });
@@ -591,11 +626,11 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
     inputSchema: versionInput.extend(inventoryPageInput),
   }, async ({ projectId, handoffId, versionId, offset, limit }) => {
     try {
-      const version = loadVersion(workspaceId, { projectId, handoffId, versionId });
-      const project = getProject({ workspaceId, projectId });
+      const version = (await loadVersion(workspaceId, { projectId, handoffId, versionId }));
+      const project = (await getProject({ workspaceId, projectId }));
       if (!project) throw new Error("Project not found in this workspace.");
       const evaluated = evaluateLayoutRules(version.snapshot, project.rules);
-      const states = listFindingStates({ workspaceId, versionId }) as Array<{ findingKey: string; status: "open" | "resolved"; note: string | null; assigneeUserId: string | null }>;
+      const states = (await listFindingStates({ workspaceId, versionId })) as Array<{ findingKey: string; status: "open" | "resolved"; note: string | null; assigneeUserId: string | null }>;
       const stateByKey = new Map(states.map((state) => [state.findingKey, state]));
       const findings = evaluated.findings.map((finding) => ({ ...finding, ...(stateByKey.get(finding.findingKey) ?? { status: "open", note: null, assigneeUserId: null }) }));
       const pageFindings = findings.slice(offset, offset + limit);
@@ -621,7 +656,7 @@ function registerWriteTools(server: McpServer, input: { workspaceId: string; cre
       }),
     }, async ({ projectId, handoffId, versionId, frameId, sourceNodeId, x, y, body }) => {
       try {
-        const version = loadVersion(workspaceId, { projectId, handoffId, versionId });
+        const version = (await loadVersion(workspaceId, { projectId, handoffId, versionId }));
         const isOverview = frameId === "__overview__";
         const frame = version.snapshot.frames.find((candidate) => candidate.sourceFrameId === frameId);
         const structuredFrame = isStructuredSnapshot(version.snapshot)
@@ -639,7 +674,7 @@ function registerWriteTools(server: McpServer, input: { workspaceId: string; cre
           const nodeExists = isStructuredSnapshot(version.snapshot) && version.snapshot.frames.some((candidate) => candidate.nodes.some((node) => node.sourceNodeId === sourceNodeId && (isOverview || candidate.sourceFrameId === frameId)));
           if (!nodeExists) throw new Error("Element not found in the selected frame.");
         }
-        const created = createHandoffComment({ workspaceId, versionId, frameId, sourceNodeId: sourceNodeId ?? null, x, y, body, createdBy });
+        const created = (await createHandoffComment({ workspaceId, versionId, frameId, sourceNodeId: sourceNodeId ?? null, x, y, body, createdBy }));
         return textResult({ ...created, versionId, frameId, sourceNodeId: sourceNodeId ?? null });
       } catch (error) { return failure(error); }
     });
@@ -653,14 +688,14 @@ function registerWriteTools(server: McpServer, input: { workspaceId: string; cre
     }, async ({ projectId, handoffId, fromVersionId, toVersionId, title, summary, statements }) => {
       try {
         if (fromVersionId === toVersionId) throw new Error("Choose two different versions.");
-        const handoff = loadHandoff(workspaceId, projectId, handoffId);
-        const project = getProject({ workspaceId, projectId });
+        const handoff = (await loadHandoff(workspaceId, projectId, handoffId));
+        const project = (await getProject({ workspaceId, projectId }));
         if (!project) throw new Error("Project not found in this workspace.");
-        const from = loadVersion(workspaceId, { projectId, handoffId, versionId: fromVersionId });
-        const to = loadVersion(workspaceId, { projectId, handoffId, versionId: toVersionId });
-        const frameMatches = getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to });
-        const nodeMatches = getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to });
-        const availableEvidence = collectChangelogEvidence({
+        const from = (await loadVersion(workspaceId, { projectId, handoffId, versionId: fromVersionId }));
+        const to = (await loadVersion(workspaceId, { projectId, handoffId, versionId: toVersionId }));
+        const frameMatches = (await getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to }));
+        const nodeMatches = (await getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to }));
+        const availableEvidence = await collectChangelogEvidence({
           workspaceId,
           handoffId,
           from: { id: from.id, versionLabel: from.versionLabel, snapshot: from.snapshot },
@@ -677,7 +712,7 @@ function registerWriteTools(server: McpServer, input: { workspaceId: string; cre
           const { content: _content, ...item } = evidenceById.get(id)!;
           return item;
         });
-        const saved = createChangelogDraft({
+        const saved = (await createChangelogDraft({
           workspaceId,
           handoffId,
           fromVersionId,
@@ -688,7 +723,7 @@ function registerWriteTools(server: McpServer, input: { workspaceId: string; cre
           evidence,
           model: "Connected AI client",
           createdBy,
-        });
+        }));
         return textResult(saved);
       } catch (error) { return failure(error); }
     });
@@ -700,13 +735,13 @@ function registerWriteTools(server: McpServer, input: { workspaceId: string; cre
     }, async ({ projectId, handoffId, fromVersionId, toVersionId }) => {
       try {
         if (fromVersionId === toVersionId) throw new Error("Choose two different versions.");
-        const handoff = loadHandoff(workspaceId, projectId, handoffId);
-        const project = getProject({ workspaceId, projectId });
-        const from = getVersion({ workspaceId, versionId: fromVersionId });
-        const to = getVersion({ workspaceId, versionId: toVersionId });
+        const handoff = (await loadHandoff(workspaceId, projectId, handoffId));
+        const project = (await getProject({ workspaceId, projectId }));
+        const from = (await getVersion({ workspaceId, versionId: fromVersionId }));
+        const to = (await getVersion({ workspaceId, versionId: toVersionId }));
         if (!project || !from || !to || from.handoffId !== handoffId || to.handoffId !== handoffId) throw new Error("Both versions must belong to this handoff.");
-        const frameMatches = getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to });
-        const nodeMatches = getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to });
+        const frameMatches = (await getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to }));
+        const nodeMatches = (await getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to }));
         const draft = await createEvidenceLinkedDraft({
           workspaceId,
           handoffId,
@@ -717,7 +752,7 @@ function registerWriteTools(server: McpServer, input: { workspaceId: string; cre
           frameMatches,
           nodeMatches,
         });
-        const saved = createChangelogDraft({ workspaceId, handoffId, fromVersionId, toVersionId, ...draft, createdBy });
+        const saved = (await createChangelogDraft({ workspaceId, handoffId, fromVersionId, toVersionId, ...draft, createdBy }));
         return textResult(saved);
       } catch (error) { return failure(error); }
     });
@@ -732,22 +767,22 @@ function registerWriteTools(server: McpServer, input: { workspaceId: string; cre
       }),
     }, async ({ projectId, handoffId, versionId, sourceSystem, externalTaskId, externalUrl, title, description, frameId, sourceNodeId }) => {
       try {
-        const handoff = loadHandoff(workspaceId, projectId, handoffId);
-        const version = loadVersion(workspaceId, { projectId, handoffId, versionId });
+        const handoff = (await loadHandoff(workspaceId, projectId, handoffId));
+        const version = (await loadVersion(workspaceId, { projectId, handoffId, versionId }));
         const parsedTask = taskLinkSchema.safeParse({ sourceSystem, externalTaskId, externalUrl, title, description, frameId, sourceNodeId });
         if (!parsedTask.success) throw new Error(`Invalid task reference: ${parsedTask.error.issues[0]?.message ?? "check the task fields."}`);
         const canvasPath = handoff.reviewShareId
           ? `/review/${encodeURIComponent(handoff.reviewShareId)}`
           : `/workspace/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`;
         const handoffUrl = new URL(`${canvasPath}?versionId=${encodeURIComponent(versionId)}`, baseUrl).toString();
-        const task = linkExternalTaskToHandoff({
+        const task = (await linkExternalTaskToHandoff({
           workspaceId,
           handoffId,
           version,
           handoffUrl,
           task: parsedTask.data,
           createdBy,
-        });
+        }));
         return textResult(task);
       } catch (error) { return failure(error); }
     });
@@ -758,7 +793,7 @@ async function authorize(request: Request) {
   const header = request.headers.get("authorization");
   const match = header?.match(/^Bearer\s+(asbir_mcp_[A-Za-z0-9_-]{32,})$/);
   if (!match) return { response: Response.json({ error: "A valid bearer token is required." }, { status: 401 }) };
-  const access = resolveWorkspaceMcpToken(match[1]);
+  const access = (await resolveWorkspaceMcpToken(match[1]));
   if (!access) return { response: Response.json({ error: "The MCP token is invalid, expired, revoked, or no longer has workspace access." }, { status: 401 }) };
   const requestedWorkspaceId = new URL(request.url).searchParams.get("workspaceId");
   if (requestedWorkspaceId !== null && requestedWorkspaceId !== access.workspaceId) {
@@ -773,7 +808,7 @@ export async function POST(request: Request) {
   if ("response" in result) return result.response;
   const { access, token } = result;
   // A token acts with its creator's visibility: reviewers reach only handoffs shared with them.
-  const allowedHandoffIds = visibleHandoffIds(access.workspaceId, access.viewer);
+  const allowedHandoffIds = (await visibleHandoffIds(access.workspaceId, access.viewer));
   const handler = createMcpHandler(() => {
     const server = new McpServer({
       name: "asbir-handoff",

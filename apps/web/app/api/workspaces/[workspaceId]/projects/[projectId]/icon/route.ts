@@ -15,8 +15,8 @@ export async function GET(request: Request, context: ProjectIconRoute) {
   const { workspaceId, projectId } = await context.params;
   try {
     await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
-    if (!getProject({ workspaceId, projectId })) return Response.json({ error: "Not found." }, { status: 404 });
-    const icon = getProjectIcon(projectId);
+    if (!(await getProject({ workspaceId, projectId }))) return Response.json({ error: "Not found." }, { status: 404 });
+    const icon = (await getProjectIcon(projectId));
     if (!icon) return Response.json({ error: "Not found." }, { status: 404 });
     const etag = `"${icon.sha256.slice(0, 32)}"`;
     if (request.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers: { ETag: etag } });
@@ -39,11 +39,11 @@ export async function PUT(request: Request, context: ProjectIconRoute) {
   const { workspaceId, projectId } = await context.params;
   try {
     const access = await requireWorkspaceRole(request, workspaceId, managerRoles);
-    if (!getProject({ workspaceId, projectId })) return Response.json({ error: "Not found." }, { status: 404 });
+    if (!(await getProject({ workspaceId, projectId }))) return Response.json({ error: "Not found." }, { status: 404 });
     const declared = Number(request.headers.get("content-length") ?? 0);
     if (declared > projectIconMaxBytes) return Response.json({ error: "Images can be up to 512 KB." }, { status: 413 });
     const bytes = new Uint8Array(await request.arrayBuffer());
-    return Response.json(setProjectIcon({ projectId, bytes, userId: access.userId }));
+    return Response.json((await setProjectIcon({ projectId, bytes, userId: access.userId })));
   } catch (error) {
     return errorResponse(error);
   }
@@ -53,8 +53,8 @@ export async function DELETE(request: Request, context: ProjectIconRoute) {
   const { workspaceId, projectId } = await context.params;
   try {
     await requireWorkspaceRole(request, workspaceId, managerRoles);
-    if (!getProject({ workspaceId, projectId })) return Response.json({ error: "Not found." }, { status: 404 });
-    deleteProjectIcon(projectId);
+    if (!(await getProject({ workspaceId, projectId }))) return Response.json({ error: "Not found." }, { status: 404 });
+    (await deleteProjectIcon(projectId));
     return Response.json({ iconVersion: null });
   } catch (error) {
     return errorResponse(error);

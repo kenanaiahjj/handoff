@@ -50,7 +50,7 @@ export async function GET(request: Request, context: ReviewAccessRoute) {
   }
 
   if (access.decision.allowed && access.decision.reason === "invite-link" && token) {
-    const invite = getHandoffInviteByToken(shareId, token);
+    const invite = (await getHandoffInviteByToken(shareId, token));
     if (!invite) return Response.json({ error: "This invitation link is invalid, expired, or revoked." }, { status: 403 });
     const maxAge = invite.expiresAt
       ? Math.max(1, Math.floor((Date.parse(invite.expiresAt) - Date.now()) / 1000))

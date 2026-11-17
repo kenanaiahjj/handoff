@@ -22,17 +22,17 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "Check the handoff name, version, and project." }, { status: 400 });
   try {
     access = await requireWorkspaceRole(request, parsed.data.workspaceId, managerRoles);
-    const project = getDatabase()
+    const project = (await getDatabase()
       .prepare("SELECT 1 FROM project WHERE id = ? AND workspace_id = ?")
-      .get(parsed.data.projectId, parsed.data.workspaceId);
+      .get(parsed.data.projectId, parsed.data.workspaceId));
     if (!project) return Response.json({ error: "Project not found." }, { status: 404 });
     const handoffId = parsed.data.handoffId ?? null;
-    if (handoffId && !getHandoff({ workspaceId: parsed.data.workspaceId, projectId: parsed.data.projectId, handoffId })) {
+    if (handoffId && !(await getHandoff({ workspaceId: parsed.data.workspaceId, projectId: parsed.data.projectId, handoffId }))) {
       return Response.json({ error: "Handoff not found in this project." }, { status: 404 });
     }
     const handoffName = handoffId ? null : parsed.data.handoffName?.trim() || null;
     if (!handoffId && !handoffName) return Response.json({ error: "Enter a handoff name for the first capture." }, { status: 400 });
-    const session = createCaptureSession({
+    const session = (await createCaptureSession({
       workspaceId: parsed.data.workspaceId,
       projectId: parsed.data.projectId,
       handoffId,
@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       versionLabel: parsed.data.versionLabel,
       releaseNote: parsed.data.releaseNote ?? null,
       createdBy: access.userId,
-    });
+    }));
     return Response.json(session, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });

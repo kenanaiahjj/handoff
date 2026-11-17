@@ -72,6 +72,9 @@
       #status[data-kind="error"] { color: var(--danger); border-color: color-mix(in srgb, var(--danger) 45%, transparent); }
       #status[data-kind="warning"] { color: var(--warning); border-color: color-mix(in srgb, var(--warning) 45%, transparent); }
       #status[data-kind="success"] { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, transparent); }
+      #upload-progress { width: 100%; height: 8px; accent-color: var(--accent); }
+      .upload-controls { display: flex; gap: 8px; }
+      .upload-controls button { flex: 0 0 auto; }
       #result { display: grid; gap: 8px; }
       #result a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
       #capture-identifiers { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: 0; }
@@ -157,6 +160,7 @@
         </details>
       </section>
       <div id="status" role="status" aria-live="polite"></div>
+      <progress id="upload-progress" max="100" value="0" aria-label="Direct upload progress" hidden></progress>
       <section id="replacement-review" class="panel" aria-labelledby="replacement-title" hidden>
         <div class="panel-head"><span id="replacement-title">Possible frame replacements</span></div>
         <p id="replacement-intro">A new frame with the same name may replace an earlier screen. Choose only the pairs that are the same screen. Unmatched frames stay separate.</p>
@@ -168,7 +172,10 @@
         </div>
       </section>
       <div class="note">Figma does not store CSS margins. Handoff records source padding and spacing as exact values, and labels geometric gaps as measured margins.</div>
-      <button id="upload-button" class="secondary" type="button" disabled>Upload frozen snapshot</button>
+      <div class="upload-controls">
+        <button id="upload-button" class="secondary" type="button" disabled>Upload frozen snapshot</button>
+        <button id="cancel-upload-button" class="secondary" type="button" hidden>Cancel upload</button>
+      </div>
       <section id="result" aria-labelledby="result-title" hidden>
         <strong id="result-title">Snapshot imported</strong>
         <dl id="capture-identifiers" aria-label="Created handoff identifiers">

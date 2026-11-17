@@ -45,17 +45,21 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
   if (!session) redirect("/sign-in");
 
   const [{ workspaceId, projectId, handoffId }, query] = await Promise.all([params, searchParams]);
-  const membership = getDatabase()
-    .prepare("SELECT role FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
-    .get(workspaceId, session.user.id) as { role: string } | undefined;
-  const handoff = getHandoff({ workspaceId, projectId, handoffId });
+  // Independent reads run together: each is a network round trip on hosted PostgreSQL.
+  const [membership, handoff, project, versionRows] = await Promise.all([
+    getDatabase()
+      .prepare("SELECT role FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
+      .get(workspaceId, session.user.id) as Promise<{ role: string } | undefined>,
+    getHandoff({ workspaceId, projectId, handoffId }),
+    getProject({ workspaceId, projectId }),
+    listHandoffVersions({ workspaceId, handoffId }),
+  ]);
   if (!membership || !handoff) notFound();
   const canManageHandoffs = membership.role === "owner" || membership.role === "designer";
-  const visible = visibleHandoffIds(workspaceId, { id: session.user.id, email: session.user.email, role: membership.role });
+  const visible = (await visibleHandoffIds(workspaceId, { id: session.user.id, email: session.user.email, role: membership.role }));
   if (visible && !visible.has(handoffId)) notFound();
-  const project = getProject({ workspaceId, projectId });
   if (!project) notFound();
-  const versions = listHandoffVersions({ workspaceId, handoffId }) as ReviewVersionSummary[];
+  const versions = versionRows as ReviewVersionSummary[];
   if (!versions.length) {
     const projectHref = `/workspace/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}`;
     return (
@@ -90,7 +94,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
     : null;
   const requestedVersionId = firstQueryValue(query.versionId) ?? initialCompareRouteState?.toVersionId;
   const selectedVersion = versions.find((version) => version.id === requestedVersionId) ?? versions[0];
-  const version = getVersion({ workspaceId, versionId: selectedVersion.id });
+  const version = (await getVersion({ workspaceId, versionId: selectedVersion.id }));
   if (!version || version.handoffId !== handoffId) notFound();
 
   const visualOnly = version.visualOnly;
@@ -102,9 +106,9 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
     : 0;
   const canCreateVersion = true;
   // Opening the newest version clears this person's "New version" badge for the handoff.
-  if (versions[0] && selectedVersion.id === versions[0].id) {
-    markHandoffSeen({ userId: session.user.id, workspaceId, handoffId, latestVersionId: versions[0].id });
-  }
+  const markSeen = versions[0] && selectedVersion.id === versions[0].id
+    ? () => markHandoffSeen({ userId: session.user.id, workspaceId, handoffId, latestVersionId: versions[0].id })
+    : async () => undefined;
   const routePath = `/workspace/${workspaceId}/projects/${projectId}/handoffs/${handoffId}`;
   const dockPanels = {
     version: canCreateVersion ? (
@@ -177,14 +181,16 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
   const assetsByKey = new Map(version.assets.map((asset) => [asset.assetKey, asset] as const));
   const selectedIndex = versions.findIndex((entry) => entry.id === version.id);
   const previousVersionId = selectedIndex >= 0 ? versions[selectedIndex + 1]?.id : undefined;
-  let changedIds = new Set<string>();
-  if (previousVersionId) {
-    try {
-      changedIds = new Set(changedFrameIdsBetween(previousVersionId, version.id));
-    } catch {
-      // Without a comparison, no screen is flagged.
-    }
-  }
+  const [, changedIds] = await Promise.all([
+    markSeen(),
+    previousVersionId
+      ? changedFrameIdsBetween(previousVersionId, version.id).then(
+          (ids) => new Set<string>(ids),
+          // Without a comparison, no screen is flagged.
+          () => new Set<string>(),
+        )
+      : new Set<string>(),
+  ]);
   const mobileScreens: MobileScreen[] = (version.snapshot as SnapshotEnvelope).frames.flatMap((frame) => {
     const asset = assetsByKey.get(frame.renderAssetKey);
     if (!asset) return [];

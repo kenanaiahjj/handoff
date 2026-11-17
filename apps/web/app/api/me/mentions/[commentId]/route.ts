@@ -8,5 +8,5 @@ export async function DELETE(request: Request, context: MentionRoute) {
   const session = await getSessionForRequest(request);
   if (!session) return Response.json({ error: "Sign in to continue." }, { status: 401 });
   const { commentId } = await context.params;
-  return Response.json({ done: markMentionDone(session.user.id, commentId) });
+  return Response.json({ done: (await markMentionDone(session.user.id, commentId)) });
 }

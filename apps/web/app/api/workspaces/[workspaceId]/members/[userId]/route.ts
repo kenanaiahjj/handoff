@@ -23,9 +23,9 @@ export async function PATCH(request: Request, context: MemberRoute) {
     const actor = await requireWorkspaceRole(request, workspaceId, ["owner"]);
     const parsed = updateSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return Response.json({ error: "Choose a role." }, { status: 400 });
-    if ("role" in parsed.data) changeMemberRole({ workspaceId, actorId: actor.userId, userId, role: parsed.data.role });
-    else declineDesignerRequest({ workspaceId, actorId: actor.userId, userId });
-    return Response.json({ members: listMembers(workspaceId) });
+    if ("role" in parsed.data) (await changeMemberRole({ workspaceId, actorId: actor.userId, userId, role: parsed.data.role }));
+    else (await declineDesignerRequest({ workspaceId, actorId: actor.userId, userId }));
+    return Response.json({ members: (await listMembers(workspaceId)) });
   } catch (error) {
     return failure(error);
   }
@@ -36,8 +36,8 @@ export async function DELETE(request: Request, context: MemberRoute) {
   const { workspaceId, userId } = await context.params;
   try {
     const actor = await requireWorkspaceRole(request, workspaceId, ["owner"]);
-    removeMember({ workspaceId, actorId: actor.userId, userId });
-    return Response.json({ members: listMembers(workspaceId) });
+    (await removeMember({ workspaceId, actorId: actor.userId, userId }));
+    return Response.json({ members: (await listMembers(workspaceId)) });
   } catch (error) {
     return failure(error);
   }

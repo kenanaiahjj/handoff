@@ -47,14 +47,14 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
   if (!session) redirect("/sign-in");
 
   const { workspaceId } = await params;
-  const workspace = getDatabase()
+  const workspace = (await getDatabase()
     .prepare(
       `SELECT workspace.id, workspace.name, workspace_membership.role
        FROM workspace
        JOIN workspace_membership ON workspace_membership.workspace_id = workspace.id
        WHERE workspace.id = ? AND workspace_membership.user_id = ?`,
     )
-    .get(workspaceId, session.user.id) as WorkspaceDetail | undefined;
+    .get(workspaceId, session.user.id)) as WorkspaceDetail | undefined;
 
   if (!workspace) notFound();
 
@@ -67,30 +67,33 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
     return (
       <ViewerHome
         devTools={devBypass ? <ViewAsSwitcher current={viewAsModeFor(session.user)} workspaceId={workspace.id} /> : null}
-        projects={listViewerHome(workspace.id, viewer)}
+        projects={(await listViewerHome(workspace.id, viewer))}
         devBypass={devBypass}
-        pinKeys={listPinKeys(session.user.id)}
-        mentions={listOpenMentions(session.user.id, workspace.id, viewer)}
-        designerRequestPending={hasPendingDesignerRequest(session.user.id)}
+        pinKeys={(await listPinKeys(session.user.id))}
+        mentions={(await listOpenMentions(session.user.id, workspace.id, viewer))}
+        designerRequestPending={(await hasPendingDesignerRequest(session.user.id))}
         user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
         homeHref="/workspace"
         title={workspace.name}
       />
     );
   }
-  const projects = filterProjectsForViewer(workspace.id, viewer, listProjects(workspace.id) as ProjectCard[]);
-  const updates = listViewerUpdates(workspace.id, viewer);
-  const invites = getDatabase()
-    .prepare(
-      `SELECT id, role, job_role AS jobRole, expires_at AS expiresAt, created_at AS createdAt
-       FROM workspace_invite
-       WHERE workspace_id = ? AND revoked_at IS NULL
-         AND (expires_at IS NULL OR expires_at > ?)
-       ORDER BY created_at DESC`,
-    )
-    .all(workspaceId, new Date().toISOString()) as WorkspaceInvite[];
-  const members = listMembers(workspace.id);
-  const navSections = createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects, page: "overview" });
+  // Independent reads run together: each is a network round trip on hosted PostgreSQL.
+  const [projects, updates, invites, members] = await Promise.all([
+    listProjects(workspace.id).then((all) => filterProjectsForViewer(workspace.id, viewer, all as ProjectCard[])),
+    listViewerUpdates(workspace.id, viewer),
+    getDatabase()
+      .prepare(
+        `SELECT id, role, job_role AS jobRole, expires_at AS expiresAt, created_at AS createdAt
+         FROM workspace_invite
+         WHERE workspace_id = ? AND revoked_at IS NULL
+           AND (expires_at IS NULL OR expires_at > ?)
+         ORDER BY created_at DESC`,
+      )
+      .all(workspaceId, new Date().toISOString()) as Promise<WorkspaceInvite[]>,
+    listMembers(workspace.id),
+  ]);
+  const navSections = await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects, page: "overview" });
 
   return (
     <WorkspaceShell
@@ -108,10 +111,10 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
           <span className="workspace-role px-3 py-1.5 text-[11px] capitalize">{workspace.role}</span>
         </header>
 
-        <NeedsYou className="mt-6" initial={listOpenMentions(session.user.id, workspace.id, viewer)} />
+        <NeedsYou className="mt-6" initial={(await listOpenMentions(session.user.id, workspace.id, viewer))} />
 
         <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} iconVersions={projectIconVersions(workspace.id)} />
+          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} iconVersions={(await projectIconVersions(workspace.id))} />
 
           {canManage ? (
             <section aria-labelledby="invite-title" className="workspace-pane p-5 sm:p-6">
@@ -129,7 +132,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
               {workspace.role === "owner" ? (
                 <div className="mt-6 border-t border-border pt-5">
                   <h3 className="text-[13px] font-semibold text-foreground" id="admins-title">Add an owner by email</h3>
-                  <div className="mt-3"><SuperadminsPanel currentEmail={session.user.email} initial={listSuperadmins()} /></div>
+                  <div className="mt-3"><SuperadminsPanel currentEmail={session.user.email} initial={(await listSuperadmins())} /></div>
                 </div>
               ) : null}
             </section>

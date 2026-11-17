@@ -1,14 +1,12 @@
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import Database from "better-sqlite3";
 import test, { after } from "node:test";
+import { createPostgresTestFixture } from "../test-support/postgres-test-fixture.mjs";
 
-const priorDatabase = globalThis.__asbirDatabase;
 const priorToken = process.env.SLACK_BOT_TOKEN;
-const database = new Database(":memory:");
-globalThis.__asbirDatabase = database;
+const fixture = await createPostgresTestFixture();
+const { database, pool } = fixture;
 
-database.exec(`
+await pool.query(`
   CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT, email TEXT);
   CREATE TABLE workspace_membership (workspace_id TEXT, user_id TEXT, role TEXT);
   CREATE TABLE project (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, pd_in_charge_user_id TEXT);
@@ -16,27 +14,26 @@ database.exec(`
   CREATE TABLE handoff_invite (id TEXT, workspace_id TEXT, handoff_id TEXT, email TEXT, revoked_at TEXT, expires_at TEXT);
   CREATE TABLE viewer_pin (user_id TEXT, kind TEXT, target_id TEXT, created_at TEXT);
   CREATE TABLE handoff_version (id TEXT PRIMARY KEY, handoff_id TEXT, version_label TEXT, created_by_user_id TEXT, created_at TEXT, snapshot_json TEXT);
-  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BLOB NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BYTEA NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
   CREATE TABLE handoff_asset (handoff_version_id TEXT, asset_key TEXT, object_key TEXT);
+  CREATE TABLE notification_preference (user_id TEXT PRIMARY KEY, slack TEXT NOT NULL DEFAULT 'all' CHECK (slack IN ('all', 'mentions', 'off')), updated_at TEXT NOT NULL);
 `);
-database.exec(readFileSync(new URL("../migrations/0023_notification_preferences.sql", import.meta.url), "utf8"));
-database.prepare(`INSERT INTO "user" VALUES ('designer', 'Dee Designer', 'dee@lmf.ventures'), ('pd', 'Pat Lead', 'pat@lmf.ventures'), ('fan', 'Fay Follower', 'fay@lmf.ventures')`).run();
-database.prepare("INSERT INTO workspace_membership VALUES ('ws', 'designer', 'designer'), ('ws', 'pd', 'reviewer'), ('ws', 'fan', 'reviewer')").run();
-database.prepare("INSERT INTO project VALUES ('p', 'ws', 'Maayo', 'pd')").run();
-database.prepare("INSERT INTO handoff VALUES ('h', 'ws', 'p', 'Rebooking')").run();
-database.prepare("INSERT INTO handoff_invite VALUES ('i1', 'ws', 'h', 'qa@lmf.ventures', NULL, NULL), ('i2', 'ws', 'h', 'gone@lmf.ventures', 'revoked', NULL), ('i3', 'ws', 'h', 'dee@lmf.ventures', NULL, NULL)").run();
-database.prepare("INSERT INTO viewer_pin VALUES ('fan', 'project', 'p', 'now')").run();
+await database.prepare(`INSERT INTO "user" VALUES ('designer', 'Dee Designer', 'dee@lmf.ventures'), ('pd', 'Pat Lead', 'pat@lmf.ventures'), ('fan', 'Fay Follower', 'fay@lmf.ventures')`).run();
+await database.prepare("INSERT INTO workspace_membership VALUES ('ws', 'designer', 'designer'), ('ws', 'pd', 'reviewer'), ('ws', 'fan', 'reviewer')").run();
+await database.prepare("INSERT INTO project VALUES ('p', 'ws', 'Maayo', 'pd')").run();
+await database.prepare("INSERT INTO handoff VALUES ('h', 'ws', 'p', 'Rebooking')").run();
+await database.prepare("INSERT INTO handoff_invite VALUES ('i1', 'ws', 'h', 'qa@lmf.ventures', NULL, NULL), ('i2', 'ws', 'h', 'gone@lmf.ventures', 'revoked', NULL), ('i3', 'ws', 'h', 'dee@lmf.ventures', NULL, NULL)").run();
+await database.prepare("INSERT INTO viewer_pin VALUES ('fan', 'project', 'p', 'now')").run();
 const frames = (keys) => JSON.stringify({ frames: keys.map((key) => ({ sourceFrameId: key, name: key, renderAssetKey: key })) });
-database.prepare("INSERT INTO handoff_version VALUES ('v1', 'h', '1.0', 'designer', '2026-01-01', ?), ('v2', 'h', '1.1', 'designer', '2026-01-02', ?)").run(frames(["a", "b"]), frames(["a", "b", "c"]));
-database.prepare("INSERT INTO handoff_asset VALUES ('v1', 'a', 'x'), ('v1', 'b', 'y'), ('v2', 'a', 'x'), ('v2', 'b', 'y2'), ('v2', 'c', 'z')").run();
+await database.prepare("INSERT INTO handoff_version VALUES ('v1', 'h', '1.0', 'designer', '2026-01-01', ?), ('v2', 'h', '1.1', 'designer', '2026-01-02', ?)").run(frames(["a", "b"]), frames(["a", "b", "c"]));
+await database.prepare("INSERT INTO handoff_asset VALUES ('v1', 'a', 'x'), ('v1', 'b', 'y'), ('v2', 'a', 'x'), ('v2', 'b', 'y2'), ('v2', 'c', 'z')").run();
 
 const { isSlackEnabled, newVersionRecipients, notifyMentions, notifyNewVersion } = await import("./slack.ts");
 
-after(() => {
-  globalThis.__asbirDatabase = priorDatabase;
+after(async () => {
   if (priorToken === undefined) delete process.env.SLACK_BOT_TOKEN;
   else process.env.SLACK_BOT_TOKEN = priorToken;
-  database.close();
+  await fixture.close();
 });
 
 /** A fake Slack API: everyone except "nobody@" has an account; records each DM. */
@@ -64,7 +61,7 @@ test("does nothing until a Slack bot token is set", async () => {
 
 test("new versions reach invitees, the PD and people who pinned the project, never the publisher", async () => {
   process.env.SLACK_BOT_TOKEN = "xoxb-test";
-  assert.deepEqual(newVersionRecipients({ workspaceId: "ws", handoffId: "h", createdBy: "designer" }).sort(), ["fay@lmf.ventures", "pat@lmf.ventures", "qa@lmf.ventures"]);
+  assert.deepEqual((await newVersionRecipients({ workspaceId: "ws", handoffId: "h", createdBy: "designer" })).sort(), ["fay@lmf.ventures", "pat@lmf.ventures", "qa@lmf.ventures"]);
 
   const { fetcher, messages } = fakeSlack();
   const result = await notifyNewVersion({ workspaceId: "ws", handoffId: "h", versionId: "v2", createdBy: "designer" }, fetcher);
@@ -97,14 +94,14 @@ test("mentions DM the person with the comment and a link to the thread", async (
 test("each person's Slack setting filters who gets messaged", async () => {
   const { filterBySlackPreference, setSlackPreference, getSlackPreference } = await import("./notification-preferences.ts");
   const emails = ["dee@lmf.ventures", "pat@lmf.ventures", "fay@lmf.ventures", "outsider@lmf.ventures"];
-  assert.equal(getSlackPreference("pd"), "all");
-  setSlackPreference("pd", "mentions");
-  setSlackPreference("fan", "off");
+  assert.equal(await getSlackPreference("pd"), "all");
+  await setSlackPreference("pd", "mentions");
+  await setSlackPreference("fan", "off");
   // Versions: only "all" (and people without an account) hear about them.
-  assert.deepEqual(filterBySlackPreference(emails, "version"), ["dee@lmf.ventures", "outsider@lmf.ventures"]);
+  assert.deepEqual(await filterBySlackPreference(emails, "version"), ["dee@lmf.ventures", "outsider@lmf.ventures"]);
   // Mentions: "mentions only" still gets them; "off" never does.
-  assert.deepEqual(filterBySlackPreference(emails, "mention"), ["dee@lmf.ventures", "pat@lmf.ventures", "outsider@lmf.ventures"]);
-  setSlackPreference("pd", "all");
-  setSlackPreference("fan", "all");
-  assert.equal(getSlackPreference("fan"), "all");
+  assert.deepEqual(await filterBySlackPreference(emails, "mention"), ["dee@lmf.ventures", "pat@lmf.ventures", "outsider@lmf.ventures"]);
+  await setSlackPreference("pd", "all");
+  await setSlackPreference("fan", "all");
+  assert.equal(await getSlackPreference("fan"), "all");
 });

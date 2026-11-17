@@ -18,13 +18,13 @@ export default async function WorkspaceHomePage() {
   const session = await getSessionForHeaders(await headers());
   if (!session) redirect("/sign-in");
 
-  syncSuperadminAccess(session.user);
-  const company = ensureCompanyWorkspace(session.user);
-  if (needsOnboarding(session.user.id)) redirect("/onboarding");
+  (await syncSuperadminAccess(session.user));
+  const company = (await ensureCompanyWorkspace(session.user));
+  if ((await needsOnboarding(session.user.id))) redirect("/onboarding");
 
-  const member = getDatabase()
+  const member = (await getDatabase()
     .prepare("SELECT 1 FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
-    .get(company.id, session.user.id);
+    .get(company.id, session.user.id));
   if (member) redirect(`/workspace/${company.id}`);
 
   // Signed in and onboarded, but not given access (for example, an email outside the company).

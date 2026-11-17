@@ -8,7 +8,7 @@ function hashToken(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
-export function createWorkspaceMcpToken(input: {
+export async function createWorkspaceMcpToken(input: {
   workspaceId: string;
   createdBy: string;
   name: string;
@@ -19,22 +19,22 @@ export function createWorkspaceMcpToken(input: {
   const id = randomUUID();
   const createdAt = new Date();
   const expiresAt = new Date(createdAt.getTime() + input.expiresInDays * 24 * 60 * 60 * 1000).toISOString();
-  getDatabase()
+  (await getDatabase()
     .prepare(
       `INSERT INTO workspace_mcp_token
         (id, workspace_id, created_by_user_id, name, token_hash, scopes_json, expires_at, created_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(id, input.workspaceId, input.createdBy, input.name.trim(), hashToken(secret), JSON.stringify(input.scopes), expiresAt, createdAt.toISOString());
+    .run(id, input.workspaceId, input.createdBy, input.name.trim(), hashToken(secret), JSON.stringify(input.scopes), expiresAt, createdAt.toISOString()));
   return {
     token: secret,
     metadata: { id, name: input.name.trim(), scopes: input.scopes, expiresAt, createdAt: createdAt.toISOString(), revokedAt: null, expired: false },
   };
 }
 
-export function listWorkspaceMcpTokens(input: { workspaceId: string; userId: string; includeAll: boolean }) {
+export async function listWorkspaceMcpTokens(input: { workspaceId: string; userId: string; includeAll: boolean }) {
   const scopeFilter = input.includeAll ? "" : " AND workspace_mcp_token.created_by_user_id = ?";
-  const rows = getDatabase()
+  const rows = (await getDatabase()
     .prepare(
       `SELECT workspace_mcp_token.id, workspace_mcp_token.name,
               workspace_mcp_token.scopes_json AS scopesJson, workspace_mcp_token.expires_at AS expiresAt,
@@ -45,7 +45,7 @@ export function listWorkspaceMcpTokens(input: { workspaceId: string; userId: str
        WHERE workspace_mcp_token.workspace_id = ?${scopeFilter}
        ORDER BY workspace_mcp_token.created_at DESC LIMIT 100`,
     )
-    .all(...(input.includeAll ? [input.workspaceId] : [input.workspaceId, input.userId])) as Array<Record<string, unknown>>;
+    .all(...(input.includeAll ? [input.workspaceId] : [input.workspaceId, input.userId]))) as Array<Record<string, unknown>>;
   return rows.map((row) => ({
     id: row.id as string,
     name: row.name as string,
@@ -59,26 +59,26 @@ export function listWorkspaceMcpTokens(input: { workspaceId: string; userId: str
   }));
 }
 
-export function revokeWorkspaceMcpToken(input: { workspaceId: string; tokenId: string; actorId: string; canManageAll: boolean }) {
-  const result = getDatabase()
+export async function revokeWorkspaceMcpToken(input: { workspaceId: string; tokenId: string; actorId: string; canManageAll: boolean }) {
+  const result = (await getDatabase()
     .prepare(
       `UPDATE workspace_mcp_token SET revoked_at = ?
        WHERE id = ? AND workspace_id = ? AND revoked_at IS NULL
          AND (created_by_user_id = ? OR ? = 1)`,
     )
-    .run(new Date().toISOString(), input.tokenId, input.workspaceId, input.actorId, Number(input.canManageAll));
+    .run(new Date().toISOString(), input.tokenId, input.workspaceId, input.actorId, Number(input.canManageAll)));
   return result.changes === 1;
 }
 
-export function resolveWorkspaceMcpToken(token: string) {
+export async function resolveWorkspaceMcpToken(token: string) {
   const tokenHash = hashToken(token);
-  const record = getDatabase()
+  const record = (await getDatabase()
     .prepare(
       `SELECT id, workspace_id AS workspaceId, created_by_user_id AS createdBy,
               scopes_json AS scopesJson, expires_at AS expiresAt, revoked_at AS revokedAt
        FROM workspace_mcp_token WHERE token_hash = ?`,
     )
-    .get(tokenHash) as {
+    .get(tokenHash)) as {
       id: string;
       workspaceId: string;
       createdBy: string;
@@ -87,13 +87,13 @@ export function resolveWorkspaceMcpToken(token: string) {
       revokedAt: string | null;
     } | undefined;
   if (!record || record.revokedAt || Date.parse(record.expiresAt) <= Date.now()) return null;
-  const membership = getDatabase()
+  const membership = (await getDatabase()
     .prepare(
       `SELECT workspace_membership.role, COALESCE("user".email, '') AS email
        FROM workspace_membership LEFT JOIN "user" ON "user".id = workspace_membership.user_id
        WHERE workspace_membership.workspace_id = ? AND workspace_membership.user_id = ?`,
     )
-    .get(record.workspaceId, record.createdBy) as { role: string; email: string } | undefined;
+    .get(record.workspaceId, record.createdBy)) as { role: string; email: string } | undefined;
   if (!membership) return null;
   return {
     id: record.id,

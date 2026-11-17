@@ -1,0 +1,28 @@
+project_id = "asbir-handoff"
+
+[experimental]
+stack = true
+
+[db]
+major_version = 17
+
+[db.pooler]
+enabled = true
+pool_mode = "transaction"
+
+[storage]
+enabled = true
+file_size_limit = "256MiB"
+
+[storage.buckets.handoff-assets]
+public = false
+file_size_limit = "256MiB"
+allowed_mime_types = [
+  "image/png",
+  "image/jpeg",
+  "image/webp",
+  "image/svg+xml",
+  "application/zip",
+  "application/x-zip-compressed",
+  "application/octet-stream",
+]

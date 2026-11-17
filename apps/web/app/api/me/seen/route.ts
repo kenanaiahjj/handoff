@@ -10,6 +10,6 @@ export async function POST(request: Request) {
   if (!session) return Response.json({ error: "Sign in to continue." }, { status: 401 });
   const parsed = seenSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Choose handoffs to mark as seen." }, { status: 400 });
-  const marked = markHandoffsSeenForViewer(session.user, [...new Set(parsed.data.handoffIds)]);
+  const marked = (await markHandoffsSeenForViewer(session.user, [...new Set(parsed.data.handoffIds)]));
   return Response.json({ marked });
 }

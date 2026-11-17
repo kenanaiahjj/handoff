@@ -10,8 +10,8 @@ import {
   updateHandoffSharingModeInDatabase,
 } from "../services/handoff-sharing-data";
 
-export function listHandoffs(input: { workspaceId: string; projectId: string }) {
-  return getDatabase()
+export async function listHandoffs(input: { workspaceId: string; projectId: string }) {
+  return (await getDatabase()
     .prepare(
       `SELECT handoff.id, handoff.name, handoff.created_at AS createdAt,
               handoff.published_version_id AS publishedVersionId,
@@ -24,15 +24,15 @@ export function listHandoffs(input: { workspaceId: string; projectId: string }) 
        GROUP BY handoff.id
        ORDER BY COALESCE(MAX(handoff_version.created_at), handoff.created_at) DESC`,
     )
-    .all(input.workspaceId, input.projectId);
+    .all(input.workspaceId, input.projectId));
 }
 
-export function listHandoffsPage(input: { workspaceId: string; projectId: string; offset: number; limit: number }) {
+export async function listHandoffsPage(input: { workspaceId: string; projectId: string; offset: number; limit: number }) {
   const database = getDatabase();
-  const total = (database
+  const total = ((await database
     .prepare("SELECT COUNT(*) AS total FROM handoff WHERE workspace_id = ? AND project_id = ?")
-    .get(input.workspaceId, input.projectId) as { total: number }).total;
-  const items = database
+    .get(input.workspaceId, input.projectId)) as { total: number }).total;
+  const items = (await database
     .prepare(
       `SELECT handoff.id, handoff.name, handoff.created_at AS createdAt,
               handoff.published_version_id AS publishedVersionId,
@@ -46,17 +46,17 @@ export function listHandoffsPage(input: { workspaceId: string; projectId: string
        ORDER BY COALESCE(MAX(handoff_version.created_at), handoff.created_at) DESC, handoff.id DESC
        LIMIT ? OFFSET ?`,
     )
-    .all(input.workspaceId, input.projectId, input.limit, input.offset);
+    .all(input.workspaceId, input.projectId, input.limit, input.offset));
 
   return { items, total };
 }
 
-export function getHandoff(input: {
+export async function getHandoff(input: {
   workspaceId: string;
   projectId: string;
   handoffId: string;
 }) {
-  return getDatabase()
+  return (await getDatabase()
     .prepare(
       `SELECT id, workspace_id AS workspaceId, project_id AS projectId, name,
               created_at AS createdAt, review_share_id AS reviewShareId,
@@ -66,7 +66,7 @@ export function getHandoff(input: {
        FROM handoff
        WHERE id = ? AND workspace_id = ? AND project_id = ?`,
     )
-    .get(input.handoffId, input.workspaceId, input.projectId) as
+    .get(input.handoffId, input.workspaceId, input.projectId)) as
     | {
         id: string;
         workspaceId: string;
@@ -90,33 +90,33 @@ export function deleteHandoff(input: {
   return deleteHandoffInDatabase(getDatabase(), input);
 }
 
-export function renameHandoff(input: {
+export async function renameHandoff(input: {
   workspaceId: string;
   projectId: string;
   handoffId: string;
   name: string;
 }) {
-  const result = getDatabase()
+  const result = (await getDatabase()
     .prepare("UPDATE handoff SET name = ? WHERE id = ? AND workspace_id = ? AND project_id = ?")
-    .run(input.name.trim(), input.handoffId, input.workspaceId, input.projectId);
+    .run(input.name.trim(), input.handoffId, input.workspaceId, input.projectId));
   return result.changes > 0;
 }
 
-export function getLatestPublishedReviewShare(input: { workspaceId: string; projectId: string }) {
-  return getDatabase()
+export async function getLatestPublishedReviewShare(input: { workspaceId: string; projectId: string }) {
+  return (await getDatabase()
     .prepare(
       `SELECT review_share_id AS shareId
        FROM handoff
        WHERE workspace_id = ? AND project_id = ?
          AND review_share_id IS NOT NULL AND published_version_id IS NOT NULL
-       ORDER BY published_at DESC, created_at DESC
+       ORDER BY published_at DESC NULLS LAST, created_at DESC
        LIMIT 1`,
     )
-    .get(input.workspaceId, input.projectId) as { shareId: string } | undefined;
+    .get(input.workspaceId, input.projectId)) as { shareId: string } | undefined;
 }
 
-export function getPublishedHandoffByShareId(shareId: string) {
-  return getDatabase()
+export async function getPublishedHandoffByShareId(shareId: string) {
+  return (await getDatabase()
     .prepare(
       `SELECT id, workspace_id AS workspaceId, project_id AS projectId, name,
               review_share_id AS reviewShareId, published_version_id AS publishedVersionId,
@@ -124,7 +124,7 @@ export function getPublishedHandoffByShareId(shareId: string) {
        FROM handoff
        WHERE review_share_id = ? AND published_version_id IS NOT NULL`,
     )
-    .get(shareId) as {
+    .get(shareId)) as {
       id: string;
       workspaceId: string;
       projectId: string;
@@ -136,14 +136,14 @@ export function getPublishedHandoffByShareId(shareId: string) {
     } | undefined;
 }
 
-export function setHandoffSharingMode(input: {
+export async function setHandoffSharingMode(input: {
   workspaceId: string;
   projectId: string;
   handoffId: string;
   mode: "workspace" | "invited" | "anyone";
   revokePublicLink?: boolean;
 }) {
-  return updateHandoffSharingModeInDatabase(getDatabase(), input);
+  return (await updateHandoffSharingModeInDatabase(getDatabase(), input));
 }
 
 export function createHandoffInvite(input: {
@@ -161,22 +161,22 @@ export function createHandoffInvite(input: {
   return createHandoffInviteInDatabase(getDatabase(), input);
 }
 
-export function listHandoffInvites(input: { workspaceId: string; handoffId: string; now?: string }) {
-  return listHandoffInvitesInDatabase(getDatabase(), input);
+export async function listHandoffInvites(input: { workspaceId: string; handoffId: string; now?: string }) {
+  return (await listHandoffInvitesInDatabase(getDatabase(), input));
 }
 
-export function revokeHandoffInvite(input: {
+export async function revokeHandoffInvite(input: {
   workspaceId: string;
   projectId: string;
   handoffId: string;
   inviteId: string;
   revokedAt?: string;
 }) {
-  return revokeHandoffInviteInDatabase(getDatabase(), input);
+  return (await revokeHandoffInviteInDatabase(getDatabase(), input));
 }
 
-export function getHandoffInviteByToken(shareId: string, token: string, now?: string) {
-  return getHandoffInviteByTokenInDatabase(getDatabase(), shareId, token, now);
+export async function getHandoffInviteByToken(shareId: string, token: string, now?: string) {
+  return (await getHandoffInviteByTokenInDatabase(getDatabase(), shareId, token, now));
 }
 
 export function publishHandoffVersion(input: {
@@ -187,8 +187,8 @@ export function publishHandoffVersion(input: {
   publishedByUserId: string;
 }) {
   const database = getDatabase();
-  const publish = database.transaction(() => {
-    const version = database
+  const publish = database.transaction(async () => {
+    const version = (await database
       .prepare(
         `SELECT handoff_version.id
          FROM handoff_version
@@ -197,10 +197,10 @@ export function publishHandoffVersion(input: {
          WHERE handoff_version.id = ? AND handoff_version.workspace_id = ?
            AND handoff.project_id = ? AND handoff_version.handoff_id = ?`,
       )
-      .get(input.versionId, input.workspaceId, input.projectId, input.handoffId) as { id: string } | undefined;
+      .get(input.versionId, input.workspaceId, input.projectId, input.handoffId)) as { id: string } | undefined;
     if (!version) return null;
 
-    const latest = database
+    const latest = (await database
       .prepare(
         `SELECT handoff_version.id
          FROM handoff_version
@@ -210,63 +210,63 @@ export function publishHandoffVersion(input: {
            AND handoff_version.handoff_id = ?
          ORDER BY handoff_version.created_at DESC, handoff_version.id DESC LIMIT 1`,
       )
-      .get(input.workspaceId, input.projectId, input.handoffId) as { id: string } | undefined;
+      .get(input.workspaceId, input.projectId, input.handoffId)) as { id: string } | undefined;
     if (latest?.id !== version.id) {
       throw new Error("Publish the latest handoff version to update its review canvas.");
     }
 
-    const existing = database
+    const existing = (await database
       .prepare("SELECT review_share_id AS reviewShareId FROM handoff WHERE id = ? AND workspace_id = ? AND project_id = ?")
-      .get(input.handoffId, input.workspaceId, input.projectId) as { reviewShareId: string | null } | undefined;
+      .get(input.handoffId, input.workspaceId, input.projectId)) as { reviewShareId: string | null } | undefined;
     if (!existing) return null;
 
     const reviewShareId = existing.reviewShareId ?? randomUUID();
     const publishedAt = new Date().toISOString();
-    database
+    (await database
       .prepare(
         `UPDATE handoff
          SET review_share_id = ?, published_version_id = ?, published_at = ?, published_by_user_id = ?
          WHERE id = ? AND workspace_id = ? AND project_id = ?`,
       )
-      .run(reviewShareId, version.id, publishedAt, input.publishedByUserId, input.handoffId, input.workspaceId, input.projectId);
+      .run(reviewShareId, version.id, publishedAt, input.publishedByUserId, input.handoffId, input.workspaceId, input.projectId));
 
     return { reviewShareId, versionId: version.id, publishedAt };
   });
 
-  return publish.immediate();
+  return publish();
 }
 
-export function listHandoffVersions(input: { workspaceId: string; handoffId: string }) {
-  return getDatabase()
+export async function listHandoffVersions(input: { workspaceId: string; handoffId: string }) {
+  return (await getDatabase()
     .prepare(
       `SELECT id, version_label AS versionLabel, release_note AS releaseNote,
               source, source_revision_id AS sourceRevisionId, captured_at AS capturedAt,
-              content_hash AS contentHash, visual_only AS visualOnly,
+              content_hash AS contentHash, CAST(visual_only AS integer) AS visualOnly,
               created_at AS createdAt, created_by_user_id AS createdBy
        FROM handoff_version
        WHERE workspace_id = ? AND handoff_id = ?
        ORDER BY created_at DESC, id DESC`,
     )
-    .all(input.workspaceId, input.handoffId);
+    .all(input.workspaceId, input.handoffId));
 }
 
-export function listHandoffVersionsPage(input: { workspaceId: string; handoffId: string; offset: number; limit: number }) {
+export async function listHandoffVersionsPage(input: { workspaceId: string; handoffId: string; offset: number; limit: number }) {
   const database = getDatabase();
-  const total = (database
+  const total = ((await database
     .prepare("SELECT COUNT(*) AS total FROM handoff_version WHERE workspace_id = ? AND handoff_id = ?")
-    .get(input.workspaceId, input.handoffId) as { total: number }).total;
-  const items = database
+    .get(input.workspaceId, input.handoffId)) as { total: number }).total;
+  const items = (await database
     .prepare(
       `SELECT id, version_label AS versionLabel, release_note AS releaseNote,
               source, source_revision_id AS sourceRevisionId, captured_at AS capturedAt,
-              content_hash AS contentHash, visual_only AS visualOnly,
+              content_hash AS contentHash, CAST(visual_only AS integer) AS visualOnly,
               created_at AS createdAt, created_by_user_id AS createdBy
        FROM handoff_version
        WHERE workspace_id = ? AND handoff_id = ?
        ORDER BY created_at DESC, id DESC
        LIMIT ? OFFSET ?`,
     )
-    .all(input.workspaceId, input.handoffId, input.limit, input.offset);
+    .all(input.workspaceId, input.handoffId, input.limit, input.offset));
 
   return { items, total };
 }

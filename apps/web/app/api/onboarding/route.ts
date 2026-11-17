@@ -14,9 +14,9 @@ export async function POST(request: Request) {
     return Response.json({ error: "Choose what you do on the team." }, { status: 400 });
   }
 
-  const joined = completeOnboarding(
+  const joined = (await completeOnboarding(
     { id: session.user.id, email: session.user.email, emailVerified: session.user.emailVerified },
     parsed.data.jobRole,
-  );
+  ));
   return Response.json({ joined, redirectTo: joined.length === 1 ? `/workspace/${joined[0].id}` : "/workspace" });
 }

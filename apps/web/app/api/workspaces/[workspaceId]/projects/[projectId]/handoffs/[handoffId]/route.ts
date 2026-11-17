@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { deleteHandoff, renameHandoff } from "@/src/server/repositories/handoffs";
-import { objectStore } from "@/src/server/storage/local-object-store";
+import { objectStore } from "@/src/server/storage/supabase-object-store";
+import { isUniqueConstraintViolation } from "@/src/server/db";
 import { requireWorkspaceRoleStrict, WorkspaceAccessError } from "@/src/server/workspace-access";
 
 type HandoffRoute = { params: Promise<{ workspaceId: string; projectId: string; handoffId: string }> };
@@ -17,14 +18,14 @@ export async function PATCH(request: Request, context: HandoffRoute) {
       return Response.json({ error: "Enter a handoff name between 1 and 100 characters." }, { status: 400 });
     }
 
-    const renamed = renameHandoff({ workspaceId, projectId, handoffId, name: parsed.data.name });
+    const renamed = (await renameHandoff({ workspaceId, projectId, handoffId, name: parsed.data.name }));
     if (!renamed) return Response.json({ error: "Handoff not found." }, { status: 404 });
     return Response.json({ renamed: true, name: parsed.data.name }, { status: 200 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       return Response.json({ error: error.message }, { status: error.status });
     }
-    if (error instanceof Error && error.message.includes("UNIQUE constraint failed")) {
+    if (isUniqueConstraintViolation(error)) {
       return Response.json({ error: "A handoff with that name already exists in this project." }, { status: 409 });
     }
     throw error;
@@ -36,7 +37,7 @@ export async function DELETE(request: Request, context: HandoffRoute) {
 
   try {
     await requireWorkspaceRoleStrict(request, workspaceId, ["owner", "designer"]);
-    const deleted = deleteHandoff({ workspaceId, projectId, handoffId });
+    const deleted = await deleteHandoff({ workspaceId, projectId, handoffId });
     if (!deleted) return Response.json({ error: "Handoff not found." }, { status: 404 });
 
     const cleanup = await Promise.allSettled(deleted.unreferencedObjectKeys.map((key) => objectStore.delete(key)));

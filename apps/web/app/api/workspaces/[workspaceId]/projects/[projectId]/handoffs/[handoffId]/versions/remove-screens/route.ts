@@ -31,18 +31,18 @@ export async function POST(request: Request, context: RemoveScreensRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
   try {
     const actor = await requireHandoffAccess(request, { workspaceId, handoffId, manage: true });
-    const handoff = getHandoff({ workspaceId, projectId, handoffId });
+    const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
     if (!handoff) return Response.json({ error: "Handoff not found." }, { status: 404 });
 
     const parsed = bodySchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return Response.json({ error: "Choose at least one screen to remove." }, { status: 400 });
     const { baseVersionId, frameIds, versionLabel, releaseNote } = parsed.data;
 
-    const latest = (listHandoffVersions({ workspaceId, handoffId }) as Array<{ id: string; versionLabel: string }>)[0];
+    const latest = ((await listHandoffVersions({ workspaceId, handoffId })) as Array<{ id: string; versionLabel: string }>)[0];
     if (!latest || latest.id !== baseVersionId) {
       return Response.json({ error: "A newer version exists. Open the latest version and try again." }, { status: 409 });
     }
-    const base = getVersion({ workspaceId, versionId: baseVersionId });
+    const base = (await getVersion({ workspaceId, versionId: baseVersionId }));
     if (!base || base.handoffId !== handoffId) return Response.json({ error: "Version not found." }, { status: 404 });
     if (base.visualOnly) {
       return Response.json({ error: "Screens can only be removed from Figma captures." }, { status: 400 });
@@ -77,7 +77,7 @@ export async function POST(request: Request, context: RemoveScreensRoute) {
       assets,
       reuseAssetsFromVersionId: baseVersionId,
     });
-    after(() => notifyNewVersion({ workspaceId: workspaceId, handoffId: created.handoffId, versionId: created.versionId, createdBy: actor.userId }).catch((error) => console.warn("[slack]", error)));
+    after(() => notifyNewVersion({ workspaceId, handoffId: created.handoffId, versionId: created.versionId, createdBy: actor.userId }).catch((error) => console.warn("[slack]", error)));
     return Response.json({ versionId: created.versionId, removed: removedNames }, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });

@@ -9,7 +9,7 @@ export async function GET(request: Request, context: ReviewFrameNodesRoute) {
   if (!access?.decision.allowed) {
     return Response.json({ error: "This handoff is not available to you." }, { status: access?.session ? 404 : 401 });
   }
-  const version = getVisiblePublishedReviewVersion(access.handoff, versionId);
+  const version = (await getVisiblePublishedReviewVersion(access.handoff, versionId));
   if (!version) return Response.json({ error: "Handoff version not found." }, { status: 404 });
   const nodes = frameNodeDetails(version, frameId);
   if (!nodes) return Response.json({ error: "Screen not found in this version." }, { status: 404 });

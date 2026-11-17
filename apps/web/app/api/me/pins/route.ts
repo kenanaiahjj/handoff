@@ -16,7 +16,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "Choose something to pin." }, { status: 400 });
 
   const { kind, targetId, pinned } = parsed.data;
-  if (pinned && !canPin(session.user.id, kind, targetId)) return Response.json({ error: "Not found." }, { status: 404 });
-  setPinned(session.user.id, kind, targetId, pinned);
-  return Response.json({ pins: listPinKeys(session.user.id) });
+  if (pinned && !(await canPin(session.user.id, kind, targetId))) return Response.json({ error: "Not found." }, { status: 404 });
+  (await setPinned(session.user.id, kind, targetId, pinned));
+  return Response.json({ pins: (await listPinKeys(session.user.id)) });
 }

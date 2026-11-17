@@ -1,5 +1,5 @@
 import { deleteHandoffVersion } from "@/src/server/repositories/versions";
-import { objectStore } from "@/src/server/storage/local-object-store";
+import { objectStore } from "@/src/server/storage/supabase-object-store";
 import { requireWorkspaceRoleStrict, WorkspaceAccessError } from "@/src/server/workspace-access";
 
 type VersionRoute = { params: Promise<{ workspaceId: string; projectId: string; handoffId: string; versionId: string }> };
@@ -9,7 +9,7 @@ export async function DELETE(request: Request, context: VersionRoute) {
 
   try {
     await requireWorkspaceRoleStrict(request, workspaceId, ["owner", "designer"]);
-    const deleted = deleteHandoffVersion({ workspaceId, projectId, handoffId, versionId });
+    const deleted = await deleteHandoffVersion({ workspaceId, projectId, handoffId, versionId });
     if (!deleted) return Response.json({ error: "Handoff version not found." }, { status: 404 });
 
     const cleanup = await Promise.allSettled(deleted.unreferencedObjectKeys.map((key) => objectStore.delete(key)));

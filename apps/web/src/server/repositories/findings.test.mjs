@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
 import test, { after } from "node:test";
+import { createPostgresTestFixture } from "../test-support/postgres-test-fixture.mjs";
 import {
   createFindingComment,
   listFindingComments,
@@ -8,11 +8,10 @@ import {
   saveFindingState,
 } from "./findings.ts";
 
-const priorDatabase = globalThis.__asbirDatabase;
-const database = new Database(":memory:");
-globalThis.__asbirDatabase = database;
+const fixture = await createPostgresTestFixture();
+const { database, pool } = fixture;
 
-database.exec(`
+await pool.query(`
   CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT NOT NULL);
   CREATE TABLE layout_finding_state (
     id TEXT PRIMARY KEY,
@@ -36,18 +35,15 @@ database.exec(`
     created_at TEXT NOT NULL
   );
 `);
-database.prepare('INSERT INTO "user" (id, name) VALUES (?, ?)').run("qa-user", "QA reviewer");
+await database.prepare('INSERT INTO "user" (id, name) VALUES (?, ?)').run("qa-user", "QA reviewer");
 
-after(() => {
-  database.close();
-  globalThis.__asbirDatabase = priorDatabase;
-});
+after(async () => fixture.close());
 
-test("finding state and comments are isolated by immutable version", () => {
+test("finding state and comments are isolated by immutable version", async () => {
   const workspaceId = "workspace-a";
   const findingKey = "spacing:screen-a:button:padding.top";
 
-  saveFindingState({
+  await saveFindingState({
     workspaceId,
     versionId: "version-before",
     findingKey,
@@ -56,7 +52,7 @@ test("finding state and comments are isolated by immutable version", () => {
     note: "Accepted in the original handoff.",
     updatedBy: "designer-user",
   });
-  saveFindingState({
+  await saveFindingState({
     workspaceId,
     versionId: "version-after",
     findingKey,
@@ -65,7 +61,7 @@ test("finding state and comments are isolated by immutable version", () => {
     note: "Recheck after the layout change.",
     updatedBy: "designer-user",
   });
-  saveFindingState({
+  await saveFindingState({
     workspaceId,
     versionId: "version-before",
     findingKey,
@@ -74,14 +70,14 @@ test("finding state and comments are isolated by immutable version", () => {
     note: "Approved in the original handoff.",
     updatedBy: "qa-user",
   });
-  createFindingComment({
+  await createFindingComment({
     workspaceId,
     versionId: "version-before",
     findingKey,
     authorUserId: "qa-user",
     body: "Reviewed in the original handoff.",
   });
-  createFindingComment({
+  await createFindingComment({
     workspaceId,
     versionId: "version-after",
     findingKey,
@@ -90,19 +86,19 @@ test("finding state and comments are isolated by immutable version", () => {
   });
 
   assert.deepEqual(
-    listFindingStates({ workspaceId, versionId: "version-before" }).map(({ findingKey: key, status, note }) => ({ key, status, note })),
+    (await listFindingStates({ workspaceId, versionId: "version-before" })).map(({ findingKey: key, status, note }) => ({ key, status, note })),
     [{ key: findingKey, status: "resolved", note: "Approved in the original handoff." }],
   );
   assert.deepEqual(
-    listFindingStates({ workspaceId, versionId: "version-after" }).map(({ findingKey: key, status, note }) => ({ key, status, note })),
+    (await listFindingStates({ workspaceId, versionId: "version-after" })).map(({ findingKey: key, status, note }) => ({ key, status, note })),
     [{ key: findingKey, status: "open", note: "Recheck after the layout change." }],
   );
   assert.deepEqual(
-    listFindingComments({ workspaceId, versionId: "version-before" }).map(({ findingKey: key, authorName, body }) => ({ key, authorName, body })),
+    (await listFindingComments({ workspaceId, versionId: "version-before" })).map(({ findingKey: key, authorName, body }) => ({ key, authorName, body })),
     [{ key: findingKey, authorName: "QA reviewer", body: "Reviewed in the original handoff." }],
   );
   assert.deepEqual(
-    listFindingComments({ workspaceId, versionId: "version-after" }).map(({ findingKey: key, authorName, body }) => ({ key, authorName, body })),
+    (await listFindingComments({ workspaceId, versionId: "version-after" })).map(({ findingKey: key, authorName, body }) => ({ key, authorName, body })),
     [{ key: findingKey, authorName: "QA reviewer", body: "Recheck after the layout change." }],
   );
 });

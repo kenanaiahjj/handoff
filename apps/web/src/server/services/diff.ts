@@ -761,6 +761,47 @@ function frameCandidates(
   };
 }
 
+/** Replacement suggestions from the minimal frame identity data used by capture preview. */
+export function unmatchedFrameCandidatesBetween(
+  beforeFrames: Array<Pick<SnapshotFrame, "sourceFrameId" | "name">>,
+  afterFrames: Array<Pick<SnapshotFrame, "sourceFrameId" | "name">>,
+  input: { sourceFileId: string; exactSourceIdentity: boolean },
+): SnapshotDiff["unmatchedFrameCandidates"] {
+  const matchedBeforeIds = new Set<string>();
+  const matchedAfterIds = new Set<string>();
+
+  if (input.exactSourceIdentity) {
+    const afterIds = new Set(afterFrames.map((frame) => frame.sourceFrameId));
+    for (const frame of beforeFrames) {
+      if (afterIds.has(frame.sourceFrameId)) {
+        matchedBeforeIds.add(frame.sourceFrameId);
+        matchedAfterIds.add(frame.sourceFrameId);
+      }
+    }
+
+    const unmatchedBefore = beforeFrames.filter((frame) => !matchedBeforeIds.has(frame.sourceFrameId));
+    const unmatchedAfter = afterFrames.filter((frame) => !matchedAfterIds.has(frame.sourceFrameId));
+    const beforeByName = indexUniqueFramesByName(unmatchedBefore);
+    const afterByName = indexUniqueFramesByName(unmatchedAfter);
+    for (const [name, before] of beforeByName) {
+      const after = afterByName.get(name);
+      if (!after) continue;
+      matchedBeforeIds.add(before.sourceFrameId);
+      matchedAfterIds.add(after.sourceFrameId);
+    }
+  }
+
+  const removedFrames = beforeFrames.filter((frame) => !matchedBeforeIds.has(frame.sourceFrameId));
+  const addedFrames = afterFrames.filter((frame) => !matchedAfterIds.has(frame.sourceFrameId));
+  const addedFrameCandidatesByName = indexFrameCandidates(addedFrames);
+  return removedFrames.flatMap((frame) => {
+    const candidates = frameCandidates(frame, addedFrameCandidatesByName);
+    return candidates.totalCandidates > 0
+      ? [{ sourceFileId: input.sourceFileId, beforeFrameId: frame.sourceFrameId, beforeName: frame.name, ...candidates }]
+      : [];
+  });
+}
+
 function assetMap(snapshot: VersionSnapshot) {
   return new Map(snapshot.assets.map((asset) => [asset.key, asset]));
 }

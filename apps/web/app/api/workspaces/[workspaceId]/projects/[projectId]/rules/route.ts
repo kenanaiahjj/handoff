@@ -13,14 +13,14 @@ export async function PATCH(request: Request, context: ProjectRulesRoute) {
   const { workspaceId, projectId } = await context.params;
   try {
     await requireProjectMember(request, workspaceId, projectId, { manage: true });
-    if (!getProject({ workspaceId, projectId })) {
+    if (!(await getProject({ workspaceId, projectId }))) {
       return Response.json({ error: "Project not found." }, { status: 404 });
     }
     const parsed = projectRulesSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) {
       return Response.json({ error: "Check the spacing values and frame limits." }, { status: 400 });
     }
-    setProjectRules({ workspaceId, projectId, rulesJson: JSON.stringify(parsed.data) });
+    (await setProjectRules({ workspaceId, projectId, rulesJson: JSON.stringify(parsed.data) }));
     return Response.json({ rules: parsed.data });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {

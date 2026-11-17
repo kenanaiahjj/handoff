@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
-import Database from "better-sqlite3";
 import test, { after } from "node:test";
+import { createPostgresTestFixture } from "../test-support/postgres-test-fixture.mjs";
 import {
   createChangelogDraft,
   getChangelogDraft,
@@ -8,11 +8,10 @@ import {
   updateChangelogDraft,
 } from "./changelogs.ts";
 
-const priorDatabase = globalThis.__asbirDatabase;
-const database = new Database(":memory:");
-globalThis.__asbirDatabase = database;
+const fixture = await createPostgresTestFixture();
+const { pool } = fixture;
 
-database.exec(`
+await pool.query(`
   CREATE TABLE changelog_draft (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,
@@ -31,12 +30,9 @@ database.exec(`
   );
 `);
 
-after(() => {
-  database.close();
-  globalThis.__asbirDatabase = priorDatabase;
-});
+after(async () => fixture.close());
 
-test("editing and approving a changelog preserves its version pair and source evidence", () => {
+test("editing and approving a changelog preserves its version pair and source evidence", async () => {
   const evidence = [{
     id: "diff:file-1:screen-checkout:button-primary:sourcePayload.textSegments.0.characters",
     kind: "diff",
@@ -47,7 +43,7 @@ test("editing and approving a changelog preserves its version pair and source ev
     sourceNodeId: "button-primary",
     path: "sourcePayload.textSegments.0.characters",
   }];
-  const draft = createChangelogDraft({
+  const draft = await createChangelogDraft({
     workspaceId: "workspace-1",
     handoffId: "handoff-1",
     fromVersionId: "version-before",
@@ -60,7 +56,7 @@ test("editing and approving a changelog preserves its version pair and source ev
     createdBy: "designer-1",
   });
 
-  assert.equal(updateChangelogDraft({
+  assert.equal(await updateChangelogDraft({
     workspaceId: "workspace-1",
     handoffId: "handoff-1",
     draftId: draft.id,
@@ -70,7 +66,7 @@ test("editing and approving a changelog preserves its version pair and source ev
     status: "approved",
   }), true);
 
-  const saved = getChangelogDraft({ workspaceId: "workspace-1", handoffId: "handoff-1", draftId: draft.id });
+  const saved = await getChangelogDraft({ workspaceId: "workspace-1", handoffId: "handoff-1", draftId: draft.id });
   assert.equal(saved.status, "approved");
   assert.equal(saved.title, "Checkout action update");
   assert.equal(saved.summary, "The primary action now guides the next step.");
@@ -79,7 +75,7 @@ test("editing and approving a changelog preserves its version pair and source ev
   assert.equal(saved.fromVersionId, "version-before");
   assert.equal(saved.toVersionId, "version-after");
   assert.deepEqual(
-    listApprovedChangelogsForVersion({ workspaceId: "workspace-1", handoffId: "handoff-1", versionId: "version-after" }).map(({ id }) => id),
+    (await listApprovedChangelogsForVersion({ workspaceId: "workspace-1", handoffId: "handoff-1", versionId: "version-after" })).map(({ id }) => id),
     [draft.id],
   );
 });

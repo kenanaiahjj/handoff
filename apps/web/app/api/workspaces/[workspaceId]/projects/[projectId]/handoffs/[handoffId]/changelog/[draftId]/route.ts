@@ -25,10 +25,10 @@ export async function PATCH(request: Request, context: DraftRoute) {
   const { workspaceId, projectId, handoffId, draftId } = await context.params;
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId });
-    if (!getHandoff({ workspaceId, projectId, handoffId })) {
+    if (!(await getHandoff({ workspaceId, projectId, handoffId }))) {
       return Response.json({ error: "Handoff not found." }, { status: 404 });
     }
-    const existing = getChangelogDraft({ workspaceId, handoffId, draftId });
+    const existing = (await getChangelogDraft({ workspaceId, handoffId, draftId }));
     if (!existing) return Response.json({ error: "Changelog draft not found." }, { status: 404 });
 
     const parsed = updateSchema.safeParse(await request.json().catch(() => null));
@@ -39,14 +39,14 @@ export async function PATCH(request: Request, context: DraftRoute) {
       return Response.json({ error: "Each statement must use evidence from this draft." }, { status: 400 });
     }
 
-    const updated = updateChangelogDraft({
+    const updated = (await updateChangelogDraft({
       workspaceId,
       handoffId,
       draftId,
       ...parsed.data,
-    });
+    }));
     if (!updated) return Response.json({ error: "Changelog draft not found." }, { status: 404 });
-    return Response.json({ draft: getChangelogDraft({ workspaceId, handoffId, draftId }) });
+    return Response.json({ draft: (await getChangelogDraft({ workspaceId, handoffId, draftId })) });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       return Response.json({ error: error.message }, { status: error.status });

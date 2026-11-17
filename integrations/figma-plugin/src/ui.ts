@@ -23,8 +23,21 @@ import { frameRenderCrop } from "./render-crop";
 import { availableOverviewBudget } from "./transfer-budget";
 import { countBlankFrameNames, findDuplicateFrameNames } from "./frame-names";
 import { formatFigmaCaptureScope } from "@asbir/snapshot-contract";
+import { requireExactOrigin } from "./network-access.mjs";
+import {
+  buildFinalizeManifest,
+  createUploadSessionState,
+  requestCaptureUploadIntent,
+  renewCaptureSession,
+  uploadCaptureAssets,
+  type CaptureUploadIntent,
+  type RenderUploadAsset,
+  type SnapshotUploadAsset,
+  type UploadSessionState,
+} from "./storage-upload";
 
 declare const __ASBIR_HANDOFF_ORIGIN__: string;
+declare const __ASBIR_STORAGE_ORIGIN__: string;
 
 const appUrlInput = document.querySelector<HTMLInputElement>("#app-url")!;
 const tokenInput = document.querySelector<HTMLInputElement>("#capture-token")!;
@@ -35,6 +48,8 @@ const excludedSectionsInput = document.querySelector<HTMLInputElement>("#exclude
 const layerAssetModeInput = document.querySelector<HTMLSelectElement>("#layer-asset-mode")!;
 const captureButton = document.querySelector<HTMLButtonElement>("#capture-button")!;
 const uploadButton = document.querySelector<HTMLButtonElement>("#upload-button")!;
+const uploadProgress = document.querySelector<HTMLProgressElement>("#upload-progress")!;
+const cancelUploadButton = document.querySelector<HTMLButtonElement>("#cancel-upload-button")!;
 const status = document.querySelector<HTMLElement>("#status")!;
 const preview = document.querySelector<HTMLCanvasElement>("#canvas-preview")!;
 const summary = document.querySelector<HTMLElement>("#capture-summary")!;
@@ -106,6 +121,7 @@ type PendingUpload = {
   mergeContext?: CaptureMergeContext;
   token: string;
   origin: string;
+  uploadSessions: Map<string, { intent: CaptureUploadIntent; state: UploadSessionState; renew: boolean }>;
 };
 
 let currentCapture: CaptureReadyMessage | null = null;
@@ -116,6 +132,7 @@ let overviewHeight = 0;
 let pendingUpload: PendingUpload | null = null;
 let busy = false;
 let previewGeneration = 0;
+let activeUploadController: AbortController | null = null;
 
 function setStatus(message: string, kind: "plain" | "error" | "success" | "warning" = "plain") {
   status.textContent = message;
@@ -146,6 +163,12 @@ function setBusy(isBusy: boolean) {
   selectAllFramesButton.disabled = isBusy || !fullCapture || Boolean(pendingUpload);
   clearFrameSelectionButton.disabled = isBusy || !fullCapture || Boolean(pendingUpload);
   updateReplacementActions();
+}
+
+function setUploadProgress(uploadedBytes: number, totalBytes: number) {
+  const percent = totalBytes ? Math.min(100, Math.round((uploadedBytes / totalBytes) * 100)) : 100;
+  uploadProgress.value = percent;
+  setStatus(`Uploading captured files to private Storage… ${percent}%`);
 }
 
 function selectedFrameIds() {
@@ -497,12 +520,37 @@ async function createMergedOverviewPng(
     mode: "cors",
     credentials: "omit",
     redirect: "error",
+    signal: activeUploadController?.signal,
   });
   if (!baselineResponse.ok) {
     const body = await baselineResponse.json().catch(() => ({})) as { error?: string };
     throw new Error(body.error || `The previous canvas overview could not be loaded (${baselineResponse.status}).`);
   }
-  const baselineBytes = new Uint8Array(await baselineResponse.arrayBuffer());
+  const baselineUpload = await baselineResponse.json().catch(() => ({})) as {
+    url?: string;
+    width?: number | null;
+    height?: number | null;
+    contentType?: string;
+    sizeBytes?: number;
+    sha256?: string;
+    error?: string;
+  };
+  if (!baselineUpload.url || baselineUpload.contentType !== "image/png") {
+    throw new Error(baselineUpload.error || "The previous canvas overview metadata is invalid.");
+  }
+  const signedOverviewUrl = new URL(baselineUpload.url);
+  requireExactOrigin(signedOverviewUrl.origin, __ASBIR_STORAGE_ORIGIN__);
+  const signedOverviewResponse = await fetch(signedOverviewUrl, {
+    mode: "cors",
+    credentials: "omit",
+    redirect: "error",
+    signal: activeUploadController?.signal,
+  });
+  if (!signedOverviewResponse.ok) throw new Error(`The previous canvas overview could not be downloaded (${signedOverviewResponse.status}).`);
+  const baselineBytes = new Uint8Array(await signedOverviewResponse.arrayBuffer());
+  if (baselineUpload.sizeBytes !== baselineBytes.byteLength || baselineUpload.sha256 !== await sha256(baselineBytes)) {
+    throw new Error("The previous canvas overview failed its size or SHA-256 check.");
+  }
   const [baselineImage, incomingImage] = await Promise.all([
     loadImage(baselineBytes, "image/png"),
     loadImage(overviewBytes, "image/png"),
@@ -701,12 +749,61 @@ function showReplacementReview(candidates: FrameReplacementCandidate[]) {
   updateReplacementActions();
 }
 
+function renderUploadAssets(
+  snapshot: SnapshotEnvelope,
+  overviewAssetBytes: Uint8Array,
+  frameRenders: CaptureAssetBytes[],
+  vectorRenders: CaptureAssetBytes[],
+  layerRenders: CaptureReadyMessage["layerRenders"],
+): RenderUploadAsset[] {
+  const sources = new Map<string, CaptureAssetBytes | { fileName: string; contentType: string; bytes: Uint8Array }>();
+  sources.set(snapshot.overviewAssetKey, { fileName: "overview.png", contentType: "image/png", bytes: overviewAssetBytes });
+  [...frameRenders, ...vectorRenders, ...layerRenders].forEach((render) => sources.set(render.key, render));
+  return snapshot.assets.map((asset) => {
+    const source = sources.get(asset.key);
+    if (!source) throw new Error(`The captured bytes for asset ${asset.key} are missing.`);
+    if (source.contentType !== asset.contentType || source.bytes.byteLength !== asset.sizeBytes) {
+      throw new Error(`The captured bytes for asset ${asset.key} do not match the snapshot metadata.`);
+    }
+    return { ...asset, assetKey: asset.key, bytes: source.bytes };
+  });
+}
+
+function snapshotSummary(snapshot: SnapshotEnvelope) {
+  return {
+    source: snapshot.source,
+    sourceFileId: snapshot.sourceFileId,
+    sourceFileName: snapshot.sourceFileName,
+    sourceMetadata: {
+      captureScope: snapshot.sourceMetadata.captureScope,
+    },
+    frames: snapshot.frames.map(({ sourceFrameId, sourcePageId, name }) => ({
+      sourceFrameId,
+      sourcePageId,
+      name,
+    })),
+  };
+}
+
+function uploadSessionKey(snapshotAsset: SnapshotUploadAsset, assets: RenderUploadAsset[]) {
+  return JSON.stringify({
+    snapshot: { sizeBytes: snapshotAsset.sizeBytes, sha256: snapshotAsset.sha256 },
+    assets: assets.map(({ assetKey, fileName, contentType, sizeBytes, sha256 }) => ({ assetKey, fileName, contentType, sizeBytes, sha256 })),
+  });
+}
+
 async function finishUpload(frameMatches: FrameReplacementMatch[]) {
   if (!currentCapture || !overviewBytes || !pendingUpload) return;
   const pending = pendingUpload;
+  const controller = new AbortController();
+  activeUploadController = controller;
+  uploadProgress.hidden = false;
+  uploadProgress.value = 0;
+  cancelUploadButton.hidden = false;
+  cancelUploadButton.disabled = false;
   setBusy(true);
   result.hidden = true;
-  setStatus(pending.mergeContext ? "Merging this capture with the previous version…" : "Uploading the frozen snapshot to Asbir Handoff…");
+  setStatus(pending.mergeContext ? "Merging this capture with the previous version…" : "Preparing the captured snapshot for direct upload…");
 
   try {
     const endpoint = new URL("/api/capture-sessions/snapshot", pending.origin);
@@ -735,40 +832,92 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
       }
       uploadSnapshot = mergedEnvelope.data;
     }
+
     const postSnapshot = async (
       snapshot: SnapshotEnvelope,
       overviewAssetBytes: Uint8Array,
       vectorRenders: CaptureAssetBytes[],
       layerRenders: CaptureReadyMessage["layerRenders"],
     ) => {
-      const form = new FormData();
-      form.append("snapshot", JSON.stringify(snapshot));
-      const overviewDescriptor = snapshot.assets.find((asset) => asset.key === snapshot.overviewAssetKey);
-      if (!overviewDescriptor) throw new Error("The snapshot overview asset is missing.");
-      form.append(`asset:${snapshot.overviewAssetKey}`, assetBlob(overviewAssetBytes, "image/png"), overviewDescriptor.fileName);
-      pending.renders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
-      vectorRenders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
-      layerRenders.forEach((render) => form.append(`asset:${render.key}`, assetBlob(render.bytes, render.contentType), render.fileName));
-      if (pending.baselineVersionId) form.append("baselineVersionId", pending.baselineVersionId);
-      if (frameMatches.length) {
-        if (!pending.baselineVersionId) throw new Error("A previous handoff version is required to confirm frame replacements.");
-        form.append("frameMatches", JSON.stringify(frameMatches));
+      const snapshotBytes = encodeUtf8(JSON.stringify(snapshot));
+      const snapshotAsset: SnapshotUploadAsset = {
+        fileName: "snapshot.json",
+        contentType: "application/json",
+        sizeBytes: snapshotBytes.byteLength,
+        sha256: await sha256(snapshotBytes),
+        bytes: snapshotBytes,
+      };
+      const assets = renderUploadAssets(snapshot, overviewAssetBytes, pending.renders, vectorRenders, layerRenders);
+      const key = uploadSessionKey(snapshotAsset, assets);
+      let cachedUpload = pending.uploadSessions.get(key);
+      const renewIntent = Boolean(cachedUpload?.renew || (!cachedUpload && pending.uploadSessions.size > 0));
+      if (!cachedUpload || cachedUpload.renew) {
+        setStatus("Requesting one-time upload paths…");
+        const intent = await requestCaptureUploadIntent({
+          handoffOrigin: pending.origin,
+          expectedStorageOrigin: __ASBIR_STORAGE_ORIGIN__,
+          token: pending.token,
+          snapshot: { sizeBytes: snapshotAsset.sizeBytes, sha256: snapshotAsset.sha256 },
+          assets: assets.map(({ assetKey, fileName, contentType, sizeBytes, sha256: assetHash }) => ({
+            assetKey,
+            fileName,
+            contentType,
+            sizeBytes,
+            sha256: assetHash,
+          })),
+          renew: renewIntent,
+          signal: controller.signal,
+        });
+        cachedUpload = { intent, state: createUploadSessionState(), renew: false };
+        pending.uploadSessions.set(key, cachedUpload);
       }
-      const response = await fetch(endpoint, {
+      setStatus("Uploading the captured snapshot and renders directly to private Storage…");
+      const staged = await uploadCaptureAssets({
+        intent: cachedUpload.intent,
+        snapshotAsset,
+        assets,
+        expectedStorageOrigin: __ASBIR_STORAGE_ORIGIN__,
+        session: cachedUpload.state,
+        signal: controller.signal,
+        onProgress: setUploadProgress,
+      });
+      if (frameMatches.length && !pending.baselineVersionId) {
+        throw new Error("A previous handoff version is required to confirm frame replacements.");
+      }
+      setStatus("Finalizing the uploaded snapshot…");
+      const finalizeInit: RequestInit = {
         method: "POST",
-        headers: { Authorization: `Bearer ${pending.token}` },
-        body: form,
+        headers: { Authorization: `Bearer ${pending.token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(buildFinalizeManifest({
+          snapshotPath: staged.snapshotPath,
+          assets: staged.assets,
+          baselineVersionId: pending.baselineVersionId,
+          frameMatches,
+        })),
         mode: "cors",
         credentials: "omit",
         redirect: "error",
-      });
-      const body = await response.json().catch(() => ({})) as {
+        signal: controller.signal,
+      };
+      let response = await fetch(endpoint, finalizeInit);
+      let body = await response.json().catch(() => ({})) as {
         error?: string;
+        code?: string;
+        retryUpload?: boolean;
         projectId?: string;
         handoffId?: string;
         versionId?: string;
         reviewUrl?: string;
       };
+      if (response.status === 401 && body.code === "capture_token_expired") {
+        await renewCaptureSession({ handoffOrigin: pending.origin, token: pending.token, signal: controller.signal });
+        response = await fetch(endpoint, finalizeInit);
+        body = await response.json().catch(() => ({})) as typeof body;
+      }
+      if (!response.ok && body.retryUpload) {
+        cachedUpload.renew = true;
+        cachedUpload.state = createUploadSessionState();
+      }
       return { response, body };
     };
 
@@ -776,6 +925,10 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
     let layerRenders = currentCapture.layerRenders;
     let fallbackUsed = false;
     let { response, body } = await postSnapshot(uploadSnapshot, uploadOverviewBytes, vectorRenders, layerRenders);
+    if (!response.ok && body.retryUpload) {
+      setStatus("Storage could not verify one or more staged files. Reissuing scoped paths and retrying this captured snapshot…");
+      ({ response, body } = await postSnapshot(uploadSnapshot, uploadOverviewBytes, vectorRenders, layerRenders));
+    }
     if (!response.ok && isRejectedSvgAssetResponse(response.status, body.error ?? "")) {
       const fallback = makeRasterOnlyFallback(uploadSnapshot, { vectorRenders, layerRenders });
       if (fallback.removedAssetKeys.length) {
@@ -790,6 +943,10 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
         layerRenders = fallback.layerRenders;
         fallbackUsed = true;
         ({ response, body } = await postSnapshot(uploadSnapshot, uploadOverviewBytes, vectorRenders, layerRenders));
+        if (!response.ok && body.retryUpload) {
+          setStatus("Storage could not verify one or more staged files. Reissuing scoped paths and retrying this captured snapshot…");
+          ({ response, body } = await postSnapshot(uploadSnapshot, uploadOverviewBytes, vectorRenders, layerRenders));
+        }
       }
     }
     if (!response.ok || !body.reviewUrl) throw new Error(body.error || `Upload failed with status ${response.status}.`);
@@ -801,6 +958,7 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
     resultVersionId.textContent = body.versionId ?? "Not returned";
     result.hidden = false;
     tokenInput.value = "";
+    uploadProgress.hidden = true;
     setStatus(fallbackUsed
       ? "Snapshot imported with PNG renders and structured layer data. Rejected SVG assets were omitted; see capture warnings in the snapshot."
       : pending.mergeContext
@@ -822,8 +980,15 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
     uploadButton.hidden = false;
     setBusy(false);
   } catch (error) {
-    setStatus(error instanceof Error ? error.message : "The snapshot could not be uploaded.", "error");
+    const wasCanceled = controller.signal.aborted || (error instanceof DOMException && error.name === "AbortError");
+    setStatus(wasCanceled
+      ? "Upload canceled. The captured snapshot is ready to retry."
+      : error instanceof Error ? error.message : "The snapshot could not be uploaded.", wasCanceled ? "warning" : "error");
     setBusy(false);
+  } finally {
+    cancelUploadButton.hidden = true;
+    cancelUploadButton.disabled = true;
+    if (activeUploadController === controller) activeUploadController = null;
   }
 }
 
@@ -896,7 +1061,7 @@ async function uploadCapture() {
     const previewResponse = await fetch(previewEndpoint, {
       method: "POST",
       headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-      body: JSON.stringify({ snapshot: parsed.data }),
+      body: JSON.stringify({ snapshotSummary: snapshotSummary(parsed.data) }),
       mode: "cors",
       credentials: "omit",
       redirect: "error",
@@ -918,6 +1083,7 @@ async function uploadCapture() {
       mergeContext: previewBody.mergeContext,
       token,
       origin: appUrl.origin,
+      uploadSessions: new Map(),
     };
     if (previewBody.candidates.length) {
       showReplacementReview(previewBody.candidates);
@@ -977,7 +1143,8 @@ clearFrameSelectionButton.addEventListener("click", () => {
   void updateSelectedCapture();
 });
 
-uploadButton.addEventListener("click", () => { void uploadCapture(); });
+uploadButton.addEventListener("click", () => { void (pendingUpload ? finishUpload([]) : uploadCapture()); });
+cancelUploadButton.addEventListener("click", () => activeUploadController?.abort());
 confirmReplacementsButton.addEventListener("click", () => { void finishUpload(selectedFrameMatches()); });
 skipReplacementsButton.addEventListener("click", () => { void finishUpload([]); });
 

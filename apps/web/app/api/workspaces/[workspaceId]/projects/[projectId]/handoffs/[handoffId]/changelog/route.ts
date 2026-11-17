@@ -18,10 +18,10 @@ export async function GET(request: Request, context: ChangelogRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId });
-    const handoff = getHandoff({ workspaceId, projectId, handoffId });
+    const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
     if (!handoff) return Response.json({ error: "Handoff not found." }, { status: 404 });
 
-    const drafts = listChangelogDrafts({ workspaceId, handoffId });
+    const drafts = (await listChangelogDrafts({ workspaceId, handoffId }));
     return Response.json({ configured: isAiConfigured(), drafts });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
@@ -38,14 +38,14 @@ export async function POST(request: Request, context: ChangelogRoute) {
 
     const generated = await generateChangelog(resolved.prepared.generationInput);
     const draft = finalizeChangelogDraft(resolved.prepared, generated);
-    const saved = createChangelogDraft({
+    const saved = (await createChangelogDraft({
       workspaceId: resolved.workspaceId,
       handoffId: resolved.handoffId,
       fromVersionId: resolved.fromVersionId,
       toVersionId: resolved.toVersionId,
       ...draft,
       createdBy: resolved.actorId,
-    });
+    }));
     return Response.json({ draft: saved }, { status: 201 });
   } catch (error) {
     return changelogErrorResponse(error);

@@ -2,7 +2,7 @@ import type { SnapshotEnvelope } from "@asbir/snapshot-contract";
 import type { getVersion } from "../repositories/versions";
 
 /** Full captured elements for one screen, loaded when someone inspects it. */
-export function frameNodeDetails(version: NonNullable<ReturnType<typeof getVersion>>, frameId: string) {
+export function frameNodeDetails(version: NonNullable<Awaited<ReturnType<typeof getVersion>>>, frameId: string) {
   if (version.visualOnly) return [];
   const frame = (version.snapshot as SnapshotEnvelope).frames.find((candidate) => candidate.sourceFrameId === frameId);
   return frame ? frame.nodes : null;

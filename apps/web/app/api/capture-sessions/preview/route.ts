@@ -1,8 +1,9 @@
-import { hashSnapshotPayload, MAX_SNAPSHOT_JSON_BYTES, normalizeFigmaCaptureScope, snapshotEnvelopeSchema, type SnapshotEnvelope } from "@asbir/snapshot-contract";
+import { normalizeFigmaCaptureScope, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { getCaptureSession } from "@/src/server/repositories/capture-sessions";
 import { getVersion } from "@/src/server/repositories/versions";
 import { getDatabase } from "@/src/server/db";
-import { diffSnapshots } from "@/src/server/services/diff";
+import { unmatchedFrameCandidatesBetween } from "@/src/server/services/diff";
+import { z } from "zod";
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -10,6 +11,20 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Authorization, Content-Type",
   "Access-Control-Max-Age": "600",
 };
+
+const snapshotSummarySchema = z.object({
+  source: z.literal("figma"),
+  sourceFileId: z.string().trim().min(1).max(200),
+  sourceFileName: z.string().trim().max(200).nullable(),
+  sourceMetadata: z.object({
+    captureScope: z.unknown().optional(),
+  }),
+  frames: z.array(z.object({
+    sourceFrameId: z.string().trim().min(1).max(200),
+    sourcePageId: z.string().trim().min(1).max(200).nullable().optional(),
+    name: z.string().trim().min(1).max(300),
+  }).strict()).max(10_000),
+}).strict();
 
 function jsonResponse(body: unknown, init: ResponseInit = {}) {
   return Response.json(body, {
@@ -26,42 +41,39 @@ export async function POST(request: Request) {
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.match(/^Bearer\s+(asbir_capture_[A-Za-z0-9_-]{32,})$/)?.[1];
   if (!token) return jsonResponse({ error: "A valid capture token is required." }, { status: 401 });
-  const session = getCaptureSession(token);
+  const session = (await getCaptureSession(token));
   if (!session) return jsonResponse({ error: "This capture token is invalid, expired, already used, or no longer authorized." }, { status: 401 });
 
   const contentLength = Number(request.headers.get("content-length"));
-  if (Number.isFinite(contentLength) && contentLength > MAX_SNAPSHOT_JSON_BYTES) {
-    return jsonResponse({ error: "The snapshot exceeds Handoff’s 128 MiB preview limit." }, { status: 413 });
+  if (Number.isFinite(contentLength) && contentLength > 1_000_000) {
+    return jsonResponse({ error: "The compact capture preview exceeds its 1 MB limit." }, { status: 413 });
   }
 
   let body: unknown;
   try { body = await request.json(); }
   catch { return jsonResponse({ error: "Send the captured snapshot as JSON." }, { status: 400 }); }
-  if (typeof body !== "object" || body === null || !("snapshot" in body)) {
-    return jsonResponse({ error: "A captured snapshot is required." }, { status: 400 });
+  if (typeof body !== "object" || body === null || !("snapshotSummary" in body)) {
+    return jsonResponse({ error: "A compact capture summary is required." }, { status: 400 });
   }
 
-  const parsed = snapshotEnvelopeSchema.safeParse(body.snapshot);
-  if (!parsed.success) return jsonResponse({ error: "The Figma capture does not match the structured snapshot format." }, { status: 400 });
+  const parsed = snapshotSummarySchema.safeParse(body.snapshotSummary);
+  if (!parsed.success) return jsonResponse({ error: "The Figma capture summary is invalid." }, { status: 400 });
   const snapshot = parsed.data;
-  if (snapshot.source !== "figma" || snapshot.sourceMetadata.sourceTool !== "figma") {
+  if (snapshot.source !== "figma") {
     return jsonResponse({ error: "This preview endpoint accepts Figma plugin snapshots." }, { status: 400 });
-  }
-  if (snapshot.contentHash !== await hashSnapshotPayload(snapshot)) {
-    return jsonResponse({ error: "Snapshot content hash does not match its content." }, { status: 400 });
   }
   if (!session.handoffId) return jsonResponse({ baselineVersionId: null, candidates: [] });
 
-  const latest = getDatabase()
+  const latest = (await getDatabase()
     .prepare(
       `SELECT id FROM handoff_version
        WHERE workspace_id = ? AND handoff_id = ?
        ORDER BY created_at DESC, id DESC LIMIT 1`,
     )
-    .get(session.workspaceId, session.handoffId) as { id: string } | undefined;
+    .get(session.workspaceId, session.handoffId)) as { id: string } | undefined;
   if (!latest) return jsonResponse({ baselineVersionId: null, candidates: [] });
 
-  const baseline = getVersion({ workspaceId: session.workspaceId, versionId: latest.id });
+  const baseline = (await getVersion({ workspaceId: session.workspaceId, versionId: latest.id }));
   if (!baseline) return jsonResponse({ error: "The previous handoff version could not be loaded." }, { status: 409 });
   const scope = normalizeFigmaCaptureScope(snapshot.sourceMetadata.captureScope);
   let mergeContext: {
@@ -91,20 +103,24 @@ export async function POST(request: Request) {
       pageLayout: baseline.snapshot.source === "figma" ? baseline.snapshot.sourceMetadata.pageLayout ?? [] : [],
     };
   }
-  const diff = diffSnapshots(
-    { versionId: baseline.id, snapshot: baseline.snapshot },
-    { versionId: "incoming-capture", snapshot },
-  );
-
   const capturedPageIds = new Set(snapshot.frames.flatMap((frame) => frame.sourcePageId ? [frame.sourcePageId] : []));
+  const hasLegacyFileId = baseline.snapshot.sourceFileId === "0:0" || snapshot.sourceFileId === "0:0";
+  const candidates = unmatchedFrameCandidatesBetween(
+    baseline.snapshot.frames,
+    snapshot.frames,
+    {
+      sourceFileId: baseline.snapshot.sourceFileId,
+      exactSourceIdentity: baseline.snapshot.sourceFileId === snapshot.sourceFileId && !hasLegacyFileId,
+    },
+  );
   const replacementCandidates = scope === "selected" || scope === "page"
-    ? diff.unmatchedFrameCandidates.filter((candidate) => {
+    ? candidates.filter((candidate) => {
         const before = baseline.snapshot.source === "figma"
           ? baseline.snapshot.frames.find((frame) => frame.sourceFrameId === candidate.beforeFrameId)
           : undefined;
         return Boolean(before?.sourcePageId && capturedPageIds.has(before.sourcePageId));
       })
-    : diff.unmatchedFrameCandidates;
+    : candidates;
 
   return jsonResponse({
     baselineVersionId: baseline.id,

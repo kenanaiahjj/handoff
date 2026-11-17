@@ -1,11 +1,11 @@
 import { createHash } from "node:crypto";
 import { brotliCompressSync, brotliDecompressSync, constants } from "node:zlib";
-import type Database from "better-sqlite3";
+import type { PostgresDatabase } from "../db";
 
 /** Quality 6: ~100x smaller for capture JSON, ~0.2 s to compress and ~0.02 s to read a large capture. */
 const brotliOptions = { params: { [constants.BROTLI_PARAM_QUALITY]: 6, [constants.BROTLI_PARAM_MODE]: constants.BROTLI_MODE_TEXT } };
 
-/** Bump when frameDesignHash changes, so stored indexes are recomputed on the next start. */
+/** Bump when frameDesignHash changes so the explicit index-refresh task can rebuild stored indexes. */
 const designHashVersion = 3;
 
 type IndexedFrame = { sourceFrameId?: string; name?: string; renderAssetKey?: string; bounds?: unknown; nodes?: Array<Record<string, unknown>> };
@@ -53,7 +53,7 @@ export function frameDesignHash(frame: IndexedFrame) {
   return createHash("sha256").update(JSON.stringify(normalizeNumbers(design))).digest("hex");
 }
 
-/** The small per-screen index kept beside a compressed capture, so comparisons can run in SQLite. */
+/** The small per-screen index kept beside a compressed capture for PostgreSQL comparisons. */
 export function frameIndexFor(snapshotJson: string) {
   const parsed = JSON.parse(snapshotJson) as { frames?: IndexedFrame[] };
   return JSON.stringify(
@@ -81,39 +81,39 @@ export function decompressSnapshot(encoding: string, compressed: Buffer) {
 }
 
 /** Writes the compressed copy of a version's capture (inside the caller's transaction). */
-export function storeCompressedSnapshot(database: Database.Database, versionId: string, snapshotJson: string) {
+export async function storeCompressedSnapshot(database: PostgresDatabase, versionId: string, snapshotJson: string) {
   const stored = compressSnapshotJson(snapshotJson);
-  database
+  (await database
     .prepare(
       `INSERT INTO handoff_version_snapshot (version_id, encoding, compressed, raw_bytes, frame_index)
        VALUES (?, ?, ?, ?, ?)`,
     )
-    .run(versionId, stored.encoding, stored.compressed, stored.rawBytes, stored.frameIndex);
+    .run(versionId, stored.encoding, stored.compressed, stored.rawBytes, stored.frameIndex));
 }
 
 /**
  * Compresses captures still stored as plain text (from before compression, or added by scripts), one
  * at a time to keep memory flat. Each is verified before its plain copy is replaced with '{}'.
  */
-export function compressStoredSnapshots(database: Database.Database) {
-  const pending = database
+export async function compressStoredSnapshots(database: PostgresDatabase) {
+  const pending = (await database
     .prepare(
       `SELECT handoff_version.id FROM handoff_version
        LEFT JOIN handoff_version_snapshot ON handoff_version_snapshot.version_id = handoff_version.id
        WHERE handoff_version.snapshot_json <> '{}' OR handoff_version_snapshot.version_id IS NULL`,
     )
-    .all() as Array<{ id: string }>;
+    .all()) as Array<{ id: string }>;
   if (!pending.length) return 0;
   const read = database.prepare("SELECT snapshot_json AS snapshotJson FROM handoff_version WHERE id = ?");
   const hasCopy = database.prepare("SELECT 1 FROM handoff_version_snapshot WHERE version_id = ?");
   const clear = database.prepare("UPDATE handoff_version SET snapshot_json = '{}' WHERE id = ?");
   let compressed = 0;
   for (const { id } of pending) {
-    const { snapshotJson } = read.get(id) as { snapshotJson: string };
+    const { snapshotJson } = (await read.get(id)) as { snapshotJson: string };
     if (snapshotJson === "{}") continue;
-    database.transaction(() => {
-      if (!hasCopy.get(id)) storeCompressedSnapshot(database, id, snapshotJson);
-      clear.run(id);
+    await database.transaction(async () => {
+      if (!(await hasCopy.get(id))) await storeCompressedSnapshot(database, id, snapshotJson);
+      await clear.run(id);
     })();
     compressed += 1;
   }
@@ -125,30 +125,36 @@ export function compressStoredSnapshots(database: Database.Database) {
  * Adds design fingerprints to screen indexes written before they existed (one pass, on start).
  * Compressed rows can be updated freely: only the version row itself is immutable.
  */
-export function refreshFrameIndexes(database: Database.Database) {
-  const stale = database
+export async function refreshFrameIndexes(database: PostgresDatabase) {
+  const stale = (await database
     .prepare(
-      `SELECT version_id AS versionId, encoding, compressed FROM handoff_version_snapshot
-       WHERE json_array_length(frame_index) > 0
-         AND COALESCE(json_extract(frame_index, '$[0].designHashVersion'), 0) < ${designHashVersion}`,
+      `SELECT version_id AS versionId, encoding, compressed, frame_index AS frameIndex FROM handoff_version_snapshot
+       WHERE frame_index <> '[]'`,
     )
-    .all() as Array<{ versionId: string; encoding: string; compressed: Buffer }>;
+    .all()) as Array<{ versionId: string; encoding: string; compressed: Buffer; frameIndex: string }>;
   const update = database.prepare("UPDATE handoff_version_snapshot SET frame_index = ? WHERE version_id = ?");
-  for (const row of stale) update.run(frameIndexFor(decompressSnapshot(row.encoding, row.compressed)), row.versionId);
-  if (stale.length) console.info(`[storage] Added design fingerprints to ${stale.length} ${stale.length === 1 ? "capture" : "captures"}.`);
-  return stale.length;
+  let refreshed = 0;
+  for (const row of stale) {
+    const indexes = JSON.parse(row.frameIndex) as Array<{ designHashVersion?: number }>;
+    if ((indexes[0]?.designHashVersion ?? 0) >= designHashVersion) continue;
+    const snapshotJson = decompressSnapshot(row.encoding, row.compressed);
+    await update.run(frameIndexFor(snapshotJson), row.versionId);
+    refreshed += 1;
+  }
+  if (refreshed) console.info(`[storage] Added design fingerprints to ${refreshed} ${refreshed === 1 ? "capture" : "captures"}.`);
+  return refreshed;
 }
 
 /** A version's capture JSON, whichever way it is stored. */
-export function readSnapshotJson(database: Database.Database, versionId: string, workspaceId: string) {
-  const row = database
+export async function readSnapshotJson(database: PostgresDatabase, versionId: string, workspaceId: string) {
+  const row = (await database
     .prepare(
       `SELECT handoff_version.snapshot_json AS snapshotJson, handoff_version_snapshot.encoding, handoff_version_snapshot.compressed
        FROM handoff_version
        LEFT JOIN handoff_version_snapshot ON handoff_version_snapshot.version_id = handoff_version.id
        WHERE handoff_version.id = ? AND handoff_version.workspace_id = ?`,
     )
-    .get(versionId, workspaceId) as { snapshotJson: string; encoding: string | null; compressed: Buffer | null } | undefined;
+    .get(versionId, workspaceId)) as { snapshotJson: string; encoding: string | null; compressed: Buffer | null } | undefined;
   if (!row) return null;
   return row.compressed && row.encoding ? decompressSnapshot(row.encoding, row.compressed) : row.snapshotJson;
 }

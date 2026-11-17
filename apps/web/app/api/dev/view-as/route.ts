@@ -19,7 +19,7 @@ export async function POST(request: Request) {
   if (!parsed.success) return Response.json({ error: "Choose a view and workspace." }, { status: 400 });
   const { mode, workspaceId } = parsed.data;
   const database = getDatabase();
-  const workspace = database.prepare("SELECT id FROM workspace WHERE id = ?").get(workspaceId);
+  const workspace = (await database.prepare("SELECT id FROM workspace WHERE id = ?").get(workspaceId));
   if (!workspace) return Response.json({ error: "Workspace not found." }, { status: 404 });
 
   const headers = new Headers({ "Content-Type": "application/json" });
@@ -28,7 +28,7 @@ export async function POST(request: Request) {
     return new Response(JSON.stringify({ mode }), { headers });
   }
 
-  ensureLocalReviewer(workspaceId, localReviewerUser);
+  await ensureLocalReviewer(workspaceId, localReviewerUser);
   headers.append("Set-Cookie", `${viewAsCookieName}=${encodeURIComponent(localReviewerUser.id)}; Path=/; HttpOnly; SameSite=Lax`);
   return new Response(JSON.stringify({ mode }), { headers });
 }

@@ -12,7 +12,7 @@ export async function GET(request: Request) {
   const session = await getSessionForRequest(request);
   if (!session) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
-  const workspaces = getDatabase()
+  const workspaces = (await getDatabase()
     .prepare(
       `SELECT workspace.id, workspace.name, workspace.created_at AS createdAt,
               workspace_membership.role
@@ -21,7 +21,7 @@ export async function GET(request: Request) {
        WHERE workspace_membership.user_id = ?
        ORDER BY workspace.created_at DESC`,
     )
-    .all(session.user.id);
+    .all(session.user.id));
 
   return Response.json({ workspaces });
 }
@@ -31,7 +31,7 @@ export async function POST(request: Request) {
   if (!session) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
   // One company workspace: new teams of work are projects inside it.
-  if (getDatabase().prepare("SELECT 1 FROM workspace LIMIT 1").get()) {
+  if ((await getDatabase().prepare("SELECT 1 FROM workspace LIMIT 1").get())) {
     return Response.json({ error: "Create a project instead. Everything lives in one team." }, { status: 409 });
   }
 
@@ -48,20 +48,20 @@ export async function POST(request: Request) {
   };
   const createdAt = new Date().toISOString();
 
-  const createWorkspace = database.transaction(() => {
-    database
+  const createWorkspace = database.transaction(async () => {
+    (await database
       .prepare(
         "INSERT INTO workspace (id, name, created_by_user_id, created_at) VALUES (?, ?, ?, ?)",
       )
-      .run(workspace.id, workspace.name, session.user.id, createdAt);
-    database
+      .run(workspace.id, workspace.name, session.user.id, createdAt));
+    (await database
       .prepare(
         "INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)",
       )
-      .run(workspace.id, session.user.id, "owner", createdAt);
-    addSuperadminsToWorkspace(workspace.id);
+      .run(workspace.id, session.user.id, "owner", createdAt));
+    (await addSuperadminsToWorkspace(workspace.id));
   });
 
-  createWorkspace();
+  await createWorkspace();
   return Response.json({ workspace }, { status: 201 });
 }

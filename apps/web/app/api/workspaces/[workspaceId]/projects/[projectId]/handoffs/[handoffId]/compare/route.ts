@@ -96,9 +96,9 @@ function framePreview(
   };
 }
 
-function compareVersions(workspaceId: string, handoffId: string, from: CompareVersion, to: CompareVersion) {
-  const frameMatches = getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to });
-  const nodeMatches = getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to });
+async function compareVersions(workspaceId: string, handoffId: string, from: CompareVersion, to: CompareVersion) {
+  const frameMatches = (await getConfirmedFrameMatchesBetweenVersions({ workspaceId, handoffId, from, to }));
+  const nodeMatches = (await getConfirmedNodeMatchesBetweenVersions({ workspaceId, handoffId, from, to }));
   const diff = diffSnapshots(
     { versionId: from.id, snapshot: from.snapshot },
     { versionId: to.id, snapshot: to.snapshot },
@@ -113,13 +113,13 @@ function compareVersions(workspaceId: string, handoffId: string, from: CompareVe
   return { diff, frames };
 }
 
-function versionsBelongToHandoff(workspaceId: string, handoffId: string, versionIds: string[]) {
-  const row = getDatabase()
+async function versionsBelongToHandoff(workspaceId: string, handoffId: string, versionIds: string[]) {
+  const row = (await getDatabase()
     .prepare(
       `SELECT COUNT(DISTINCT id) AS total FROM handoff_version
        WHERE workspace_id = ? AND handoff_id = ? AND id IN (?, ?)`,
     )
-    .get(workspaceId, handoffId, versionIds[0], versionIds[1]) as { total: number };
+    .get(workspaceId, handoffId, versionIds[0], versionIds[1])) as { total: number };
   return row.total === new Set(versionIds).size;
 }
 
@@ -154,19 +154,19 @@ export async function GET(request: Request, context: CompareRoute) {
 
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId });
-    const handoff = getHandoff({ workspaceId, projectId, handoffId });
+    const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
     if (!handoff) return Response.json({ error: "Handoff not found." }, { status: 404 });
 
     // A saved comparison skips loading both captures and recomputing the diff. It is only used when
     // both versions belong to this handoff and the confirmed matches haven't changed since.
-    const matchKey = parsedNodeSearch ? null : matchStateKey(handoffId);
-    if (matchKey && versionsBelongToHandoff(workspaceId, handoffId, [fromVersionId, toVersionId])) {
-      const saved = readSavedComparison({ fromVersionId, toVersionId, matchKey });
+    const matchKey = parsedNodeSearch ? null : (await matchStateKey(handoffId));
+    if (matchKey && (await versionsBelongToHandoff(workspaceId, handoffId, [fromVersionId, toVersionId]))) {
+      const saved = (await readSavedComparison({ fromVersionId, toVersionId, matchKey }));
       if (saved) return new Response(saved, { headers: { "Content-Type": "application/json" } });
     }
 
-    const fromRow = getVersion({ workspaceId, versionId: fromVersionId });
-    const toRow = getVersion({ workspaceId, versionId: toVersionId });
+    const fromRow = (await getVersion({ workspaceId, versionId: fromVersionId }));
+    const toRow = (await getVersion({ workspaceId, versionId: toVersionId }));
 
     if (!fromRow || !toRow || fromRow.handoffId !== handoffId || toRow.handoffId !== handoffId) {
       return Response.json({ error: "The selected versions were not found in this handoff." }, { status: 404 });
@@ -174,7 +174,7 @@ export async function GET(request: Request, context: CompareRoute) {
 
     const from = fromRow as CompareVersion;
     const to = toRow as CompareVersion;
-    const comparison = compareVersions(workspaceId, handoffId, from, to);
+    const comparison = (await compareVersions(workspaceId, handoffId, from, to));
     if (parsedNodeSearch?.success) {
       const { query, limit, ...candidate } = parsedNodeSearch.data;
       return Response.json(searchUnmatchedNodeCandidates(comparison.diff, {
@@ -185,7 +185,7 @@ export async function GET(request: Request, context: CompareRoute) {
       }), { headers: { "Cache-Control": "no-store" } });
     }
     const json = JSON.stringify(comparison);
-    if (matchKey) saveComparison({ handoffId, fromVersionId, toVersionId, matchKey, json });
+    if (matchKey) await saveComparison({ handoffId, fromVersionId, toVersionId, matchKey, json });
     return new Response(json, { headers: { "Content-Type": "application/json" } });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
@@ -207,7 +207,7 @@ export async function POST(request: Request, context: CompareRoute) {
 
   try {
     const access = await requireHandoffAccess(request, { workspaceId, handoffId, manage: true });
-    const handoff = getHandoff({ workspaceId, projectId, handoffId });
+    const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
     if (!handoff) return Response.json({ error: "Handoff not found." }, { status: 404 });
 
     const fromVersionId = isNodeMatch && parsedNodeMatch.success
@@ -216,8 +216,8 @@ export async function POST(request: Request, context: CompareRoute) {
     const toVersionId = isNodeMatch && parsedNodeMatch.success
       ? parsedNodeMatch.data.toVersionId
       : parsedFrameMatch.success ? parsedFrameMatch.data.toVersionId : "";
-    const fromRow = getVersion({ workspaceId, versionId: fromVersionId });
-    const toRow = getVersion({ workspaceId, versionId: toVersionId });
+    const fromRow = (await getVersion({ workspaceId, versionId: fromVersionId }));
+    const toRow = (await getVersion({ workspaceId, versionId: toVersionId }));
     if (!fromRow || !toRow || fromRow.handoffId !== handoffId || toRow.handoffId !== handoffId) {
       return Response.json({ error: "The selected versions were not found in this handoff." }, { status: 404 });
     }
@@ -227,7 +227,7 @@ export async function POST(request: Request, context: CompareRoute) {
 
     const from = fromRow as CompareVersion;
     const to = toRow as CompareVersion;
-    const currentComparison = compareVersions(workspaceId, handoffId, from, to);
+    const currentComparison = (await compareVersions(workspaceId, handoffId, from, to));
     const baselineIsFrom = isEarlierVersion(from, to);
 
     if (isNodeMatch && parsedNodeMatch.success) {
@@ -257,14 +257,14 @@ export async function POST(request: Request, context: CompareRoute) {
         beforeNodeId: baselineIsFrom ? match.beforeNodeId : match.afterNodeId,
         afterNodeId: baselineIsFrom ? match.afterNodeId : match.beforeNodeId,
       };
-      const alreadyConfirmed = hasConfirmedNodeReplacementMatch(replacement);
+      const alreadyConfirmed = (await hasConfirmedNodeReplacementMatch(replacement));
       if (!pairIsUnmatchedCandidate && !alreadyConfirmed) {
         return Response.json({ error: "That layer pair is no longer an unmatched candidate. Reload the comparison and choose an available match." }, { status: 409 });
       }
       if (!alreadyConfirmed) {
-        createConfirmedNodeReplacementMatch({ ...replacement, confirmedByUserId: access.userId });
+        await createConfirmedNodeReplacementMatch({ ...replacement, confirmedByUserId: access.userId });
       }
-      return Response.json(compareVersions(workspaceId, handoffId, from, to));
+      return Response.json((await compareVersions(workspaceId, handoffId, from, to)));
     }
 
     if (!parsedFrameMatch.success) {
@@ -283,15 +283,15 @@ export async function POST(request: Request, context: CompareRoute) {
       beforeFrameId: baselineIsFrom ? match.beforeFrameId : match.afterFrameId,
       afterFrameId: baselineIsFrom ? match.afterFrameId : match.beforeFrameId,
     };
-    const alreadyConfirmed = hasConfirmedFrameReplacementMatch(replacement);
+    const alreadyConfirmed = (await hasConfirmedFrameReplacementMatch(replacement));
     if (!pairIsUnmatchedCandidate && !alreadyConfirmed) {
       return Response.json({ error: "That screen pair is no longer an unmatched candidate. Reload the comparison and choose an available match." }, { status: 409 });
     }
     if (!alreadyConfirmed) {
-      createConfirmedFrameReplacementMatch({ ...replacement, confirmedByUserId: access.userId });
+      await createConfirmedFrameReplacementMatch({ ...replacement, confirmedByUserId: access.userId });
     }
 
-    return Response.json(compareVersions(workspaceId, handoffId, from, to));
+    return Response.json((await compareVersions(workspaceId, handoffId, from, to)));
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       return Response.json({ error: error.message }, { status: error.status });

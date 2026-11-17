@@ -7,7 +7,7 @@ export async function DELETE(request: Request, context: InviteRoute) {
   const { workspaceId, projectId, handoffId, inviteId } = await context.params;
   try {
     await requireWorkspaceRoleStrict(request, workspaceId, ["owner", "designer"]);
-    const revoked = revokeHandoffInvite({ workspaceId, projectId, handoffId, inviteId });
+    const revoked = (await revokeHandoffInvite({ workspaceId, projectId, handoffId, inviteId }));
     if (!revoked) return Response.json({ error: "Active invitation not found." }, { status: 404 });
     return Response.json({ revoked: true }, { status: 200 });
   } catch (error) {

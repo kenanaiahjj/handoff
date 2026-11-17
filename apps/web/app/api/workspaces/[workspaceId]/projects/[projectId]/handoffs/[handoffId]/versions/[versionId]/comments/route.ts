@@ -88,12 +88,12 @@ export async function GET(request: Request, context: CommentsRoute) {
   const { workspaceId, projectId, handoffId, versionId } = await context.params;
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId });
-    const handoff = getHandoff({ workspaceId, projectId, handoffId });
-    const version = getVersion({ workspaceId, versionId });
+    const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
+    const version = (await getVersion({ workspaceId, versionId }));
     if (!handoff || !version || version.handoffId !== handoffId) {
       return Response.json({ error: "Handoff version not found." }, { status: 404 });
     }
-    return Response.json({ comments: listHandoffComments({ workspaceId, versionId }) });
+    return Response.json({ comments: (await listHandoffComments({ workspaceId, versionId })) });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });
     throw error;
@@ -104,8 +104,8 @@ export async function POST(request: Request, context: CommentsRoute) {
   const { workspaceId, projectId, handoffId, versionId } = await context.params;
   try {
     const access = await requireHandoffAccess(request, { workspaceId, handoffId });
-    const handoff = getHandoff({ workspaceId, projectId, handoffId });
-    const version = getVersion({ workspaceId, versionId });
+    const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
+    const version = (await getVersion({ workspaceId, versionId }));
     if (!handoff || !version || version.handoffId !== handoffId) {
       return Response.json({ error: "Handoff version not found." }, { status: 404 });
     }
@@ -118,13 +118,13 @@ export async function POST(request: Request, context: CommentsRoute) {
     let anchor: CommentAnchor | null;
     let parentCommentId: string | null = parsed.data.parentCommentId ?? null;
     if (parentCommentId) {
-      const root = getDatabase()
+      const root = (await getDatabase()
         .prepare(
           `SELECT frame_id AS frameId, source_node_id AS sourceNodeId, x, y
            FROM handoff_comment
            WHERE id = ? AND workspace_id = ? AND handoff_version_id = ? AND parent_comment_id IS NULL`,
         )
-        .get(parentCommentId, workspaceId, versionId) as CommentAnchor | undefined;
+        .get(parentCommentId, workspaceId, versionId)) as CommentAnchor | undefined;
       if (!root) return Response.json({ error: "The comment thread was not found." }, { status: 404 });
       anchor = root;
     } else {
@@ -132,26 +132,24 @@ export async function POST(request: Request, context: CommentsRoute) {
       if (!anchor) return Response.json({ error: "Choose a valid point on a frame before posting the comment." }, { status: 400 });
     }
 
-    const created = createHandoffComment({
+    const created = (await createHandoffComment({
       workspaceId,
       versionId,
       ...anchor,
       parentCommentId,
       body: parsed.data.body,
       createdBy: access.userId,
-    });
-    const mentioned = recordCommentMentions({
+    }));
+    const mentioned = (await recordCommentMentions({
       workspaceId,
       handoffId,
       commentId: created.id,
       threadId: parentCommentId ?? created.id,
       authorId: access.userId,
       body: parsed.data.body,
-    });
-    after(() =>
-      notifyMentions({ workspaceId, handoffId, versionId, commentId: created.id, authorId: access.userId, body: parsed.data.body, mentioned })
-        .catch((error) => console.warn("[slack]", error)),
-    );
+    }));
+    after(() => notifyMentions({ workspaceId, handoffId, versionId, commentId: created.id, authorId: access.userId, body: parsed.data.body, mentioned })
+      .catch((error) => console.warn("[slack]", error)));
     return Response.json(created, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });

@@ -2,19 +2,21 @@ import { build } from "esbuild";
 import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { buildPluginNetworkAccess, deriveStorageOrigin } from "./src/network-access.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const outputDirectory = path.join(here, "dist");
 const publicUrl = process.env.HANDOFF_PUBLIC_URL?.trim() || "http://localhost:3000";
+const supabaseUrl = process.env.SUPABASE_URL?.trim() || "http://127.0.0.1:54321";
+const storageUrl = process.env.SUPABASE_STORAGE_URL?.trim() || supabaseUrl;
 const endpoint = new URL(publicUrl);
-if (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(endpoint.hostname))) {
-  throw new Error("HANDOFF_PUBLIC_URL must use HTTPS outside local development.");
-}
+const storageOrigin = deriveStorageOrigin(storageUrl);
+const networkAccess = buildPluginNetworkAccess(publicUrl, supabaseUrl, storageUrl);
 
 await mkdir(outputDirectory, { recursive: true });
 const [, uiBuild] = await Promise.all([
   build({ entryPoints: [path.join(here, "src/code.ts")], outfile: path.join(outputDirectory, "code.js"), bundle: true, platform: "browser", format: "iife", target: ["es2022"], minify: true, legalComments: "none" }),
-  build({ entryPoints: [path.join(here, "src/ui.ts")], outfile: path.join(outputDirectory, "ui.js"), bundle: true, platform: "browser", format: "iife", target: ["es2022"], minify: true, legalComments: "none", define: { __ASBIR_HANDOFF_ORIGIN__: JSON.stringify(endpoint.origin) }, write: false }),
+  build({ entryPoints: [path.join(here, "src/ui.ts")], outfile: path.join(outputDirectory, "ui.js"), bundle: true, platform: "browser", format: "iife", target: ["es2022"], minify: true, legalComments: "none", define: { __ASBIR_HANDOFF_ORIGIN__: JSON.stringify(endpoint.origin), __ASBIR_STORAGE_ORIGIN__: JSON.stringify(storageOrigin) }, write: false }),
 ]);
 
 const uiSource = await readFile(path.join(here, "src/ui.html"), "utf8");
@@ -29,16 +31,7 @@ await Promise.all([
 ]);
 
 const manifest = JSON.parse(await readFile(path.join(here, "manifest.template.json"), "utf8"));
-// The plugin calls three capture routes: preview (merge check), baseline-overview (the previous
-// canvas image) and snapshot (the upload). A trailing slash lets Figma allow everything under it;
-// listing only /snapshot would block the other two outside local development.
-const captureRoutes = `${endpoint.origin}/api/capture-sessions/`;
-manifest.networkAccess = {
-  allowedDomains: [captureRoutes],
-  reasoning: "Send captured Figma canvases to the configured Asbir Handoff server.",
-  devAllowedDomains: endpoint.hostname === "localhost" || endpoint.hostname === "127.0.0.1" || endpoint.hostname === "[::1]"
-    ? [endpoint.origin]
-    : [],
-};
+// Only the capture route and its configured private Storage origin are available to the plugin.
+manifest.networkAccess = networkAccess;
 await writeFile(path.join(here, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-process.stdout.write(`Built Figma plugin for ${endpoint.origin}. Load integrations/figma-plugin/manifest.json in Figma.\n`);
+process.stdout.write(`Built Figma plugin for ${endpoint.origin} and ${storageOrigin}. Load integrations/figma-plugin/manifest.json in Figma.\n`);

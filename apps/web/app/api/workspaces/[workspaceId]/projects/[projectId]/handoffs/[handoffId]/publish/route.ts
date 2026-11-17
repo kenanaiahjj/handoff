@@ -20,7 +20,7 @@ export async function POST(request: Request, context: PublishRoute) {
 
   try {
     const access = await requireWorkspaceRoleStrict(request, workspaceId, ["owner", "designer"]);
-    const published = publishHandoffVersion({
+    const published = await publishHandoffVersion({
       workspaceId,
       projectId,
       handoffId,

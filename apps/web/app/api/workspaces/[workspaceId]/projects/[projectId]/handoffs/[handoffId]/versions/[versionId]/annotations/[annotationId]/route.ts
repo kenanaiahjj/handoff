@@ -14,11 +14,11 @@ export async function PATCH(request: Request, context: AnnotationRoute) {
   const { workspaceId, projectId, handoffId, versionId, annotationId } = await context.params;
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId, manage: true });
-    const version = getVersion({ workspaceId, versionId });
+    const version = (await getVersion({ workspaceId, versionId }));
     if (!version || version.handoffId !== handoffId) return Response.json({ error: "Handoff version not found." }, { status: 404 });
     const parsed = updateSchema.safeParse(await request.json().catch(() => null));
     if (!parsed.success) return Response.json({ error: "Enter a title and note." }, { status: 400 });
-    if (!updateHandoffAnnotation({ workspaceId, versionId, annotationId, ...parsed.data })) {
+    if (!(await updateHandoffAnnotation({ workspaceId, versionId, annotationId, ...parsed.data }))) {
       return Response.json({ error: "Canvas note not found." }, { status: 404 });
     }
     return Response.json({ updated: true });
@@ -32,9 +32,9 @@ export async function DELETE(request: Request, context: AnnotationRoute) {
   const { workspaceId, projectId, handoffId, versionId, annotationId } = await context.params;
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId, manage: true });
-    const version = getVersion({ workspaceId, versionId });
+    const version = (await getVersion({ workspaceId, versionId }));
     if (!version || version.handoffId !== handoffId) return Response.json({ error: "Handoff version not found." }, { status: 404 });
-    if (!deleteHandoffAnnotation({ workspaceId, versionId, annotationId })) {
+    if (!(await deleteHandoffAnnotation({ workspaceId, versionId, annotationId }))) {
       return Response.json({ error: "Canvas note not found." }, { status: 404 });
     }
     return Response.json({ deleted: true });

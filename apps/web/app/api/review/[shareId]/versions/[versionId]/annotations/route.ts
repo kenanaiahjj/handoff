@@ -20,9 +20,9 @@ export async function GET(request: Request, context: ReviewAnnotationsRoute) {
   const access = await resolvePublishedReviewAccess(shareId, request.headers);
   if (!access) return Response.json({ error: "Published handoff not found." }, { status: 404 });
   if (!access.decision.allowed) return Response.json({ error: "This handoff is not available to you." }, { status: access.session ? 404 : 401 });
-  const version = getVisiblePublishedReviewVersion(access.handoff, versionId);
+  const version = (await getVisiblePublishedReviewVersion(access.handoff, versionId));
   if (!version) return Response.json({ error: "Handoff version not found." }, { status: 404 });
-  return Response.json({ annotations: listHandoffAnnotations({ workspaceId: access.handoff.workspaceId, versionId }) }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({ annotations: (await listHandoffAnnotations({ workspaceId: access.handoff.workspaceId, versionId })) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request, context: ReviewAnnotationsRoute) {
@@ -31,14 +31,14 @@ export async function POST(request: Request, context: ReviewAnnotationsRoute) {
   if (!access) return Response.json({ error: "Published handoff not found." }, { status: 404 });
   if (!access.decision.allowed) return Response.json({ error: "This handoff is not available to you." }, { status: access.session ? 404 : 401 });
   if (!access.decision.canWrite || !access.session) return Response.json({ error: "You cannot add canvas notes to this handoff." }, { status: 403 });
-  const version = getVisiblePublishedReviewVersion(access.handoff, versionId);
+  const version = (await getVisiblePublishedReviewVersion(access.handoff, versionId));
   if (!version) return Response.json({ error: "Handoff version not found." }, { status: 404 });
   if (!isStructuredSnapshot(version.snapshot)) return Response.json({ error: "Canvas annotations need a structured Figma capture." }, { status: 400 });
   const parsed = createSchema.safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Enter a title and note, then choose a canvas point." }, { status: 400 });
   const anchorError = canvasAnnotationAnchorError(version.snapshot, parsed.data);
   if (anchorError) return Response.json({ error: anchorError }, { status: 400 });
-  const annotation = createHandoffAnnotation({
+  const annotation = (await createHandoffAnnotation({
     workspaceId: access.handoff.workspaceId,
     versionId,
     frameId: parsed.data.frameId,
@@ -48,6 +48,6 @@ export async function POST(request: Request, context: ReviewAnnotationsRoute) {
     title: parsed.data.title,
     body: parsed.data.body,
     createdBy: access.session.user.id,
-  });
+  }));
   return Response.json({ annotation }, { status: 201 });
 }

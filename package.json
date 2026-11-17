@@ -10,8 +10,14 @@
   "scripts": {
     "setup:env": "node scripts/setup-env.mjs",
     "test": "node --experimental-transform-types --loader ./scripts/node-esm-loader.mjs --test",
-    "dev": "npm run dev --workspace @asbir/web",
+    "dev": "node --experimental-transform-types --loader ./scripts/node-esm-loader.mjs scripts/dev-local.mjs",
+    "dev:supabase": "npm run dev --workspace @asbir/web",
+    "plugin:build:local": "HANDOFF_PUBLIC_URL=http://localhost:3000 SUPABASE_URL=http://localhost:3000 SUPABASE_STORAGE_URL=http://localhost:3000 npm run build --workspace @asbir/figma-plugin",
     "build": "npm run build --workspace @asbir/web",
     "lint": "npm run lint --workspace @asbir/web"
+  },
+  "devDependencies": {
+    "@electric-sql/pglite-socket": "^0.2.11",
+    "supabase": "^3.2.0"
   }
 }

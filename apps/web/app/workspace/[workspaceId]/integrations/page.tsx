@@ -16,24 +16,24 @@ export default async function IntegrationsPage({ params }: IntegrationsPageProps
   const session = await getSessionForHeaders(await headers());
   if (!session) redirect("/sign-in");
   const { workspaceId } = await params;
-  const workspace = getDatabase()
+  const workspace = (await getDatabase()
     .prepare(
       `SELECT workspace.id, workspace.name, workspace_membership.role
        FROM workspace
        JOIN workspace_membership ON workspace_membership.workspace_id = workspace.id
        WHERE workspace.id = ? AND workspace_membership.user_id = ?`,
     )
-    .get(workspaceId, session.user.id) as { id: string; name: string; role: string } | undefined;
+    .get(workspaceId, session.user.id)) as { id: string; name: string; role: string } | undefined;
   if (!workspace) notFound();
 
   const database = getDatabase();
-  const projects = listProjects(workspaceId) as Array<{ id: string; name: string; handoffCount: number; versionCount: number }>;
+  const projects = (await listProjects(workspaceId)) as Array<{ id: string; name: string; handoffCount: number; versionCount: number }>;
 
   return (
     <WorkspaceShell
       user={{ name: session.user.name, email: session.user.email }}
       workspace={workspace}
-      navSections={createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects: filterProjectsForViewer(workspaceId, { id: session.user.id, email: session.user.email, role: workspace.role }, projects), page: "integrations" })}
+      navSections={await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects: (await filterProjectsForViewer(workspaceId, { id: session.user.id, email: session.user.email, role: workspace.role }, projects)), page: "integrations" })}
       breadcrumbs={[{ label: "Integrations" }]}
     >
       <main className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 sm:py-9">

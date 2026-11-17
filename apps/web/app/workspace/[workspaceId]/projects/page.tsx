@@ -26,27 +26,27 @@ export default async function ProjectsPage({ params }: ProjectsPageProps) {
   if (!session) redirect("/sign-in");
 
   const { workspaceId } = await params;
-  const workspace = getDatabase()
+  const workspace = (await getDatabase()
     .prepare(
       `SELECT workspace.id, workspace.name, workspace_membership.role
        FROM workspace
        JOIN workspace_membership ON workspace_membership.workspace_id = workspace.id
        WHERE workspace.id = ? AND workspace_membership.user_id = ?`,
     )
-    .get(workspaceId, session.user.id) as WorkspaceDetail | undefined;
+    .get(workspaceId, session.user.id)) as WorkspaceDetail | undefined;
 
   if (!workspace) notFound();
 
   const viewer = { id: session.user.id, email: session.user.email, role: workspace.role };
   const canManage = canSeeWholeWorkspace(workspace.role);
-  const projects = filterProjectsForViewer(workspace.id, viewer, listProjects(workspace.id) as ProjectCard[]);
-  const newCounts = countUpdatesByProject(listViewerUpdates(workspace.id, viewer));
+  const projects = (await filterProjectsForViewer(workspace.id, viewer, (await listProjects(workspace.id)) as ProjectCard[]));
+  const newCounts = countUpdatesByProject((await listViewerUpdates(workspace.id, viewer)));
 
   return (
     <WorkspaceShell
       user={{ name: session.user.name, email: session.user.email }}
       workspace={workspace}
-      navSections={createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects, page: "projects" })}
+      navSections={await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects, page: "projects" })}
       breadcrumbs={[{ label: "Projects", href: `/workspace/${workspaceId}` }]}
     >
       <main className="workspace-dashboard mx-auto px-5 py-7 text-foreground sm:px-8 sm:py-9">
@@ -57,7 +57,7 @@ export default async function ProjectsPage({ params }: ProjectsPageProps) {
           </div>
         </header>
         <div className="mt-6 max-w-4xl">
-          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={newCounts} iconVersions={projectIconVersions(workspace.id)} />
+          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={newCounts} iconVersions={(await projectIconVersions(workspace.id))} />
         </div>
       </main>
     </WorkspaceShell>

@@ -1,18 +1,16 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import Database from "better-sqlite3";
 import test, { after } from "node:test";
+import { createPostgresTestFixture } from "../../../../../../../src/server/test-support/postgres-test-fixture.mjs";
 
-const priorDatabase = globalThis.__asbirDatabase;
 const priorSecret = process.env.BETTER_AUTH_SECRET;
 const priorBaseUrl = process.env.BETTER_AUTH_URL;
-const database = new Database(":memory:");
-database.pragma("foreign_keys = ON");
-globalThis.__asbirDatabase = database;
+const fixture = await createPostgresTestFixture();
+const { pool, database } = fixture;
 process.env.BETTER_AUTH_SECRET ??= "asbir-handoff-project-icon-route-test-secret-over-thirty-two";
 process.env.BETTER_AUTH_URL = "http://localhost:3000";
 
-database.exec(`
+await pool.query(`
   CREATE TABLE workspace_membership (
     workspace_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
@@ -49,52 +47,52 @@ database.exec(`
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
     email TEXT NOT NULL,
-    emailVerified INTEGER NOT NULL DEFAULT 0,
+    "emailVerified" BOOLEAN NOT NULL DEFAULT false,
     image TEXT,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL
   );
   CREATE TABLE session (
     id TEXT PRIMARY KEY,
-    expiresAt TEXT NOT NULL,
+    "expiresAt" TEXT NOT NULL,
     token TEXT NOT NULL UNIQUE,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL,
-    ipAddress TEXT,
-    userAgent TEXT,
-    userId TEXT NOT NULL
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL,
+    "ipAddress" TEXT,
+    "userAgent" TEXT,
+    "userId" TEXT NOT NULL
   );
   CREATE TABLE account (
     id TEXT PRIMARY KEY,
-    accountId TEXT NOT NULL,
-    providerId TEXT NOT NULL,
-    userId TEXT NOT NULL,
-    accessToken TEXT,
-    refreshToken TEXT,
-    idToken TEXT,
-    accessTokenExpiresAt TEXT,
-    refreshTokenExpiresAt TEXT,
+    "accountId" TEXT NOT NULL,
+    "providerId" TEXT NOT NULL,
+    "userId" TEXT NOT NULL,
+    "accessToken" TEXT,
+    "refreshToken" TEXT,
+    "idToken" TEXT,
+    "accessTokenExpiresAt" TEXT,
+    "refreshTokenExpiresAt" TEXT,
     scope TEXT,
     password TEXT,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL
   );
   CREATE TABLE verification (
     id TEXT PRIMARY KEY,
     identifier TEXT NOT NULL,
     value TEXT NOT NULL,
-    expiresAt TEXT NOT NULL,
-    createdAt TEXT NOT NULL,
-    updatedAt TEXT NOT NULL
+    "expiresAt" TEXT NOT NULL,
+    "createdAt" TEXT NOT NULL,
+    "updatedAt" TEXT NOT NULL
   );
 `);
-database.exec(readFileSync(new URL("../../../../../../../src/server/migrations/0024_project_icons.sql", import.meta.url), "utf8"));
+await pool.query(readFileSync(new URL("../../../../../../../src/server/migrations/0024_project_icons.sql", import.meta.url), "utf8").replaceAll("BLOB", "BYTEA"));
 
 const workspaceId = "00000000-0000-4000-8000-000000000001";
 const projectId = "10000000-0000-4000-8000-000000000001";
 const now = "2026-11-11T12:00:00.000Z";
-database.prepare("INSERT INTO project (id, workspace_id) VALUES (?, ?)").run(projectId, workspaceId);
-database.prepare("INSERT INTO workspace_membership VALUES (?, 'designer-id', 'designer', ?), (?, 'qa-id', 'qa', ?)").run(workspaceId, now, workspaceId, now);
+await database.prepare("INSERT INTO project (id, workspace_id) VALUES (?, ?)").run(projectId, workspaceId);
+await database.prepare("INSERT INTO workspace_membership VALUES (?, 'designer-id', 'designer', ?), (?, 'qa-id', 'qa', ?)").run(workspaceId, now, workspaceId, now);
 
 const { auth } = await import("@/src/server/auth.ts");
 const originalGetSession = auth.api.getSession;
@@ -108,11 +106,9 @@ const context = { params: Promise.resolve({ workspaceId, projectId }) };
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==", "base64");
 const put = (body, type = "image/png") => PUT(new Request(url, { method: "PUT", headers: { "content-type": type }, body }), context);
 
-after(() => {
+after(async () => {
   auth.api.getSession = originalGetSession;
-  database.close();
-  if (priorDatabase === undefined) delete globalThis.__asbirDatabase;
-  else globalThis.__asbirDatabase = priorDatabase;
+  await fixture.close();
   if (priorSecret === undefined) delete process.env.BETTER_AUTH_SECRET;
   else process.env.BETTER_AUTH_SECRET = priorSecret;
   if (priorBaseUrl === undefined) delete process.env.BETTER_AUTH_URL;
@@ -144,7 +140,7 @@ test("reviewers, developers and QA cannot change or remove the icon", async () =
   currentSession = { user: { id: "qa-id", email: "qa@example.com" } };
   assert.equal((await put(png)).status, 403);
   assert.equal((await DELETE(new Request(url, { method: "DELETE" }), context)).status, 403);
-  assert.equal(database.prepare("SELECT COUNT(*) AS count FROM project_icon").get().count, 1);
+  assert.equal((await database.prepare("SELECT COUNT(*) AS count FROM project_icon").get()).count, 1);
   currentSession = { user: { id: "designer-id", email: "dee@example.com" } };
 });
 

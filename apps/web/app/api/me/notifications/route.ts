@@ -6,7 +6,7 @@ import { getSessionForRequest } from "@/src/server/workspace-access";
 export async function GET(request: Request) {
   const session = await getSessionForRequest(request);
   if (!session) return Response.json({ error: "Sign in to continue." }, { status: 401 });
-  return Response.json({ slack: getSlackPreference(session.user.id) }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({ slack: (await getSlackPreference(session.user.id)) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function PUT(request: Request) {
@@ -14,6 +14,6 @@ export async function PUT(request: Request) {
   if (!session) return Response.json({ error: "Sign in to continue." }, { status: 401 });
   const parsed = z.object({ slack: z.enum(slackPreferences) }).safeParse(await request.json().catch(() => null));
   if (!parsed.success) return Response.json({ error: "Choose all, mentions or off." }, { status: 400 });
-  setSlackPreference(session.user.id, parsed.data.slack);
+  (await setSlackPreference(session.user.id, parsed.data.slack));
   return Response.json({ slack: parsed.data.slack });
 }

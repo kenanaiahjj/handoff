@@ -39,14 +39,14 @@ function frameName(snapshot: StoredSnapshot, frameId: string) {
   return snapshot.frames.find((frame) => frame.sourceFrameId === frameId)?.name ?? frameId;
 }
 
-function listAllHandoffComments(input: Parameters<typeof listHandoffComments>[0]) {
+async function listAllHandoffComments(input: Parameters<typeof listHandoffComments>[0]) {
   const pageSize = 100;
-  const comments: ReturnType<typeof listHandoffComments> = [];
+  const comments: Awaited<ReturnType<typeof listHandoffComments>> = [];
   let offset = 0;
   let total = 0;
 
   do {
-    const page = listHandoffCommentsPage({ ...input, offset, limit: pageSize });
+    const page = (await listHandoffCommentsPage({ ...input, offset, limit: pageSize }));
     comments.push(...page.items);
     total = page.total;
     offset += page.items.length;
@@ -55,7 +55,7 @@ function listAllHandoffComments(input: Parameters<typeof listHandoffComments>[0]
   return comments;
 }
 
-export function collectChangelogEvidence(input: {
+export async function collectChangelogEvidence(input: {
   workspaceId: string;
   handoffId: string;
   from: VersionInput;
@@ -123,14 +123,7 @@ export function collectChangelogEvidence(input: {
     });
   }
 
-  const commentRows = listComments({ workspaceId: input.workspaceId, versionId: input.to.id }) as Array<{
-    id: string;
-    frameId: string;
-    sourceNodeId: string | null;
-    parentCommentId: string | null;
-    body: string;
-    resolvedAt: string | null;
-  }>;
+  const commentRows = await listComments({ workspaceId: input.workspaceId, versionId: input.to.id });
   for (const comment of commentRows) {
     commentEvidence.push({
       id: `comment:${comment.id}`,
@@ -171,11 +164,11 @@ type DraftInput = {
   nodeMatches?: NodeMatch[];
 };
 
-export type PreparedChangelogDraft = ReturnType<typeof prepareChangelogDraft>;
+export type PreparedChangelogDraft = Awaited<ReturnType<typeof prepareChangelogDraft>>;
 
 /** Collects evidence and builds the model input; shared by batch and streaming generation. */
-export function prepareChangelogDraft(input: DraftInput, listComments?: ChangelogDraftDependencies["listComments"]) {
-  const evidence = collectChangelogEvidence(input, listComments);
+export async function prepareChangelogDraft(input: DraftInput, listComments?: ChangelogDraftDependencies["listComments"]) {
+  const evidence = await collectChangelogEvidence(input, listComments);
   const modelEvidence = evidence.slice(0, 200);
   const evidenceCoverage = { provided: modelEvidence.length, total: evidence.length };
   return {
@@ -218,7 +211,7 @@ export function finalizeChangelogDraft(
 }
 
 export async function createEvidenceLinkedDraft(input: DraftInput, dependencies: ChangelogDraftDependencies = {}) {
-  const prepared = prepareChangelogDraft(input, dependencies.listComments);
+  const prepared = await prepareChangelogDraft(input, dependencies.listComments);
   const generated = await (dependencies.generateChangelog ?? generateChangelog)(prepared.generationInput);
   return finalizeChangelogDraft(prepared, generated);
 }
