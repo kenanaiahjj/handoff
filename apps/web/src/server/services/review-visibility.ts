@@ -1,4 +1,5 @@
 import { getDatabase } from "../db";
+import { projectIconUrl, projectIconVersions } from "./project-icons";
 
 /** Owners and designers manage the whole workspace; every other role reviews what is shared with them. */
 export function canSeeWholeWorkspace(role: string | null | undefined) {
@@ -223,6 +224,8 @@ export type ViewerProject = {
   workspaceName: string;
   projectId: string;
   projectName: string;
+  /** The project's uploaded icon, if any. */
+  iconUrl: string | null;
   handoffs: ViewerHandoff[];
   newCount: number;
   updatedAt: string;
@@ -283,6 +286,7 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
       previewKey: string | null;
     }>;
 
+  const iconVersions = projectIconVersions(workspaceId);
   const projects = new Map<string, ViewerProject>();
   for (const row of rows) {
     if (visible && !visible.has(row.handoffId)) continue;
@@ -305,7 +309,7 @@ export function listViewerHome(workspaceId: string, viewer: Viewer): ViewerProje
         // A comparison that can't be read just leaves the tile without a count.
       }
     }
-    const project = projects.get(row.projectId) ?? { workspaceId, workspaceName: row.workspaceName, projectId: row.projectId, projectName: row.projectName, handoffs: [], newCount: 0, updatedAt: handoff.updatedAt };
+    const project = projects.get(row.projectId) ?? { workspaceId, workspaceName: row.workspaceName, projectId: row.projectId, projectName: row.projectName, iconUrl: projectIconUrl(workspaceId, row.projectId, iconVersions[row.projectId]), handoffs: [], newCount: 0, updatedAt: handoff.updatedAt };
     project.handoffs.push(handoff);
     if (handoff.isNew) project.newCount += 1;
     if (handoff.updatedAt > project.updatedAt) project.updatedAt = handoff.updatedAt;

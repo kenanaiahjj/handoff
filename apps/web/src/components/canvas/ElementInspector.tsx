@@ -5,6 +5,7 @@ import { typographyFromTextSegments, type SnapshotNode } from "@asbir/snapshot-c
 import type { HandoffComment } from "../comments/CommentPin";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import { MeasurementRow } from "./MeasurementRow";
+import { formatLength, measureUnits, setMeasureUnit, useMeasureUnit } from "./measure-unit";
 import { formatFrameSize, formatPrecisePixelValue, formatWholeNumber, inspectionBounds, inspectionGeometryNotice, inspectionMargins, inspectionMeasurementEntries } from "./format-captured-measurement";
 import { capturedGridTracks, formatGridTrack, shouldShowGridLayout } from "./grid-layout";
 import { formatFigmaTextMetric, readPaintDetails, readTextStyleRuns, type TextStyleRun } from "./text-style-runs";
@@ -41,12 +42,13 @@ function valueText(value: unknown) {
 function measurementText(value: unknown, unit = "px") {
   if (typeof value !== "number") return valueText(value);
   return ["px", "pixel", "pixels"].includes(unit.trim().toLowerCase())
-    ? formatPrecisePixelValue(value)
+    ? formatLength(value)
     : formatWholeNumber(value);
 }
 
 function typographyMeasurementText(measurement: NonNullable<SnapshotNode["typography"]>["fontSize"]) {
   if (measurement.value === null) return measurement.unit === "auto" ? "Auto" : "Unavailable";
+  if (measurement.unit === "px") return formatLength(measurement.value);
   return `${formatFigmaTextMetric(measurement.value)} ${measurement.unit}`;
 }
 
@@ -208,7 +210,7 @@ function TextStyleRuns({ runs }: { runs: TextStyleRun[] }) {
           const excerpt = run.characters.replace(/\s+/g, " ").trim() || "Empty text run";
           const properties = availableProperties([
             { label: "Font", value: [run.fontFamily, run.fontStyle].filter(Boolean).join(" · ") },
-            { label: "Size", value: run.fontSize === null ? null : formatPrecisePixelValue(run.fontSize) + "px" },
+            { label: "Size", value: run.fontSize === null ? null : formatLength(run.fontSize) },
             { label: "Weight", value: run.fontWeight },
             { label: "Line height", value: measurementText(run.lineHeight) },
             { label: "Letter spacing", value: measurementText(run.letterSpacing) },
@@ -217,7 +219,7 @@ function TextStyleRuns({ runs }: { runs: TextStyleRun[] }) {
             <details className="rounded-control bg-surface-inset px-2.5 py-2" key={`${run.start}:${run.end}`}>
               <summary className="flex cursor-pointer items-center justify-between gap-2 text-[10px] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">
                 <span className="min-w-0 truncate text-foreground-muted" title={run.characters}>{excerpt}</span>
-                <span className="shrink-0 font-mono text-foreground-subtle">{run.fontSize === null ? `Run ${index + 1}` : `${formatPrecisePixelValue(run.fontSize)}px`}</span>
+                <span className="shrink-0 font-mono text-foreground-subtle">{run.fontSize === null ? `Run ${index + 1}` : formatLength(run.fontSize)}</span>
               </summary>
               {properties.length ? (
                 <dl className="mt-2 space-y-1.5 text-[10px]">
@@ -307,6 +309,9 @@ export function ElementInspector({
 }: ElementInspectorProps) {
   const [cssCopied, setCssCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
+  const [textCopied, setTextCopied] = useState(false);
+  // Re-render when the unit changes; the helpers above read it when formatting.
+  const measureUnit = useMeasureUnit();
   const textStyleRuns = selectedNode
     ? readTextStyleRuns(
         selectedNode.sourcePayload,
@@ -388,6 +393,16 @@ export function ElementInspector({
     }
   }
 
+  async function copyText(text: string) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setTextCopied(true);
+      window.setTimeout(() => setTextCopied(false), 1200);
+    } catch {
+      setTextCopied(false);
+    }
+  }
+
   async function copyLink() {
     try {
       await onCopyLink();
@@ -400,7 +415,23 @@ export function ElementInspector({
 
   return (
     <div className="min-h-0 min-w-0 flex-1 overflow-y-auto bg-surface px-4 py-4 text-foreground-muted">
-      <h2 className="text-[14px] font-semibold text-foreground">Properties</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="text-[11px] font-medium uppercase tracking-[0.06em] text-foreground-subtle">Properties</h2>
+        <div aria-label="Measurement unit" className="dial-segmented h-7 shrink-0" role="group">
+          {measureUnits.map((unit) => (
+            <button
+              aria-pressed={measureUnit === unit}
+              className="min-h-6 px-2 font-mono text-[11px]"
+              key={unit}
+              onClick={() => setMeasureUnit(unit)}
+              title={unit === "rem" ? "rem, with a 16 px root" : unit === "px" ? "Pixels" : unit === "pt" ? "iOS points (1x)" : "Android dp (1x)"}
+              type="button"
+            >
+              {unit}
+            </button>
+          ))}
+        </div>
+      </div>
 
       {!selectedNode && pendingNode ? (
         <div aria-busy={pendingNode.detailStatus !== "error"} className="mt-4" role="status">
@@ -422,35 +453,45 @@ export function ElementInspector({
         </div>
       ) : selectedNode ? (
         <div className="mt-4">
-          <div className="mb-4 min-w-0">
-            <p className="break-words text-[13px] font-semibold text-foreground">{selectedNode.name || "Unnamed element"}</p>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-[11px] text-foreground-subtle">
-              <span className="rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono">{selectedNode.type}</span>
-              <span>{selectedNode.visible ? "Visible" : "Hidden"}</span>
-            </div>
-            <p className="mt-2 break-all font-mono text-[10px] text-foreground-subtle">{selectedNode.sourceNodeId}</p>
-            <div className="mt-3 flex flex-wrap gap-1">
-              <button className="dial-button min-h-7 px-2.5 text-[11px]" onClick={copyCss} type="button">{cssCopied ? "Copied CSS" : "Copy CSS"}</button>
-              <button className="dial-button min-h-7 px-2.5 text-[11px]" onClick={copyLink} type="button">{linkCopied ? "Copied link" : "Copy link"}</button>
+          <div className="mb-4 min-w-0 rounded-[12px] border border-white/[0.07] bg-white/[0.02] p-3">
+            <div className="flex min-w-0 items-start justify-between gap-2">
+              <p className="min-w-0 break-words text-[14px] font-semibold leading-5 tracking-[-0.01em] text-foreground">{selectedNode.name || "Unnamed element"}</p>
               {selectedNode.parentSourceNodeId ? (
-                <button className="dial-button min-h-7 px-2.5 text-[11px]" onClick={() => onSelectNode(selectedNode.parentSourceNodeId!)} type="button">Parent</button>
+                <button className="inspector-action shrink-0" onClick={() => onSelectNode(selectedNode.parentSourceNodeId!)} title="Select the parent layer" type="button">
+                  <svg aria-hidden="true" className="size-3" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="M8 13V3.5M4 7.5l4-4 4 4" /></svg>
+                  Parent
+                </button>
               ) : null}
+            </div>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[11px] text-foreground-subtle">
+              <span className="rounded-[5px] bg-white/[0.06] px-1.5 py-0.5 font-mono text-[10px] text-foreground-muted">{selectedNode.type}</span>
+              {!selectedNode.visible ? <span className="rounded-[5px] bg-warning/15 px-1.5 py-0.5 text-[10px] text-warning">Hidden layer</span> : null}
+              {selectedBounds?.width.value != null && selectedBounds?.height.value != null ? (
+                <span className="font-mono tabular-nums">{formatLength(selectedBounds.width.value).replace(/ \S+$/, "")} × {formatLength(selectedBounds.height.value)}</span>
+              ) : null}
+            </div>
+            <div className="mt-3 flex flex-wrap gap-1.5">
+              <button className="inspector-action" onClick={copyCss} type="button">{cssCopied ? "Copied" : "Copy CSS"}</button>
+              {selectedTypography?.content ? <button className="inspector-action" onClick={() => void copyText(selectedTypography.content!)} title="Copy the exact text of this layer" type="button">{textCopied ? "Copied" : "Copy text"}</button> : null}
+              <button className="inspector-action" onClick={copyLink} title="A link that opens this screen with this element selected" type="button">{linkCopied ? "Copied" : "Copy link"}</button>
               {layerExport ? (
                 <a
                   aria-label={`Export ${selectedNode.name || "selected layer"} as ${layerExport.contentType === "image/svg+xml" ? "SVG" : "PNG"}`}
-                  className="inline-flex min-h-7 items-center rounded-chip bg-primary px-2 text-[10px] font-semibold text-primary-foreground hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
+                  className="inspector-action"
                   download={layerExport.fileName}
                   href={layerExport.downloadUrl}
                   title={`Download ${layerExport.fileName}`}
                 >
-                  Export {layerExport.contentType === "image/svg+xml" ? "SVG" : "PNG"}
+                  {layerExport.contentType === "image/svg+xml" ? "SVG" : "PNG"}
+                  <svg aria-hidden="true" className="size-3" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="M8 3v7.5M4.5 7 8 10.5 11.5 7M3.5 13h9" /></svg>
                 </a>
               ) : null}
-              {canCompare ? <button className="dial-button min-h-7 px-2.5 text-[11px]" onClick={onCompare} type="button">Compare</button> : null}
+              {canComment ? <button className="inspector-action" onClick={onAddComment} type="button">Comment</button> : null}
+              {canCompare ? <button className="inspector-action" onClick={onCompare} type="button">Compare</button> : null}
             </div>
           </div>
 
-          <section className="border-t border-border py-3">
+          {comments.length ? <section className="border-t border-border py-3">
             <div className="mb-2 flex items-center justify-between gap-2">
               <h3 className="dial-section-title">Comments on this element</h3>
               <span className="font-mono text-[10px] text-foreground-subtle">{comments.length}</span>
@@ -458,8 +499,7 @@ export function ElementInspector({
             {comments.slice(0, 3).map((comment) => (
               <p className="mb-2 text-[11px] leading-5 text-foreground-muted" key={comment.id}><span className="font-medium text-foreground-muted">{comment.authorName}</span> · {comment.body}</p>
             ))}
-            {canComment ? <button className="min-h-8 rounded-control bg-surface-raised px-2.5 text-[11px] text-foreground hover:bg-surface-strong" onClick={onAddComment} type="button">Comment</button> : null}
-          </section>
+          </section> : null}
 
             <MeasurementGroup title="Layout" values={selectedBounds ?? selectedNode.bounds} description={inspectionGeometryNotice(selectedNode)} />
           <section className="border-t border-white/[0.06] pt-3">
@@ -474,15 +514,15 @@ export function ElementInspector({
                     return (
                       <div className="dial-row grid min-h-9 grid-cols-[1fr_auto] items-center gap-x-3 px-3 py-2" key={label}>
                         <dt className="text-foreground-subtle">{label}</dt>
-                        <dd className="text-right"><CopyValue label={`${label.toLowerCase()} radius`} value={`${formatPrecisePixelValue(effectiveValue)}px`} /></dd>
+                        <dd className="text-right"><CopyValue label={`${label.toLowerCase()} radius`} value={formatLength(effectiveValue)} /></dd>
                         {isClamped ? (
                           <dd className="col-span-2 mt-1 text-right text-[10px] text-foreground-subtle">
                             Figma source: {" "}
                             <CopyValue
                               className="inline-block max-w-full break-all font-mono text-[10px] text-foreground-muted hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                              displayValue={`${formatPrecisePixelValue(value)}px`}
+                              displayValue={formatLength(value)}
                               label={`${label.toLowerCase()} radius source value`}
-                              value={`${formatPrecisePixelValue(value)}px`}
+                              value={formatLength(value)}
                             />
                             {" · clamped to fit"}
                           </dd>
@@ -557,7 +597,7 @@ export function ElementInspector({
                     <p className="font-medium text-foreground">{String(grid.pattern ?? "Grid").toLowerCase().replace(/^./, (letter) => letter.toUpperCase())}{typeof grid.visible === "boolean" && !grid.visible ? " · hidden" : ""}</p>
                     <dl className="mt-2 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1.5 text-foreground-subtle">
                       {(["count", "sectionSize", "gutterSize", "offset", "alignment"] as const).map((key) => grid[key] === undefined ? null : (
-                        <div className="contents" key={key}><dt>{key === "sectionSize" ? "Size" : key === "gutterSize" ? "Gutter" : key === "alignment" ? "Alignment" : key === "offset" ? "Offset" : "Count"}</dt><dd className="truncate text-right text-foreground-muted">{measurementText(grid[key], ["sectionSize", "gutterSize", "offset"].includes(key) ? "px" : "")}{["sectionSize", "gutterSize", "offset"].includes(key) && typeof grid[key] === "number" ? " px" : ""}</dd></div>
+                        <div className="contents" key={key}><dt>{key === "sectionSize" ? "Size" : key === "gutterSize" ? "Gutter" : key === "alignment" ? "Alignment" : key === "offset" ? "Offset" : "Count"}</dt><dd className="truncate text-right text-foreground-muted">{measurementText(grid[key], ["sectionSize", "gutterSize", "offset"].includes(key) ? "px" : "")}</dd></div>
                       ))}
                     </dl>
                   </li>
@@ -620,7 +660,7 @@ export function ElementInspector({
                 <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Line height</dt><dd className="text-right text-foreground">{selectedTypography.lineHeight.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.lineHeight)}</dd></div>
                 <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Letter spacing</dt><dd className="text-right text-foreground">{selectedTypography.letterSpacing.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.letterSpacing)}</dd></div>
                 <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Alignment</dt><dd className="text-right text-foreground">{selectedTypography.textAlign ?? "Unavailable"}</dd></div>
-                {selectedTypography.content !== null ? <div className="border-t border-border pt-2"><dt className="text-foreground-subtle">Text content</dt><dd className="mt-1 break-words text-foreground">{selectedTypography.content}</dd></div> : null}
+                {selectedTypography.content !== null ? <div className="border-t border-border pt-2"><dt className="flex items-center justify-between gap-2 text-foreground-subtle">Text content<button className="rounded-chip px-1.5 py-0.5 text-[11px] text-foreground-muted transition-colors hover:bg-surface-strong hover:text-foreground" onClick={() => void copyText(selectedTypography.content!)} type="button">{textCopied ? "Copied" : "Copy"}</button></dt><dd className="mt-1 select-text whitespace-pre-wrap break-words text-foreground">{selectedTypography.content}</dd></div> : null}
               </dl>
             ) : textStyleRuns.length ? <p className="text-[11px] text-foreground-subtle">Typography is captured per text run.</p> : <p className="text-[11px] text-foreground-subtle">No typography data captured.</p>}
             <TextStyleRuns runs={textStyleRuns} />
@@ -645,22 +685,34 @@ export function ElementInspector({
           <details className="border-t border-border pt-3">
             <summary className="cursor-pointer text-[11px] text-foreground-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Source details</summary>
             <dl className="mt-2 space-y-2 text-[10px]">
+              <div><dt className="text-foreground-subtle">Element ID</dt><dd className="mt-0.5 break-all font-mono text-foreground-muted">{selectedNode.sourceNodeId}</dd></div>
               <div><dt className="text-foreground-subtle">Parent element</dt><dd className="mt-0.5 break-all font-mono text-foreground-muted">{selectedNode.parentSourceNodeId ?? "None"}</dd></div>
               <div><dt className="text-foreground-subtle">Source frame</dt><dd className="mt-0.5 break-all font-mono text-foreground-muted">{selectedNode.sourceFrameId}</dd></div>
             </dl>
           </details>
         </div>
       ) : frame.kind === "overview" ? (
-        <div className="mt-5 space-y-5 text-[13px] leading-6 text-foreground-muted">
-          <p>
-            {inspecting ? "Select a design element to see its size, spacing, colors and type." : "Switch to Inspect in the top bar, then select a design element to see its size, spacing, colors and type. View keeps layer hit areas out of the way."} Hold <kbd className="rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono text-[11px] text-foreground">Alt</kbd> and hover another element to see pixel distances in the canvas. Click a value to copy it.
-          </p>
-          <p><kbd className="rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono text-[11px] text-foreground">⌘ F</kbd> searches text, colors and elements on every screen.</p>
-          <dl className="space-y-1.5 border-t border-white/[0.06] pt-3 text-[12px]">
-            <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Screens</dt><dd className="font-mono text-foreground">{frameCount}</dd></div>
-            <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Captured elements</dt><dd className="font-mono text-foreground">{totalNodeCount}</dd></div>
+        <div className="mt-6 text-foreground-muted">
+          <div className="flex flex-col items-center rounded-[12px] border border-dashed border-white/[0.09] px-4 py-6 text-center">
+            <span aria-hidden="true" className="grid size-9 place-items-center rounded-[10px] bg-white/[0.05] text-foreground-muted">
+              <svg className="size-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><path d="m3.5 2.5 9 4-3.8 1.4L7.3 12 3.5 2.5Z" /></svg>
+            </span>
+            <p className="mt-3 text-[13px] font-medium text-foreground">{inspecting ? "Select an element" : "Pick the Inspect tool"}</p>
+            <p className="mt-1 max-w-[230px] text-[12px] leading-5 text-foreground-subtle">
+              {inspecting ? "Click anything on a screen to see its size, spacing, colors and type." : "Press I, then click anything on a screen to see its size, spacing, colors and type."}
+            </p>
+          </div>
+          <ul className="mt-4 space-y-2 text-[12px]">
+            <li className="flex items-center justify-between gap-3"><span>Measure distances</span><span className="flex gap-1"><kbd className="canvas-kbd">Alt</kbd><span className="text-foreground-subtle">+ hover</span></span></li>
+            <li className="flex items-center justify-between gap-3"><span>Search text and colors</span><span className="flex gap-1"><kbd className="canvas-kbd">⌘</kbd><kbd className="canvas-kbd">F</kbd></span></li>
+            <li className="flex items-center justify-between gap-3"><span>Next or previous screen</span><span className="flex gap-1"><kbd className="canvas-kbd">[</kbd><kbd className="canvas-kbd">]</kbd></span></li>
+            <li className="flex items-center justify-between gap-3"><span>All shortcuts</span><kbd className="canvas-kbd">?</kbd></li>
+          </ul>
+          <dl className="mt-5 grid grid-cols-2 gap-2 border-t border-white/[0.06] pt-4 text-[12px]">
+            <div className="rounded-[10px] bg-white/[0.03] px-3 py-2.5"><dt className="text-[11px] text-foreground-subtle">Screens</dt><dd className="mt-0.5 font-mono text-[15px] text-foreground">{frameCount}</dd></div>
+            <div className="rounded-[10px] bg-white/[0.03] px-3 py-2.5"><dt className="text-[11px] text-foreground-subtle">Elements</dt><dd className="mt-0.5 font-mono text-[15px] text-foreground">{totalNodeCount}</dd></div>
           </dl>
-          {!frame.exact ? <p className="text-[11px] leading-5 text-foreground-subtle">This image has no structured source attributes. Upload a structured Figma capture for exact measurements and token bindings.</p> : null}
+          {!frame.exact ? <p className="mt-4 text-[11px] leading-5 text-foreground-subtle">This image has no structured source attributes. Upload a structured Figma capture for exact measurements and token bindings.</p> : null}
         </div>
       ) : !frame.exact ? (
         <div className="mt-4 space-y-3 text-[12px] leading-5 text-foreground-muted">
@@ -680,7 +732,7 @@ export function ElementInspector({
               ) : null}
             </span>
           </div>
-          <p className="mt-2 text-[12px] leading-5 text-foreground-subtle">{inspecting ? "Select an element to inspect its captured attributes." : "Switch to Inspect in the top bar, then select an element to inspect its captured attributes."}</p>
+          <p className="mt-2 text-[12px] leading-5 text-foreground-subtle">{inspecting ? "Click an element on this screen to inspect it." : "Press I (Inspect), then click an element on this screen."}</p>
           <dl className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3 text-[12px]">
             <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Size</dt><dd className="font-mono text-foreground">{formatFrameSize(frame.sourceWidth, frame.sourceHeight)}</dd></div>
             <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Elements</dt><dd className="font-mono text-foreground">{frame.nodes.length}</dd></div>

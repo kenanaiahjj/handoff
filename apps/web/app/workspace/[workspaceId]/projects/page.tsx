@@ -5,6 +5,7 @@ import { getDatabase } from "@/src/server/db";
 import { listProjects } from "@/src/server/repositories/projects";
 import { WorkspaceShell } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
+import { projectIconVersions } from "@/src/server/services/project-icons";
 import { ProjectsPane, type ProjectCard } from "../projects-pane";
 import { canSeeWholeWorkspace, countUpdatesByProject, filterProjectsForViewer, listViewerUpdates } from "@/src/server/services/review-visibility";
 
@@ -56,7 +57,7 @@ export default async function ProjectsPage({ params }: ProjectsPageProps) {
           </div>
         </header>
         <div className="mt-6 max-w-4xl">
-          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={newCounts} />
+          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={newCounts} iconVersions={projectIconVersions(workspace.id)} />
         </div>
       </main>
     </WorkspaceShell>

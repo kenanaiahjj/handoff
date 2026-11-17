@@ -27,7 +27,7 @@ compare versions, comment (with @mentions), and get notified of new versions.
 |---|---|
 | `apps/web` | Next.js 16.4.5 app (App Router, React 19.3, `cacheComponents` on) |
 | `apps/web/src/server` | Server code: `db.ts` (SQLite + migrations), `repositories/`, `services/`, `storage/`, `workspace-access.ts` (all access checks) |
-| `apps/web/src/server/migrations` | SQL migrations, run in filename order on server start (`0001`…`0023`) |
+| `apps/web/src/server/migrations` | SQL migrations, run in filename order on server start (`0001`…`0024`) |
 | `apps/web/src/components` | UI. `canvas/` (handoff canvas, compare, phone view), `shell/` (homes, tabs, quick open, update notice), `comments/` (threads, mentions) |
 | `packages/snapshot-contract` | Capture schema, validation, content fingerprint (`hashSnapshotPayload`), merge and screen removal |
 | `integrations/figma-plugin` | The Figma capture plugin (separate build) |
@@ -53,7 +53,7 @@ find apps -name "*.test.mjs" -path "*\[*" -not -path "*/node_modules/*" | while 
 cd apps/web && npx tsc --noEmit -p . && npx eslint .
 ```
 
-Baseline at handoff: **304 tests passing**, typecheck and lint clean. Keep it that way; never weaken a
+Baseline at handoff: **309 tests passing**, typecheck and lint clean. Keep it that way; never weaken a
 test to make a change pass.
 
 Local verification without real sign-in (development only):
@@ -126,6 +126,12 @@ Each item: why, where to start, and when it is done.
   app-icon badge in the installed app (new versions + open mentions, `/api/me/badge`).
 - Slack notification setting per person: All updates / Mentions only / Off
   (`notification_preference`, `/api/me/notifications`; avatar menu for reviewers, bell in the sidebar for managers).
+- Canvas: grouped top bar (View / Inspect / Comment tools, Outlines, Grids, Changes), Inspect /
+  Comments / Notes / Versions tabs with integrations under "More", units switch (px, pt, dp, rem),
+  Copy text, outlines on elements changed in this version, `[` `]` screen stepping, a `?` shortcut
+  sheet, and pan/zoom remembered per screen (sessionStorage).
+- Project logos: owners and designers upload one on the project page (`project_icon`, resized to
+  256 px in the browser, PNG/JPEG/WebP only); shown in the sidebar, projects list and reviewer home.
 - Screen change counts use a design fingerprint (layers without names, canvas position, export
   pointers or sub-pixel noise) instead of image bytes: Tripket's rename release went from 199 to 1.
 

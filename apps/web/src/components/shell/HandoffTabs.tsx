@@ -49,7 +49,11 @@ function useRememberScreen(handoffId: string) {
     }
     save();
     window.addEventListener("hashchange", save);
-    return () => window.removeEventListener("hashchange", save);
+    window.addEventListener("handofflocationchange", save);
+    return () => {
+      window.removeEventListener("hashchange", save);
+      window.removeEventListener("handofflocationchange", save);
+    };
   }, [handoffId]);
 }
 

@@ -101,7 +101,7 @@ export function AssetExportMenu({ targets }: { targets: AssetExportTarget[] }) {
 
   return (
     <details className="relative" ref={detailsRef}>
-      <summary className="dial-button size-11 shrink-0 cursor-pointer list-none lg:size-8 [&::-webkit-details-marker]:hidden" aria-label="Export image" title="Export image">
+      <summary className="canvas-tool shrink-0 cursor-pointer list-none [&::-webkit-details-marker]:hidden" aria-label="Export image" title="Export image">
         <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 16 16">
           <path d="M8 2.5v7m0 0 2.5-2.5M8 9.5 5.5 7M3 10.5v2h10v-2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.3" />
         </svg>

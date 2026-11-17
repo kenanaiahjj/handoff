@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { CreateProjectForm } from "../workspace-actions";
 import { NewVersionBadge } from "@/src/components/shell/NewVersionBadge";
+import { ProjectIcon } from "@/src/components/shell/ProjectIcon";
 
 export type ProjectCard = {
   id: string;
@@ -10,12 +11,14 @@ export type ProjectCard = {
   versionCount: number;
 };
 
-export function ProjectsPane({ workspaceId, projects, canManage = true, newCounts = {} }: {
+export function ProjectsPane({ workspaceId, projects, canManage = true, newCounts = {}, iconVersions = {} }: {
   workspaceId: string;
   projects: ProjectCard[];
   canManage?: boolean;
   /** Handoffs per project whose newest version this person has not opened. */
   newCounts?: Record<string, number>;
+  /** Projects with an uploaded icon: id → content fingerprint. */
+  iconVersions?: Record<string, string>;
 }) {
   return (
     <section aria-labelledby="projects-title" className="workspace-pane p-5 sm:p-6" id="projects">
@@ -29,7 +32,7 @@ export function ProjectsPane({ workspaceId, projects, canManage = true, newCount
             <li className="py-1" key={project.id}>
               <div className="workspace-list-item flex min-h-[72px] items-center gap-3 px-2.5">
                 <Link aria-label={`Open ${project.name}`} className="flex min-w-0 flex-1 items-center gap-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspaceId}/projects/${project.id}`}>
-                <span aria-hidden="true" className="workspace-mark grid size-9 shrink-0 place-items-center text-[12px] font-semibold">{project.name.trim().slice(0, 1).toUpperCase() || "P"}</span>
+                <ProjectIcon name={project.name} size={36} src={iconVersions[project.id] ? `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(project.id)}/icon?v=${iconVersions[project.id]}` : null} />
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-2">
                   <span className="truncate text-[13px] font-medium text-foreground">{project.name}</span>

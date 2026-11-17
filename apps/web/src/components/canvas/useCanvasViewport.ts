@@ -11,8 +11,27 @@ export interface CanvasTransform {
 const MIN_SCALE = 0.08;
 const MAX_SCALE = 5;
 
-export function useCanvasViewport(frameWidth: number, frameHeight: number) {
+const viewMemoryPrefix = "asbir-canvas-view:";
+
+function readView(key: string | null): CanvasTransform | null {
+  if (!key) return null;
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(viewMemoryPrefix + key) ?? "null") as CanvasTransform | null;
+    return saved && [saved.scale, saved.offsetX, saved.offsetY].every(Number.isFinite) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Pan and zoom for one canvas. With a `memoryKey` the view is remembered for this browser tab, so
+ * coming back to a screen (or switching tabs) puts you where you left off instead of fitting again.
+ */
+export function useCanvasViewport(frameWidth: number, frameHeight: number, memoryKey: string | null = null) {
   const containerRef = useRef<HTMLDivElement>(null);
+  // A saved view waiting to be applied; layout resizes refit only once the person has moved.
+  const restoreRef = useRef<CanvasTransform | null>(null);
+  const touchedRef = useRef(false);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [transform, setTransform] = useState<CanvasTransform>({
     scale: 0.3,
@@ -37,8 +56,18 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number) {
     setTransform({ scale, offsetX: 0, offsetY: 0 });
   }, [frameHeight, frameWidth]);
 
-  useEffect(() => {
+  const autoFit = useCallback(() => {
+    if (restoreRef.current && !touchedRef.current) {
+      setTransform(restoreRef.current);
+      return;
+    }
     fitToFrame();
+  }, [fitToFrame]);
+
+  useEffect(() => {
+    restoreRef.current = readView(memoryKey);
+    touchedRef.current = false;
+    autoFit();
     const container = containerRef.current;
     if (!container || typeof ResizeObserver === "undefined") return;
 
@@ -48,13 +77,33 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number) {
         const nextSize = { width: contentRect.width, height: contentRect.height };
         setViewportSize((current) => current.width === nextSize.width && current.height === nextSize.height ? current : nextSize);
       }
-      fitToFrame();
+      autoFit();
     });
     observer.observe(container);
     return () => observer.disconnect();
+  }, [autoFit, memoryKey]);
+
+  // Save the view once the person has panned or zoomed.
+  useEffect(() => {
+    if (!memoryKey || !touchedRef.current) return;
+    const timer = window.setTimeout(() => {
+      try {
+        sessionStorage.setItem(viewMemoryPrefix + memoryKey, JSON.stringify(transform));
+      } catch {
+        // Storage blocked: the view just isn't remembered.
+      }
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [memoryKey, transform]);
+
+  const fitByUser = useCallback(() => {
+    touchedRef.current = true;
+    restoreRef.current = null;
+    fitToFrame();
   }, [fitToFrame]);
 
   const zoomBy = useCallback((factor: number) => {
+    touchedRef.current = true;
     setTransform((current) => ({
       ...current,
       scale: Math.max(MIN_SCALE, Math.min(MAX_SCALE, current.scale * factor)),
@@ -67,6 +116,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number) {
     const rect = container.getBoundingClientRect();
     const center = { x: rect.width / 2, y: rect.height / 2 };
     const pointer = { x: point.x - rect.left, y: point.y - rect.top };
+    touchedRef.current = true;
 
     setTransform((current) => {
       const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, current.scale * factor));
@@ -84,6 +134,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number) {
   }, []);
 
   const panBy = useCallback((deltaX: number, deltaY: number) => {
+    touchedRef.current = true;
     setTransform((current) => ({
       ...current,
       offsetX: current.offsetX + deltaX,
@@ -95,7 +146,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number) {
     containerRef,
     viewportSize,
     transform,
-    fitToFrame,
+    fitToFrame: fitByUser,
     zoomBy,
     zoomAt,
     panBy,

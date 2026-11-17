@@ -3,6 +3,7 @@
 import { useState } from "react";
 import type { Measurement } from "@asbir/snapshot-contract";
 import { formatPrecisePixelValue } from "./format-captured-measurement";
+import { formatLength, useMeasureUnit } from "./measure-unit";
 
 type MeasurementRowProps = {
   label: string;
@@ -11,9 +12,10 @@ type MeasurementRowProps = {
 
 export function MeasurementRow({ label, measurement }: MeasurementRowProps) {
   const [copied, setCopied] = useState(false);
+  const unit = useMeasureUnit();
   const displayValue = measurement.value === null
     ? "—"
-    : (measurement.unit === "px" ? formatPrecisePixelValue(measurement.value) : String(measurement.value)) + " " + measurement.unit;
+    : measurement.unit === "px" ? formatLength(measurement.value, unit) : formatPrecisePixelValue(measurement.value) + " " + measurement.unit;
 
   async function copyValue() {
     if (measurement.value === null) return;

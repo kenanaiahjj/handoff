@@ -126,6 +126,12 @@ export function HandoffReview({
     (visibleComparison?.toVersionId === selectedVersionId ? visibleComparison.diff.frames : []).map((frame) => [frame.frameId, frame.status]),
   ), [selectedVersionId, visibleComparison]);
 
+  // Elements that changed in this version, outlined on the canvas.
+  const changedNodeIds = useMemo(() => {
+    if (!visibleComparison || visibleComparison.toVersionId !== selectedVersionId) return [];
+    return [...new Set(visibleComparison.diff.changes.flatMap((change) => change.sourceNodeId ? [change.sourceNodeId] : []))];
+  }, [selectedVersionId, visibleComparison]);
+
   const comparisonSummary = useMemo<FrameComparisonSummary | null>(() => {
     if (!visibleComparison || visibleComparison.toVersionId !== selectedVersionId) return null;
     const earlierVersionLabel = versions.find((version) => version.id === visibleComparison.fromVersionId)?.versionLabel ?? "the earlier version";
@@ -177,6 +183,8 @@ export function HandoffReview({
           handoffId={handoffId}
         frameStatuses={frameStatuses}
         comparisonSummary={comparisonSummary}
+        changedNodeIds={changedNodeIds}
+        startChangedOnly={Boolean(initialCompareRouteState)}
         canCompare={versions.length > 1}
         onCompareScreen={handleCompareScreen}
         onOpenComparison={openComparison}

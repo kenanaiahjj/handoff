@@ -8,6 +8,7 @@ import { SuperadminsPanel } from "../superadmins-panel";
 import { MembersPanel } from "../members-panel";
 import { hasPendingDesignerRequest, listMembers } from "@/src/server/services/members";
 import { isSuperadmin, listSuperadmins } from "@/src/server/services/superadmins";
+import { projectIconVersions } from "@/src/server/services/project-icons";
 import { ProjectsPane, type ProjectCard } from "./projects-pane";
 import Link from "next/link";
 import { NewVersionBadge } from "@/src/components/shell/NewVersionBadge";
@@ -109,7 +110,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
         <NeedsYou className="mt-6" initial={listOpenMentions(session.user.id, workspace.id, viewer)} />
 
         <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} />
+          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} iconVersions={projectIconVersions(workspace.id)} />
 
           {canManage ? (
             <section aria-labelledby="invite-title" className="workspace-pane p-5 sm:p-6">

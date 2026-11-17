@@ -4,6 +4,8 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionForHeaders } from "@/src/server/auth-session";
 import { getDatabase } from "@/src/server/db";
 import { getProject, listProjectPdCandidates } from "@/src/server/repositories/projects";
+import { projectIconUrl, projectIconVersions } from "@/src/server/services/project-icons";
+import { ProjectIcon, ProjectIconEditor } from "@/src/components/shell/ProjectIcon";
 import { listHandoffs } from "@/src/server/repositories/handoffs";
 import { listProjects } from "@/src/server/repositories/projects";
 import { ProjectPdInChargeForm } from "./project-actions";
@@ -65,9 +67,16 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
     >
       <main className="workspace-dashboard mx-auto px-5 py-7 sm:px-8 sm:py-9">
         <header className="workspace-dashboard-heading">
-          <div>
+          <div className="flex items-start gap-4">
+            {canManageHandoffs ? (
+              <ProjectIconEditor initialSrc={projectIconUrl(workspaceId, projectId, projectIconVersions(workspaceId)[projectId])} name={project.name} projectId={projectId} workspaceId={workspaceId} />
+            ) : (
+              <ProjectIcon name={project.name} size={48} src={projectIconUrl(workspaceId, projectId, projectIconVersions(workspaceId)[projectId])} />
+            )}
+          <div className="min-w-0">
             <h1 className="font-semibold text-foreground">{project.name}</h1>
             <p className="mt-2 text-[13px] leading-5 text-foreground-muted">{canManageHandoffs ? "Keep the app’s design canvas and every reviewed version in this project." : "Handoffs shared with you in this project. New versions are marked until you open them."}</p>
+          </div>
           </div>
         </header>
 

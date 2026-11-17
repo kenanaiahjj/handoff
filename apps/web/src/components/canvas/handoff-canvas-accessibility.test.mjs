@@ -15,10 +15,14 @@ test("review header home link meets the 24px pointer target minimum", () => {
 });
 
 test("zoom percentage control meets the 24px pointer target minimum", () => {
+  // The control uses the shared canvas tool style, which is 30px tall (40px on touch layouts).
   assert.match(
     toolbarSource,
-    /aria-label=\{"Fit canvas to view\. Current zoom "\s*\+\s*zoomPercentage\}\s+className="[^"]*\bmin-h-6\b/,
+    /aria-label=\{"Fit to screen\. Current zoom "\s*\+\s*zoomPercentage\}\s+className="[^"]*\bcanvas-tool\b/,
   );
+  const css = readFileSync(new URL("../../../app/globals.css", import.meta.url), "utf8");
+  const toolHeight = css.match(/\.canvas-tool \{[^}]*?height:\s*(\d+)px/);
+  assert.ok(toolHeight && Number(toolHeight[1]) >= 24, "canvas tools must be at least 24px tall");
 });
 
 test("overview screen and compare controls keep 24px targets at every canvas zoom", () => {
@@ -30,11 +34,13 @@ test("overview screen and compare controls keep 24px targets at every canvas zoo
   assert.match(compareControl[1], /minHeight:\s*24\s*\*\s*inverseScale/);
 });
 
-test("the comments panel toggle exposes its selected state as a pressed button", () => {
-  const commentsButton = source.match(/<button\s+aria-pressed=\{panelMode === "comments"\}[\s\S]*?Comments\{commentCount[\s\S]*?<\/button>/);
-  assert.ok(commentsButton, "the comments panel control must exist");
-  assert.match(commentsButton[0], /aria-pressed=\{panelMode === "comments"\}/);
-  assert.doesNotMatch(commentsButton[0], /aria-current=/);
+test("the comments panel tab exposes its selected state", () => {
+  const tabs = source.match(/role="tablist" aria-label="Details panels"[\s\S]*?<\/div>/);
+  assert.ok(tabs, "the details panel tabs must exist");
+  assert.match(tabs[0], /\["comments", "Comments"/, "comments must be one of the tabs");
+  assert.match(tabs[0], /aria-selected=\{panelMode === mode\}/);
+  assert.match(tabs[0], /role="tab"/);
+  assert.doesNotMatch(tabs[0], /aria-current=/);
 });
 
 test("the frozen canvas render does not add a decorative drop shadow", () => {

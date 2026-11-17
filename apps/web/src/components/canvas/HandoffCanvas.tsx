@@ -18,6 +18,9 @@ import { ElementInspector } from "./ElementInspector";
 import { LocalPreviewPanel } from "./LocalPreviewPanel";
 import { CanvasAnnotationsPanel, type CanvasAnnotationRecord } from "./CanvasAnnotationsPanel";
 import { McpConnectionPanel } from "./McpConnectionPanel";
+import { CanvasShortcuts } from "./CanvasShortcuts";
+import { ChangesIcon, ChevronDownIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MoreIcon, NoteIcon, OutlineIcon, VersionIcon } from "./canvas-icons";
+import { getMeasureUnit, measureUnits, setMeasureUnit } from "./measure-unit";
 import { hasVisibleLayoutGrids } from "./LayoutGridOverlay";
 import { formatComparisonChangeCount } from "./compare-presentation";
 import { formatCapturedAt } from "./captured-at";
@@ -68,6 +71,10 @@ type HandoffCanvasProps = {
   handoffId: string;
   frameStatuses: Record<string, CanvasFrameChangeStatus>;
   comparisonSummary: FrameComparisonSummary | null;
+  /** Elements changed in this version (outlined when Changes is on). */
+  changedNodeIds?: string[];
+  /** Arrived from a "N new" link: start with only the changed screens. */
+  startChangedOnly?: boolean;
   canCompare: boolean;
   onCompareScreen: (frameId: string) => void;
   onOpenComparison: (frameId?: string) => void;
@@ -132,6 +139,8 @@ export function HandoffCanvas({
   handoffId,
   frameStatuses,
   comparisonSummary,
+  changedNodeIds = [],
+  startChangedOnly = false,
   canCompare,
   onCompareScreen,
   onOpenComparison,
@@ -174,7 +183,11 @@ export function HandoffCanvas({
   );
   const [localSelectedFrameId, setSelectedFrameId] = useState<string | null>(null);
   const [localSelectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-  const [changedOnly, setChangedOnly] = useState(false);
+  const [changedOnly, setChangedOnly] = useState(startChangedOnly);
+  const [showChanges, setShowChanges] = useState(true);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const [panelMoreOpen, setPanelMoreOpen] = useState(false);
   const [comments, setComments] = useState<HandoffComment[]>([]);
   const [annotations, setAnnotations] = useState<CanvasAnnotationRecord[]>([]);
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
@@ -559,10 +572,32 @@ export function HandoffCanvas({
         setCommentMode((current) => !current);
         return;
       }
-      if (event.key.toLowerCase() === "o") {
+      if (event.key === "?") {
+        event.preventDefault();
+        setShortcutsOpen(true);
+        return;
+      }
+      if (modified) return;
+      const key = event.key.toLowerCase();
+      if (key === "o") {
         setCanvasModeOverride("inspect");
         setPanelMode("inspect");
         setOutlinesVisible((current) => !current);
+      }
+      if (key === "v") setCanvasModeOverride("view");
+      if (key === "i") {
+        setCanvasModeOverride("inspect");
+        setPanelMode("inspect");
+      }
+      if (key === "g") setLayoutGridsVisible((current) => !current);
+      if (key === "d") setShowChanges((current) => !current);
+      if (key === "u") {
+        const current = measureUnits.indexOf(getMeasureUnit());
+        setMeasureUnit(measureUnits[(current + 1) % measureUnits.length]);
+      }
+      if (event.key === "[" || event.key === "]") {
+        event.preventDefault();
+        stepScreenRef.current(event.key === "]" ? 1 : -1);
       }
       if (event.shiftKey && event.key === "1") viewportControls?.fitToFrame();
       if (event.key === "Escape") {
@@ -621,6 +656,18 @@ export function HandoffCanvas({
       window.removeEventListener("focus", onVisible);
     };
   }, [commentsEndpoint]);
+
+  // "[" and "]" step through the screens in list order (only the changed ones when filtered).
+  const stepScreenRef = useRef<(direction: 1 | -1) => void>(() => {});
+  useEffect(() => {
+    stepScreenRef.current = (direction) => {
+      const list = canvasScreens.length ? canvasScreens : screens;
+      if (!list.length) return;
+      const index = list.findIndex((frame) => frame.id === selectedFrameId);
+      const next = index === -1 ? (direction === 1 ? 0 : list.length - 1) : (index + direction + list.length) % list.length;
+      selectFrame(list[next].id);
+    };
+  });
 
   // "?comment=<id>" (from "Needs you" or a notification) opens that thread once comments load.
   const selectCommentRef = useRef(selectComment);
@@ -915,152 +962,170 @@ export function HandoffCanvas({
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface text-foreground">
-      <header className="relative z-20 flex h-auto min-h-12 min-w-0 flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface px-3 py-1 text-foreground-muted xl:gap-3">
-        <div className="flex min-w-0 flex-1 items-center gap-3 lg:min-w-[330px]">
+      <header className="canvas-topbar relative z-20 flex min-h-12 min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-border bg-surface px-2.5 py-1.5 text-foreground-muted lg:flex-nowrap lg:py-0">
+        <div className="flex min-w-0 flex-1 items-center gap-2 lg:flex-none">
           <Link aria-label="Asbir Handoff home" className="flex min-h-9 shrink-0 items-center rounded-lg px-1 transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" href={metadata.projectHref.startsWith("/workspace") ? "/workspace" : metadata.projectHref}>
             <BrandMark compact />
           </Link>
-          <span aria-hidden="true" className="h-6 w-px shrink-0 bg-surface-strong" />
-          <label className="sr-only" htmlFor="review-version-select">Snapshot version</label>
-          <select
-            className="h-11 min-w-0 max-w-none flex-1 rounded-control border border-transparent bg-surface-raised px-3 text-[13px] text-foreground hover:bg-surface-strong focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:h-9 lg:max-w-[340px] lg:min-w-[180px]"
-            id="review-version-select"
-            title={metaParts.join(" · ")}
-            onChange={(event) => window.location.assign(metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(event.target.value))}
-            value={metadata.selectedVersionId}
-          >
-            {metadata.versions.map((version) => (
-              <option key={version.id} value={version.id}>Version {version.versionLabel} · {metadata.handoffName}</option>
-            ))}
-          </select>
+          <span aria-hidden="true" className="h-5 w-px shrink-0 bg-white/[0.08]" />
+          <div className="flex min-w-0 items-center gap-1.5" title={metaParts.join(" · ")}>
+            <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em] text-foreground lg:max-w-[220px]">{metadata.handoffName}</span>
+            <label className="sr-only" htmlFor="review-version-select">Version</label>
+            <span className="relative inline-flex shrink-0 items-center">
+              <select
+                className="h-7 appearance-none rounded-[7px] border border-white/[0.08] bg-white/[0.03] py-0 pl-2 pr-6 font-mono text-[11px] text-foreground-muted transition-colors hover:border-white/[0.16] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                id="review-version-select"
+                onChange={(event) => window.location.assign(metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(event.target.value))}
+                value={metadata.selectedVersionId}
+              >
+                {metadata.versions.map((version, index) => (
+                  <option key={version.id} value={version.id}>v{version.versionLabel.replace(/^v/i, "")}{index === 0 ? " · latest" : ""}</option>
+                ))}
+              </select>
+              <ChevronDownIcon className="pointer-events-none absolute right-1.5 size-3 text-foreground-subtle" />
+            </span>
+            {canCompare ? (
+              <button
+                className="canvas-tool hidden h-7 shrink-0 sm:inline-flex"
+                onClick={() => {
+                  setCommentMode(false);
+                  setStatesOpen(false);
+                  setSearchOpen(false);
+                  onOpenComparison();
+                }}
+                title="Compare with the previous version"
+                type="button"
+              >
+                <CompareIcon className="size-3.5" />
+                <span className="max-xl:sr-only">Compare</span>
+              </button>
+            ) : null}
+          </div>
         </div>
-        <p className="hidden min-w-0 flex-1 truncate text-[12px] text-foreground-subtle 2xl:block" title={metaParts.join(" · ")}>
-          {metaParts.join(" · ")}
-        </p>
-        <nav aria-label="Handoff review tools" className="ml-0 flex w-full min-w-0 flex-wrap items-center gap-1 pb-1 lg:ml-auto lg:w-auto lg:shrink-0 lg:flex-nowrap lg:pb-0">
-          <InstallAppButton compact />
+
+        <nav aria-label="Handoff review tools" className="order-last flex w-full min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] lg:order-none lg:w-auto lg:flex-1 lg:justify-center lg:overflow-visible [&::-webkit-scrollbar]:hidden">
           <button
             aria-pressed={statesOpen}
-            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 lg:hidden"}
+            className="canvas-tool shrink-0 border border-white/[0.07] lg:hidden"
             id="canvas-mobile-screens-toggle"
             onClick={() => {
               setSearchOpen(false);
               setStatesOpen((current) => !current);
               setMobilePanelOpenOverride(false);
             }}
-            title={statesOpen ? "Hide screens" : "Show screens"}
             type="button"
           >
-            Screens {screens.length}
+            Screens <span className="font-mono text-[10px] text-foreground-subtle">{screens.length}</span>
           </button>
-          <div aria-label="Canvas mode" className="dial-segmented h-12 shrink-0 lg:h-8" role="group">
-            {(["view", "inspect"] as const).map((mode) => (
+          <div aria-label="Canvas mode" className="canvas-toolgroup shrink-0" role="group">
+            <button aria-pressed={canvasMode === "view" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setCanvasModeOverride("view"); }} title="View: pan without selecting (V)" type="button">
+              <HandIcon /><span className="sr-only">View</span>
+            </button>
+            <button aria-pressed={canvasMode === "inspect" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setCanvasModeOverride("inspect"); setPanelMode("inspect"); }} title="Inspect: select elements (I)" type="button">
+              <CursorIcon /><span className="sr-only">Inspect</span>
+            </button>
+            {metadata.canComment ? (
               <button
-                aria-pressed={canvasMode === mode}
-                className="h-11 px-2.5 text-[12px] lg:h-7"
-                key={mode}
+                aria-pressed={commentMode}
+                className="canvas-tool"
                 onClick={() => {
-                  setCanvasModeOverride(mode);
-                  if (mode === "inspect") setPanelMode("inspect");
+                  setAnnotationMode(false);
+                  setPendingPoint(null);
+                  setCommentThreadOpen(false);
+                  setPanelMode("comments");
+                  setCommentMode((current) => !current);
                 }}
+                title="Comment: click the canvas to place one (C)"
                 type="button"
               >
-                {mode === "view" ? "View" : "Inspect"}
+                <CommentIcon /><span className="sr-only">Comment</span>
               </button>
-            ))}
+            ) : null}
           </div>
-          <button
-            aria-pressed={panelMode === "comments"}
-            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 "}
-            onClick={() => {
-              setPanelMode("comments");
-              setCommentMode(false);
-              if (isMobile) {
-                setStatesOpen(false);
-                setSearchOpen(false);
-                setMobilePanelOpenOverride(true);
-              }
-            }}
-            title="Every open comment on every screen"
-            type="button"
-          >
-            Comments{commentCount ? " " + commentCount : ""}
-          </button>
-          <button
-            aria-pressed={panelMode === "annotations"}
-            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 "}
-            onClick={() => {
-              setPanelMode("annotations");
-              setCommentMode(false);
-              setAnnotationMode(false);
-              setSearchOpen(false);
-              if (isMobile) {
-                setStatesOpen(false);
-                setMobilePanelOpenOverride(true);
-              }
-            }}
-            title="Canvas notes and annotations"
-            type="button"
-          >
-            Notes{annotations.length ? " " + annotations.length : ""}
-          </button>
-          {metadata.canManageIntegrations ? <button
-            aria-pressed={panelMode === "mcp"}
-            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 lg:hidden"}
-            onClick={() => {
-              setPanelMode("mcp");
-              setCommentMode(false);
-              setAnnotationMode(false);
-              setStatesOpen(false);
-              setSearchOpen(false);
-              setMobilePanelOpenOverride(true);
-            }}
-            title="MCP connection instructions"
-            type="button"
-          >
-            MCP
-          </button> : null}
-          <button
-            aria-pressed={outlinesVisible}
-            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 hidden sm:inline-flex"}
-            onClick={() => {
-              setCanvasModeOverride("inspect");
-              setPanelMode("inspect");
-              setOutlinesVisible((current) => !current);
-            }}
-            title="Outline every element on the screens (O)"
-            type="button"
-          >
-            Outlines
-          </button>
-          <button
-            aria-label="Toggle Figma layout grids"
-            aria-pressed={layoutGridsVisible && hasLayoutGrids}
-            className={"dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8 hidden sm:inline-flex"}
-            disabled={!hasLayoutGrids}
-            onClick={() => setLayoutGridsVisible((current) => !current)}
-            title={hasLayoutGrids ? "Show captured Figma layout grids" : "No visible Figma layout grids were captured"}
-            type="button"
-          >
-            Grid
-          </button>
+          <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-white/[0.08]" />
+          <div aria-label="Overlays" className="canvas-toolgroup shrink-0" role="group">
+            <button
+              aria-pressed={outlinesVisible}
+              className="canvas-tool"
+              onClick={() => {
+                setCanvasModeOverride("inspect");
+                setPanelMode("inspect");
+                setOutlinesVisible((current) => !current);
+              }}
+              title="Outline every element (O)"
+              type="button"
+            >
+              <OutlineIcon /><span className="max-xl:sr-only">Outlines</span>
+            </button>
+            <button
+              aria-label="Toggle Figma layout grids"
+              aria-pressed={layoutGridsVisible && hasLayoutGrids}
+              className="canvas-tool"
+              disabled={!hasLayoutGrids}
+              onClick={() => setLayoutGridsVisible((current) => !current)}
+              title={hasLayoutGrids ? "Layout grids (G)" : "No layout grids in this capture"}
+              type="button"
+            >
+              <GridIcon /><span className="max-xl:sr-only">Grids</span>
+            </button>
+            {changedNodeIds.length ? (
+              <button
+                aria-pressed={showChanges}
+                className="canvas-tool"
+                onClick={() => setShowChanges((current) => !current)}
+                title={`Outline what changed since ${comparisonSummary?.earlierVersionLabel ?? "the previous version"} (D)`}
+                type="button"
+              >
+                <ChangesIcon /><span className="max-xl:sr-only">Changes</span>
+                <span className="canvas-tool-count">{changedNodeIds.length}</span>
+              </button>
+            ) : null}
+          </div>
+        </nav>
+
+        <div className="flex shrink-0 items-center gap-1">
           {/* Rendered before the viewport is ready too, so the toolbar doesn't jump when it mounts. */}
           <CanvasToolbar
-              scale={viewportControls?.scale ?? 1}
-              exportTargets={exportTargets}
-              shareUrl={metadata.reviewHref}
-              shareTitle={metadata.projectName + " · " + metadata.handoffName}
-              sharingEndpoint={sharingEndpoint}
-              publishEndpoint={sharingEndpoint ? `${sharingEndpoint}/publish` : null}
-              publishVersionId={metadata.selectedVersionId}
-              latestVersionId={metadata.versions[0]?.id ?? metadata.selectedVersionId}
-              publishedVersionId={metadata.publishedVersionId}
-              onZoomOut={() => viewportControls?.zoomOut()}
-              onFit={() => viewportControls?.fitToFrame()}
-              onZoomIn={() => viewportControls?.zoomIn()}
-            />
-        </nav>
+            scale={viewportControls?.scale ?? 1}
+            exportTargets={exportTargets}
+            shareUrl={metadata.reviewHref}
+            shareTitle={metadata.projectName + " · " + metadata.handoffName}
+            sharingEndpoint={sharingEndpoint}
+            publishEndpoint={sharingEndpoint ? `${sharingEndpoint}/publish` : null}
+            publishVersionId={metadata.selectedVersionId}
+            latestVersionId={metadata.versions[0]?.id ?? metadata.selectedVersionId}
+            publishedVersionId={metadata.publishedVersionId}
+            onZoomOut={() => viewportControls?.zoomOut()}
+            onFit={() => viewportControls?.fitToFrame()}
+            onZoomIn={() => viewportControls?.zoomIn()}
+          />
+          <div className="relative">
+            <button aria-expanded={moreOpen} aria-label="More" className="canvas-tool" onClick={() => setMoreOpen((current) => !current)} title="More" type="button">
+              <MoreIcon />
+            </button>
+            {moreOpen ? (
+              <>
+                <button aria-label="Close menu" className="fixed inset-0 z-40 cursor-default" onClick={() => setMoreOpen(false)} tabIndex={-1} type="button" />
+                <div className="dial-popover absolute right-0 top-10 z-50 w-56 p-1.5" role="menu">
+                  <button className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06]" onClick={() => { setMoreOpen(false); setShortcutsOpen(true); }} role="menuitem" type="button">
+                    <KeyboardIcon className="size-4 text-foreground-subtle" />
+                    <span className="flex-1">Keyboard shortcuts</span>
+                    <kbd className="canvas-kbd">?</kbd>
+                  </button>
+                  {metadata.canManageIntegrations ? (
+                    <button className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06]" onClick={() => { setMoreOpen(false); setPanelMode("mcp"); setCommentMode(false); setAnnotationMode(false); if (isMobile) { setStatesOpen(false); setMobilePanelOpenOverride(true); } }} role="menuitem" type="button">
+                      <span aria-hidden="true" className="grid size-4 place-items-center font-mono text-[9px] text-foreground-subtle">AI</span>
+                      <span className="flex-1">Connect an AI coding tool</span>
+                    </button>
+                  ) : null}
+                  <div className="px-1 pt-1 [&>button]:w-full [&>button]:justify-start"><InstallAppButton compact /></div>
+                </div>
+              </>
+            ) : null}
+          </div>
+        </div>
       </header>
+      {shortcutsOpen ? <CanvasShortcuts onClose={() => setShortcutsOpen(false)} /> : null}
       {latestPublished && latestPublished.versionId !== metadata.selectedVersionId ? (
         <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2 text-[12px] text-foreground-muted">
           <p className="flex items-center gap-2"><span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning" />{latestPublished.versionId !== metadata.publishedVersionId ? "A new version was published" : "Latest published version"} · Version {latestPublished.versionLabel}</p>
@@ -1269,6 +1334,8 @@ export function HandoffCanvas({
           outlinesVisible={outlinesVisible}
           layoutGridsVisible={layoutGridsVisible && hasLayoutGrids}
           highlightedNodeIds={highlightedNodeIds}
+          changedNodeIds={showChanges ? changedNodeIds : []}
+          viewMemoryKey={`${handoffId}:${metadata.selectedVersionId}:${visualFrame.id}`}
           showResolvedPins={showResolvedPins}
           selectedNodeId={selectedNodeId}
           onSelectNode={selectNode}
@@ -1319,36 +1386,75 @@ export function HandoffCanvas({
               </button>
             </div>
           ) : null}
-          <nav aria-label="Details panels" className="dial-segmented mx-3 mb-1 mt-3 flex shrink-0 overflow-x-auto [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <div className="canvas-tabs shrink-0" role="tablist" aria-label="Details panels">
             {([
-              ["inspect", "Properties", true],
-              ["compare", "Compare", canCompare],
-              ["version", "Version", Boolean(dockPanels.version)],
-              ["agent", "Agent", Boolean(metadata.canManageIntegrations && metadata.reviewHref && metadata.versionIsPublished)],
-              ["local", "Local", metadata.canUseLocalPreview],
-              ["mcp", "MCP", metadata.canManageIntegrations],
-            ] as const).filter(([, , visible]) => visible).map(([mode, label]) => (
+              ["inspect", "Inspect", InspectIcon, null],
+              ["comments", "Comments", CommentIcon, openCommentCount || null],
+              ["annotations", "Notes", NoteIcon, annotations.length || null],
+              ...(dockPanels.version ? [["version", "Versions", VersionIcon, null] as const] : []),
+            ] as const).map(([mode, label, TabIcon, count]) => (
               <button
-                aria-pressed={mode === "compare" ? comparisonOpen : panelMode === mode}
-                className="min-h-8 min-w-fit flex-1 whitespace-nowrap px-1.5 text-[12px]"
+                aria-selected={panelMode === mode}
+                className="canvas-tab"
                 key={mode}
                 onClick={() => {
-                  if (mode === "compare") {
-                    onOpenComparison();
-                    return;
-                  }
                   setPanelMode(mode);
+                  setPanelMoreOpen(false);
                   setCommentMode(false);
                   setAnnotationMode(false);
                   if (mode === "inspect") setCanvasModeOverride("inspect");
                   if (isMobile) setMobilePanelOpenOverride(true);
                 }}
+                role="tab"
                 type="button"
               >
+                <TabIcon className="size-3.5 max-xl:hidden" />
                 {label}
+                {count ? <span className="canvas-tab-count">{count}</span> : null}
               </button>
             ))}
-          </nav>
+            {(() => {
+              const extras = ([
+                ["agent", "Agent handoff", Boolean(metadata.canManageIntegrations && metadata.reviewHref && metadata.versionIsPublished)],
+                ["local", "Local preview", metadata.canUseLocalPreview],
+                ["mcp", "AI coding tool (MCP)", metadata.canManageIntegrations],
+              ] as const).filter(([, , visible]) => visible);
+              if (!extras.length) return null;
+              const activeExtra = extras.find(([mode]) => mode === panelMode);
+              return (
+                <div className="relative ml-auto flex">
+                  <button aria-expanded={panelMoreOpen} aria-selected={Boolean(activeExtra)} className="canvas-tab" onClick={() => setPanelMoreOpen((current) => !current)} role="tab" type="button">
+                    {activeExtra ? activeExtra[1].replace(/ \(MCP\)$/, "") : "More"}
+                    <ChevronDownIcon className="size-3" />
+                  </button>
+                  {panelMoreOpen ? (
+                    <>
+                      <button aria-label="Close menu" className="fixed inset-0 z-40 cursor-default" onClick={() => setPanelMoreOpen(false)} tabIndex={-1} type="button" />
+                      <div className="dial-popover absolute right-0 top-11 z-50 w-52 p-1.5" role="menu">
+                        {extras.map(([mode, label]) => (
+                          <button
+                            className="flex w-full items-center rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06]"
+                            key={mode}
+                            onClick={() => {
+                              setPanelMode(mode);
+                              setPanelMoreOpen(false);
+                              setCommentMode(false);
+                              setAnnotationMode(false);
+                              if (isMobile) setMobilePanelOpenOverride(true);
+                            }}
+                            role="menuitem"
+                            type="button"
+                          >
+                            {label}
+                          </button>
+                        ))}
+                      </div>
+                    </>
+                  ) : null}
+                </div>
+              );
+            })()}
+          </div>
           {panelMode === "annotations" ? (
             <CanvasAnnotationsPanel key={`${selectedAnnotationId ?? "new"}:${pendingAnnotationPoint?.frameId ?? ""}:${pendingAnnotationPoint?.x ?? ""}:${pendingAnnotationPoint?.y ?? ""}`} annotations={annotations} screenNames={{ [overviewCanvasFrameId]: "Canvas", ...Object.fromEntries(screens.map((screen) => [screen.id, screen.name])) }} selectedAnnotationId={selectedAnnotationId} pendingPoint={pendingAnnotationPoint} placing={annotationMode} canEdit={metadata.canAnnotate} hasSelectedScreen={Boolean(selectedFrame)} error={annotationError} onSelect={selectAnnotation} onStartPlacement={() => { setCommentMode(false); setSelectedAnnotationId(null); setPendingAnnotationPoint(null); setAnnotationMode(true); }} onPlaceAtSelectedScreen={annotateSelectedScreen} onCancel={() => { setAnnotationMode(false); setPendingAnnotationPoint(null); setSelectedAnnotationId(null); }} onCreate={createAnnotation} onUpdate={updateAnnotation} onDelete={deleteAnnotation} />
           ) : panelMode === "comments" ? (

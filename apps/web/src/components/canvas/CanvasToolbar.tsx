@@ -96,38 +96,22 @@ export function CanvasToolbar({
   }
 
   return (
-    <div className="contents text-[12px] text-foreground-muted lg:flex lg:flex-nowrap lg:items-center lg:gap-1" role="group" aria-label="Canvas controls">
-      <button
-        className="dial-button max-lg:hidden min-h-11 shrink-0 px-3 text-[12px] lg:min-h-8"
-        onClick={onFit}
-        type="button"
-      >
-        Fit
-      </button>
-      <div className="dial-segmented h-11 shrink-0 lg:h-8">
-        <button
-          aria-label="Zoom out"
-          className="grid size-11 shrink-0 place-items-center rounded text-[16px] text-foreground-muted hover:bg-surface-strong hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:size-7"
-          onClick={onZoomOut}
-          type="button"
-        >
-          −
+    <div className="flex flex-nowrap items-center gap-1 text-[12px] text-foreground-muted" role="group" aria-label="Canvas controls">
+      <div aria-label="Zoom" className="canvas-toolgroup shrink-0" role="group">
+        <button aria-label="Zoom out" className="canvas-tool !min-w-7 !px-0" onClick={onZoomOut} title="Zoom out (−)" type="button">
+          <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" viewBox="0 0 16 16"><path d="M3.5 8h9" /></svg>
         </button>
         <button
-          aria-label={"Fit canvas to view. Current zoom " + zoomPercentage}
-          className="min-h-11 min-w-11 shrink-0 px-1 font-mono text-[11px] text-foreground hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:min-h-6 lg:min-w-10"
+          aria-label={"Fit to screen. Current zoom " + zoomPercentage}
+          className="canvas-tool !min-w-12 !px-1 font-mono !text-[11px] tabular-nums"
           onClick={onFit}
+          title="Fit to screen (⇧1)"
           type="button"
         >
           {zoomPercentage}
         </button>
-        <button
-          aria-label="Zoom in"
-          className="grid size-11 shrink-0 place-items-center rounded text-[16px] text-foreground-muted hover:bg-surface-strong hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary lg:size-7"
-          onClick={onZoomIn}
-          type="button"
-        >
-          +
+        <button aria-label="Zoom in" className="canvas-tool !min-w-7 !px-0" onClick={onZoomIn} title="Zoom in (+)" type="button">
+          <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9" /></svg>
         </button>
       </div>
       <AssetExportMenu targets={exportTargets} />

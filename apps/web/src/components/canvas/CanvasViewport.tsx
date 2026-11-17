@@ -58,6 +58,10 @@ type CanvasViewportProps = {
   outlinesVisible: boolean;
   layoutGridsVisible: boolean;
   highlightedNodeIds: string[];
+  /** Elements that changed in this version, outlined when "Changes" is on. */
+  changedNodeIds?: string[];
+  /** Remembers pan and zoom for this canvas (per handoff and screen). */
+  viewMemoryKey?: string | null;
   showResolvedPins: boolean;
   selectedNodeId: string | null;
   onSelectNode: (sourceNodeId: string) => void;
@@ -135,6 +139,8 @@ export function CanvasViewport({
   outlinesVisible,
   layoutGridsVisible,
   highlightedNodeIds,
+  changedNodeIds = [],
+  viewMemoryKey = null,
   showResolvedPins,
   selectedNodeId,
   onSelectNode,
@@ -161,6 +167,7 @@ export function CanvasViewport({
   const { containerRef, viewportSize, transform, fitToFrame, zoomBy, zoomAt, panBy } = useCanvasViewport(
     frame.sourceWidth,
     frame.sourceHeight,
+    viewMemoryKey,
   );
   const controls = useMemo<CanvasViewportControls>(() => ({
     scale: transform.scale,
@@ -364,6 +371,11 @@ export function CanvasViewport({
     [overlayNodes],
   );
   const highlightedNodeIdSet = useMemo(() => new Set(highlightedNodeIds), [highlightedNodeIds]);
+  const changedRects = useMemo(() => changedNodeIds.flatMap((nodeId) => {
+    const node = overlayNodesById.get(nodeId);
+    const rect = node ? elementRectInFrame(node.bounds, frame) : null;
+    return rect && rect.width > 0 && rect.height > 0 ? [{ nodeId, rect }] : [];
+  }), [changedNodeIds, frame, overlayNodesById]);
   const selectedBounds = selectedNodeId ? overlayNodesById.get(selectedNodeId)?.bounds : undefined;
   const hoveredBounds = hoveredNodeId ? overlayNodesById.get(hoveredNodeId)?.bounds : undefined;
   const visibleOverlayNodes = useMemo(() => {
@@ -571,6 +583,15 @@ export function CanvasViewport({
               </div>
             );
           }) : null}
+
+          {changedRects.map(({ nodeId, rect }) => (
+            <span
+              aria-hidden="true"
+              className="canvas-changed-outline pointer-events-none absolute"
+              key={"changed:" + nodeId}
+              style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height, borderWidth: 1.5 * inverseScale, borderRadius: 2 * inverseScale }}
+            />
+          ))}
 
           {visibleOverlayNodes.map((node) => {
             const x = node.bounds.x.value === null ? null : node.bounds.x.value - (frame.kind === "overview" ? frame.sourceX : 0);

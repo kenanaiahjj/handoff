@@ -6,6 +6,7 @@ import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } fro
 import { lastScreenHash } from "./HandoffTabs";
 import { QuickOpen, type QuickOpenItem } from "./QuickOpen";
 import { NeedsYou } from "./NeedsYou";
+import { ProjectIcon } from "./ProjectIcon";
 import { refreshAppBadge } from "./AppBadgeSync";
 import { NotificationSettings } from "./NotificationSettings";
 import type { OpenMention } from "@/src/server/services/mentions";
@@ -48,7 +49,7 @@ function Avatar({ name, image, size = 16 }: { name: string; image: string | null
 }
 
 type ViewerGroupItem = ViewerProject["handoffs"][number] & { workspaceId: string; projectId: string; projectName: string };
-type ViewerGroup = { key: string; title: string; newCount: number; updatedAt: string; projectCount: number; items: ViewerGroupItem[] };
+type ViewerGroup = { key: string; title: string; iconUrl: string | null; newCount: number; updatedAt: string; projectCount: number; items: ViewerGroupItem[] };
 
 const relativeTime = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
@@ -238,6 +239,7 @@ export function ViewerHome({
       const group = byKey.get(key) ?? {
         key,
         title: showWorkspaceNames ? project.workspaceName : project.projectName,
+        iconUrl: showWorkspaceNames ? null : project.iconUrl ?? null,
         newCount: 0,
         updatedAt: project.updatedAt,
         projectCount: 0,
@@ -443,11 +445,7 @@ export function ViewerHome({
                   >
                     <svg aria-hidden="true" className={"size-3.5 transition-transform " + (collapsed.includes(group.key) ? "-rotate-90" : "")} fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" /></svg>
                   </button>
-                  {showWorkspaceNames ? (
-                    <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-[7px] bg-surface-strong text-[11px] font-semibold">
-                      {group.title.trim().slice(0, 1).toUpperCase()}
-                    </span>
-                  ) : null}
+                  <ProjectIcon name={group.title} size={24} src={group.iconUrl} />
                   <h2 className="min-w-0 truncate text-[14px] font-semibold tracking-[-0.01em]" id={`group-${group.key}`}>{group.title}</h2>
                   {collapsed.includes(group.key) ? <span className="shrink-0 font-mono text-[11px] text-foreground-subtle">{group.items.length}</span> : null}
                   {group.newCount ? <span className="viewer-count shrink-0 whitespace-nowrap">{group.newCount} new</span> : null}

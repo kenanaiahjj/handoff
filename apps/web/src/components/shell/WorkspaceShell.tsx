@@ -5,6 +5,7 @@ import { isDevelopmentAuthBypassActive, viewAsModeFor } from "@/src/server/auth-
 import { ViewAsSwitcher } from "./ViewAsSwitcher";
 import { InstallAppButton } from "./InstallAppButton";
 import { BrandMark } from "./BrandMark";
+import { ProjectIcon } from "./ProjectIcon";
 import { NotificationSettingsButton } from "./NotificationSettingsButton";
 
 export type WorkspaceChoice = {
@@ -17,6 +18,8 @@ export type WorkspaceNavItem = {
   label: string;
   href: string;
   icon?: "home" | "grid" | "folder" | "settings";
+  /** A project's uploaded icon, shown instead of the folder. */
+  imageUrl?: string | null;
   active?: boolean;
 };
 
@@ -80,7 +83,7 @@ function NavigationSections({ sections }: { sections: WorkspaceNavSection[] }) {
                   className={`flex min-h-9 items-center gap-2.5 rounded-control px-2.5 text-[13px] font-medium transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary ${item.active ? "workspace-nav-active text-foreground" : "text-foreground-muted hover:bg-surface-inset hover:text-foreground"}`}
                   href={item.href}
                 >
-                  <Icon name={item.icon} />
+                  {item.imageUrl ? <ProjectIcon name={item.label} size={18} src={item.imageUrl} /> : <Icon name={item.icon} />}
                   <span className="min-w-0 flex-1 truncate">{item.label}</span>
                 </Link>
               </li>

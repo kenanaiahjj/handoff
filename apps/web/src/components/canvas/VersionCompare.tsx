@@ -130,7 +130,7 @@ export function VersionCompare({
   const [fromVersionId, setFromVersionId] = useState(validInitialRouteState?.fromVersionId ?? defaultFromVersionId);
   // Screens list: search by name and optionally show only screens that changed.
   const [screenQuery, setScreenQuery] = useState("");
-  const [changedOnly, setChangedOnly] = useState(false);
+  const [changedOnly, setChangedOnly] = useState(Boolean(validInitialRouteState));
   const [pairResultState, setPairResultState] = useState<PairResultState | null>(null);
   const [pairFrameSelection, setPairFrameSelection] = useState<PairFrameSelection | null>(null);
   const [pairViewPreference, setPairViewPreference] = useState<PairViewPreference | null>(() =>

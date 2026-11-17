@@ -1,3 +1,4 @@
+import { projectIconUrl, projectIconVersions } from "@/src/server/services/project-icons";
 import type { WorkspaceNavSection } from "./WorkspaceShell";
 
 type WorkspaceNavigationProject = { id: string; name: string };
@@ -17,6 +18,7 @@ export function createWorkspaceNavigation({
   page: WorkspacePage;
   activeProjectId?: string;
 }): WorkspaceNavSection[] {
+  const iconVersions = projects.length ? projectIconVersions(workspaceId) : {};
   return [
     {
       label: companyName ?? "Main",
@@ -33,6 +35,7 @@ export function createWorkspaceNavigation({
             label: project.name,
             href: `/workspace/${workspaceId}/projects/${project.id}`,
             icon: "folder" as const,
+            imageUrl: projectIconUrl(workspaceId, project.id, iconVersions[project.id]),
             active: project.id === activeProjectId,
           })),
         }]
