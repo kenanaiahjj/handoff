@@ -1,5 +1,9 @@
 import { getDatabase } from "../db";
 
+/**
+ * Owners added by email (stored in the `superadmin` table for history). They become owners on
+ * sign-in and may use an email outside the company domains. In the app this is just "Owner".
+ */
 export type Superadmin = { email: string; name: string | null; createdAt: string; hasSignedIn: boolean };
 
 function normalizeEmail(email: string) {

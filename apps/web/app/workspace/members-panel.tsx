@@ -107,7 +107,7 @@ export function MembersPanel({
       <ul className="space-y-1">
         {members.map((member) => {
           const isYou = member.id === currentUserId;
-          const locked = !canEdit || isYou || member.isAdmin;
+          const locked = !canEdit || isYou;
           return (
             <li className="dial-row flex items-center gap-2.5 px-2.5 py-2" key={member.id}>
               <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center rounded-full bg-surface-strong text-[10px] font-semibold">
@@ -119,13 +119,12 @@ export function MembersPanel({
                   {isYou ? <span className="ml-1.5 font-normal text-foreground-subtle">(you)</span> : null}
                 </span>
                 <span className="block truncate text-[11px] text-foreground-subtle">
-                  {member.isAdmin ? "Admin · " : ""}
                   {member.jobRole ? `${jobLabels[member.jobRole] ?? member.jobRole} · ` : ""}
                   {member.email}
                 </span>
               </span>
               {locked ? (
-                <span className="shrink-0 text-[11px] capitalize text-foreground-muted" title={member.isAdmin ? "Admins are managed under Admins" : undefined}>
+                <span className="shrink-0 text-[11px] capitalize text-foreground-muted" >
                   {roleOptions.find((option) => option.value === member.role)?.label ?? member.role}
                 </span>
               ) : (

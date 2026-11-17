@@ -1,6 +1,6 @@
 import { getDatabase } from "../db";
 import type { WorkspaceRole } from "../workspace-access";
-import { isSuperadmin } from "./superadmins";
+import { removeSuperadmin } from "./superadmins";
 
 export class MemberChangeError extends Error {
   constructor(message: string, readonly status: 400 | 403 | 404 | 409) {
@@ -16,7 +16,6 @@ export type Member = {
   role: WorkspaceRole;
   jobRole: string | null;
   requestedRole: "designer" | null;
-  isAdmin: boolean;
   joinedAt: string;
 };
 
@@ -32,11 +31,11 @@ export function listMembers(workspaceId: string): Member[] {
        WHERE workspace_membership.workspace_id = ?
        ORDER BY user_profile.requested_role IS NULL, "user".name COLLATE NOCASE`,
     )
-    .all(workspaceId) as Array<Omit<Member, "isAdmin">>;
-  return rows.map((row) => ({ ...row, isAdmin: isSuperadmin(row.email) }));
+    .all(workspaceId) as Member[];
+  return rows;
 }
 
-/** The person being changed: a member, not the actor, not an admin (admins are managed under Admins). */
+/** The person being changed: a member of the team other than the actor. */
 function editableMember(workspaceId: string, actorId: string, userId: string) {
   if (userId === actorId) throw new MemberChangeError("You can't change your own access. Ask another owner.", 400);
   const member = getDatabase()
@@ -47,7 +46,6 @@ function editableMember(workspaceId: string, actorId: string, userId: string) {
     )
     .get(workspaceId, userId) as { role: WorkspaceRole; email: string } | undefined;
   if (!member) throw new MemberChangeError("That person isn't on the team.", 404);
-  if (isSuperadmin(member.email)) throw new MemberChangeError("Admins are always owners. Remove them from Admins first.", 409);
   return member;
 }
 
@@ -65,6 +63,8 @@ export function changeMemberRole(input: { workspaceId: string; actorId: string; 
     database
       .prepare("UPDATE workspace_membership SET role = ? WHERE workspace_id = ? AND user_id = ?")
       .run(input.role, input.workspaceId, input.userId);
+    // Someone added as an owner by email is re-made owner on each visit; stop that once demoted.
+    if (input.role !== "owner") removeSuperadmin(member.email);
     // Any role decision answers a pending designer request.
     database.prepare("UPDATE user_profile SET requested_role = NULL WHERE user_id = ?").run(input.userId);
   })();
@@ -87,6 +87,7 @@ export function removeMember(input: { workspaceId: string; actorId: string; user
   const now = new Date().toISOString();
   database.transaction(() => {
     database.prepare("DELETE FROM workspace_membership WHERE workspace_id = ? AND user_id = ?").run(input.workspaceId, input.userId);
+    removeSuperadmin(member.email);
     database
       .prepare("UPDATE handoff_invite SET revoked_at = ? WHERE workspace_id = ? AND lower(email) = lower(?) AND revoked_at IS NULL")
       .run(now, input.workspaceId, member.email);

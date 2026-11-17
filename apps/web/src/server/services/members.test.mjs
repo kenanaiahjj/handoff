@@ -50,17 +50,20 @@ test("declining keeps the person as a reviewer and clears the request", () => {
   assert.equal(hasPendingDesignerRequest("dee"), false);
 });
 
-test("owners can't edit themselves, admins, or leave the team without an owner", () => {
+test("owners can't edit themselves or leave the team without an owner", () => {
   assert.throws(() => changeMemberRole({ workspaceId: "ws", actorId: "owner", userId: "owner", role: "qa" }), /your own access/);
-  assert.throws(() => removeMember({ workspaceId: "ws", actorId: "owner", userId: "admin" }), /Admins are always owners/);
   assert.throws(() => changeMemberRole({ workspaceId: "ws", actorId: "owner", userId: "missing", role: "qa" }), /isn't on the team/);
 
-  // With Ada as an admin owner there are two owners, so Olive could be demoted by Ada...
-  database.prepare("DELETE FROM superadmin").run();
-  changeMemberRole({ workspaceId: "ws", actorId: "admin", userId: "owner", role: "designer" });
-  // ...but the last remaining owner can't be demoted or removed.
-  assert.throws(() => changeMemberRole({ workspaceId: "ws", actorId: "owner", userId: "admin", role: "designer" }), /at least one owner/);
-  assert.throws(() => removeMember({ workspaceId: "ws", actorId: "owner", userId: "admin" }), /at least one owner/);
+  // Ada was added as an owner by email; she is an ordinary owner and can be demoted. Demoting her
+  // also drops her from that list, so she isn't made owner again on her next visit.
+  changeMemberRole({ workspaceId: "ws", actorId: "owner", userId: "admin", role: "designer" });
+  assert.equal(roleOf("admin"), "designer");
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM superadmin").get().n, 0);
+
+  // Olive is now the only owner: she can't be demoted or removed.
+  assert.throws(() => changeMemberRole({ workspaceId: "ws", actorId: "admin", userId: "owner", role: "designer" }), /at least one owner/);
+  assert.throws(() => removeMember({ workspaceId: "ws", actorId: "admin", userId: "owner" }), /at least one owner/);
+  changeMemberRole({ workspaceId: "ws", actorId: "owner", userId: "admin", role: "owner" });
 });
 
 test("removing someone revokes their shares, PD role, pins and open mentions", () => {

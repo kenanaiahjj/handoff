@@ -7,7 +7,7 @@ import { CreateInviteForm } from "../workspace-actions";
 import { SuperadminsPanel } from "../superadmins-panel";
 import { MembersPanel } from "../members-panel";
 import { hasPendingDesignerRequest, listMembers } from "@/src/server/services/members";
-import { isSuperadmin, listSuperadmins } from "@/src/server/services/superadmins";
+import { listSuperadmins } from "@/src/server/services/superadmins";
 import { projectIconVersions } from "@/src/server/services/project-icons";
 import { ProjectsPane, type ProjectCard } from "./projects-pane";
 import Link from "next/link";
@@ -126,9 +126,9 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
                 </div>
                 <MembersPanel canEdit={workspace.role === "owner"} currentUserId={session.user.id} initial={members} workspaceId={workspace.id} />
               </div>
-              {isSuperadmin(session.user.email) ? (
+              {workspace.role === "owner" ? (
                 <div className="mt-6 border-t border-border pt-5">
-                  <h3 className="text-[13px] font-semibold text-foreground" id="admins-title">Admins</h3>
+                  <h3 className="text-[13px] font-semibold text-foreground" id="admins-title">Add an owner by email</h3>
                   <div className="mt-3"><SuperadminsPanel currentEmail={session.user.email} initial={listSuperadmins()} /></div>
                 </div>
               ) : null}
