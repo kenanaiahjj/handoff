@@ -65,7 +65,11 @@ type CanvasViewportProps = {
   showResolvedPins: boolean;
   selectedNodeId: string | null;
   onSelectNode: (sourceNodeId: string) => void;
-  onSelectFrame: (frameId: string) => void;
+  onSelectFrame: (frameId: string, event?: { shiftKey: boolean }) => void;
+  /** Screens picked for removal: shown with a check and a tint. */
+  pickedFrameIds?: Set<string>;
+  /** Select mode: a click on a screen marks it instead of opening it. */
+  pickingFrames?: boolean;
   comments: HandoffComment[];
   selectedCommentId: string | null;
   commentMode: boolean;
@@ -145,6 +149,8 @@ export function CanvasViewport({
   selectedNodeId,
   onSelectNode,
   onSelectFrame,
+  pickedFrameIds,
+  pickingFrames = false,
   comments,
   selectedCommentId,
   commentMode,
@@ -204,6 +210,11 @@ export function CanvasViewport({
   }, []);
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
+    // Shift-click marks screens; stop the browser from also selecting text across the page.
+    if (event.shiftKey) {
+      event.preventDefault();
+      window.getSelection()?.removeAllRanges();
+    }
     const target = event.target as HTMLElement;
     if (commentMode || annotationMode || event.button !== 0 || target.closest("[data-comment-pin], [data-canvas-annotation]")) return;
     if (target.closest("button") && !target.closest("[data-source-node-id]")) return;
@@ -307,7 +318,7 @@ export function CanvasViewport({
       return;
     }
 
-    if (!nodeButton && screen) onSelectFrame(screen.id);
+    if (screen && (!nodeButton || event.shiftKey || pickingFrames)) onSelectFrame(screen.id, { shiftKey: event.shiftKey });
   }
 
   const commentPins = layoutCommentPins(comments, screens, frame, showResolvedPins, overviewOrigin);
@@ -432,6 +443,9 @@ export function CanvasViewport({
         className={"review-dot-grid group relative grid min-h-0 min-w-0 flex-1 touch-none place-items-center overflow-hidden outline-none focus-visible:outline-none " + (commentMode || annotationMode ? "cursor-crosshair" : isDragging ? "cursor-grabbing" : "cursor-grab")}
         onClick={handleCanvasClick}
         onPointerCancel={handlePointerCancel}
+        onMouseDown={(event) => {
+          if (event.shiftKey) event.preventDefault();
+        }}
         onPointerDown={handlePointerDown}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
@@ -523,6 +537,13 @@ export function CanvasViewport({
                   border: (selected ? 3 : 1.5) * inverseScale + "px solid " + borderColor,
                 }}
               >
+                  {pickedFrameIds?.has(screen.id) ? (
+                    <span aria-hidden="true" className="absolute inset-0 grid place-items-center bg-black/55 outline outline-danger" style={{ outlineWidth: 3 * inverseScale }}>
+                      <span className="whitespace-nowrap rounded-full bg-danger font-semibold text-white shadow-lg" style={{ fontSize: 12 * inverseScale, padding: `${4 * inverseScale}px ${10 * inverseScale}px` }}>
+                        Removing
+                      </span>
+                    </span>
+                  ) : null}
                   {showLabel ? (
                     <div
                     className="pointer-events-auto absolute left-0 z-20 flex items-center gap-1 whitespace-nowrap"
@@ -536,7 +557,7 @@ export function CanvasViewport({
                       aria-label={"Select screen " + screen.name + (label ? ", " + label : "")}
                         aria-pressed={selected}
                       className="flex max-w-none items-center gap-1.5 rounded-chip bg-surface/95 text-left text-foreground-muted shadow-sm hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
-                      onClick={() => onSelectFrame(screen.id)}
+                      onClick={(event) => onSelectFrame(screen.id, { shiftKey: event.shiftKey })}
                       style={{
                         minHeight: 24 * inverseScale + "px",
                         borderRadius: 7 * inverseScale + "px",

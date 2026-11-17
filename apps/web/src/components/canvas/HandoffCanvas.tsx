@@ -19,6 +19,7 @@ import { LocalPreviewPanel } from "./LocalPreviewPanel";
 import { CanvasAnnotationsPanel, type CanvasAnnotationRecord } from "./CanvasAnnotationsPanel";
 import { McpConnectionPanel } from "./McpConnectionPanel";
 import { CanvasShortcuts } from "./CanvasShortcuts";
+import { PublishChangesDialog } from "./PublishChangesDialog";
 import { ChangesIcon, ChevronDownIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MoreIcon, NoteIcon, OutlineIcon, VersionIcon } from "./canvas-icons";
 import { getMeasureUnit, measureUnits, setMeasureUnit } from "./measure-unit";
 import { hasVisibleLayoutGrids } from "./LayoutGridOverlay";
@@ -160,6 +161,30 @@ export function HandoffCanvas({
   const latestVersion = metadata.versions[0];
   const canRemoveScreens = Boolean(sharingEndpoint) && !metadata.visualOnly && latestVersion?.id === metadata.selectedVersionId;
   const [removingScreen, setRemovingScreen] = useState(false);
+  // Pending changes for the next version: screens marked for removal (Shift-click on the canvas,
+  // the list's Select mode, or the inspector). Kept on this device until published or discarded.
+  const [removalSelecting, setRemovalSelecting] = useState(false);
+  const [removalPicked, setRemovalPicked] = useState<Set<string>>(() => new Set());
+  const [publishDialogOpen, setPublishDialogOpen] = useState(false);
+  const draftKey = `asbir-draft-removals:${handoffId}:${metadata.versions[0]?.id ?? ""}`;
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(draftKey) ?? "[]");
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the draft lives in localStorage, only readable after mount.
+      if (Array.isArray(saved) && saved.length) setRemovalPicked(new Set(saved.filter((id): id is string => typeof id === "string")));
+    } catch {
+      // No saved draft.
+    }
+  }, [draftKey]);
+  const updateDraft = useCallback((next: Set<string>) => {
+    setRemovalPicked(next);
+    try {
+      if (next.size) localStorage.setItem(draftKey, JSON.stringify([...next]));
+      else localStorage.removeItem(draftKey);
+    } catch {
+      // Storage blocked: the draft lasts until the page reloads.
+    }
+  }, [draftKey]);
   const router = useRouter();
   const { confirm: confirmRemoval, dialog: removalDialog } = useConfirm();
   const screens = useMemo(() => frames.filter((frame) => frame.kind === "frame"), [frames]);
@@ -601,6 +626,7 @@ export function HandoffCanvas({
       }
       if (event.shiftKey && event.key === "1") viewportControls?.fitToFrame();
       if (event.key === "Escape") {
+        setRemovalSelecting(false);
         setSearchOpen(false);
         setCommentMode(false);
         setAnnotationMode(false);
@@ -686,34 +712,45 @@ export function HandoffCanvas({
     return <p className="p-6 text-sm text-foreground-muted">This snapshot has no frames to display.</p>;
   }
 
-  // Removing a screen publishes a new version without it (versions never change), so the
-  // comparison and changelog then list it as removed.
-  async function removeSelectedScreen() {
-    if (!canRemoveScreens || !sharingEndpoint || !latestVersion || !selectedFrame || selectedFrame.kind !== "frame" || removingScreen) return;
-    const confirmed = await confirmRemoval({
-      title: `Remove “${selectedFrame.name}”?`,
-      description: "This publishes a new version of the canvas without this screen. Earlier versions keep it, and the comparison and changelog will list it as removed.",
-      confirmLabel: "Remove screen",
-    });
-    if (!confirmed) return;
+  const pendingRemovals = canRemoveScreens ? [...removalPicked].filter((id) => screens.some((frame) => frame.id === id)) : [];
+
+  function toggleRemoval(frameId: string) {
+    const next = new Set(removalPicked);
+    if (next.has(frameId)) next.delete(frameId);
+    else next.add(frameId);
+    updateDraft(next);
+  }
+
+  // Publishing applies every pending change as ONE new version (versions never change), then
+  // publishes it to reviewers. The comparison and changelog list the removed screens.
+  async function publishChanges(input: { versionLabel: string; releaseNote: string }): Promise<string | null> {
+    if (!canRemoveScreens || !sharingEndpoint || !latestVersion || !pendingRemovals.length) return "Nothing to publish.";
+    if (pendingRemovals.length >= screens.length) return "A version needs at least one screen. Keep one and try again.";
     setRemovingScreen(true);
     try {
       const response = await fetch(`${sharingEndpoint}/versions/remove-screens`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ baseVersionId: latestVersion.id, frameIds: [selectedFrame.id] }),
+        body: JSON.stringify({
+          baseVersionId: latestVersion.id,
+          frameIds: pendingRemovals,
+          versionLabel: input.versionLabel || undefined,
+          releaseNote: input.releaseNote || undefined,
+        }),
       });
       const payload = await response.json() as { versionId?: string; error?: string };
-      if (!response.ok || !payload.versionId) throw new Error(payload.error ?? "Could not remove this screen.");
+      if (!response.ok || !payload.versionId) throw new Error(payload.error ?? "Could not publish this version.");
+      await fetch(`${sharingEndpoint}/publish`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ versionId: payload.versionId }),
+      }).catch(() => null);
+      updateDraft(new Set());
       router.push(`${metadata.versionHrefPrefix}?versionId=${encodeURIComponent(payload.versionId)}`);
+      return null;
     } catch (cause) {
-      await confirmRemoval({
-        title: "Couldn’t remove this screen",
-        description: cause instanceof Error ? cause.message : "Try again.",
-        confirmLabel: "OK",
-        tone: "default",
-      });
       setRemovingScreen(false);
+      return cause instanceof Error ? cause.message : "Could not publish this version.";
     }
   }
 
@@ -1094,6 +1131,8 @@ export function HandoffCanvas({
             publishVersionId={metadata.selectedVersionId}
             latestVersionId={metadata.versions[0]?.id ?? metadata.selectedVersionId}
             publishedVersionId={metadata.publishedVersionId}
+            pendingChanges={pendingRemovals.length}
+            onReviewChanges={() => setPublishDialogOpen(true)}
             onZoomOut={() => viewportControls?.zoomOut()}
             onFit={() => viewportControls?.fitToFrame()}
             onZoomIn={() => viewportControls?.zoomIn()}
@@ -1125,6 +1164,15 @@ export function HandoffCanvas({
         </div>
       </header>
       {shortcutsOpen ? <CanvasShortcuts onClose={() => setShortcutsOpen(false)} /> : null}
+      {publishDialogOpen && pendingRemovals.length ? (
+        <PublishChangesDialog
+          defaultVersionLabel={`${metadata.versions[0]?.versionLabel ?? metadata.versionLabel} · ${pendingRemovals.length === 1 ? "1 screen" : `${pendingRemovals.length} screens`} removed`}
+          onClose={() => setPublishDialogOpen(false)}
+          onKeep={toggleRemoval}
+          onPublish={publishChanges}
+          removedScreens={pendingRemovals.map((id) => ({ id, name: screens.find((frame) => frame.id === id)?.name ?? id }))}
+        />
+      ) : null}
       {latestPublished && latestPublished.versionId !== metadata.selectedVersionId ? (
         <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2 text-[12px] text-foreground-muted">
           <p className="flex items-center gap-2"><span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning" />{latestPublished.versionId !== metadata.publishedVersionId ? "A new version was published" : "Latest published version"} · Version {latestPublished.versionLabel}</p>
@@ -1315,6 +1363,20 @@ export function HandoffCanvas({
                 comparisonSummary={comparisonSummary}
                 changedOnly={changedOnlyActive}
                 onChangedOnlyChange={setChangedOnly}
+                removal={canRemoveScreens ? {
+                  onReview: () => setPublishDialogOpen(true),
+                  removing: removingScreen,
+                  selecting: removalSelecting,
+                  picked: removalPicked,
+                  onSelectingChange: (value) => {
+                    setRemovalSelecting(value);
+                    if (value) {
+                      setCommentMode(false);
+                      setAnnotationMode(false);
+                    }
+                  },
+                  onPickedChange: updateDraft,
+                } : undefined}
               />
             )}
           </div>
@@ -1323,7 +1385,7 @@ export function HandoffCanvas({
         <CanvasViewport
           frame={visualFrame}
           overviewOrigin={{ sourceX: overviewFrame.sourceX, sourceY: overviewFrame.sourceY }}
-          interactionMode={canvasMode}
+          interactionMode={removalSelecting ? "view" : canvasMode}
           screens={canvasScreens}
           changedOnly={changedOnlyActive}
           selectedFrameId={selectedFrameId}
@@ -1338,7 +1400,16 @@ export function HandoffCanvas({
           showResolvedPins={showResolvedPins}
           selectedNodeId={selectedNodeId}
           onSelectNode={selectNode}
-          onSelectFrame={selectFrame}
+          onSelectFrame={(frameId, event) => {
+            // Shift-click (or select mode) picks screens for removal instead of opening them.
+            if (canRemoveScreens && (removalSelecting || event?.shiftKey)) {
+              toggleRemoval(frameId);
+              return;
+            }
+            selectFrame(frameId);
+          }}
+          pickedFrameIds={canRemoveScreens ? new Set(pendingRemovals) : undefined}
+          pickingFrames={removalSelecting}
           annotations={annotations}
           selectedAnnotationId={selectedAnnotationId}
           annotationMode={annotationMode}
@@ -1539,7 +1610,8 @@ export function HandoffCanvas({
             onSelectNode={selectNode}
             onCopyLink={() => navigator.clipboard?.writeText(window.location.href)}
             inspecting={canvasMode === "inspect"}
-            onRemoveScreen={canRemoveScreens && selectedFrame?.kind === "frame" ? () => void removeSelectedScreen() : undefined}
+            onRemoveScreen={canRemoveScreens && selectedFrame?.kind === "frame" ? () => toggleRemoval(selectedFrame.id) : undefined}
+            screenMarkedForRemoval={Boolean(selectedFrame && removalPicked.has(selectedFrame.id))}
             removingScreen={removingScreen}
           />
           ) : null}

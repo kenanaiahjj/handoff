@@ -15,6 +15,9 @@ type CanvasToolbarProps = {
   publishVersionId: string;
   latestVersionId: string;
   publishedVersionId: string | null;
+  /** Unpublished changes (screens marked for removal); Publish then opens the review dialog. */
+  pendingChanges?: number;
+  onReviewChanges?: () => void;
   onZoomOut: () => void;
   onFit: () => void;
   onZoomIn: () => void;
@@ -33,6 +36,8 @@ export function CanvasToolbar({
   publishVersionId,
   latestVersionId,
   publishedVersionId,
+  pendingChanges = 0,
+  onReviewChanges,
   onZoomOut,
   onFit,
   onZoomIn,
@@ -115,7 +120,17 @@ export function CanvasToolbar({
         </button>
       </div>
       <AssetExportMenu targets={exportTargets} />
-      {publishEndpoint ? (
+      {publishEndpoint && pendingChanges > 0 && onReviewChanges ? (
+        <button
+          className="canvas-publish-action flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap px-3 text-[12px] font-semibold lg:h-8"
+          onClick={onReviewChanges}
+          title="Review and publish your changes as a new version"
+          type="button"
+        >
+          Publish
+          <span className="rounded-full bg-black/15 px-1.5 text-[10px] leading-4">{pendingChanges}</span>
+        </button>
+      ) : publishEndpoint ? (
         latestIsPublished ? (
           <span className="canvas-publish-status" role="status">
             <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">

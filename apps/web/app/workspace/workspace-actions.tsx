@@ -1,6 +1,7 @@
 "use client";
 
 import { type FormEvent, useState } from "react";
+import { inviteRoleLabel, inviteRoles, isInviteRole, workspaceRoleLabel } from "@/src/lib/team-roles";
 import { useConfirm } from "@/src/components/ConfirmDialog";
 import { useRouter } from "next/navigation";
 import { authClient } from "@/src/client/auth-client";
@@ -146,6 +147,7 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
 type InviteEntry = {
   id: string;
   role: string;
+  jobRole?: string | null;
   expiresAt: string | null;
   createdAt: string;
   inviteUrl?: string;
@@ -235,11 +237,9 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
             onChange={(event) => setRole(event.target.value)}
             value={role}
           >
-            <option value="designer">Designer</option>
-            <option value="reviewer">Product manager / reviewer</option>
-            <option value="developer">Developer</option>
-            <option value="qa">QA</option>
-            <option value="owner">Owner</option>
+            {inviteRoles.map((option) => (
+              <option key={option} value={option}>{inviteRoleLabel(option)}</option>
+            ))}
           </select>
         </label>
         <label className="space-y-1.5 text-[12px] text-foreground" htmlFor="invite-expiry">
@@ -278,7 +278,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
             {invites.map((invite) => (
               <li className="flex flex-wrap items-center gap-2 py-2.5" key={invite.id}>
                 <span className="min-w-0 flex-1">
-                  <span className="block truncate text-[12px] font-medium capitalize text-foreground">{invite.role}</span>
+                  <span className="block truncate text-[12px] font-medium text-foreground">{invite.jobRole && isInviteRole(invite.jobRole) ? inviteRoleLabel(invite.jobRole) : workspaceRoleLabel(invite.role)}</span>
                   <span className="mt-0.5 block text-[10px] text-foreground-subtle">
                     {invite.expiresAt ? `Expires ${new Date(invite.expiresAt).toLocaleDateString()}` : "Never expires"}
                     <span aria-hidden="true"> · </span>

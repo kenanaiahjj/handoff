@@ -8,7 +8,8 @@ export interface CanvasTransform {
   offsetY: number;
 }
 
-const MIN_SCALE = 0.08;
+// Low enough that Fit shows a whole large Figma page (some are 25,000+ px wide).
+const MIN_SCALE = 0.01;
 const MAX_SCALE = 5;
 
 const viewMemoryPrefix = "asbir-canvas-view:";

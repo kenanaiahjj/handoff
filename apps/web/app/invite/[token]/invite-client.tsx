@@ -8,6 +8,7 @@ import { BrandMark } from "@/src/components/shell/BrandMark";
 type InviteInfo = {
   workspaceName: string;
   role: string;
+  roleLabel?: string;
   expiresAt: string | null;
   reusable: boolean;
 };
@@ -70,7 +71,7 @@ export function InviteClient({ token }: { token: string }) {
         </h1>
         {invite ? (
           <p className="mt-3 text-sm leading-6 text-foreground-muted" role="status">
-            You will join as <span className="font-medium capitalize text-foreground">{invite.role}</span>. {invite.reusable ? "This link can be reused" : "This link can be used once"}{invite.expiresAt ? ` and expires ${new Date(invite.expiresAt).toLocaleDateString()}.` : ". It stays active until a workspace member revokes it."}
+            You will join as <span className="font-medium text-foreground">{invite.roleLabel ?? invite.role}</span>. {invite.reusable ? "This link can be reused" : "This link can be used once"}{invite.expiresAt ? ` and expires ${new Date(invite.expiresAt).toLocaleDateString()}.` : ". It stays active until a workspace member revokes it."}
           </p>
         ) : !errorMessage ? (
           <p className="mt-3 text-sm text-foreground-muted" role="status">Checking the invitation…</p>

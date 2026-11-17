@@ -6,9 +6,11 @@ import {
   workspaceRoles,
 } from "@/src/server/workspace-access";
 import { getDatabase } from "@/src/server/db";
+import { inviteRoles, isInviteRole, workspaceRoleForInvite } from "@/src/lib/team-roles";
 
 const createInviteSchema = z.object({
-  role: z.enum(workspaceRoles),
+  // A job role from onboarding (or Owner); older callers may still send a workspace role.
+  role: z.union([z.enum(inviteRoles), z.enum(workspaceRoles)]),
   expiresInDays: z.union([
     z.number().int().refine((days) => [1, 7, 15, 30, 90, 365].includes(days)),
     z.null(),
@@ -25,7 +27,7 @@ export async function GET(
     const access = await requireWorkspaceRole(request, workspaceId, ["owner"]);
     const invites = getDatabase()
       .prepare(
-        `SELECT id, role, expires_at AS expiresAt, created_at AS createdAt
+        `SELECT id, role, job_role AS jobRole, expires_at AS expiresAt, created_at AS createdAt
          FROM workspace_invite
          WHERE workspace_id = ? AND revoked_at IS NULL
            AND (expires_at IS NULL OR expires_at > ?)
@@ -54,6 +56,9 @@ export async function POST(
       return Response.json({ error: "Choose a role and one of the available expiry periods." }, { status: 400 });
     }
 
+    const requested = parsed.data.role;
+    const jobRole = isInviteRole(requested) && requested !== "owner" ? requested : null;
+    const workspaceRole = isInviteRole(requested) ? workspaceRoleForInvite(requested) : requested;
     const token = randomBytes(32).toString("base64url");
     const tokenHash = createHash("sha256").update(token).digest("hex");
     const createdAt = new Date();
@@ -65,15 +70,16 @@ export async function POST(
     getDatabase()
       .prepare(
         `INSERT INTO workspace_invite
-          (id, workspace_id, invited_by_user_id, token_hash, role, expires_at, reusable, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, 1, ?)`,
+          (id, workspace_id, invited_by_user_id, token_hash, role, job_role, expires_at, reusable, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
       )
       .run(
         inviteId,
         access.workspaceId,
         access.userId,
         tokenHash,
-        parsed.data.role,
+        workspaceRole,
+        jobRole,
         expiresAt,
         createdAt.toISOString(),
       );
@@ -81,7 +87,7 @@ export async function POST(
     const inviteUrl = new URL(`/invite/${token}`, request.url).toString();
     return Response.json({
       inviteUrl,
-      invite: { id: inviteId, role: parsed.data.role, expiresAt, createdAt: createdAt.toISOString() },
+      invite: { id: inviteId, role: workspaceRole, jobRole, expiresAt, createdAt: createdAt.toISOString() },
     }, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {

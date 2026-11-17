@@ -1,24 +1,8 @@
 import { getDatabase } from "../db";
-import type { WorkspaceRole } from "../workspace-access";
+import { isJobRole, jobRoles, type JobRole } from "@/src/lib/team-roles";
 
-/**
- * The roles a person picks for themselves. Product designers manage handoffs (they upload captures)
- * once an owner approves; everyone else sees only the handoffs shared with them.
- */
-export const jobRoles = {
-  designer: { label: "Product designer", description: "Request access to capture and publish handoffs.", workspaceRole: "reviewer" },
-  dev: { label: "Developer", description: "Build from specs and measurements.", workspaceRole: "developer" },
-  qa: { label: "QA", description: "Check builds against the design.", workspaceRole: "qa" },
-  pm: { label: "Product manager", description: "Review handoffs, lead projects.", workspaceRole: "reviewer" },
-  marketing: { label: "Marketing", description: "Follow launches, grab final screens.", workspaceRole: "reviewer" },
-  exec: { label: "Executive", description: "Follow progress and sign off.", workspaceRole: "reviewer" },
-} as const satisfies Record<string, { label: string; description: string; workspaceRole: WorkspaceRole }>;
-
-export type JobRole = keyof typeof jobRoles;
-
-export function isJobRole(value: unknown): value is JobRole {
-  return typeof value === "string" && Object.hasOwn(jobRoles, value);
-}
+// The role list lives in src/lib/team-roles.ts, shared with invite links.
+export { isJobRole, jobRoles, type JobRole };
 
 /** Company email domains allowed to sign up, from ASBIR_ALLOWED_EMAIL_DOMAINS ("lmf.ventures,plxrmedia.com"). */
 export function allowedEmailDomains() {

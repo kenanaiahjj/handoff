@@ -5,6 +5,7 @@ import { AppSplash } from "@/src/components/shell/AppSplash";
 import { DeviceCacheRegistration } from "@/src/client/device-cache";
 import { UpdateNotice } from "@/src/components/shell/UpdateNotice";
 import { AppBadgeSync } from "@/src/components/shell/AppBadgeSync";
+import { CanvasNavigationOverlay } from "@/src/components/shell/CanvasNavigationOverlay";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -47,6 +48,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <DeviceCacheRegistration />
         <UpdateNotice />
         <AppBadgeSync />
+        <CanvasNavigationOverlay />
         {children}
       </body>
     </html>

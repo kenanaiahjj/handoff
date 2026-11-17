@@ -30,6 +30,8 @@ type ElementInspectorProps = {
   /** Owners and designers on the latest version can remove the selected screen. */
   onRemoveScreen?: () => void;
   removingScreen?: boolean;
+  /** This screen is marked for removal in the next (unpublished) version. */
+  screenMarkedForRemoval?: boolean;
 };
 
 function valueText(value: unknown) {
@@ -306,6 +308,7 @@ export function ElementInspector({
   pendingNode = null,
   onRemoveScreen,
   removingScreen = false,
+  screenMarkedForRemoval = false,
 }: ElementInspectorProps) {
   const [cssCopied, setCssCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -726,8 +729,8 @@ export function ElementInspector({
             <span className="flex shrink-0 items-center gap-1.5">
               {canCompare ? <button className="dial-button min-h-8 px-2.5 text-[12px]" onClick={onCompare} type="button">Compare</button> : null}
               {onRemoveScreen ? (
-                <button className="dial-button min-h-8 px-2.5 text-[12px] !text-danger hover:!bg-danger/15" disabled={removingScreen} onClick={onRemoveScreen} type="button">
-                  {removingScreen ? "Removing…" : "Remove screen"}
+                <button className={"dial-button min-h-8 px-2.5 text-[12px] " + (screenMarkedForRemoval ? "" : "!text-danger hover:!bg-danger/15")} disabled={removingScreen} onClick={onRemoveScreen} title={screenMarkedForRemoval ? "Keep this screen in the next version" : "Remove from the next version (publish to apply)"} type="button">
+                  {screenMarkedForRemoval ? "Keep screen" : "Remove screen"}
                 </button>
               ) : null}
             </span>

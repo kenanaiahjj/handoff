@@ -37,6 +37,7 @@ type WorkspaceDetail = {
 type WorkspaceInvite = {
   id: string;
   role: string;
+  jobRole: string | null;
   expiresAt: string | null;
   createdAt: string;
 };
@@ -81,7 +82,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
   const updates = listViewerUpdates(workspace.id, viewer);
   const invites = getDatabase()
     .prepare(
-      `SELECT id, role, expires_at AS expiresAt, created_at AS createdAt
+      `SELECT id, role, job_role AS jobRole, expires_at AS expiresAt, created_at AS createdAt
        FROM workspace_invite
        WHERE workspace_id = ? AND revoked_at IS NULL
          AND (expires_at IS NULL OR expires_at > ?)

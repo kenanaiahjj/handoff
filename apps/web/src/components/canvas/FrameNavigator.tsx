@@ -55,7 +55,20 @@ type FrameNavigatorProps = {
   comparisonSummary: FrameComparisonSummary | null;
   changedOnly: boolean;
   onChangedOnlyChange: (changedOnly: boolean) => void;
+  /** Owners and designers on the latest version: tick several screens and remove them in one version. */
+  removal?: {
+    /** Opens the publish dialog with the pending changes. */
+    onReview: () => void;
+    removing: boolean;
+    /** Shared with the canvas, where screens can be clicked to select them too. */
+    selecting: boolean;
+    picked: Set<string>;
+    onSelectingChange: (selecting: boolean) => void;
+    onPickedChange: (picked: Set<string>) => void;
+  };
 };
+
+const emptyPicked = new Set<string>();
 
 export function FrameNavigator({
   frames,
@@ -68,8 +81,12 @@ export function FrameNavigator({
   comparisonSummary,
   changedOnly,
   onChangedOnlyChange,
+  removal,
 }: FrameNavigatorProps) {
   const [screenQuery, setScreenQuery] = useState("");
+  const selecting = Boolean(removal?.selecting);
+  const picked = removal?.picked ?? emptyPicked;
+  const setPicked = (update: (current: Set<string>) => Set<string>) => removal?.onPickedChange(update(picked));
   const [elementQuery, setElementQuery] = useState("");
   const screens = useMemo(() => frames.filter((frame) => frame.kind === "frame"), [frames]);
   const activeFrame = filterChangedFrames(
@@ -83,6 +100,20 @@ export function FrameNavigator({
     const searchText = `${frame.name} ${frame.pageName ?? ""}`.toLowerCase();
     return searchText.includes(screenQuery.trim().toLowerCase());
   });
+  const pickedCount = [...picked].filter((id) => screens.some((frame) => frame.id === id)).length;
+  const allVisiblePicked = visibleFrames.length > 0 && visibleFrames.every((frame) => picked.has(frame.id));
+  function togglePicked(frameId: string) {
+    setPicked((current) => {
+      const next = new Set(current);
+      if (next.has(frameId)) next.delete(frameId);
+      else next.add(frameId);
+      return next;
+    });
+  }
+  function stopSelecting() {
+    removal?.onSelectingChange(false);
+  }
+
   const filteredNodes = (activeFrame?.nodes ?? []).filter((node) =>
     (node.name + " " + node.type + " " + node.sourceNodeId).toLowerCase().includes(elementQuery.toLowerCase()),
   );
@@ -139,14 +170,41 @@ export function FrameNavigator({
         </label>
       </div>
 
-      <div className="flex items-center justify-between px-3 pb-2 pt-1">
-        <h2 className="dial-section-title">Screens</h2>
-        <span className="font-mono text-[10px] text-foreground-subtle">{visibleFrames.length}/{screens.length}</span>
-      </div>
+      {selecting ? (
+        <div className="mx-2 mb-2 flex items-center gap-1.5 rounded-[9px] bg-white/[0.04] px-2 py-1.5">
+          <span className="min-w-0 flex-1 truncate text-[12px] font-medium text-foreground" title="Click screens here or on the canvas">{pickedCount ? `${pickedCount} to remove` : "Click screens to remove"}</span>
+          <button
+            className="rounded-[6px] px-1.5 py-1 text-[11px] text-foreground-muted hover:bg-white/[0.06] hover:text-foreground"
+            onClick={() => setPicked((current) => {
+              const next = new Set(current);
+              for (const frame of visibleFrames) {
+                if (allVisiblePicked) next.delete(frame.id);
+                else next.add(frame.id);
+              }
+              return next;
+            })}
+            type="button"
+          >
+            {allVisiblePicked ? "Clear" : screenQuery.trim() || changedOnly ? "Select shown" : "Select all"}
+          </button>
+          <button className="rounded-[6px] px-1.5 py-1 text-[11px] text-foreground-muted hover:bg-white/[0.06] hover:text-foreground" onClick={stopSelecting} type="button">Done</button>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-2 px-3 pb-2 pt-1">
+          <h2 className="dial-section-title">Screens</h2>
+          <span className="ml-auto font-mono text-[10px] text-foreground-subtle">{visibleFrames.length}/{screens.length}</span>
+          {removal ? (
+            <button className="rounded-[6px] px-1.5 py-0.5 text-[11px] text-foreground-muted hover:bg-white/[0.06] hover:text-foreground" onClick={() => removal.onSelectingChange(true)} title="Mark screens to remove in the next version (or Shift-click screens on the canvas)" type="button">
+              Select
+            </button>
+          ) : null}
+        </div>
+      )}
 
       <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
         {visibleFrames.map((frame, index) => {
-          const selected = frame.id === activeFrameId;
+          // In select mode "selected" means marked for removal; otherwise it's the open screen.
+          const selected = selecting ? picked.has(frame.id) : frame.id === activeFrameId;
           const status = frameStatuses[frame.id];
           const statusLabel = status && status !== "unchanged" ? comparisonFrameStatusLabel(status) : null;
           const statusTone = status === "added" ? "bg-[#183a2d] text-success"
@@ -157,15 +215,22 @@ export function FrameNavigator({
               <button
                 aria-pressed={selected}
                 className={"flex min-h-9 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] font-medium transition-colors " + (selected ? "bg-surface-strong text-foreground" : "text-foreground-muted hover:bg-surface-inset hover:text-foreground")}
-                onClick={() => onSelect(frame.id)}
+                onClick={() => (selecting ? togglePicked(frame.id) : onSelect(frame.id))}
                 title={frame.pageName ? `${frame.name} · ${frame.pageName}` : frame.name}
                 type="button"
               >
+                {selecting ? (
+                  <span aria-hidden="true" className={"grid size-4 shrink-0 place-items-center rounded-[4px] border " + (picked.has(frame.id) ? "border-foreground bg-foreground text-background" : "border-white/25")}>
+                    {picked.has(frame.id) ? <svg className="size-3" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" viewBox="0 0 16 16"><path d="m3.5 8.2 2.8 2.8 6.2-6.2" /></svg> : null}
+                  </span>
+                ) : null}
                 <span className="min-w-0 flex-1 truncate">
                   {frame.name}
                   {frame.pageName ? <span className="ml-1.5 text-[10px] text-foreground-subtle">· {frame.pageName}</span> : null}
                 </span>
-                {statusLabel ? (
+                {!selecting && picked.has(frame.id) ? (
+                  <span className="shrink-0 rounded-control bg-danger/15 px-1.5 py-0.5 text-[10px] font-medium leading-4 text-danger">Removing</span>
+                ) : statusLabel ? (
                   <span className={"shrink-0 rounded-control px-1.5 py-0.5 text-[10px] font-medium leading-4 " + statusTone}>{statusLabel}</span>
                 ) : null}
                 <span className="sr-only">Screen {index + 1} of {screens.length}</span>
@@ -175,6 +240,20 @@ export function FrameNavigator({
         })}
         {!visibleFrames.length ? <li className="px-2 py-3 text-xs text-foreground-subtle">{changedOnly ? "No changed screens match this view." : "No screens match this filter."}</li> : null}
       </ul>
+
+      {removal && pickedCount ? (
+        <div className="shrink-0 border-t border-border p-2.5">
+          <button
+            className="flex h-9 w-full items-center justify-center rounded-[9px] bg-[#ececec] text-[12px] font-semibold text-[#141414] transition-colors hover:bg-white disabled:opacity-50"
+            disabled={removal.removing}
+            onClick={removal.onReview}
+            type="button"
+          >
+            Review &amp; publish · {pickedCount} {pickedCount === 1 ? "change" : "changes"}
+          </button>
+          <p className="mt-1.5 text-center text-[10px] leading-4 text-foreground-subtle">Nothing changes for reviewers until you publish.</p>
+        </div>
+      ) : null}
 
       {activeFrame?.exact && activeFrame.nodes.length ? (
         <details className="shrink-0 border-t border-border px-3 py-2">
