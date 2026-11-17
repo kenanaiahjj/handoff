@@ -9,7 +9,7 @@ import { useFrameNodeDetails } from "./useFrameNodeDetails";
 import { useConfirm } from "@/src/components/ConfirmDialog";
 import { CommentThread, type PendingCommentPoint } from "../comments/CommentThread";
 import type { CommentIdentity, HandoffComment } from "../comments/CommentPin";
-import { CanvasToolbar } from "./CanvasToolbar";
+import { CanvasToolbar, ZoomControls } from "./CanvasToolbar";
 import { CanvasViewport, type CanvasViewportControls } from "./CanvasViewport";
 import { InstallAppButton } from "@/src/components/shell/InstallAppButton";
 import { BrandMark } from "@/src/components/shell/BrandMark";
@@ -1006,11 +1006,11 @@ export function HandoffCanvas({
           </Link>
           <span aria-hidden="true" className="h-5 w-px shrink-0 bg-white/[0.08]" />
           <div className="flex min-w-0 items-center gap-1.5" title={metaParts.join(" · ")}>
-            <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em] text-foreground lg:max-w-[150px] xl:max-w-[220px]">{metadata.handoffName}</span>
+            <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em] text-foreground max-sm:max-w-[4.5rem] lg:max-w-[150px] xl:max-w-[220px]">{metadata.handoffName}</span>
             <label className="sr-only" htmlFor="review-version-select">Version</label>
-            <span className="relative inline-flex shrink-0 items-center">
+            <span className="relative inline-flex min-w-[5.5rem] shrink items-center">
               <select
-                className="h-7 max-w-[150px] appearance-none truncate xl:max-w-[240px] rounded-[7px] border border-white/[0.08] bg-white/[0.03] bg-[length:12px] bg-[position:right_7px_center] py-0 pl-2 !pr-7 font-mono text-[11px] text-foreground-muted transition-colors hover:border-white/[0.16] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                className="h-7 w-full min-w-0 max-w-[150px] appearance-none truncate xl:max-w-[240px] rounded-[7px] border border-white/[0.08] bg-white/[0.03] bg-[length:12px] bg-[position:right_7px_center] py-0 pl-2 !pr-7 font-mono text-[11px] text-foreground-muted transition-colors hover:border-white/[0.16] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                 id="review-version-select"
                 onChange={(event) => window.location.assign(metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(event.target.value))}
                 value={metadata.selectedVersionId}
@@ -1117,6 +1117,13 @@ export function HandoffCanvas({
               </button>
             ) : null}
           </div>
+          <ZoomControls
+            className="sm:hidden"
+            scale={viewportControls?.scale ?? 1}
+            onZoomOut={() => viewportControls?.zoomOut()}
+            onFit={() => viewportControls?.fitToFrame()}
+            onZoomIn={() => viewportControls?.zoomIn()}
+          />
         </nav>
 
         <div className="flex shrink-0 items-center gap-1">

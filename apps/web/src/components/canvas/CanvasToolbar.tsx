@@ -43,7 +43,6 @@ export function CanvasToolbar({
   onZoomIn,
 }: CanvasToolbarProps) {
   const router = useRouter();
-  const zoomPercentage = Math.round(scale * 100) + "%";
   const [shareStatus, setShareStatus] = useState<ShareStatus>("idle");
   const [locallyPublishedVersionId, setLocallyPublishedVersionId] = useState<string | null>(null);
   const [publishPending, setPublishPending] = useState(false);
@@ -102,23 +101,7 @@ export function CanvasToolbar({
 
   return (
     <div className="flex flex-nowrap items-center gap-1 text-[12px] text-foreground-muted" role="group" aria-label="Canvas controls">
-      <div aria-label="Zoom" className="canvas-toolgroup shrink-0" role="group">
-        <button aria-label="Zoom out" className="canvas-tool !min-w-7 !px-0" onClick={onZoomOut} title="Zoom out (−)" type="button">
-          <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" viewBox="0 0 16 16"><path d="M3.5 8h9" /></svg>
-        </button>
-        <button
-          aria-label={"Fit to screen. Current zoom " + zoomPercentage}
-          className="canvas-tool !min-w-12 !px-1 font-mono !text-[11px] tabular-nums"
-          onClick={onFit}
-          title="Fit to screen (⇧1)"
-          type="button"
-        >
-          {zoomPercentage}
-        </button>
-        <button aria-label="Zoom in" className="canvas-tool !min-w-7 !px-0" onClick={onZoomIn} title="Zoom in (+)" type="button">
-          <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9" /></svg>
-        </button>
-      </div>
+      <ZoomControls className="max-sm:hidden" scale={scale} onZoomOut={onZoomOut} onFit={onFit} onZoomIn={onZoomIn} />
       <AssetExportMenu targets={exportTargets} />
       {publishEndpoint && pendingChanges > 0 && onReviewChanges ? (
         <button
@@ -171,12 +154,42 @@ export function CanvasToolbar({
             <circle cx="12.2" cy="3.6" r="1.65" stroke="currentColor" strokeWidth="1.3" />
             <circle cx="12.2" cy="12.4" r="1.65" stroke="currentColor" strokeWidth="1.3" />
           </svg>
-          {shareStatus === "copied" ? "Copied" : shareStatus === "failed" ? "Try again" : "Share"}
+          <span className="max-sm:sr-only">{shareStatus === "copied" ? "Copied" : shareStatus === "failed" ? "Try again" : "Share"}</span>
         </button>
       )}
       <span aria-live="polite" className="sr-only">
         {shareStatus === "copied" ? "Canvas link copied to clipboard." : shareStatus === "failed" ? "Could not copy the canvas link." : ""}
       </span>
+    </div>
+  );
+}
+
+/** Zoom out, fit and zoom in. On phones it sits in the tools row so the version picker keeps its room. */
+export function ZoomControls({ scale, onZoomOut, onFit, onZoomIn, className }: {
+  scale: number;
+  onZoomOut: () => void;
+  onFit: () => void;
+  onZoomIn: () => void;
+  className?: string;
+}) {
+  const zoomPercentage = Math.round(scale * 100) + "%";
+  return (
+    <div aria-label="Zoom" className={"canvas-toolgroup shrink-0" + (className ? " " + className : "")} role="group">
+      <button aria-label="Zoom out" className="canvas-tool !min-w-7 !px-0" onClick={onZoomOut} title="Zoom out (−)" type="button">
+        <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" viewBox="0 0 16 16"><path d="M3.5 8h9" /></svg>
+      </button>
+      <button
+        aria-label={"Fit to screen. Current zoom " + zoomPercentage}
+        className="canvas-tool !min-w-12 !px-1 font-mono !text-[11px] tabular-nums"
+        onClick={onFit}
+        title="Fit to screen (⇧1)"
+        type="button"
+      >
+        {zoomPercentage}
+      </button>
+      <button aria-label="Zoom in" className="canvas-tool !min-w-7 !px-0" onClick={onZoomIn} title="Zoom in (+)" type="button">
+        <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" viewBox="0 0 16 16"><path d="M3.5 8h9M8 3.5v9" /></svg>
+      </button>
     </div>
   );
 }
