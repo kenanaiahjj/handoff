@@ -3,6 +3,7 @@ import { z } from "zod";
 import { MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES } from "@asbir/snapshot-contract";
 import { getCaptureSession, isCaptureSessionExpired } from "@/src/server/repositories/capture-sessions";
 import { getDatabase } from "@/src/server/db";
+import { mapWithConcurrency } from "@/src/server/map-with-concurrency";
 import { getSupabaseStorageUrl, objectStore } from "@/src/server/storage/supabase-object-store";
 
 const supportedContentTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
@@ -170,7 +171,7 @@ export async function POST(request: Request) {
       await database.prepare(`DELETE FROM capture_upload_abandoned WHERE object_key IN (${placeholders})`).run(...cleanedKeys);
     }
 
-    const signedUploads = await Promise.all(declaredUploads.map(async (upload) => {
+    const signedUploads = await mapWithConcurrency(declaredUploads, 4, async (upload) => {
       const signed = await objectStore.createSignedUploadUrl(upload.objectKey);
       return {
         kind: upload.kind,
@@ -178,7 +179,7 @@ export async function POST(request: Request) {
         path: upload.objectKey,
         token: signed.token,
       };
-    }));
+    });
     const snapshot = signedUploads.find((upload) => upload.kind === "snapshot")!;
     const uploads = signedUploads.filter((upload) => upload.kind === "asset");
     return jsonResponse({
