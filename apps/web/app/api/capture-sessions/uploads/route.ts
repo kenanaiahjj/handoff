@@ -197,7 +197,8 @@ export async function POST(request: Request) {
         tusChunkBytes: 6 * 1024 * 1024,
       },
     });
-  } catch {
+  } catch (error) {
+    console.error("[capture uploads] Could not create Storage upload credentials:", error instanceof Error ? error.message : error);
     return jsonResponse({ error: "Could not create the Storage upload credentials. Retry the upload request." }, { status: 503 });
   }
 }
