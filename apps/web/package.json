@@ -7,7 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint .",
-    "prebuild": "node scripts/build-figma-plugin-template.mjs",
+    "prebuild": "node scripts/verify-deployment-database.mjs && node scripts/build-figma-plugin-template.mjs",
     "plugin:template": "node scripts/build-figma-plugin-template.mjs"
   },
   "dependencies": {

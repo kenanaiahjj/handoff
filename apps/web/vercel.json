@@ -1,4 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "crons": [{ "path": "/api/cron/digest", "schedule": "0 1 * * 1" }]
+  "crons": [
+    {
+      "path": "/api/cron/digest",
+      "schedule": "0 1 * * 1"
+    }
+  ],
+  "installCommand": "cd ../.. && npm ci --workspaces --include-workspace-root"
 }

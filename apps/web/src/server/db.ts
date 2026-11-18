@@ -194,6 +194,7 @@ function createPool() {
   if (!connectionString) {
     throw new Error("DATABASE_URL must be set before the app can connect to PostgreSQL.");
   }
+  const supabaseCa = process.env.SUPABASE_DB_SSL_CA?.trim();
 
   return new Pool({
     connectionString,
@@ -202,7 +203,9 @@ function createPool() {
     max: databasePoolMax(),
     connectionTimeoutMillis: 10_000,
     idleTimeoutMillis: 10_000,
-    ssl: isLocalDatabaseUrl(connectionString) ? false : { rejectUnauthorized: true },
+    ssl: isLocalDatabaseUrl(connectionString)
+      ? false
+      : { rejectUnauthorized: true, ...(supabaseCa ? { ca: supabaseCa } : {}) },
   });
 }
 
