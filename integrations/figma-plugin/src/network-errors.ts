@@ -38,3 +38,34 @@ export function withNetworkDiagnostics(baseFetch: typeof fetch, retryDelayMs = 1
     }
   };
 }
+
+const retryableFinalizeStatuses = new Set([429, 502, 503, 504]);
+
+/**
+ * Sends the finalize request, and if the connection drops or the server is briefly unavailable, asks
+ * again after a pause. That is safe: Handoff answers a repeated finalize for a capture it already
+ * saved with the saved version (also when two requests overlap), and nothing is saved twice. Without
+ * this, a dropped connection after a long upload looked like a failed capture.
+ */
+export async function sendFinalizeWithRetry(
+  send: () => Promise<Response>,
+  options: { delaysMs?: number[]; signal?: AbortSignal; onRetry?: (attempt: number, reason: string) => void; wait?: (ms: number) => Promise<void> } = {},
+) {
+  const delays = options.delaysMs ?? [2_000, 5_000, 10_000, 20_000];
+  const wait = options.wait ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+  for (let attempt = 0; ; attempt += 1) {
+    let reason: string;
+    try {
+      const response = await send();
+      if (!retryableFinalizeStatuses.has(response.status) || attempt >= delays.length) return response;
+      reason = `Handoff answered ${response.status}`;
+    } catch (error) {
+      if (options.signal?.aborted || (error instanceof DOMException && error.name === "AbortError")) throw error;
+      if (attempt >= delays.length) throw error;
+      reason = error instanceof Error ? error.message : "The connection dropped";
+    }
+    options.onRetry?.(attempt + 1, reason);
+    await wait(delays[attempt]);
+    if (options.signal?.aborted) throw new DOMException("The upload was cancelled.", "AbortError");
+  }
+}

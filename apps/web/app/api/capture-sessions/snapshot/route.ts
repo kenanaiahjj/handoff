@@ -15,7 +15,15 @@ import { SnapshotImportError, verifyRenderAssetBytes } from "@/src/server/servic
 import { createSnapshotEnvelope } from "@asbir/snapshot-contract";
 import { mergeFigmaCaptureSnapshots } from "@/src/server/services/merge-figma-capture";
 import { findReusableAsset } from "@/src/server/services/reusable-assets";
+import { primeCanvasCopy } from "@/src/server/services/version-canvas";
+import { storeScreenCopiesLater } from "@/src/server/services/frame-store";
 import { objectStore } from "@/src/server/storage/supabase-object-store";
+
+/**
+ * Large captures (250 MB of JSON) take tens of seconds to verify, merge and store. 300 s is the
+ * highest limit every Vercel plan accepts; on Pro it can be raised to 800 here.
+ */
+export const maxDuration = 300;
 
 const supportedContentTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
 const objectKeySchema = z.string().regex(/^[a-f0-9]{48}$/);
@@ -47,8 +55,24 @@ function retryUploadResponse(message: string) {
   return jsonResponse({ error: message, code: "upload_integrity_failed", retryUpload: true }, { status: 409 });
 }
 
+/**
+ * Deletes uploads no version uses. Uploaded renders become the version's own asset objects, so a key
+ * that any version refers to is never deleted, even if this request failed (for example a duplicate
+ * finalize that lost the race to another request for the same capture).
+ */
 async function cleanupObjects(keys: string[]) {
-  const uniqueKeys = [...new Set(keys)];
+  let uniqueKeys = [...new Set(keys)];
+  if (!uniqueKeys.length) return 0;
+  try {
+    const referenced = (await getDatabase()
+      .prepare("SELECT DISTINCT object_key AS objectKey FROM handoff_asset WHERE object_key = ANY(?)")
+      .all([uniqueKeys])) as Array<{ objectKey: string }>;
+    const inUse = new Set(referenced.map((row) => row.objectKey));
+    uniqueKeys = uniqueKeys.filter((key) => !inUse.has(key));
+  } catch (error) {
+    console.warn("[storage] Could not check which uploads are in use; keeping them all.", error);
+    return 0;
+  }
   const results = await Promise.allSettled(uniqueKeys.map((key) => objectStore.delete(key)));
   const failures = results.filter((result) => result.status === "rejected").length;
   if (failures) console.warn(`[storage] Could not delete ${failures} unreferenced capture upload(s).`);
@@ -309,12 +333,16 @@ export async function POST(request: Request) {
       snapshot: versionSnapshot,
       assets: versionAssets,
       reuseAssetsFromVersionId,
+      // Parsed with the schema and hash-checked above, or rebuilt by createSnapshotEnvelope after a merge.
+      snapshotVerified: true,
       consumeCaptureSessionId: session.id,
       captureUploadPaths: { snapshotKey: snapshotUpload.objectKey, assetKeys: assetPaths },
       frameReplacementMatches: frameMatches.length && baselineVersionId
         ? { baselineVersionId, matches: frameMatches }
         : undefined,
     });
+    await primeCanvasCopy(created.versionId, versionSnapshot.contentHash, versionSnapshot);
+    storeScreenCopiesLater(session.workspaceId, created.versionId, versionSnapshot);
     const origin = process.env.BETTER_AUTH_URL || new URL(request.url).origin;
     after(() => notifyNewVersion({ workspaceId: session.workspaceId, handoffId: created.handoffId, versionId: created.versionId, createdBy: session.createdBy }).catch((error) => console.warn("[slack]", error)));
 
@@ -325,6 +353,17 @@ export async function POST(request: Request) {
     const reviewUrl = new URL(`/workspace/${encodeURIComponent(session.workspaceId)}/projects/${encodeURIComponent(session.projectId)}/handoffs/${encodeURIComponent(created.handoffId)}?versionId=${encodeURIComponent(created.versionId)}`, origin).toString();
     return jsonResponse({ ...created, projectId: session.projectId, reviewUrl }, { status: 201 });
   } catch (error) {
+    // A second finalize for the same capture (a double click, or a retry after a dropped connection
+    // while the first was still saving) loses the race: answer with the version the first one saved.
+    const finalizedMeanwhile = await getFinalizedCaptureSession(token).catch(() => null);
+    if (finalizedMeanwhile) {
+      const origin = process.env.BETTER_AUTH_URL || new URL(request.url).origin;
+      const reviewUrl = new URL(
+        `/workspace/${encodeURIComponent(finalizedMeanwhile.workspaceId)}/projects/${encodeURIComponent(finalizedMeanwhile.projectId)}/handoffs/${encodeURIComponent(finalizedMeanwhile.handoffId)}?versionId=${encodeURIComponent(finalizedMeanwhile.versionId)}`,
+        origin,
+      ).toString();
+      return jsonResponse({ handoffId: finalizedMeanwhile.handoffId, versionId: finalizedMeanwhile.versionId, projectId: finalizedMeanwhile.projectId, reviewUrl }, { status: 200 });
+    }
     await cleanupObjects([snapshotUpload.objectKey, ...Object.values(assetPaths)]);
     if (error instanceof HandoffVersionConflictError) {
       return jsonResponse({ error: error.message }, { status: 409 });

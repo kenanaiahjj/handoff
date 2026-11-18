@@ -1,6 +1,7 @@
 import { getHandoff } from "@/src/server/repositories/handoffs";
-import { getVersion } from "@/src/server/repositories/versions";
-import { frameNodeDetails, frameNodeDetailsHeaders } from "@/src/server/services/frame-node-details";
+import { getVersionRecord } from "@/src/server/repositories/versions";
+import { frameNodeDetailsHeaders } from "@/src/server/services/frame-node-details";
+import { readScreenNodes } from "@/src/server/services/frame-store";
 import { requireHandoffAccess, WorkspaceAccessError } from "@/src/server/workspace-access";
 
 type FrameNodesRoute = {
@@ -12,11 +13,11 @@ export async function GET(request: Request, context: FrameNodesRoute) {
   try {
     await requireHandoffAccess(request, { workspaceId, handoffId });
     const handoff = (await getHandoff({ workspaceId, projectId, handoffId }));
-    const version = (await getVersion({ workspaceId, versionId }));
+    const version = (await getVersionRecord({ workspaceId, versionId }));
     if (!handoff || !version || version.handoffId !== handoffId) {
       return Response.json({ error: "Handoff version not found." }, { status: 404 });
     }
-    const nodes = frameNodeDetails(version, frameId);
+    const nodes = await readScreenNodes(version, frameId);
     if (!nodes) return Response.json({ error: "Screen not found in this version." }, { status: 404 });
     return Response.json({ nodes }, { headers: frameNodeDetailsHeaders });
   } catch (error) {

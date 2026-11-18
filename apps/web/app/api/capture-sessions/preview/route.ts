@@ -5,6 +5,12 @@ import { getDatabase } from "@/src/server/db";
 import { unmatchedFrameCandidatesBetween } from "@/src/server/services/diff";
 import { z } from "zod";
 
+/**
+ * Large captures (250 MB of JSON) take tens of seconds to verify, merge and store. 300 s is the
+ * highest limit every Vercel plan accepts; on Pro it can be raised to 800 here.
+ */
+export const maxDuration = 300;
+
 /** Names of the Figma pages a version was captured from, for the plugin's choice prompt. */
 function baselinePageNames(sourceMetadata: Record<string, unknown>) {
   const layout = Array.isArray(sourceMetadata.pageLayout) ? sourceMetadata.pageLayout : [];

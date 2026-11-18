@@ -8,12 +8,13 @@ import {
   type SnapshotPayload,
   createFigmaCaptureMergePlan,
   getFigmaCaptureOverviewClearRects,
+  getFigmaCaptureOverviewKeepRects,
   MAX_SNAPSHOT_JSON_BYTES,
   type PageCaptureChoice,
   type PageCaptureMode,
 } from "@asbir/snapshot-contract";
 import { jsonByteLength } from "./json-byte-length.ts";
-import { withNetworkDiagnostics } from "./network-errors";
+import { sendFinalizeWithRetry, withNetworkDiagnostics } from "./network-errors";
 import { encodeUtf8 } from "../../../packages/snapshot-contract/src/utf8";
 import type {
   CaptureAssetBytes,
@@ -622,6 +623,11 @@ async function createMergedOverviewPng(
     plan.replacedFrameIds,
     plan.pageOffsets,
   );
+  const keepRects = getFigmaCaptureOverviewKeepRects(
+    merge.frames,
+    plan.replacedFrameIds,
+    plan.pageOffsets,
+  );
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const canvas = document.createElement("canvas");
     canvas.width = Math.max(1, Math.min(maxDimension, Math.round(mergedBounds.width * scale)));
@@ -629,6 +635,14 @@ async function createMergedOverviewPng(
     const context = canvas.getContext("2d", { alpha: true });
     if (!context) throw new Error("The browser could not create the merged canvas overview.");
 
+    // Copy only the kept screens from the previous picture: anything else in it is stale
+    // (screens removed since it was drawn would otherwise reappear in the merged version).
+    context.save();
+    context.beginPath();
+    for (const bounds of keepRects) {
+      context.rect((bounds.x - mergedBounds.x) * scale, (bounds.y - mergedBounds.y) * scale, bounds.width * scale, bounds.height * scale);
+    }
+    context.clip();
     context.drawImage(
       baselineImage,
       (baselineBounds.x - mergedBounds.x) * scale,
@@ -636,6 +650,7 @@ async function createMergedOverviewPng(
       baselineBounds.width * scale,
       baselineBounds.height * scale,
     );
+    context.restore();
     for (const bounds of clearRects) {
       context.clearRect(
         (bounds.x - mergedBounds.x) * scale,
@@ -921,7 +936,11 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
         redirect: "error",
         signal: controller.signal,
       };
-      let response = await fetch(endpoint, finalizeInit);
+      const finalize = () => sendFinalizeWithRetry(() => fetch(endpoint, finalizeInit), {
+        signal: controller.signal,
+        onRetry: (attempt) => setStatus(`The connection to Handoff dropped while finalizing. Checking whether it saved the snapshot (attempt ${attempt + 1})…`, "warning"),
+      });
+      let response = await finalize();
       let body = await response.json().catch(() => ({})) as {
         error?: string;
         code?: string;
@@ -933,7 +952,7 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
       };
       if (response.status === 401 && body.code === "capture_token_expired") {
         await renewCaptureSession({ handoffOrigin: pending.origin, token: pending.token, signal: controller.signal });
-        response = await fetch(endpoint, finalizeInit);
+        response = await finalize();
         body = await response.json().catch(() => ({})) as typeof body;
       }
       if (!response.ok && body.retryUpload) {

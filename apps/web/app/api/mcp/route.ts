@@ -26,6 +26,12 @@ import { diffSnapshots, isStructuredSnapshot } from "@/src/server/services/diff"
 import { evaluateLayoutRules } from "@/src/server/services/layout-rules";
 import { objectStore } from "@/src/server/storage/supabase-object-store";
 
+/**
+ * Large captures (250 MB of JSON) take tens of seconds to verify, merge and store. 300 s is the
+ * highest limit every Vercel plan accepts; on Pro it can be raised to 800 here.
+ */
+export const maxDuration = 300;
+
 const idSchema = z.string().uuid();
 const idInput = z.object({ projectId: idSchema, handoffId: idSchema });
 const versionInput = idInput.extend({ versionId: idSchema });

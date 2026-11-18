@@ -33,6 +33,7 @@ type AssetFrameInput = {
   nodes: SnapshotNode[];
   overlayNodes?: CanvasFrameOption["overlayNodes"];
   maskRects?: CanvasFrameOption["maskRects"];
+  keepRects?: CanvasFrameOption["keepRects"];
   exact: boolean;
   kind: "overview" | "frame";
 };
@@ -122,6 +123,22 @@ function buildCanvasFrames(version: StoredVersion, publicReviewShareId?: string)
             width: removed.width,
             height: removed.height,
           };
+        })
+      : undefined,
+    // Only the version's current screens are shown from the overview image: pixels outside them
+    // are stale (removed screens, or an older picture that a page merge painted over).
+    keepRects: overviewExact && structuredSnapshot
+      ? structuredSnapshot.frames.flatMap((frame) => {
+          const bounds = frame.renderBounds ?? frame.bounds;
+          const [x, y, width, height] = [bounds.x.value, bounds.y.value, bounds.width.value, bounds.height.value];
+          if (x === null || y === null || width === null || height === null) return [];
+          const offset = pageOffsets.get(frame.sourcePageId ?? "");
+          return [{
+            x: x + (offset?.offsetX ?? 0) - (overviewBounds?.x.value ?? 0),
+            y: y + (offset?.offsetY ?? 0) - (overviewBounds?.y.value ?? 0),
+            width,
+            height,
+          }];
         })
       : undefined,
     exact: overviewExact,

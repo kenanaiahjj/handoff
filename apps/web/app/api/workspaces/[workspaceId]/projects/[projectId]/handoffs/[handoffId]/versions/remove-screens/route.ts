@@ -1,10 +1,18 @@
 import { after } from "next/server";
+import { primeCanvasCopy } from "@/src/server/services/version-canvas";
+import { storeScreenCopiesLater } from "@/src/server/services/frame-store";
 import { notifyNewVersion } from "@/src/server/services/slack";
 import { z } from "zod";
 import { createSnapshotEnvelope, removeFramesFromSnapshot, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { getHandoff, listHandoffVersions } from "@/src/server/repositories/handoffs";
 import { createHandoffVersion, getVersion, HandoffVersionConflictError, type VersionAssetInput } from "@/src/server/repositories/versions";
 import { requireHandoffAccess, WorkspaceAccessError } from "@/src/server/workspace-access";
+
+/**
+ * Large captures (250 MB of JSON) take tens of seconds to verify, merge and store. 300 s is the
+ * highest limit every Vercel plan accepts; on Pro it can be raised to 800 here.
+ */
+export const maxDuration = 300;
 
 type RemoveScreensRoute = {
   params: Promise<{ workspaceId: string; projectId: string; handoffId: string }>;
@@ -74,9 +82,13 @@ export async function POST(request: Request, context: RemoveScreensRoute) {
       releaseNote: releaseNote || defaultReleaseNote(removedNames),
       createdBy: actor.userId,
       snapshot: finalized.data,
+      // createSnapshotEnvelope validated it and computed its hash.
+      snapshotVerified: true,
       assets,
       reuseAssetsFromVersionId: baseVersionId,
     });
+    await primeCanvasCopy(created.versionId, finalized.data.contentHash, finalized.data);
+    storeScreenCopiesLater(workspaceId, created.versionId, finalized.data);
     after(() => notifyNewVersion({ workspaceId, handoffId: created.handoffId, versionId: created.versionId, createdBy: actor.userId }).catch((error) => console.warn("[slack]", error)));
     return Response.json({ versionId: created.versionId, removed: removedNames }, { status: 201 });
   } catch (error) {

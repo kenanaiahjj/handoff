@@ -55,9 +55,13 @@ export function frameDesignHash(frame: IndexedFrame) {
 
 /** The small per-screen index kept beside a compressed capture for PostgreSQL comparisons. */
 export function frameIndexFor(snapshotJson: string) {
-  const parsed = JSON.parse(snapshotJson) as { frames?: IndexedFrame[] };
+  return frameIndexForFrames((JSON.parse(snapshotJson) as { frames?: IndexedFrame[] }).frames);
+}
+
+/** frameIndexFor, from frames already in memory (saves parsing a large capture a second time). */
+export function frameIndexForFrames(frames: readonly IndexedFrame[] | undefined) {
   return JSON.stringify(
-    (parsed.frames ?? []).map((frame) => ({
+    (frames ?? []).map((frame) => ({
       sourceFrameId: frame.sourceFrameId,
       name: frame.name,
       renderAssetKey: frame.renderAssetKey,
@@ -68,11 +72,19 @@ export function frameIndexFor(snapshotJson: string) {
 }
 
 /** Compresses capture JSON and proves the result reads back to the exact same text. */
-export function compressSnapshotJson(snapshotJson: string) {
+export function compressSnapshotJson(snapshotJson: string, frames?: readonly IndexedFrame[]) {
   const raw = Buffer.from(snapshotJson, "utf8");
   const compressed = brotliCompressSync(raw, brotliOptions);
   if (!brotliDecompressSync(compressed).equals(raw)) throw new Error("Compressed capture did not read back identically.");
-  return { encoding: "br" as const, compressed, rawBytes: raw.length, frameIndex: frameIndexFor(snapshotJson) };
+  const frameIndex = frames ? frameIndexForFrames(frames) : frameIndexFor(snapshotJson);
+  return { encoding: "br" as const, compressed, rawBytes: raw.length, frameIndex };
+}
+
+export type CompressedSnapshot = ReturnType<typeof compressSnapshotJson>;
+
+/** Compresses a capture already in memory, so the slow part can run before a transaction opens. */
+export function compressSnapshot(snapshot: { frames?: readonly IndexedFrame[] }) {
+  return compressSnapshotJson(JSON.stringify(snapshot), snapshot.frames ?? []);
 }
 
 export function decompressSnapshot(encoding: string, compressed: Buffer) {
@@ -137,8 +149,8 @@ export async function readChunkedFrame(database: PostgresDatabase, workspaceId: 
 }
 
 /** Writes the compressed copy of a version's capture (inside the caller's transaction). */
-export async function storeCompressedSnapshot(database: PostgresDatabase, versionId: string, snapshotJson: string) {
-  const stored = compressSnapshotJson(snapshotJson);
+export async function storeCompressedSnapshot(database: PostgresDatabase, versionId: string, snapshotJson: string | CompressedSnapshot) {
+  const stored = typeof snapshotJson === "string" ? compressSnapshotJson(snapshotJson) : snapshotJson;
   (await database
     .prepare(
       `INSERT INTO handoff_version_snapshot (version_id, encoding, compressed, raw_bytes, frame_index)
@@ -236,4 +248,39 @@ export async function readSnapshotJson(database: PostgresDatabase, versionId: st
     .get(versionId, workspaceId)) as { snapshotJson: string; encoding: string | null; compressed: Buffer | null } | undefined;
   if (!row) return null;
   return row.compressed && row.encoding ? decompressSnapshot(row.encoding, row.compressed) : row.snapshotJson;
+}
+
+const screenCopyTablesPresent = new WeakMap<object, boolean>();
+
+/**
+ * Whether the per-screen tables exist (migration 20261118010000). A database that hasn't applied it
+ * yet keeps working from whole captures; checking first avoids a failed query, which also aborts the
+ * surrounding transaction and can upset the local PGlite connection.
+ */
+export async function hasScreenCopyTables(database: PostgresDatabase) {
+  const known = screenCopyTablesPresent.get(database);
+  if (known) return true;
+  const row = (await database
+    .prepare("SELECT to_regclass('public.handoff_snapshot_frame_chunk') IS NOT NULL AS present")
+    .get()) as { present: boolean } | undefined;
+  const present = Boolean(row?.present);
+  // Only a positive answer is remembered: the migration may be applied while the server runs.
+  if (present) screenCopyTablesPresent.set(database, true);
+  return present;
+}
+
+/** Removes stored screens no version refers to any more (after deletions). */
+export async function deleteUnreferencedScreenCopies(database: PostgresDatabase, workspaceId: string) {
+  if (!(await hasScreenCopyTables(database))) return;
+  await database
+    .prepare(
+      `DELETE FROM handoff_snapshot_frame_chunk
+       WHERE workspace_id = ?
+         AND NOT EXISTS (
+           SELECT 1 FROM handoff_snapshot_frame_ref
+           WHERE handoff_snapshot_frame_ref.workspace_id = handoff_snapshot_frame_chunk.workspace_id
+             AND handoff_snapshot_frame_ref.content_hash = handoff_snapshot_frame_chunk.content_hash
+         )`,
+    )
+    .run(workspaceId);
 }

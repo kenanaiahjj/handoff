@@ -25,6 +25,19 @@ Set the Vercel Function region close to the Supabase database region. Vercel sup
 
 Vercel limits Function request and response bodies to 4.5 MB. The Figma plugin and browser package-import flow therefore send large bytes directly to Supabase Storage.[^limits]
 
+### Memory, duration and build
+
+Large captures are parsed and compressed in memory, so the defaults are too small for real files:
+
+| Setting | Value | Why |
+| --- | --- | --- |
+| Plan | Pro | Hobby caps Functions at 2 GB and limits duration |
+| Function memory | 4 GB (Settings → Functions → Advanced) | Saving or comparing a ~250 MB capture peaks at 2-3 GB |
+| `maxDuration` | 300 s, set in the capture, compare, findings, changelog, remove-screens, package-finalize and MCP routes and on the handoff and review pages | Raise to 800 in those files if large captures time out on Pro |
+| `DATABASE_URL` at build | Available to the Build step, not only at runtime | `auth.ts` creates the database client when the module loads, so `next build` fails without it |
+
+Optional: `ASBIR_SNAPSHOT_CACHE_MB` sets how much parsed capture data a Function instance keeps in memory between requests. The default is 160 MB on Vercel and 1024 MB elsewhere. A capture bigger than the budget is never cached. Raise it only together with Function memory.
+
 ## Environment variables
 
 Set these server-side variables for Preview and Production. Use separate Supabase projects for the two environments.
@@ -71,6 +84,12 @@ npx supabase db push
 ```
 
 Link the Production project separately and push the same reviewed migrations after staging verification. Do not run schema DDL during app startup.
+
+Migration `20261118010000_chunked_snapshots.sql` adds per-screen copies of each capture, so inspecting one screen does not load the whole capture. The app works without it (it falls back to the whole capture) but is much slower on large files, so apply it before inviting testers.
+
+### Storage limits
+
+On the Supabase Free plan a single file is capped at 50 MB, which large Figma captures exceed. Use Supabase Pro and set both the project's global upload limit (Settings → Storage) and the `handoff-assets` bucket file size limit to at least 256 MB.
 
 ## Migrate existing data
 
@@ -122,7 +141,8 @@ See [deploy/README.md](../deploy/README.md) for the self-hosting steps.
 3. Deploy a Vercel Preview connected only to staging.
 4. Verify sign-in, authorization, handoff reads, comments, package import, Figma capture, private assets, MCP tools, and persistence across separate function invocations.
 5. Before cutover, back up the live SQLite database and copy its object directory. Freeze writes, run the final import, run the verifier, then deploy Production against the production Supabase project.
-6. Keep the old deployment and backup read-only through the rollback window. If cutover fails before new writes, restore the old deployment and resume writes there. If users have written to Supabase, preserve those writes before rolling back.
+6. With testers, capture a large real file (several hundred screens) from the plugin built for this deployment. Confirm the new-version notice appears in an open handoff tab, screens open quickly, and removed screens stay removed.
+7. Keep the old deployment and backup read-only through the rollback window. If cutover fails before new writes, restore the old deployment and resume writes there. If users have written to Supabase, preserve those writes before rolling back.
 
 ## Current verification status
 

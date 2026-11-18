@@ -165,9 +165,10 @@ function translateSql(text: string) {
   return replaceQuestionPlaceholders(sql);
 }
 
+/** Local development only (file-backed database and objects); never bundled into deployed functions. */
 export function getDataDirectory() {
   return path.resolve(
-    process.env.ASBIR_DATA_DIR ?? path.join(process.cwd(), "data"),
+    /*turbopackIgnore: true*/ process.env.ASBIR_DATA_DIR ?? path.join(/*turbopackIgnore: true*/ process.cwd(), "data"),
   );
 }
 

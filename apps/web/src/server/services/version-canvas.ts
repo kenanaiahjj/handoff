@@ -129,6 +129,21 @@ export async function getCanvasVersion(input: { workspaceId: string; versionId: 
   return { ...record, snapshot };
 }
 
+/**
+ * Saves the canvas copy of a version that was just created, from the capture already in memory, so
+ * the first person to open it doesn't wait for (and pay the memory of) a full re-read. Never throws:
+ * a missing copy is rebuilt on first view as before.
+ */
+export async function primeCanvasCopy(versionId: string, contentHash: string, snapshot: StoredSnapshot) {
+  try {
+    const slim = slimCanvasSnapshot(snapshot);
+    await store(versionId, contentHash, slim);
+    remember(`${versionId}:${contentHash}`, Promise.resolve(slim));
+  } catch (error) {
+    console.warn(`[canvas] Could not prepare the canvas copy of version ${versionId}; it will be built on first view: ${errorMessage(error)}`);
+  }
+}
+
 /** Clears the in-process copies so tests can exercise the database path. */
 export function forgetCanvasMemoryForTests() {
   if (process.env.NODE_ENV === "production") throw new Error("Unavailable in production.");

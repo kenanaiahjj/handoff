@@ -19,7 +19,14 @@ import { DeleteHandoffButton, DeleteHandoffVersionButton } from "@/src/component
 import { HandoffSetupForm } from "../../handoff-setup-form";
 import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
 import { ChangelogPanel } from "@/src/components/canvas/ChangelogPanel";
+import { NewVersionNotice } from "@/src/components/canvas/NewVersionNotice";
 import { markHandoffSeen, visibleHandoffIds } from "@/src/server/services/review-visibility";
+
+/**
+ * Large captures (250 MB of JSON) take tens of seconds to verify, merge and store. 300 s is the
+ * highest limit every Vercel plan accepts; on Pro it can be raised to 800 here.
+ */
+export const maxDuration = 300;
 
 export const instant = false;
 
@@ -207,6 +214,11 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
   return (
     <div className="flex h-dvh min-h-0 flex-col overflow-hidden bg-surface text-foreground">
       <MobileReview backHref="/workspace" handoffName={handoff.name} screens={mobileScreens} versionLabel={version.versionLabel} />
+      <NewVersionNotice
+        endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/versions/latest`}
+        knownLatestVersionId={versions[0].id}
+        versionHref={routePath}
+      />
       <HandoffTabs
         current={{ id: handoffId, href: `/workspace/${workspaceId}/projects/${projectId}/handoffs/${handoffId}`, title: handoff.name, project: project.name }}
         homeHref="/workspace"

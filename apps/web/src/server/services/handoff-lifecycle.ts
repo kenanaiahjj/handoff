@@ -1,4 +1,5 @@
 import type { PostgresDatabase } from "../db";
+import { deleteUnreferencedScreenCopies } from "../storage/snapshot-store";
 
 export type HandoffLifecycleDatabase = PostgresDatabase;
 
@@ -25,6 +26,15 @@ export async function assertReusableAssetReferences(
   ));
   if (matchingAssets.some((asset) => !asset)) {
     throw new Error("Reusable asset is no longer attached to its source version.");
+  }
+}
+
+/** After a deletion commits: stored screens nothing refers to are removed. Never fails the deletion. */
+async function cleanUpScreenCopies(database: HandoffLifecycleDatabase, workspaceId: string) {
+  try {
+    await deleteUnreferencedScreenCopies(database, workspaceId);
+  } catch (error) {
+    console.warn(`[frames] Could not remove unused screen copies: ${error instanceof Error ? error.message : String(error)}`);
   }
 }
 
@@ -65,7 +75,9 @@ export async function deleteHandoffInDatabase(
     return { handoffId: input.handoffId, unreferencedObjectKeys };
   });
 
-  return remove();
+  const result = await remove();
+  if (result) await cleanUpScreenCopies(database, input.workspaceId);
+  return result;
 }
 
 export async function deleteHandoffVersionInDatabase(
@@ -120,5 +132,7 @@ export async function deleteHandoffVersionInDatabase(
     };
   });
 
-  return remove();
+  const result = await remove();
+  if (result) await cleanUpScreenCopies(database, input.workspaceId);
+  return result;
 }

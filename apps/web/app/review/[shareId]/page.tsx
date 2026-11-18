@@ -7,6 +7,12 @@ import { getCanvasVersion } from "@/src/server/services/version-canvas";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
 import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
 
+/**
+ * Large captures (250 MB of JSON) take tens of seconds to verify, merge and store. 300 s is the
+ * highest limit every Vercel plan accepts; on Pro it can be raised to 800 here.
+ */
+export const maxDuration = 300;
+
 export const instant = false;
 
 type PublishedReviewPageProps = {

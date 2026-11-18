@@ -80,6 +80,21 @@ export function getFigmaCaptureOverviewClearRects(
   });
 }
 
+/** Where the baseline overview still shows a screen the merged version keeps; its other pixels are stale. */
+export function getFigmaCaptureOverviewKeepRects(
+  baselineFrames: readonly CaptureFrameRef[],
+  replacedFrameIds: readonly string[],
+  pageOffsets: ReadonlyMap<string, { offsetX: number; offsetY: number }>,
+) {
+  const replaced = new Set(replacedFrameIds);
+  return baselineFrames.flatMap((frame) => {
+    if (replaced.has(frame.sourceFrameId)) return [];
+    const offset = frame.sourcePageId ? pageOffsets.get(frame.sourcePageId) : undefined;
+    const rect = numericRect(frame.renderBounds ?? frame.bounds, offset?.offsetX ?? 0, offset?.offsetY ?? 0);
+    return rect ? [rect] : [];
+  });
+}
+
 function measuredBounds(rect: { x: number; y: number; width: number; height: number }): Bounds {
   const measured = (value: number, property: string) => ({
     value,

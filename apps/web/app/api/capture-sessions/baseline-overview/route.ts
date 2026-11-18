@@ -3,6 +3,12 @@ import { getVersion } from "@/src/server/repositories/versions";
 import { getDatabase } from "@/src/server/db";
 import { objectStore } from "@/src/server/storage/supabase-object-store";
 
+/**
+ * Large captures (250 MB of JSON) take tens of seconds to verify, merge and store. 300 s is the
+ * highest limit every Vercel plan accepts; on Pro it can be raised to 800 here.
+ */
+export const maxDuration = 300;
+
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
   "Access-Control-Allow-Methods": "GET, OPTIONS",

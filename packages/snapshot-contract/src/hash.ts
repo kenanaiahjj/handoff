@@ -8,8 +8,6 @@ import type {
 const utf8 = typeof TextEncoder === "undefined" ? null : new TextEncoder();
 const maxChunkLength = 16 * 1024;
 
-type CanonicalTask = { kind: "value"; value: unknown } | { kind: "text"; value: string };
-
 function encodeUtf8(value: string): Uint8Array {
   const encoded = encodeURIComponent(value);
   const bytes = new Uint8Array(encoded.length);
@@ -33,73 +31,67 @@ export function sha256Hex(bytes: Uint8Array): string {
 /** Text is hashed in blocks this size: one update per token made a large capture take ~13 s to hash. */
 const hashBufferLength = 16 * 1024;
 
-function writeCanonicalJson(value: unknown) {
+type IncrementalHash = { update(text: string): void; digest(): Uint8Array };
+
+type NodeCrypto = { createHash(algorithm: "sha256"): { update(data: string, encoding: "utf8"): unknown; digest(): Uint8Array } };
+
+/**
+ * Node's native SHA-256 when it is available (the server: ~4x faster on a 250 MB capture), otherwise
+ * the portable implementation (the Figma plugin sandbox has no Node built-ins). Both hash the same
+ * UTF-8 bytes, so they produce the same digest. getBuiltinModule keeps node:crypto out of the plugin bundle.
+ */
+function createIncrementalHash(): IncrementalHash {
+  const nodeProcess = (globalThis as { process?: { getBuiltinModule?: (id: string) => unknown } }).process;
+  const nodeCrypto = nodeProcess?.getBuiltinModule?.("node:crypto") as NodeCrypto | undefined;
+  if (nodeCrypto) {
+    const hash = nodeCrypto.createHash("sha256");
+    return { update: (text) => void hash.update(text, "utf8"), digest: () => new Uint8Array(hash.digest()) };
+  }
   const hash = sha256.create();
+  return { update: (text) => void hash.update(utf8 ? utf8.encode(text) : encodeUtf8(text)), digest: () => hash.digest() };
+}
+
+function writeCanonicalJson(value: unknown) {
+  const hash = createIncrementalHash();
   // Same bytes as hashing each piece separately, so the hash is unchanged. Pieces never end inside a
   // surrogate pair (writeString keeps pairs together), so joining them never splits a character.
   let pending = "";
   const flush = () => {
     if (!pending) return;
-    hash.update(utf8 ? utf8.encode(pending) : encodeUtf8(pending));
+    hash.update(pending);
     pending = "";
   };
   // Never encode more than hashBufferLength characters at once (keeps memory flat inside Figma).
   const writeText = (text: string) => {
     if (pending.length + text.length > hashBufferLength) flush();
-    if (text.length >= hashBufferLength) hash.update(utf8 ? utf8.encode(text) : encodeUtf8(text));
+    if (text.length >= hashBufferLength) hash.update(text);
     else pending += text;
   };
+  // JSON.stringify escapes strings exactly as canonical JSON requires (quote, backslash, \b \f \n \r \t,
+  // other control characters and lone surrogates as lowercase \u00xx), natively instead of per character.
   const writeString = (value: string) => {
-    writeText('"');
-    let chunkStart = 0;
-    let index = 0;
-    while (index < value.length) {
-      const codeUnit = value.charCodeAt(index);
-      let escape: string | null = null;
-      let nextIndex = index + 1;
-      if (codeUnit === 0x22) escape = '\\"';
-      else if (codeUnit === 0x5c) escape = "\\\\";
-      else if (codeUnit === 0x08) escape = "\\b";
-      else if (codeUnit === 0x09) escape = "\\t";
-      else if (codeUnit === 0x0a) escape = "\\n";
-      else if (codeUnit === 0x0c) escape = "\\f";
-      else if (codeUnit === 0x0d) escape = "\\r";
-      else if (codeUnit < 0x20) escape = `\\u${codeUnit.toString(16).padStart(4, "0")}`;
-      else if (codeUnit >= 0xd800 && codeUnit <= 0xdbff) {
-        const next = value.charCodeAt(index + 1);
-        if (next >= 0xdc00 && next <= 0xdfff) nextIndex = index + 2;
-        else escape = `\\u${codeUnit.toString(16).padStart(4, "0")}`;
-      } else if (codeUnit >= 0xdc00 && codeUnit <= 0xdfff) {
-        escape = `\\u${codeUnit.toString(16).padStart(4, "0")}`;
-      }
-
-      if (escape !== null) {
-        if (index > chunkStart) writeText(value.slice(chunkStart, index));
-        writeText(escape);
-        index = nextIndex;
-        chunkStart = index;
-        continue;
-      }
-
-      index = nextIndex;
-      if (index - chunkStart >= maxChunkLength) {
-        writeText(value.slice(chunkStart, index));
-        chunkStart = index;
-      }
+    if (value.length <= hashBufferLength) {
+      writeText(JSON.stringify(value));
+      return;
     }
-    if (chunkStart < value.length) writeText(value.slice(chunkStart));
+    // Very long strings are escaped in slices that never split a surrogate pair, so memory stays bounded.
+    writeText('"');
+    for (let start = 0; start < value.length;) {
+      let end = Math.min(start + maxChunkLength, value.length);
+      const last = value.charCodeAt(end - 1);
+      if (end < value.length && last >= 0xd800 && last <= 0xdbff) end -= 1;
+      const escaped = JSON.stringify(value.slice(start, end));
+      writeText(escaped.slice(1, -1));
+      start = end;
+    }
     writeText('"');
   };
 
-  const stack: CanonicalTask[] = [{ kind: "value", value }];
-  while (stack.length) {
-    const task = stack.pop()!;
-    if (task.kind === "text") {
-      writeText(task.value);
-      continue;
-    }
-
-    const current = task.value;
+  // Snapshot JSON is shallow (screens hold a flat list of layers), so plain recursion is safe; the
+  // depth cap turns a hostile, deeply nested payload into an error instead of a stack overflow.
+  const maxDepth = 2_000;
+  const writeValue = (current: unknown, depth: number): void => {
+    if (depth > maxDepth) throw new TypeError("Snapshot payloads are nested too deeply to hash.");
     if (current === null) {
       writeText("null");
     } else if (typeof current === "string") {
@@ -110,29 +102,33 @@ function writeCanonicalJson(value: unknown) {
       if (!Number.isFinite(current)) throw new TypeError("Snapshot payloads can only hash finite numbers.");
       writeText(JSON.stringify(current));
     } else if (Array.isArray(current)) {
-      stack.push({ kind: "text", value: "]" });
-      for (let index = current.length - 1; index >= 0; index -= 1) {
-        stack.push({ kind: "value", value: current[index] });
-        if (index > 0) stack.push({ kind: "text", value: "," });
+      writeText("[");
+      for (let index = 0; index < current.length; index += 1) {
+        if (index > 0) writeText(",");
+        writeValue(current[index], depth + 1);
       }
-      stack.push({ kind: "text", value: "[" });
+      writeText("]");
     } else if (typeof current === "object") {
-      const entries = Object.entries(current as Record<string, unknown>)
-        .filter(([, entry]) => entry !== undefined)
-        .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0));
-      stack.push({ kind: "text", value: "}" });
-      for (let index = entries.length - 1; index >= 0; index -= 1) {
-        const [key, entry] = entries[index];
-        stack.push({ kind: "value", value: entry });
-        stack.push({ kind: "text", value: ":" });
-        stack.push({ kind: "value", value: key });
-        if (index > 0) stack.push({ kind: "text", value: "," });
+      const record = current as Record<string, unknown>;
+      // Default sort orders by UTF-16 code units, the same order as comparing keys with < and >.
+      const keys = Object.keys(record).sort();
+      writeText("{");
+      let first = true;
+      for (const key of keys) {
+        const entry = record[key];
+        if (entry === undefined) continue;
+        if (!first) writeText(",");
+        first = false;
+        writeString(key);
+        writeText(":");
+        writeValue(entry, depth + 1);
       }
-      stack.push({ kind: "text", value: "{" });
+      writeText("}");
     } else {
       throw new TypeError("Snapshot payloads must contain JSON-compatible values.");
     }
-  }
+  };
+  writeValue(value, 0);
 
   flush();
   return hash.digest();

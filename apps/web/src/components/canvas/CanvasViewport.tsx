@@ -18,6 +18,7 @@ import { comparisonFrameStatusLabel } from "./compare-presentation";
 import { getCanvasFrameLabelMaxWidth, shouldShowCanvasFrameLabel } from "./canvas-frame-label-visibility";
 import { getElementDistanceGuides, type ElementRect } from "./element-distance-guides";
 import { formatPrecisePixelValue } from "./format-captured-measurement";
+import { overviewClipPath } from "./overview-clip";
 
 /** CSS mask that hides the given rectangles of an image (xor/exclude of a full layer and each rect). */
 function cutOutMaskStyle(rects: CanvasFrameOption["maskRects"]) {
@@ -480,7 +481,7 @@ export function CanvasViewport({
               height={frame.pixelHeight}
               priority
               src={frame.imageSrc}
-              style={{ width: frame.sourceWidth, height: frame.sourceHeight, ...cutOutMaskStyle(frame.maskRects) }}
+              style={{ width: frame.sourceWidth, height: frame.sourceHeight, ...cutOutMaskStyle(frame.maskRects), clipPath: overviewClipPath(frame.keepRects) }}
               unoptimized
               width={frame.pixelWidth}
             />

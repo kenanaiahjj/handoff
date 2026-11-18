@@ -15,6 +15,7 @@ export { createSnapshotEnvelope } from "./envelope";
 export {
   createFigmaCaptureMergePlan,
   getFigmaCaptureOverviewClearRects,
+  getFigmaCaptureOverviewKeepRects,
   mergeFigmaCaptureSnapshots,
   normalizeFigmaCaptureScope,
   pageCaptureChoice,

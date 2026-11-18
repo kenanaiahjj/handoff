@@ -8,7 +8,7 @@ import {
   type VisualOnlySnapshot,
 } from "@asbir/snapshot-contract";
 import { getDatabase } from "../db";
-import { readSnapshotJson, storeCompressedSnapshot } from "../storage/snapshot-store";
+import { compressSnapshot, readSnapshotJson, storeCompressedSnapshot } from "../storage/snapshot-store";
 import { objectStore } from "../storage/supabase-object-store";
 import {
   assertReusableAssetReferences,
@@ -58,6 +58,12 @@ export type CreateHandoffVersionInput = {
   reuseAssetsFromVersionId?: string;
   consumeCaptureSessionId?: string;
   captureUploadPaths?: { snapshotKey: string; assetKeys: Record<string, string> };
+  /**
+   * The caller already validated `snapshot` against its schema and confirmed its contentHash (for
+   * example with createSnapshotEnvelope), so neither is repeated: on a 250 MB capture each costs
+   * seconds and hundreds of megabytes.
+   */
+  snapshotVerified?: boolean;
   frameReplacementMatches?: {
     baselineVersionId: string;
     matches: Array<{ beforeFrameId: string; afterFrameId: string }>;
@@ -121,12 +127,14 @@ function assertAssetBytes(snapshot: StoredSnapshot, assets: VersionAssetInput[])
 }
 
 export async function createHandoffVersion(input: CreateHandoffVersionInput) {
-  const snapshot = validateStoredSnapshot(input.snapshot);
-  const contentHash = await hashSnapshotPayload(snapshot);
+  const snapshot = input.snapshotVerified ? input.snapshot : validateStoredSnapshot(input.snapshot);
+  const contentHash = input.snapshotVerified ? snapshot.contentHash : await hashSnapshotPayload(snapshot);
   if (snapshot.contentHash !== contentHash) {
     throw new Error("Snapshot content hash does not match its content.");
   }
   assertAssetBytes(snapshot, input.assets);
+  // Compressed (and verified to read back) before the transaction, which holds the handoff's lock.
+  const compressedSnapshot = compressSnapshot(snapshot);
 
   const database = getDatabase();
   const project = (await database
@@ -305,7 +313,7 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
           now,
         ));
       // The capture itself is stored compressed beside the row (verified to read back identically).
-      (await storeCompressedSnapshot(database, versionId, JSON.stringify(snapshot)));
+      (await storeCompressedSnapshot(database, versionId, compressedSnapshot));
 
       const insertAsset = database.prepare(
         `INSERT INTO handoff_asset
@@ -642,12 +650,20 @@ export async function getConfirmedNodeMatchesBetweenVersions(input: {
 }
 
 // Versions are immutable (enforced by a trigger), so a parsed snapshot can be reused across
-// requests. Parsing and validating a large capture takes seconds; keep the two most recent per
-// database, keyed by version and content hash.
-const parsedSnapshotCache = new WeakMap<object, Map<string, Promise<StoredSnapshot>>>();
+// requests. Parsing a large capture takes seconds, but a parsed 250 MB capture also holds ~1 GB, and
+// a Vercel Function has 2-4 GB in all. So the cache keeps at most two captures and at most
+// ASBIR_SNAPSHOT_CACHE_MB of their stored size (default 160 MB on Vercel, 1 GB on a long-running
+// server); a larger capture is used once and not kept, so one big version can't exhaust memory.
+const parsedSnapshotCache = new WeakMap<object, Map<string, { snapshot: Promise<StoredSnapshot>; bytes: number }>>();
 const parsedSnapshotCacheSize = 2;
 
-async function cachedSnapshot(database: object, key: string, load: () => Promise<StoredSnapshot>) {
+function snapshotCacheBudgetBytes() {
+  const megabytes = Number(process.env.ASBIR_SNAPSHOT_CACHE_MB);
+  const fallback = process.env.VERCEL ? 160 : 1024;
+  return (process.env.ASBIR_SNAPSHOT_CACHE_MB && Number.isFinite(megabytes) && megabytes >= 0 ? megabytes : fallback) * 1024 * 1024;
+}
+
+async function cachedSnapshot(database: object, key: string, load: () => Promise<{ snapshot: StoredSnapshot; bytes: number }>) {
   let cache = parsedSnapshotCache.get(database);
   if (!cache) {
     cache = new Map();
@@ -657,15 +673,30 @@ async function cachedSnapshot(database: object, key: string, load: () => Promise
   if (hit) {
     cache.delete(key);
     cache.set(key, hit);
-    return hit;
+    return hit.snapshot;
   }
-  const snapshot = Promise.resolve().then(load);
-  cache.set(key, snapshot);
-  while (cache.size > parsedSnapshotCacheSize) cache.delete(cache.keys().next().value!);
+  const loaded = Promise.resolve().then(load);
+  // Concurrent requests for the same version share one parse while it runs.
+  const entry = { snapshot: loaded.then((value) => value.snapshot), bytes: 0 };
+  cache.set(key, entry);
   try {
-    return await snapshot;
+    const { snapshot, bytes } = await loaded;
+    entry.bytes = bytes;
+    const budget = snapshotCacheBudgetBytes();
+    if (bytes > budget) {
+      if (cache.get(key) === entry) cache.delete(key);
+    } else {
+      let total = [...cache.values()].reduce((sum, value) => sum + value.bytes, 0);
+      for (const [otherKey, value] of cache) {
+        if (cache.size <= parsedSnapshotCacheSize && total <= budget) break;
+        if (otherKey === key) continue;
+        cache.delete(otherKey);
+        total -= value.bytes;
+      }
+    }
+    return snapshot;
   } catch (error) {
-    if (cache.get(key) === snapshot) cache.delete(key);
+    if (cache.get(key) === entry) cache.delete(key);
     throw error;
   }
 }
@@ -763,7 +794,7 @@ export async function getVersion(input: { workspaceId: string; versionId: string
 
   const snapshot = await cachedSnapshot(database, `${row.id}:${row.contentHash}`, async () => {
     const snapshotJson = (await readSnapshotJson(database, input.versionId, input.workspaceId)) ?? "{}";
-    return parseStoredSnapshot(snapshotJson);
+    return { snapshot: parseStoredSnapshot(snapshotJson), bytes: snapshotJson.length };
   });
 
   return { ...row, snapshot, assets };

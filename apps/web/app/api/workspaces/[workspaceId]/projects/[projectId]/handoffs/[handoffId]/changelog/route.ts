@@ -10,6 +10,12 @@ import {
   requireHandoffAccess,
 } from "@/src/server/workspace-access";
 
+/**
+ * Large captures (250 MB of JSON) take tens of seconds to verify, merge and store. 300 s is the
+ * highest limit every Vercel plan accepts; on Pro it can be raised to 800 here.
+ */
+export const maxDuration = 300;
+
 type ChangelogRoute = {
   params: Promise<{ workspaceId: string; projectId: string; handoffId: string }>;
 };

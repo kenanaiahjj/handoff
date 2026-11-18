@@ -23,6 +23,8 @@ type CanvasFrameOption = {
   overlayNodes?: CanvasOverlayNode[];
   /** Areas of this frame's image to cut out (screens removed after the image was rendered). */
   maskRects?: Array<{ x: number; y: number; width: number; height: number }>;
+  /** Areas of this frame's image to keep (the overview's current screens); everything else is stale. */
+  keepRects?: Array<{ x: number; y: number; width: number; height: number }>;
   layerExports?: Record<string, { downloadUrl: string; fileName: string; contentType: "image/png" | "image/svg+xml" }>;
   exact: boolean;
   kind: "overview" | "frame";
