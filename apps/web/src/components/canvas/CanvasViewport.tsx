@@ -21,6 +21,9 @@ import { formatPrecisePixelValue } from "./format-captured-measurement";
 import { overviewClipPath } from "./overview-clip";
 
 /** CSS mask that hides the given rectangles of an image (xor/exclude of a full layer and each rect). */
+/** The canvas colour behind the dot grid (.review-dot-grid). */
+const canvasBackground = "var(--background)";
+
 function cutOutMaskStyle(rects: CanvasFrameOption["maskRects"]) {
   if (!rects?.length) return {};
   const layers = ["linear-gradient(#000 0 0)", ...rects.map(() => "linear-gradient(#000 0 0)")].join(", ");
@@ -392,6 +395,14 @@ export function CanvasViewport({
     frame.pixelWidth / Math.max(frame.sourceWidth, 1),
     frame.pixelHeight / Math.max(frame.sourceHeight, 1),
   );
+  // Sharp screen images sit on top of the overview image, which is soft when zoomed in. Where a
+  // screen is transparent (text with no fill, its edges) the soft copy would show through as a
+  // glow, so each screen gets a backdrop in the canvas colour once its sharp image has loaded.
+  // The backdrop reaches about one overview pixel past the edge to cover the soft image's bleed.
+  const [loadedScreenIds, setLoadedScreenIds] = useState<ReadonlySet<string>>(() => new Set());
+  const markScreenLoaded = useCallback((id: string) => {
+    setLoadedScreenIds((current) => (current.has(id) ? current : new Set(current).add(id)));
+  }, []);
   const imageRenderPlan = getCanvasImageRenderPlan({
     kind: frame.kind,
     exact: frame.exact,
@@ -518,6 +529,26 @@ export function CanvasViewport({
             />
           ) : null}
 
+          {imageRenderPlan.showFrameImages && imageRenderPlan.showBaseImage ? screens.map((screen) => {
+            if (!loadedScreenIds.has(screen.id)) return null;
+            const bleed = Math.ceil(1.5 / Math.max(overviewResolutionScale, 0.05));
+            return (
+              <div
+                aria-hidden="true"
+                className="pointer-events-none absolute"
+                key={"backdrop:" + screen.id}
+                style={{
+                  left: screen.sourceX - frame.sourceX,
+                  top: screen.sourceY - frame.sourceY,
+                  width: screen.sourceWidth,
+                  height: screen.sourceHeight,
+                  backgroundColor: canvasBackground,
+                  boxShadow: `0 0 0 ${bleed}px ${canvasBackground}`,
+                }}
+              />
+            );
+          }) : null}
+
           {imageRenderPlan.showFrameImages ? screens.map((screen) => (
             <RetryingCanvasImage
               alt={(screen.fileName.toLowerCase().endsWith(".svg") ? "Figma vector render: " : "Frozen design render: ") + screen.name}
@@ -526,6 +557,7 @@ export function CanvasViewport({
               height={screen.pixelHeight}
               key={screen.id}
               loading="lazy"
+              onLoad={() => markScreenLoaded(screen.id)}
               src={screen.imageSrc}
               style={{
                 left: screen.sourceX - frame.sourceX,
