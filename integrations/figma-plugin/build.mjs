@@ -37,5 +37,8 @@ await Promise.all([
 const manifest = JSON.parse(await readFile(path.join(here, "manifest.template.json"), "utf8"));
 // Only the capture route and its configured private Storage origin are available to the plugin.
 manifest.networkAccess = networkAccess;
+// The local dev copy gets its own name so it can't be mistaken for the production plugin teammates
+// download from Integrations (the template build keeps the plain name).
+if (!separateOutput) manifest.name = `${manifest.name} (Local)`;
 await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
 process.stdout.write(`Built Figma plugin for ${endpoint.origin} and ${storageOrigin}. Load ${path.relative(process.cwd(), manifestPath)} in Figma.\n`);

@@ -44,8 +44,10 @@ export async function GET(request: Request) {
   const storageOrigin = getSupabaseStorageUrl();
   const fill = (text: string) => text.replaceAll(handoffPlaceholder, origin).replaceAll(storagePlaceholder, storageOrigin);
 
-  const manifest = JSON.parse(manifestSource) as { networkAccess: { allowedDomains: string[]; devAllowedDomains: string[]; reasoning: string } };
+  const manifest = JSON.parse(manifestSource) as { name: string; networkAccess: { allowedDomains: string[]; devAllowedDomains: string[]; reasoning: string } };
   const local = loopbackHosts.has(new URL(origin).hostname);
+  // A copy that talks to a local server is labelled so it sits apart from the production plugin.
+  if (local) manifest.name = `${manifest.name} (Local)`;
   manifest.networkAccess = {
     allowedDomains: [`${origin}/api/capture-sessions/`, storageOrigin],
     reasoning: manifest.networkAccess.reasoning,
