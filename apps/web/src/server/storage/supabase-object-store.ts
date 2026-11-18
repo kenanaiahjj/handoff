@@ -8,6 +8,11 @@ const defaultBucket = "handoff-assets";
 function requiredEnvironment(name: "SUPABASE_URL" | "SUPABASE_SERVICE_ROLE_KEY") {
   const value = process.env[name]?.trim();
   if (!value) throw new Error(`${name} must be set before using Supabase Storage.`);
+  // A key copied from a dashboard while hidden arrives as "•••", which fetch can't send as a header.
+  if (/[^\x21-\x7e]/.test(value)) {
+    const shape = value.startsWith("sb_secret_") ? "sb_secret_ key" : value.startsWith("eyJ") ? "JWT key" : `value starting "${value.slice(0, 3)}"`;
+    throw new Error(`${name} contains hidden or non-ASCII characters (${shape}, ${value.length} chars); paste the revealed key again.`);
+  }
   return value;
 }
 
