@@ -6,11 +6,13 @@ const fixture = await createPostgresTestFixture();
 const { database, pool } = fixture;
 
 await pool.query(`
-  CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT, email TEXT);
+  CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT, email TEXT, image TEXT);
+  CREATE TABLE IF NOT EXISTS user_presence (user_id TEXT PRIMARY KEY, last_seen_at TIMESTAMPTZ);
   CREATE TABLE workspace_membership (workspace_id TEXT, user_id TEXT, role TEXT);
   CREATE TABLE project (id TEXT PRIMARY KEY, workspace_id TEXT, name TEXT, pd_in_charge_user_id TEXT);
   CREATE TABLE handoff (id TEXT PRIMARY KEY, workspace_id TEXT, project_id TEXT, name TEXT);
   CREATE TABLE handoff_invite (id TEXT, workspace_id TEXT, handoff_id TEXT, email TEXT, revoked_at TEXT, expires_at TEXT);
+  CREATE TABLE IF NOT EXISTS project_member (project_id TEXT, workspace_id TEXT, email TEXT, role TEXT, added_by_user_id TEXT, created_at TEXT);
   CREATE TABLE handoff_comment (id TEXT PRIMARY KEY, handoff_version_id TEXT, frame_id TEXT, body TEXT, created_by_user_id TEXT,
     author_label TEXT, resolved_at TEXT);
   CREATE TABLE comment_mention (comment_id TEXT, user_id TEXT, workspace_id TEXT, handoff_id TEXT, thread_id TEXT,

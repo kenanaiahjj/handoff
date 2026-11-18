@@ -55,6 +55,7 @@ await pool.query(`
     handoff_id TEXT NOT NULL,
     FOREIGN KEY (handoff_id, workspace_id) REFERENCES handoff (id, workspace_id) ON DELETE CASCADE
   );
+  CREATE TABLE IF NOT EXISTS project_member (project_id TEXT, workspace_id TEXT, email TEXT, role TEXT, added_by_user_id TEXT, created_at TEXT);
   CREATE TABLE handoff_comment (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,

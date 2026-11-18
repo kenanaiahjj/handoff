@@ -5,6 +5,8 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { authClient } from "@/src/client/auth-client";
 import { clearDeviceCache } from "@/src/client/device-cache";
 import { AuthShell } from "../auth-shell";
+import type { EditableProfile } from "@/src/components/profile/ProfileForm";
+import { InstallStep, ProfileStep } from "./onboarding-steps";
 
 export type RoleOption = { id: string; label: string; description: string; requestsApproval: boolean };
 
@@ -29,8 +31,11 @@ function initials(name: string) {
     .join("");
 }
 
-export function OnboardingForm({ roles, user, workspaceNames }: { roles: RoleOption[]; user: OnboardingUser; workspaceNames: string[] }) {
+export function OnboardingForm({ roles, user, workspaceNames, profile }: { roles: RoleOption[]; user: OnboardingUser; workspaceNames: string[]; profile: EditableProfile }) {
   const [jobRole, setJobRole] = useState<string | null>(null);
+  // After the role is saved: an optional profile step, then an optional install step.
+  const [step, setStep] = useState<"role" | "profile" | "install">("role");
+  const [redirectTo, setRedirectTo] = useState("/workspace");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const router = useRouter();
@@ -54,7 +59,9 @@ export function OnboardingForm({ roles, user, workspaceNames }: { roles: RoleOpt
         setPending(false);
         return;
       }
-      window.location.assign(result.redirectTo);
+      setRedirectTo(result.redirectTo);
+      setPending(false);
+      setStep("profile");
     } catch {
       setError("We couldn't reach the server. Try again.");
       setPending(false);
@@ -76,7 +83,7 @@ export function OnboardingForm({ roles, user, workspaceNames }: { roles: RoleOpt
   // Number keys pick a role from anywhere on the page; Enter continues.
   useEffect(() => {
     function onKey(event: globalThis.KeyboardEvent) {
-      if (event.metaKey || event.ctrlKey || event.altKey) return;
+      if (step !== "role" || event.metaKey || event.ctrlKey || event.altKey) return;
       const index = Number(event.key) - 1;
       if (index >= 0 && index < roles.length) {
         setJobRole(roles[index].id);
@@ -85,18 +92,18 @@ export function OnboardingForm({ roles, user, workspaceNames }: { roles: RoleOpt
     }
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [roles]);
+  }, [roles, step]);
 
   // Enter continues from anywhere once a role is picked.
   useEffect(() => {
     function onEnter(event: globalThis.KeyboardEvent) {
-      if (event.key !== "Enter" || event.metaKey || event.ctrlKey || event.altKey || !jobRole || pending) return;
+      if (step !== "role" || event.key !== "Enter" || event.metaKey || event.ctrlKey || event.altKey || !jobRole || pending) return;
       event.preventDefault();
       void submitRef.current();
     }
     window.addEventListener("keydown", onEnter);
     return () => window.removeEventListener("keydown", onEnter);
-  }, [jobRole, pending]);
+  }, [jobRole, pending, step]);
 
   // Arrow keys move through the radio group, as native radios do.
   function onRowKeyDown(event: KeyboardEvent<HTMLButtonElement>, index: number) {
@@ -110,6 +117,22 @@ export function OnboardingForm({ roles, user, workspaceNames }: { roles: RoleOpt
   }
 
   const focusIndex = Math.max(0, roles.findIndex((role) => role.id === jobRole));
+
+  if (step === "profile") {
+    return (
+      <AuthShell subtitle="Tell your team what you do, so they know who's commenting. You can change this later." title="Introduce yourself" wide>
+        <ProfileStep onDone={() => setStep("install")} profile={profile} />
+      </AuthShell>
+    );
+  }
+
+  if (step === "install") {
+    return (
+      <AuthShell subtitle="Install it once and Handoff works like a desktop app." title="Get the app" wide>
+        <InstallStep onDone={() => window.location.assign(redirectTo)} />
+      </AuthShell>
+    );
+  }
 
   return (
     <AuthShell

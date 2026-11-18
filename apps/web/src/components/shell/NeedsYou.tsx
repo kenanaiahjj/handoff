@@ -1,5 +1,6 @@
 "use client";
 
+import { Avatar } from "@/src/components/Avatar";
 import Link from "next/link";
 import { useState } from "react";
 import type { OpenMention } from "@/src/server/services/mentions";
@@ -36,12 +37,10 @@ export function NeedsYou({ initial, className = "" }: { initial: OpenMention[]; 
         <h2 className="text-[14px] font-semibold tracking-[-0.01em]" id="needs-you-title">Needs you</h2>
         <span className="viewer-count">{mentions.length}</span>
       </div>
-      <ul className="needs-you-list overflow-hidden rounded-panel border border-border bg-surface">
+      <ul className="needs-you-list overflow-hidden rounded-panel bg-surface">
         {mentions.map((mention) => (
-          <li className="group flex items-start gap-3 border-b border-border px-4 py-3 last:border-b-0" key={mention.commentId}>
-            <span aria-hidden="true" className="mt-0.5 grid size-7 shrink-0 place-items-center rounded-full bg-surface-strong text-[11px] font-semibold">
-              {mention.authorName.trim().slice(0, 1).toUpperCase()}
-            </span>
+          <li className="group flex items-start gap-3 px-4 py-3 transition-colors hover:bg-white/[0.03]" key={mention.commentId}>
+            <Avatar className="mt-0.5" name={mention.authorName} size={28} src={mention.authorImage} />
             <Link
               className="min-w-0 flex-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40"
               href={`/workspace/${mention.workspaceId}/projects/${mention.projectId}/handoffs/${mention.handoffId}?versionId=${mention.versionId}&comment=${mention.commentId}`}

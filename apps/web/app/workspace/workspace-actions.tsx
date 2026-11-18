@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { authClient } from "@/src/client/auth-client";
 import { clearDeviceCache } from "@/src/client/device-cache";
 
-export function SignOutButton({ devBypass = false }: { devBypass?: boolean }) {
+export function SignOutButton({ devBypass = false, icon = false }: { devBypass?: boolean; icon?: boolean }) {
   const [pending, setPending] = useState(false);
 
   async function signOut() {
@@ -20,6 +20,25 @@ export function SignOutButton({ devBypass = false }: { devBypass?: boolean }) {
     await authClient.signOut().catch(() => undefined);
     // A full load drops every cached render from the signed-in session.
     window.location.replace("/sign-in");
+  }
+
+  if (icon) {
+    return (
+      <button
+        aria-label="Sign out"
+        className="grid size-8 shrink-0 place-items-center rounded-control text-foreground-subtle transition-colors hover:bg-white/[0.07] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-60"
+        disabled={pending}
+        onClick={signOut}
+        title="Sign out"
+        type="button"
+      >
+        {pending ? (
+          <span aria-hidden="true" className="size-3.5 animate-spin rounded-full border-2 border-current border-r-transparent" />
+        ) : (
+          <svg aria-hidden="true" className="size-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><path d="M9.5 3H4.5v10h5M7 8h6.5m-2-2 2 2-2 2" /></svg>
+        )}
+      </button>
+    );
   }
 
   return (
@@ -269,7 +288,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
       </form>
 
       {invites.length ? (
-        <section aria-labelledby="active-invites-title" className="border-t border-border pt-3">
+        <section aria-labelledby="active-invites-title" className="pt-3">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-[12px] font-semibold text-foreground" id="active-invites-title">Active invite links</h3>
             <span className="font-mono text-[10px] text-foreground-subtle">{invites.length.toString().padStart(2, "0")}</span>
@@ -296,7 +315,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
           </ul>
         </section>
       ) : (
-        <p className="border-t border-border pt-3 text-[11px] text-foreground-subtle">No active invite links.</p>
+        <p className="pt-3 text-[11px] text-foreground-subtle">No active invite links.</p>
       )}
       {message && <p className="text-[11px] text-foreground-muted" role="status">{message}</p>}
       {dialog}

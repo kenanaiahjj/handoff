@@ -1,5 +1,6 @@
 "use client";
 
+import { Avatar } from "@/src/components/Avatar";
 import { CommentBody } from "./mentions";
 
 import { useState } from "react";
@@ -45,9 +46,7 @@ function timeLabel(value: string) {
 function Author({ comment }: { comment: HandoffComment }) {
   return (
     <span className="flex min-w-0 items-center gap-1.5">
-      <span aria-hidden="true" className="grid size-6 shrink-0 place-items-center rounded-full bg-surface-strong text-[10px] font-semibold text-foreground">
-        {comment.authorName.trim().slice(0, 1).toUpperCase() || "?"}
-      </span>
+      <Avatar name={comment.authorName} size={24} src={comment.authorImage} />
       <span className="truncate text-[12px] font-medium text-foreground">{comment.authorName}</span>
       {comment.authorRole ? <span className="shrink-0 rounded bg-surface-strong px-1 py-0.5 text-[9px] uppercase tracking-wide text-foreground-muted">{comment.authorRole}</span> : null}
       <span className="shrink-0 text-[10px] text-foreground-subtle">{timeLabel(comment.createdAt)}</span>

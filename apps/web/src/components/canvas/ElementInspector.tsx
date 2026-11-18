@@ -724,9 +724,10 @@ export function ElementInspector({
         </div>
       ) : (
         <div className="mt-4">
-          <div className="flex items-center justify-between gap-2">
-            <h3 className="min-w-0 break-words text-[13px] font-medium text-foreground">{frame.name}</h3>
-            <span className="flex shrink-0 items-center gap-1.5">
+          {/* The name gets the full width (long Figma names otherwise wrap into a narrow column). */}
+          <h3 className="break-words text-[13px] font-medium leading-5 text-foreground">{frame.name}</h3>
+          <div className="mt-2 flex items-center gap-1.5">
+            <span className="flex items-center gap-1.5">
               {canCompare ? <button className="dial-button min-h-8 px-2.5 text-[12px]" onClick={onCompare} type="button">Compare</button> : null}
               {onRemoveScreen ? (
                 <button className={"dial-button min-h-8 px-2.5 text-[12px] " + (screenMarkedForRemoval ? "" : "!text-danger hover:!bg-danger/15")} disabled={removingScreen} onClick={onRemoveScreen} title={screenMarkedForRemoval ? "Keep this screen in the next version" : "Remove from the next version (publish to apply)"} type="button">

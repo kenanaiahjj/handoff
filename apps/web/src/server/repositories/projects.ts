@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { getDatabase } from "../db";
+import { deleteHandoffInDatabase } from "../services/handoff-lifecycle";
 import { projectRulesSchema } from "../services/layout-rules";
 
 export async function createProject(input: {
@@ -137,4 +138,30 @@ export async function assignProjectPdInCharge(input: { workspaceId: string; proj
     )
     .run(input.pdInChargeUserId, input.projectId, input.workspaceId, input.pdInChargeUserId, input.pdInChargeUserId));
   return result.changes === 1;
+}
+
+export async function renameProject(input: { workspaceId: string; projectId: string; name: string }) {
+  const result = (await getDatabase()
+    .prepare("UPDATE project SET name = ? WHERE id = ? AND workspace_id = ?")
+    .run(input.name.trim(), input.projectId, input.workspaceId));
+  return result.changes > 0;
+}
+
+/**
+ * Deletes a project with every handoff in it. Handoffs go one at a time through the normal handoff
+ * delete, so stored files no other version uses are returned for clean-up.
+ */
+export async function deleteProject(input: { workspaceId: string; projectId: string }) {
+  const database = getDatabase();
+  if (!(await getProject(input))) return null;
+  const handoffs = (await database
+    .prepare("SELECT id FROM handoff WHERE workspace_id = ? AND project_id = ?")
+    .all(input.workspaceId, input.projectId)) as Array<{ id: string }>;
+  const unreferencedObjectKeys: string[] = [];
+  for (const handoff of handoffs) {
+    const deleted = await deleteHandoffInDatabase(database, { workspaceId: input.workspaceId, projectId: input.projectId, handoffId: handoff.id });
+    if (deleted) unreferencedObjectKeys.push(...deleted.unreferencedObjectKeys);
+  }
+  await database.prepare("DELETE FROM project WHERE id = ? AND workspace_id = ?").run(input.projectId, input.workspaceId);
+  return { handoffCount: handoffs.length, unreferencedObjectKeys };
 }

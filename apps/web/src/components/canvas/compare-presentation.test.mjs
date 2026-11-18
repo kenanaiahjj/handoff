@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { captureScopeNotice, comparisonChangeLabel, comparisonFrameStatusLabel } from "./compare-presentation.ts";
+import { captureScopeNotice, comparisonChangeLabel, comparisonFrameStatusLabel, comparisonFrameStatusShortLabel } from "./compare-presentation.ts";
 import * as comparePresentation from "./compare-presentation.ts";
 
 test("labels capture coverage with the snapshot side, not as a screen change", () => {
@@ -28,8 +28,8 @@ test("warns when one or both Figma capture scopes are missing", () => {
 });
 
 test("labels one-sided screens by the capture that contains them", () => {
-  assert.equal(comparisonFrameStatusLabel("only-in-before-capture"), "Present only in before capture");
-  assert.equal(comparisonFrameStatusLabel("only-in-after-capture"), "Present only in after capture");
+  assert.equal(comparisonFrameStatusLabel("only-in-before-capture"), "Not in this version");
+  assert.equal(comparisonFrameStatusLabel("only-in-after-capture"), "New in this version");
   assert.equal(comparisonFrameStatusLabel("unchanged"), "No changes");
   assert.equal(comparisonFrameStatusLabel("removed"), "Removed");
   assert.equal(comparisonFrameStatusLabel("added"), "New");
@@ -60,4 +60,10 @@ test("explains one-sided frames when selected capture scopes have the same label
     captureScopeNotice(null, true),
     "Screens present in only one capture are not confirmed design additions or removals.",
   );
+});
+
+test("badge labels stay short enough to leave room for the screen name", () => {
+  assert.equal(comparisonFrameStatusShortLabel("only-in-after-capture"), "New");
+  assert.equal(comparisonFrameStatusShortLabel("only-in-before-capture"), "Removed");
+  assert.equal(comparisonFrameStatusShortLabel("changed"), "Changed");
 });

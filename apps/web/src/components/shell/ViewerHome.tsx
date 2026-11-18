@@ -95,6 +95,7 @@ export function ViewerHome({
   projects,
   devBypass = false,
   devTools,
+  notice,
   pinKeys = [],
   mentions = [],
   designerRequestPending = false,
@@ -116,6 +117,8 @@ export function ViewerHome({
   /** Development bypass is on: "Sign out" leaves it for this browser. */
   devBypass?: boolean;
   devTools?: ReactNode;
+  /** Optional prompt above "Needs you", such as completing your profile. */
+  notice?: ReactNode;
 }) {
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
@@ -344,6 +347,8 @@ export function ViewerHome({
                     <p className="truncate text-[12px] text-foreground-subtle">{user.email}</p>
                   </div>
                   <div className="my-1 h-px bg-border" />
+                  <Link className="flex h-8 items-center rounded-[7px] px-2.5 text-[12px] text-foreground hover:bg-white/[0.06]" href="/profile" role="menuitem">Edit profile</Link>
+                  <div className="my-1 h-px bg-border" />
                   <NotificationSettings />
                   <div className="my-1 h-px bg-border" />
                   <div className="px-1 pb-1 pt-1.5 [&>button]:w-full [&>button]:justify-start [&>button]:text-left">
@@ -419,6 +424,7 @@ export function ViewerHome({
           </p>
         ) : null}
 
+        {notice ? <div className="mt-8">{notice}</div> : null}
         <NeedsYou className="mt-10" initial={mentions} />
 
         {!projects.length ? (

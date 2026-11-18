@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { SnapshotNode } from "@asbir/snapshot-contract";
 import { filterChangedFrames } from "./changed-frame-filter";
-import { comparisonFrameStatusLabel } from "./compare-presentation";
+import { comparisonFrameStatusLabel, comparisonFrameStatusShortLabel } from "./compare-presentation";
 import type { CanvasNodeSummary } from "./canvas-node-summary";
 
 type CanvasFrameOption = {
@@ -90,6 +90,13 @@ export function FrameNavigator({
   const picked = removal?.picked ?? emptyPicked;
   const setPicked = (update: (current: Set<string>) => Set<string>) => removal?.onPickedChange(update(picked));
   const [elementQuery, setElementQuery] = useState("");
+  const listRef = useRef<HTMLUListElement>(null);
+  // Keep the open screen visible in the list when it is chosen elsewhere (canvas, search, [ and ]).
+  useEffect(() => {
+    if (!activeFrameId) return;
+    const row = listRef.current?.querySelector<HTMLElement>(`[data-frame-id="${CSS.escape(activeFrameId)}"]`);
+    row?.scrollIntoView({ block: "nearest" });
+  }, [activeFrameId]);
   const screens = useMemo(() => frames.filter((frame) => frame.kind === "frame"), [frames]);
   const activeFrame = filterChangedFrames(
     screens.filter((frame) => frame.id === activeFrameId),
@@ -203,17 +210,17 @@ export function FrameNavigator({
         </div>
       )}
 
-      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3">
+      <ul className="min-h-0 flex-1 space-y-1 overflow-y-auto px-2 pb-3" ref={listRef}>
         {visibleFrames.map((frame, index) => {
           // In select mode "selected" means marked for removal; otherwise it's the open screen.
           const selected = selecting ? picked.has(frame.id) : frame.id === activeFrameId;
           const status = frameStatuses[frame.id];
-          const statusLabel = status && status !== "unchanged" ? comparisonFrameStatusLabel(status) : null;
-          const statusTone = status === "added" ? "bg-[#183a2d] text-success"
+          const statusLabel = status && status !== "unchanged" ? comparisonFrameStatusShortLabel(status) : null;
+          const statusTone = status === "added" || status === "only-in-after-capture" ? "bg-[#183a2d] text-success"
             : status === "removed" || status === "only-in-before-capture" ? "bg-[#3b2525] text-danger"
               : "bg-[#43331f] text-[#efae3d]";
           return (
-            <li key={frame.id}>
+            <li data-frame-id={frame.id} key={frame.id}>
               <button
                 aria-pressed={selected}
                 className={"flex min-h-9 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] font-medium transition-colors " + (selected ? "bg-surface-strong text-foreground" : "text-foreground-muted hover:bg-surface-inset hover:text-foreground")}
@@ -233,7 +240,7 @@ export function FrameNavigator({
                 {!selecting && picked.has(frame.id) ? (
                   <span className="shrink-0 rounded-control bg-danger/15 px-1.5 py-0.5 text-[10px] font-medium leading-4 text-danger">Removing</span>
                 ) : statusLabel ? (
-                  <span className={"shrink-0 rounded-control px-1.5 py-0.5 text-[10px] font-medium leading-4 " + statusTone}>{statusLabel}</span>
+                  <span className={"shrink-0 whitespace-nowrap rounded-control px-1.5 py-0.5 text-[10px] font-medium leading-4 " + statusTone} title={status ? comparisonFrameStatusLabel(status) : undefined}>{statusLabel}</span>
                 ) : null}
                 <span className="sr-only">Screen {index + 1} of {screens.length}</span>
               </button>

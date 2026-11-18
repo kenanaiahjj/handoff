@@ -42,6 +42,7 @@ await pool.query(`
     invited_by_user_id TEXT NOT NULL,
     created_at TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS project_member (project_id TEXT, workspace_id TEXT, email TEXT, role TEXT, added_by_user_id TEXT, created_at TEXT);
   CREATE TABLE "user" (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,
@@ -51,6 +52,7 @@ await pool.query(`
     "createdAt" TEXT NOT NULL,
     "updatedAt" TEXT NOT NULL
   );
+  CREATE TABLE IF NOT EXISTS user_presence (user_id TEXT PRIMARY KEY, last_seen_at TIMESTAMPTZ);
   CREATE TABLE session (
     id TEXT PRIMARY KEY,
     "expiresAt" TEXT NOT NULL,

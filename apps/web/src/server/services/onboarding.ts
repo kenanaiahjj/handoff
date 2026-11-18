@@ -23,6 +23,28 @@ export function isAllowedEmail(email: string) {
   return !allowed.length || allowed.includes(emailDomain(email));
 }
 
+/**
+ * Company domains that may sign up and join on their own. The app serves one company, so the
+ * first workspace's setting applies; without one, the deployment's environment list does.
+ */
+export async function companyEmailDomains() {
+  try {
+    const row = (await getDatabase()
+      .prepare("SELECT allowed_email_domains AS domains FROM workspace ORDER BY created_at ASC, id ASC LIMIT 1")
+      .get()) as { domains: string | null } | undefined;
+    if (row?.domains != null) return row.domains.split(",").filter(Boolean);
+  } catch {
+    // Before the settings migration runs, fall back to the environment.
+  }
+  return allowedEmailDomains();
+}
+
+/** Like isAllowedEmail, but honours the domains an owner saved in workspace Settings. */
+export async function isAllowedCompanyEmail(email: string) {
+  const allowed = await companyEmailDomains();
+  return !allowed.length || allowed.includes(emailDomain(email));
+}
+
 type OnboardingUser = { id: string; email: string; emailVerified: boolean | number };
 
 /**
@@ -30,7 +52,7 @@ type OnboardingUser = { id: string; email: string; emailVerified: boolean | numb
  * from a company domain joins every workspace; anyone else needs an invite link.
  */
 export async function joinableWorkspaces(user: OnboardingUser) {
-  if (!user.emailVerified || !allowedEmailDomains().includes(emailDomain(user.email))) return [];
+  if (!user.emailVerified || !(await companyEmailDomains()).includes(emailDomain(user.email))) return [];
   return (await getDatabase()
     .prepare(
       `SELECT workspace.id, workspace.name

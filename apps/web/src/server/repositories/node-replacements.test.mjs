@@ -7,6 +7,7 @@ const fixture = await createPostgresTestFixture();
 const { database, pool } = fixture;
 await pool.query(`
   CREATE TABLE "user" (id TEXT PRIMARY KEY);
+  CREATE TABLE IF NOT EXISTS user_presence (user_id TEXT PRIMARY KEY, last_seen_at TIMESTAMPTZ);
   CREATE TABLE handoff (
     id TEXT NOT NULL,
     workspace_id TEXT NOT NULL,

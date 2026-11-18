@@ -18,12 +18,23 @@ export function captureScopeNotice(
 export function comparisonFrameStatusLabel(
   status: SnapshotDiff["frames"][number]["status"],
 ) {
-  if (status === "only-in-before-capture") return "Present only in before capture";
-  if (status === "only-in-after-capture") return "Present only in after capture";
+  // A screen in only one version is new to (or gone from) the handoff, even when the captures
+  // differ in scope and Figma can't confirm it was created or deleted in the file.
+  if (status === "only-in-before-capture") return "Not in this version";
+  if (status === "only-in-after-capture") return "New in this version";
   if (status === "unchanged") return "No changes";
   if (status === "changed") return "Changed";
   if (status === "added") return "New";
   return "Removed";
+}
+
+/** Badge-sized label for tight rows (the screen list, canvas labels); pair it with the full label as a tooltip. */
+export function comparisonFrameStatusShortLabel(
+  status: SnapshotDiff["frames"][number]["status"],
+) {
+  if (status === "only-in-after-capture") return "New";
+  if (status === "only-in-before-capture") return "Removed";
+  return comparisonFrameStatusLabel(status);
 }
 
 export function captureCoverageAvailabilityLabel(availableIn: "before" | "after") {

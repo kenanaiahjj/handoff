@@ -17,22 +17,36 @@ export type Member = {
   jobRole: string | null;
   requestedRole: "designer" | null;
   joinedAt: string;
+  image: string | null;
+  title: string | null;
+  department: string | null;
+  /** Last time they used the app (their most recent session), or null if they never signed in. */
+  lastActiveAt: string | null;
 };
 
 export async function listMembers(workspaceId: string): Promise<Member[]> {
   const rows = (await getDatabase()
     .prepare(
-      `SELECT "user".id, "user".name, "user".email, workspace_membership.role,
+      `SELECT "user".id, "user".name, "user".email, "user".image, workspace_membership.role,
+              user_about.title, user_about.department,
               user_profile.job_role AS jobRole, user_profile.requested_role AS requestedRole,
-              workspace_membership.created_at AS joinedAt
+              workspace_membership.created_at AS joinedAt,
+              GREATEST(
+                (SELECT MAX(session."updatedAt") FROM session WHERE session."userId" = "user".id),
+                (SELECT user_presence.last_seen_at FROM user_presence WHERE user_presence.user_id = "user".id)
+              ) AS lastActiveAt
        FROM workspace_membership
        JOIN "user" ON "user".id = workspace_membership.user_id
        LEFT JOIN user_profile ON user_profile.user_id = workspace_membership.user_id
+       LEFT JOIN user_about ON user_about.user_id = workspace_membership.user_id
        WHERE workspace_membership.workspace_id = ?
        ORDER BY user_profile.requested_role IS NULL, lower("user".name) COLLATE "C"`,
     )
-    .all(workspaceId)) as Member[];
-  return rows;
+    .all(workspaceId)) as Array<Omit<Member, "lastActiveAt"> & { lastActiveAt: string | Date | null }>;
+  return rows.map((row) => ({
+    ...row,
+    lastActiveAt: row.lastActiveAt instanceof Date ? row.lastActiveAt.toISOString() : row.lastActiveAt ? new Date(row.lastActiveAt).toISOString() : null,
+  }));
 }
 
 /** The person being changed: a member of the team other than the actor. */

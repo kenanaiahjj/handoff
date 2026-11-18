@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { RetryingCanvasImage } from "./RetryingImage";
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import type { CanvasFrameChangeStatus, CanvasFrameOption } from "./FrameNavigator";
 import { useCanvasViewport } from "./useCanvasViewport";
 import { attachCanvasWheelZoom } from "./canvas-wheel-zoom";
@@ -14,7 +14,7 @@ import type { PendingCommentPoint } from "../comments/CommentThread";
 import { layoutCommentPins } from "../comments/comment-pin-layout";
 import { CanvasCommentPopover } from "../comments/CanvasCommentPopover";
 import { LayoutGridOverlay } from "./LayoutGridOverlay";
-import { comparisonFrameStatusLabel } from "./compare-presentation";
+import { comparisonFrameStatusShortLabel } from "./compare-presentation";
 import { getCanvasFrameLabelMaxWidth, shouldShowCanvasFrameLabel } from "./canvas-frame-label-visibility";
 import { getElementDistanceGuides, type ElementRect } from "./element-distance-guides";
 import { formatPrecisePixelValue } from "./format-captured-measurement";
@@ -41,7 +41,8 @@ function cutOutMaskStyle(rects: CanvasFrameOption["maskRects"]) {
 }
 
 export type CanvasViewportControls = {
-  scale: number;
+  /** null until the canvas has been fitted to its viewport. */
+  scale: number | null;
   fitToFrame: () => void;
   zoomOut: () => void;
   zoomIn: () => void;
@@ -94,10 +95,12 @@ type CanvasViewportProps = {
   onSelectAnnotation: (annotationId: string) => void;
   onPlaceAnnotation: (point: PendingCommentPoint) => void;
   onViewportChange: (controls: CanvasViewportControls) => void;
+  /** Bump `seq` to centre and zoom to a screen (picked from the list, search, or [ and ]). */
+  focusRequest?: { frameId: string; seq: number } | null;
 };
 
 function statusLabel(status: CanvasFrameChangeStatus | undefined) {
-  return status && status !== "unchanged" ? comparisonFrameStatusLabel(status) : null;
+  return status && status !== "unchanged" ? comparisonFrameStatusShortLabel(status) : null;
 }
 
 type MeasuredRect = {
@@ -165,6 +168,7 @@ export function CanvasViewport({
   onSelectAnnotation,
   onPlaceAnnotation,
   onViewportChange,
+  focusRequest = null,
 }: CanvasViewportProps) {
   const dragRef = useRef<{ pointerId: number; x: number; y: number; startX: number; startY: number; moved: boolean } | null>(null);
   const suppressClickRef = useRef(false);
@@ -172,20 +176,47 @@ export function CanvasViewport({
   const [altHeld, setAltHeld] = useState(false);
   const [hoveredNode, setHoveredNode] = useState<{ nodeId: string; frameId: string } | null>(null);
   const hoveredNodeId = hoveredNode?.frameId === frame.id ? hoveredNode.nodeId : null;
-  const { containerRef, viewportSize, transform, fitToFrame, zoomBy, zoomAt, panBy } = useCanvasViewport(
+  const { containerRef, viewportSize, transform, fitted, fitToFrame, zoomToRect, zoomBy, zoomAt, panBy } = useCanvasViewport(
     frame.sourceWidth,
     frame.sourceHeight,
     viewMemoryKey,
   );
   const controls = useMemo<CanvasViewportControls>(() => ({
-    scale: transform.scale,
+    scale: fitted ? transform.scale : null,
     fitToFrame,
     zoomOut: () => zoomBy(1 / 1.2),
     zoomIn: () => zoomBy(1.2),
-  }), [fitToFrame, transform.scale, zoomBy]);
+  }), [fitToFrame, fitted, transform.scale, zoomBy]);
   const visibleScreenIds = useMemo(() => new Set(screens.map((screen) => screen.id)), [screens]);
 
   useEffect(() => onViewportChange(controls), [controls, onViewportChange]);
+
+  // Bring a requested screen into view. Read the screens through a ref so a re-render of the list
+  // doesn't re-run an old request after the person has panned away.
+  const screensRef = useRef(screens);
+  const frameOriginRef = useRef({ x: frame.sourceX, y: frame.sourceY, kind: frame.kind });
+  useEffect(() => {
+    screensRef.current = screens;
+    frameOriginRef.current = { x: frame.sourceX, y: frame.sourceY, kind: frame.kind };
+  });
+  const focusOnScreen = useCallback((frameId: string) => {
+    const origin = frameOriginRef.current;
+    if (origin.kind !== "overview") return;
+    const screen = screensRef.current.find((entry) => entry.id === frameId);
+    if (!screen) return;
+    zoomToRect({ x: screen.sourceX - origin.x, y: screen.sourceY - origin.y, width: screen.sourceWidth, height: screen.sourceHeight });
+  }, [zoomToRect]);
+  useEffect(() => {
+    if (focusRequest) focusOnScreen(focusRequest.frameId);
+  }, [focusOnScreen, focusRequest]);
+  // A shared link to a screen (#screen=…) opens zoomed on that screen, not on the whole canvas.
+  const linkFocusedRef = useRef(false);
+  useEffect(() => {
+    if (linkFocusedRef.current) return;
+    linkFocusedRef.current = true;
+    const linked = new URLSearchParams(window.location.hash.slice(1)).get("screen");
+    if (linked) focusOnScreen(linked);
+  }, [focusOnScreen]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -271,9 +302,7 @@ export function CanvasViewport({
     else if (event.key === "ArrowRight") panBy(-distance, 0);
     else if (event.key === "ArrowUp") panBy(0, distance);
     else if (event.key === "ArrowDown") panBy(0, -distance);
-    else if (event.key === "+" || event.key === "=") zoomBy(1.2);
-    else if (event.key === "-") zoomBy(1 / 1.2);
-    else if (event.key === "0" || event.key === "Home") fitToFrame();
+    else if (event.key === "Home") fitToFrame();
     else return;
     event.preventDefault();
   }
@@ -470,6 +499,8 @@ export function CanvasViewport({
               marginLeft: -frame.sourceWidth / 2,
               marginTop: -frame.sourceHeight / 2,
             transform: "translate(" + transform.offsetX + "px, " + transform.offsetY + "px) scale(" + transform.scale + ")",
+            // Hidden until the first fit, so the canvas doesn't flash at a placeholder zoom while loading.
+            visibility: fitted ? undefined : "hidden",
             transformOrigin: "center center",
           }}
         >
@@ -525,8 +556,9 @@ export function CanvasViewport({
             const label = statusLabel(status);
             const selected = screen.id === selectedFrameId;
             const showLabel = shouldShowCanvasFrameLabel(transform.scale, selected, screens.length);
-              const captureOnly = status === "only-in-before-capture" || status === "only-in-after-capture";
-              const borderColor = status === "changed" ? "#e3a13a" : status === "added" ? "#55c987" : status === "removed" ? "#df7770" : captureOnly ? "#b99a5d" : selected ? "#888888" : "#4c4c4c";
+              const isNew = status === "added" || status === "only-in-after-capture";
+              const isGone = status === "removed" || status === "only-in-before-capture";
+              const borderColor = status === "changed" ? "#e3a13a" : isNew ? "#55c987" : isGone ? "#df7770" : selected ? "#888888" : "#4c4c4c";
             return (
               <div
                 className="pointer-events-none absolute"
@@ -582,8 +614,8 @@ export function CanvasViewport({
                             padding: 2 * inverseScale + "px " + 4 * inverseScale + "px",
                             borderRadius: 4 * inverseScale + "px",
                             fontSize: 10 * inverseScale + "px",
-                            color: status === "added" ? "#76e0a5" : status === "removed" || status === "only-in-before-capture" ? "#f18b84" : "#ffca71",
-                            backgroundColor: status === "added" ? "#173b2b" : status === "removed" || status === "only-in-before-capture" ? "#3b2323" : "#46351e",
+                            color: status === "added" || status === "only-in-after-capture" ? "#76e0a5" : status === "removed" || status === "only-in-before-capture" ? "#f18b84" : "#ffca71",
+                            backgroundColor: status === "added" || status === "only-in-after-capture" ? "#173b2b" : status === "removed" || status === "only-in-before-capture" ? "#3b2323" : "#46351e",
                           }}
                         >
                           {label}

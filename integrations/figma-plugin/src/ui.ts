@@ -76,6 +76,9 @@ const layerAssetReportCopy = document.querySelector<HTMLElement>("#asset-report-
 const layerAssetExportList = document.querySelector<HTMLUListElement>("#asset-export-list")!;
 const result = document.querySelector<HTMLElement>("#result")!;
 const resultLink = document.querySelector<HTMLAnchorElement>("#result-link")!;
+const copyResultLinkButton = document.querySelector<HTMLButtonElement>("#copy-result-link")!;
+const uploadHint = document.querySelector<HTMLElement>("#upload-hint")!;
+const frameFilterInput = document.querySelector<HTMLInputElement>("#frame-filter")!;
 const resultProjectId = document.querySelector<HTMLElement>("#result-project-id")!;
 const resultHandoffId = document.querySelector<HTMLElement>("#result-handoff-id")!;
 const resultVersionId = document.querySelector<HTMLElement>("#result-version-id")!;
@@ -174,13 +177,35 @@ function updateReplacementActions() {
   confirmReplacementsButton.textContent = matches.length === 1 ? "Confirm 1 match and upload" : `Confirm ${matches.length} matches and upload`;
 }
 
+/**
+ * One obvious next step: Capture is the main button until a capture is ready, then Upload takes
+ * over and says what it will send. A missing token is explained before the click, not after.
+ */
+function refreshPrimaryAction() {
+  const ready = Boolean(currentCapture && overviewBytes);
+  const hasToken = Boolean(tokenInput.value.trim());
+  uploadButton.disabled = busy || !ready || !hasToken;
+  uploadButton.className = ready && hasToken ? "primary" : "secondary";
+  captureButton.className = ready ? "secondary" : "primary";
+  captureButton.textContent = fullCapture ? "Capture again" : "Capture canvas";
+  const count = currentCapture?.payload.frames.length ?? 0;
+  const screens = `${count} screen${count === 1 ? "" : "s"}`;
+  uploadButton.textContent = !ready ? "Upload to Handoff"
+    : fullCapture?.captureAllTopLevel ? `Merge ${screens} into Handoff` : `Upload ${screens} to Handoff`;
+  uploadHint.textContent = busy || uploadButton.hidden || !result.hidden ? ""
+    : !ready ? (fullCapture ? "Select at least one frame above." : "Capture the canvas first, then upload it here.")
+      : !hasToken ? "Paste the capture token above to upload."
+        : `${navigator.platform.includes("Mac") ? "⌘" : "Ctrl"}+Enter also uploads.`;
+}
+
 function setBusy(isBusy: boolean) {
   busy = isBusy;
   captureButton.disabled = isBusy;
-  uploadButton.disabled = isBusy || !currentCapture || !overviewBytes;
+  refreshPrimaryAction();
   layerAssetModeInput.disabled = isBusy || Boolean(fullCapture);
   frameListFieldset.disabled = isBusy || !fullCapture || Boolean(pendingUpload);
   selectAllFramesButton.disabled = isBusy || !fullCapture || Boolean(pendingUpload);
+  frameFilterInput.disabled = isBusy || !fullCapture || Boolean(pendingUpload);
   clearFrameSelectionButton.disabled = isBusy || !fullCapture || Boolean(pendingUpload);
   updateReplacementActions();
 }
@@ -215,8 +240,26 @@ function updateFrameManifestSummary(capture: CaptureReadyMessage) {
   frameManifestIntro.textContent = `${excludedSummary} ${selectionSummary}`;
 }
 
+/** Rows matching the frame filter (all rows when it is empty). */
+function visibleFrameCheckboxes() {
+  return Array.from(frameList.querySelectorAll<HTMLInputElement>("input[data-frame-id]"))
+    .filter((checkbox) => !checkbox.closest("li")?.hidden);
+}
+
+function applyFrameFilter() {
+  const needle = frameFilterInput.value.trim().toLowerCase();
+  for (const item of Array.from(frameList.children) as HTMLElement[]) {
+    item.hidden = Boolean(needle) && !(item.textContent ?? "").toLowerCase().includes(needle);
+  }
+  const shown = visibleFrameCheckboxes().length;
+  const total = frameList.children.length;
+  selectAllFramesButton.textContent = needle && shown < total ? `Select ${shown} shown` : "Select all";
+  clearFrameSelectionButton.textContent = needle && shown < total ? "Clear shown" : "Select none";
+}
+
 function renderFrameManifest(capture: CaptureReadyMessage) {
   frameList.replaceChildren();
+  frameFilterInput.value = "";
   capture.payload.frames.forEach((frame, index) => {
     const item = document.createElement("li");
     const label = document.createElement("label");
@@ -238,6 +281,7 @@ function renderFrameManifest(capture: CaptureReadyMessage) {
     checkbox.addEventListener("change", () => { void updateSelectedCapture(); });
   });
   frameManifest.hidden = false;
+  applyFrameFilter();
   updateFrameManifestSummary(capture);
 }
 
@@ -1006,7 +1050,7 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
         ? `Merged ${pending.snapshot.frames.length} captured frame${pending.snapshot.frames.length === 1 ? "" : "s"} into the previous version. Uncaptured frames and their layer data were kept.`
         : frameMatches.length
         ? `Snapshot imported with ${frameMatches.length} confirmed frame ${frameMatches.length === 1 ? "replacement" : "replacements"}.`
-        : "Snapshot imported. Open the frozen canvas in Asbir Handoff.", "success");
+        : "Uploaded. Open it in Handoff below.", "success");
     currentCapture = null;
     fullCapture = null;
     overviewBytes = null;
@@ -1241,17 +1285,47 @@ captureButton.addEventListener("click", () => {
   });
 });
 
+frameFilterInput.addEventListener("input", applyFrameFilter);
+
 selectAllFramesButton.addEventListener("click", () => {
-  frameList.querySelectorAll<HTMLInputElement>("input[data-frame-id]").forEach((checkbox) => { checkbox.checked = true; });
+  visibleFrameCheckboxes().forEach((checkbox) => { checkbox.checked = true; });
   void updateSelectedCapture();
 });
 
 clearFrameSelectionButton.addEventListener("click", () => {
-  frameList.querySelectorAll<HTMLInputElement>("input[data-frame-id]").forEach((checkbox) => { checkbox.checked = false; });
+  visibleFrameCheckboxes().forEach((checkbox) => { checkbox.checked = false; });
   void updateSelectedCapture();
 });
 
 uploadButton.addEventListener("click", () => { void (pendingUpload ? finishUpload([]) : uploadCapture()); });
+tokenInput.addEventListener("input", refreshPrimaryAction);
+
+// Figma's plugin frame can block the async clipboard API; fall back to a selected text field.
+copyResultLinkButton.addEventListener("click", async () => {
+  const link = resultLink.href;
+  let copied = false;
+  try {
+    await navigator.clipboard.writeText(link);
+    copied = true;
+  } catch {
+    const field = Object.assign(document.createElement("textarea"), { value: link });
+    document.body.append(field);
+    field.select();
+    copied = document.execCommand("copy");
+    field.remove();
+  }
+  copyResultLinkButton.textContent = copied ? "Copied" : "Copy failed";
+  window.setTimeout(() => { copyResultLinkButton.textContent = "Copy link"; }, 1600);
+});
+
+// Cmd/Ctrl+Enter runs the main action: capture, then upload.
+document.addEventListener("keydown", (event) => {
+  if (event.key !== "Enter" || !(event.metaKey || event.ctrlKey) || busy) return;
+  const target = !uploadButton.hidden && !uploadButton.disabled ? uploadButton : !captureButton.disabled ? captureButton : null;
+  if (!target) return;
+  event.preventDefault();
+  target.click();
+});
 cancelUploadButton.addEventListener("click", () => activeUploadController?.abort());
 confirmReplacementsButton.addEventListener("click", () => { void finishUpload(selectedFrameMatches()); });
 skipReplacementsButton.addEventListener("click", () => { void finishUpload([]); });

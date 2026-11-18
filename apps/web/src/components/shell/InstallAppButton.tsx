@@ -10,7 +10,7 @@ type InstallAppButtonProps = {
   compact?: boolean;
 };
 
-function getManualInstallInstructions() {
+export function getManualInstallInstructions() {
   const userAgent = navigator.userAgent;
   const isMac = /Macintosh|Mac OS X/.test(userAgent);
   const isWindows = /Windows/.test(userAgent);
@@ -41,12 +41,20 @@ function getManualInstallInstructions() {
   return "Open this page in Safari, Chrome, or Microsoft Edge, then choose the browser's option to add or install the site as an app.";
 }
 
-export function InstallAppButton({ compact = false }: InstallAppButtonProps) {
-  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(null);
+// The browser fires beforeinstallprompt once, often before the component that wants it mounts, so
+// it is caught here as soon as this module loads and handed to whichever hook asks later.
+let earlyPrompt: InstallPromptEvent | null = null;
+if (typeof window !== "undefined") {
+  window.addEventListener("beforeinstallprompt", (event) => {
+    event.preventDefault();
+    earlyPrompt = event as InstallPromptEvent;
+  });
+}
+
+/** Tracks whether the app is installed and holds the browser's install prompt when it offers one. */
+export function useInstallPrompt() {
+  const [installPrompt, setInstallPrompt] = useState<InstallPromptEvent | null>(() => earlyPrompt);
   const [installed, setInstalled] = useState(false);
-  const [instructions, setInstructions] = useState("");
-  const [instructionsOpen, setInstructionsOpen] = useState(false);
-  const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
     const standaloneDisplay = window.matchMedia("(display-mode: standalone)");
@@ -75,6 +83,30 @@ export function InstallAppButton({ compact = false }: InstallAppButtonProps) {
     };
   }, []);
 
+  /** Shows the browser's prompt. Returns "manual" when the browser needs the person to use its menu. */
+  async function install(): Promise<"accepted" | "dismissed" | "manual"> {
+    if (!installPrompt) return "manual";
+    const prompt = installPrompt;
+    setInstallPrompt(null);
+    earlyPrompt = null;
+    try {
+      const result = await prompt.prompt();
+      if (result.outcome === "accepted") setInstalled(true);
+      return result.outcome;
+    } catch {
+      return "manual";
+    }
+  }
+
+  return { installed, canPrompt: Boolean(installPrompt), install };
+}
+
+export function InstallAppButton({ compact = false }: InstallAppButtonProps) {
+  const { installed, install } = useInstallPrompt();
+  const [instructions, setInstructions] = useState("");
+  const [instructionsOpen, setInstructionsOpen] = useState(false);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -83,18 +115,7 @@ export function InstallAppButton({ compact = false }: InstallAppButtonProps) {
   }, [instructionsOpen]);
 
   async function installApp() {
-    if (!installPrompt) {
-      setInstructions(getManualInstallInstructions());
-      setInstructionsOpen(true);
-      return;
-    }
-
-    const prompt = installPrompt;
-    setInstallPrompt(null);
-    try {
-      const result = await prompt.prompt();
-      if (result.outcome === "accepted") setInstalled(true);
-    } catch {
+    if ((await install()) === "manual") {
       setInstructions(getManualInstallInstructions());
       setInstructionsOpen(true);
     }

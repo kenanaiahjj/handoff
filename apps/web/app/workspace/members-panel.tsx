@@ -1,5 +1,6 @@
 "use client";
 
+import { Avatar } from "@/src/components/Avatar";
 import { useState } from "react";
 import { useConfirm } from "@/src/components/ConfirmDialog";
 import type { Member } from "@/src/server/services/members";
@@ -27,11 +28,16 @@ export function MembersPanel({
   initial,
   currentUserId,
   canEdit,
+  limit,
+  manageHref,
 }: {
   workspaceId: string;
   initial: Member[];
   currentUserId: string;
   canEdit: boolean;
+  /** Show only this many members (requests are always shown), with a link to the full list. */
+  limit?: number;
+  manageHref?: string;
 }) {
   const [members, setMembers] = useState(initial);
   const [busy, setBusy] = useState("");
@@ -105,14 +111,12 @@ export function MembersPanel({
       ) : null}
 
       <ul className="space-y-1">
-        {members.map((member) => {
+        {(limit ? members.filter((member) => !member.requestedRole).slice(0, limit) : members).map((member) => {
           const isYou = member.id === currentUserId;
           const locked = !canEdit || isYou;
           return (
             <li className="dial-row flex items-center gap-2.5 px-2.5 py-2" key={member.id}>
-              <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center rounded-full bg-surface-strong text-[10px] font-semibold">
-                {member.name.trim().slice(0, 1).toUpperCase() || "?"}
-              </span>
+              <Avatar name={member.name} size={28} src={member.image} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate text-[12px] font-medium text-foreground">
                   {member.name}
@@ -159,6 +163,11 @@ export function MembersPanel({
           );
         })}
       </ul>
+      {manageHref ? (
+        <a className="dial-button min-h-8 w-full justify-center px-3 text-[12px]" href={manageHref}>
+          {limit && members.length > limit ? `See all ${members.length} members and roles` : "Manage team and roles"}
+        </a>
+      ) : null}
       {message ? <p aria-live="polite" className="text-[12px] leading-5 text-foreground-muted">{message}</p> : null}
       {dialog}
     </div>

@@ -1,4 +1,5 @@
 import { connection } from "next/server";
+import { notePresence } from "./services/presence";
 import type { AuthSession } from "./auth";
 import { auth } from "./auth";
 import { getDatabase } from "./db";
@@ -105,9 +106,13 @@ export async function getSessionForHeaders(headers: Headers) {
   if (isDevelopmentAuthBypassEnabled(headers)) {
     // The bypass session is built from the clock, so mark the render as request-time.
     await connection();
-    return (await getLocalTestSession(headers));
+    const session = await getLocalTestSession(headers);
+    notePresence(session?.user.id);
+    return session;
   }
-  return auth.api.getSession({ headers });
+  const session = await auth.api.getSession({ headers });
+  notePresence(session?.user.id);
+  return session;
 }
 
 /** Which "View as" choice is showing: the owner, the seeded reviewer, or a throwaway test account. */

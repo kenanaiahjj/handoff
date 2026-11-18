@@ -100,10 +100,10 @@ function summaryText(summary: FrameComparisonSummary | null) {
   if (!summary) return "";
   const parts = [];
   if (summary.changed) parts.push(summary.changed + " changed");
-  if (summary.added) parts.push(summary.added + " new");
-  if (summary.removed) parts.push(summary.removed + " removed");
-  if (summary.onlyInAfterCapture) parts.push(summary.onlyInAfterCapture + " screen" + (summary.onlyInAfterCapture === 1 ? "" : "s") + " with no match in the earlier capture");
-  if (summary.onlyInBeforeCapture) parts.push(summary.onlyInBeforeCapture + " screen" + (summary.onlyInBeforeCapture === 1 ? "" : "s") + " with no match in this capture");
+  const added = summary.added + summary.onlyInAfterCapture;
+  const removed = summary.removed + summary.onlyInBeforeCapture;
+  if (added) parts.push(added + " new");
+  if (removed) parts.push(removed + " removed");
   if (summary.changeCount) parts.push(formatComparisonChangeCount(summary.changeCount, summary.visualChangeCount));
   return (parts.join(", ") || "No changes") + " since " + summary.earlierVersionLabel;
 }
@@ -119,6 +119,20 @@ function subscribeToLocationHash(onChange: () => void) {
 
 function getLocationHash() {
   return window.location.hash;
+}
+
+// The change summary can be hidden per version for this browser tab.
+function subscribeToSummaryDismissals(onChange: () => void) {
+  window.addEventListener("storage", onChange);
+  return () => window.removeEventListener("storage", onChange);
+}
+
+function readSummaryDismissal(key: string) {
+  try {
+    return sessionStorage.getItem(key) === "1";
+  } catch {
+    return false;
+  }
 }
 
 function getServerLocationHash() {
@@ -211,6 +225,11 @@ export function HandoffCanvas({
   const [changedOnly, setChangedOnly] = useState(startChangedOnly);
   const [showChanges, setShowChanges] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  // Centres and zooms the canvas to a screen; each request gets a new seq so repeats still apply.
+  const [focusRequest, setFocusRequest] = useState<{ frameId: string; seq: number } | null>(null);
+  const focusScreen = useCallback((frameId: string) => {
+    setFocusRequest((current) => ({ frameId, seq: (current?.seq ?? 0) + 1 }));
+  }, []);
   const [moreOpen, setMoreOpen] = useState(false);
   const [panelMoreOpen, setPanelMoreOpen] = useState(false);
   const [comments, setComments] = useState<HandoffComment[]>([]);
@@ -250,6 +269,24 @@ export function HandoffCanvas({
   const mobilePanelWasOpenRef = useRef(false);
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
   const [latestPublished, setLatestPublished] = useState<{ versionId: string; versionLabel: string } | null>(null);
+  // Only point at the published version when it is newer than the one open (versions are newest
+  // first; one missing from the list was published after this page loaded, so it is newer too).
+  const publishedIndex = latestPublished ? metadata.versions.findIndex((version) => version.id === latestPublished.versionId) : -1;
+  const openIndex = metadata.versions.findIndex((version) => version.id === metadata.selectedVersionId);
+  const newerPublished = latestPublished && latestPublished.versionId !== metadata.selectedVersionId
+    && (publishedIndex === -1 || openIndex === -1 || publishedIndex < openIndex) ? latestPublished : null;
+  const summaryDismissKey = `asbir-changes-dismissed:${metadata.selectedVersionId}`;
+  const storedDismissal = useSyncExternalStore(subscribeToSummaryDismissals, () => readSummaryDismissal(summaryDismissKey), () => false);
+  const [dismissedKey, setDismissedKey] = useState<string | null>(null);
+  const summaryDismissed = storedDismissal || dismissedKey === summaryDismissKey;
+  function dismissSummary() {
+    setDismissedKey(summaryDismissKey);
+    try {
+      sessionStorage.setItem(summaryDismissKey, "1");
+    } catch {
+      // Storage blocked: it stays hidden until the page reloads.
+    }
+  }
 
   const closeSearchPanel = useCallback(() => {
     setSearchOpen(false);
@@ -516,8 +553,9 @@ export function HandoffCanvas({
     setPanelMode("inspect");
     setCanvasModeOverride("inspect");
     setHighlightedNodeIds([]);
+    focusScreen(result.frame.id);
     updateLinkState(result.frame.id, result.node.sourceNodeId);
-  }, [updateLinkState]);
+  }, [focusScreen, updateLinkState]);
 
   const selectSearchResult = useCallback((result: SearchResult) => {
     previewSearchResult(result);
@@ -624,7 +662,12 @@ export function HandoffCanvas({
         event.preventDefault();
         stepScreenRef.current(event.key === "]" ? 1 : -1);
       }
-      if (event.shiftKey && event.key === "1") viewportControls?.fitToFrame();
+      // Zoom works wherever focus is (not only on the canvas). Shift+digit is matched by key position,
+      // because Shift+1 types "!" on most layouts.
+      if (event.key === "+" || event.key === "=") viewportControls?.zoomIn();
+      if (event.key === "-" || event.key === "_") viewportControls?.zoomOut();
+      if (event.key === "0" || (event.shiftKey && event.code === "Digit1")) viewportControls?.fitToFrame();
+      if (event.shiftKey && event.code === "Digit2" && selectedFrameIdRef.current) focusScreen(selectedFrameIdRef.current);
       if (event.key === "Escape") {
         setRemovalSelecting(false);
         setSearchOpen(false);
@@ -637,7 +680,7 @@ export function HandoffCanvas({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeSearchIndex, closeSearchPanel, copySearchHighlights, metadata.canComment, previewSearchResult, searchOpen, searchResults, selectSearchResult, viewportControls]);
+  }, [activeSearchIndex, closeSearchPanel, copySearchHighlights, focusScreen, metadata.canComment, previewSearchResult, searchOpen, searchResults, selectSearchResult, viewportControls]);
 
   // Clicking anywhere outside the anchored comment (or another pin) closes it, like Figma.
   useEffect(() => {
@@ -685,6 +728,7 @@ export function HandoffCanvas({
 
   // "[" and "]" step through the screens in list order (only the changed ones when filtered).
   const stepScreenRef = useRef<(direction: 1 | -1) => void>(() => {});
+  const selectedFrameIdRef = useRef<string | null>(null);
   useEffect(() => {
     stepScreenRef.current = (direction) => {
       const list = canvasScreens.length ? canvasScreens : screens;
@@ -692,7 +736,9 @@ export function HandoffCanvas({
       const index = list.findIndex((frame) => frame.id === selectedFrameId);
       const next = index === -1 ? (direction === 1 ? 0 : list.length - 1) : (index + direction + list.length) % list.length;
       selectFrame(list[next].id);
+      focusScreen(list[next].id);
     };
+    selectedFrameIdRef.current = selectedFrameId;
   });
 
   // "?comment=<id>" (from "Needs you" or a notification) opens that thread once comments load.
@@ -1119,7 +1165,7 @@ export function HandoffCanvas({
           </div>
           <ZoomControls
             className="sm:hidden"
-            scale={viewportControls?.scale ?? 1}
+            scale={viewportControls?.scale ?? null}
             onZoomOut={() => viewportControls?.zoomOut()}
             onFit={() => viewportControls?.fitToFrame()}
             onZoomIn={() => viewportControls?.zoomIn()}
@@ -1129,7 +1175,7 @@ export function HandoffCanvas({
         <div className="flex shrink-0 items-center gap-1">
           {/* Rendered before the viewport is ready too, so the toolbar doesn't jump when it mounts. */}
           <CanvasToolbar
-            scale={viewportControls?.scale ?? 1}
+            scale={viewportControls?.scale ?? null}
             exportTargets={exportTargets}
             shareUrl={metadata.reviewHref}
             shareTitle={metadata.projectName + " · " + metadata.handoffName}
@@ -1180,29 +1226,36 @@ export function HandoffCanvas({
           removedScreens={pendingRemovals.map((id) => ({ id, name: screens.find((frame) => frame.id === id)?.name ?? id }))}
         />
       ) : null}
-      {latestPublished && latestPublished.versionId !== metadata.selectedVersionId ? (
+      {newerPublished ? (
         <div className="flex min-h-10 items-center justify-between gap-3 border-b border-border bg-surface px-4 py-2 text-[12px] text-foreground-muted">
-          <p className="flex items-center gap-2"><span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning" />{latestPublished.versionId !== metadata.publishedVersionId ? "A new version was published" : "Latest published version"} · Version {latestPublished.versionLabel}</p>
-          <Link className="dial-button shrink-0 px-3 py-1.5 text-[12px]" href={metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(latestPublished.versionId)}>View latest</Link>
+          <p className="flex min-w-0 items-center gap-2"><span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning" /><span className="truncate">You&apos;re viewing an older version. {newerPublished.versionId !== metadata.publishedVersionId ? "A newer version was just published" : "The published version is newer"}: <span className="font-medium text-foreground">{newerPublished.versionLabel}</span></span></p>
+          <Link className="dial-button shrink-0 px-3 py-1.5 text-[12px]" href={metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(newerPublished.versionId)}>Open it</Link>
         </div>
       ) : null}
-      {comparisonSummary && (
+      {comparisonSummary && !summaryDismissed && (
         comparisonSummary.changed > 0 || comparisonSummary.added > 0 || comparisonSummary.removed > 0 ||
         comparisonSummary.onlyInAfterCapture > 0 || comparisonSummary.onlyInBeforeCapture > 0 || comparisonSummary.changeCount > 0
       ) ? (
         <div aria-live="polite" className="flex min-h-11 flex-wrap items-center justify-between gap-x-4 gap-y-2 border-b border-border bg-surface px-4 py-2 text-[12px] text-foreground-muted">
-          <p className="flex flex-wrap items-center gap-x-2">
-            <span aria-hidden="true" className="size-1.5 shrink-0 rounded-full bg-warning" />
-            <span className="font-semibold text-foreground">{[
+          {(() => {
+            const added = comparisonSummary.added + comparisonSummary.onlyInAfterCapture;
+            const removed = comparisonSummary.removed + comparisonSummary.onlyInBeforeCapture;
+            const realChanges = [
               comparisonSummary.changed ? `${comparisonSummary.changed} screen${comparisonSummary.changed === 1 ? "" : "s"} changed` : "",
-              comparisonSummary.added ? `${comparisonSummary.added} new` : "",
-              comparisonSummary.removed ? `${comparisonSummary.removed} removed` : "",
-              comparisonSummary.onlyInAfterCapture ? `${comparisonSummary.onlyInAfterCapture} screen${comparisonSummary.onlyInAfterCapture === 1 ? "" : "s"} with no match in the earlier capture` : "",
-              comparisonSummary.onlyInBeforeCapture ? `${comparisonSummary.onlyInBeforeCapture} screen${comparisonSummary.onlyInBeforeCapture === 1 ? "" : "s"} with no match in this capture` : "",
-            ].filter(Boolean).join(" · ")}</span>
-            {comparisonSummary.changeCount ? ` · ${formatComparisonChangeCount(comparisonSummary.changeCount, comparisonSummary.visualChangeCount)}` : ""}
-            {` since ${comparisonSummary.earlierVersionLabel}`}
-          </p>
+              added ? `${added} new` : "",
+              removed ? `${removed} removed` : "",
+            ].filter(Boolean);
+            return (
+              <div className="min-w-0">
+                <p className="flex flex-wrap items-center gap-x-2">
+                  <span aria-hidden="true" className={"size-1.5 shrink-0 rounded-full " + (realChanges.length || comparisonSummary.changeCount ? "bg-warning" : "bg-foreground-subtle")} />
+                  <span className="font-semibold text-foreground">{realChanges.length ? realChanges.join(" · ") : comparisonSummary.changeCount ? "Screens changed" : "No changes"}</span>
+                  {comparisonSummary.changeCount ? <span>· {formatComparisonChangeCount(comparisonSummary.changeCount, comparisonSummary.visualChangeCount)}</span> : null}
+                  <span>since {comparisonSummary.earlierVersionLabel}</span>
+                </p>
+              </div>
+            );
+          })()}
           <span className="flex shrink-0 items-center gap-1.5">
           {onOpenChangesList ? (
             <button className="dial-button shrink-0 px-3 py-1.5 text-[12px]" onClick={() => { setCommentMode(false); setSearchOpen(false); onOpenChangesList(); }} type="button">
@@ -1220,6 +1273,15 @@ export function HandoffCanvas({
             type="button"
           >
             Review changes
+          </button>
+          <button
+            aria-label="Hide this summary for this version"
+            className="grid size-7 shrink-0 place-items-center rounded-[7px] text-foreground-subtle hover:bg-white/[0.06] hover:text-foreground"
+            onClick={dismissSummary}
+            title="Hide for this version (Compare in the toolbar still shows the changes)"
+            type="button"
+          >
+            <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8" /></svg>
           </button>
           </span>
         </div>
@@ -1355,7 +1417,10 @@ export function HandoffCanvas({
               <FrameNavigator
                 frames={frames}
                 activeFrameId={selectedFrameId}
-                onSelect={selectFrame}
+                onSelect={(frameId) => {
+                  selectFrame(frameId);
+                  focusScreen(frameId);
+                }}
                 selectedNodeId={selectedNodeId}
                 onSelectNode={selectNode}
                 onOpenSearch={() => {
@@ -1404,6 +1469,7 @@ export function HandoffCanvas({
           highlightedNodeIds={highlightedNodeIds}
           changedNodeIds={showChanges ? changedNodeIds : []}
           viewMemoryKey={`${handoffId}:${metadata.selectedVersionId}:${visualFrame.id}`}
+          focusRequest={focusRequest}
           showResolvedPins={showResolvedPins}
           selectedNodeId={selectedNodeId}
           onSelectNode={selectNode}

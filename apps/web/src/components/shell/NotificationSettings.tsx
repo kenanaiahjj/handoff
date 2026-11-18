@@ -1,16 +1,17 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { PushToggle } from "./PushToggle";
 
 type SlackPreference = "all" | "mentions" | "off";
 
 const options: Array<{ value: SlackPreference; label: string; detail: string }> = [
   { value: "all", label: "All updates", detail: "New versions and mentions" },
   { value: "mentions", label: "Mentions only", detail: "When someone @mentions you" },
-  { value: "off", label: "Off", detail: "No Slack messages" },
+  { value: "off", label: "Off", detail: "No notifications" },
 ];
 
-/** Slack notification choice, saved per person. Loads when shown. */
+/** What to be notified about (Slack and push follow the same choice), plus push for this device. */
 export function NotificationSettings() {
   const [value, setValue] = useState<SlackPreference | null>(null);
   const [saving, setSaving] = useState(false);
@@ -51,7 +52,7 @@ export function NotificationSettings() {
   return (
     <div className="px-1 py-1">
       <p className="px-1.5 pb-1.5 text-[11px] font-medium uppercase tracking-[0.05em] text-foreground-subtle" id="slack-notifications-label">
-        Slack notifications
+        Notify me about
       </p>
       <div aria-busy={saving} aria-labelledby="slack-notifications-label" className="space-y-0.5" role="radiogroup">
         {options.map((option) => {
@@ -77,6 +78,7 @@ export function NotificationSettings() {
           );
         })}
       </div>
+      <PushToggle />
     </div>
   );
 }

@@ -16,6 +16,7 @@ export async function listHandoffs(input: { workspaceId: string; projectId: stri
       `SELECT handoff.id, handoff.name, handoff.created_at AS createdAt,
               handoff.published_version_id AS publishedVersionId,
               handoff.sharing_mode AS sharingMode,
+              handoff.review_status AS reviewStatus,
               COUNT(handoff_version.id) AS versionCount,
               MAX(handoff_version.created_at) AS latestVersionAt
        FROM handoff
@@ -37,6 +38,7 @@ export async function listHandoffsPage(input: { workspaceId: string; projectId: 
       `SELECT handoff.id, handoff.name, handoff.created_at AS createdAt,
               handoff.published_version_id AS publishedVersionId,
               handoff.sharing_mode AS sharingMode,
+              handoff.review_status AS reviewStatus,
               COUNT(handoff_version.id) AS versionCount,
               MAX(handoff_version.created_at) AS latestVersionAt
        FROM handoff
@@ -99,6 +101,25 @@ export async function renameHandoff(input: {
   const result = (await getDatabase()
     .prepare("UPDATE handoff SET name = ? WHERE id = ? AND workspace_id = ? AND project_id = ?")
     .run(input.name.trim(), input.handoffId, input.workspaceId, input.projectId));
+  return result.changes > 0;
+}
+
+export const handoffReviewStatuses = ["draft", "in_review", "approved"] as const;
+export type HandoffReviewStatus = (typeof handoffReviewStatuses)[number];
+
+export async function setHandoffReviewStatus(input: {
+  workspaceId: string;
+  projectId: string;
+  handoffId: string;
+  status: HandoffReviewStatus;
+  userId: string;
+}) {
+  const result = (await getDatabase()
+    .prepare(
+      `UPDATE handoff SET review_status = ?, review_status_at = ?, review_status_by_user_id = ?
+       WHERE id = ? AND workspace_id = ? AND project_id = ?`,
+    )
+    .run(input.status, new Date().toISOString(), input.userId, input.handoffId, input.workspaceId, input.projectId));
   return result.changes > 0;
 }
 

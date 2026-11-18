@@ -2,6 +2,7 @@ import { getDatabase } from "../db";
 import { plainCommentText } from "./mentions";
 import { filterBySlackPreference } from "./notification-preferences";
 import { screenChangesBetween } from "./review-visibility";
+import { isPushEnabled, sendPushToEmails } from "./push";
 
 /**
  * Slack direct messages from the "Asbir Handoff" Slack app. Off until SLACK_BOT_TOKEN is set.
@@ -100,7 +101,7 @@ export async function newVersionRecipients(input: { workspaceId: string; handoff
 
 /** DMs everyone following a handoff about its new version, with a button straight into the comparison. */
 export async function notifyNewVersion(input: { workspaceId: string; handoffId: string; versionId: string; createdBy: string }, fetcher?: SlackFetch) {
-  if (!isSlackEnabled()) return { sent: 0 };
+  if (!isSlackEnabled() && !isPushEnabled()) return { sent: 0 };
   const database = getDatabase();
   const details = (await database
     .prepare(
@@ -135,8 +136,15 @@ export async function notifyNewVersion(input: { workspaceId: string; handoffId: 
     url = appUrl(`${base}?compare=1&compareFrom=${previous.id}&compareTo=${input.versionId}&versionId=${input.versionId}`);
   }
   const text = `*${escape(details.publisher ?? "Someone")}* published version *${escape(details.versionLabel)}* of *${escape(details.handoffName)}* in ${escape(details.projectName)}.`;
+  const recipients = await filterBySlackPreference((await newVersionRecipients(input)), "version");
+  await sendPushToEmails(recipients, {
+    title: `${details.handoffName} ${details.versionLabel}`,
+    body: `${details.publisher ?? "Someone"} published a new version${detail ? ` · ${detail}` : ""}`,
+    url: new URL(url).pathname + new URL(url).search,
+    tag: `version:${input.handoffId}`,
+  }).catch((error) => console.warn("[push]", error));
   return sendSlackDirectMessages(
-    (await filterBySlackPreference((await newVersionRecipients(input)), "version")),
+    recipients,
     messageWithButton(text, detail, previous ? "Review changes" : "Open handoff", url),
     fetcher,
   );
@@ -147,7 +155,7 @@ export async function notifyMentions(
   input: { workspaceId: string; handoffId: string; versionId: string; commentId: string; authorId: string; body: string; mentioned: Array<{ email: string }> },
   fetcher?: SlackFetch,
 ) {
-  if (!isSlackEnabled() || !input.mentioned.length) return { sent: 0 };
+  if ((!isSlackEnabled() && !isPushEnabled()) || !input.mentioned.length) return { sent: 0 };
   const details = (await getDatabase()
     .prepare(
       `SELECT handoff.name AS handoffName, handoff.project_id AS projectId, project.name AS projectName,
@@ -158,14 +166,44 @@ export async function notifyMentions(
   if (!details) return { sent: 0 };
   const text = plainCommentText(input.body).replace(/\s+/g, " ").trim();
   const excerpt = text.length > 280 ? `${text.slice(0, 279)}…` : text;
+  const recipients = await filterBySlackPreference(input.mentioned.map((person) => person.email), "mention");
+  const path = `/workspace/${input.workspaceId}/projects/${details.projectId}/handoffs/${input.handoffId}?versionId=${input.versionId}&comment=${input.commentId}`;
+  await sendPushToEmails(recipients, {
+    title: `${details.author ?? "Someone"} mentioned you`,
+    body: `${details.handoffName}: ${excerpt}`,
+    url: path,
+    tag: `comment:${input.commentId}`,
+  }).catch((error) => console.warn("[push]", error));
   return sendSlackDirectMessages(
-    (await filterBySlackPreference(input.mentioned.map((person) => person.email), "mention")),
+    recipients,
     messageWithButton(
       `*${escape(details.author ?? "Someone")}* mentioned you in *${escape(details.handoffName)}* · ${escape(details.projectName)}`,
       `> ${escape(excerpt)}`,
       "Open comment",
       appUrl(`/workspace/${input.workspaceId}/projects/${details.projectId}/handoffs/${input.handoffId}?versionId=${input.versionId}&comment=${input.commentId}`),
     ),
+    fetcher,
+  );
+}
+
+/** The weekly summary DM: what's waiting on this person, and what moved. */
+export async function sendSlackDigest(digest: import("./digest").Digest, fetcher?: SlackFetch) {
+  const link = (path: string, label: string) => `<${appUrl(path)}|${escape(label)}>`;
+  const lines: string[] = [];
+  if (digest.openMentions) lines.push(`• *${digest.openMentions}* ${digest.openMentions === 1 ? "mention needs" : "mentions need"} your reply`);
+  if (digest.newVersions) lines.push(`• *${digest.newVersions}* new ${digest.newVersions === 1 ? "version" : "versions"} this week`);
+  if (digest.inReview.length) lines.push(`• In review: ${digest.inReview.map((handoff) => link(handoff.path, handoff.name)).join(", ")}`);
+  if (digest.stale.length) lines.push(`• Going stale: ${digest.stale.map((handoff) => `${link(handoff.path, handoff.name)} (${handoff.days}d)`).join(", ")}`);
+  const text = "Your week in Asbir Handoff";
+  return sendSlackDirectMessages(
+    [digest.email],
+    {
+      text,
+      blocks: [
+        { type: "section", text: { type: "mrkdwn", text: `*${text}*\n${lines.join("\n")}` } },
+        { type: "actions", elements: [{ type: "button", text: { type: "plain_text", text: "Open Asbir Handoff" }, url: appUrl("/workspace"), style: "primary" }] },
+      ],
+    },
     fetcher,
   );
 }

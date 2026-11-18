@@ -4,10 +4,8 @@ import { getSessionForHeaders } from "@/src/server/auth-session";
 import { getDatabase } from "@/src/server/db";
 import { listProjects } from "@/src/server/repositories/projects";
 import { CreateInviteForm } from "../workspace-actions";
-import { SuperadminsPanel } from "../superadmins-panel";
 import { MembersPanel } from "../members-panel";
 import { hasPendingDesignerRequest, listMembers } from "@/src/server/services/members";
-import { listSuperadmins } from "@/src/server/services/superadmins";
 import { projectIconVersions } from "@/src/server/services/project-icons";
 import { ProjectsPane, type ProjectCard } from "./projects-pane";
 import Link from "next/link";
@@ -15,8 +13,12 @@ import { NewVersionBadge } from "@/src/components/shell/NewVersionBadge";
 import { canSeeWholeWorkspace, countUpdatesByProject, filterProjectsForViewer, listViewerHome, listViewerUpdates } from "@/src/server/services/review-visibility";
 import { ViewerHome } from "@/src/components/shell/ViewerHome";
 import { listPinKeys } from "@/src/server/services/viewer-pins";
+import { listStaleHandoffs, staleAfterDays } from "@/src/server/services/workspace-activity";
+import { handoffStatusMeta } from "@/src/lib/handoff-status";
 import { listOpenMentions } from "@/src/server/services/mentions";
 import { NeedsYou } from "@/src/components/shell/NeedsYou";
+import { ProfileNudge } from "@/src/components/shell/ProfileNudge";
+import { getProfile } from "@/src/server/services/profiles";
 import { ViewAsSwitcher } from "@/src/components/shell/ViewAsSwitcher";
 import { isDevelopmentAuthBypassActive, viewAsModeFor } from "@/src/server/auth-session";
 import { WorkspaceShell } from "@/src/components/shell/WorkspaceShell";
@@ -64,6 +66,8 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
   // People who review rather than manage get a calm, app-like home instead of the dashboard.
   if (!canManage) {
     const devBypass = await isDevelopmentAuthBypassActive();
+    const profile = await getProfile(session.user.id);
+    const missing = [...(profile?.image ? [] : ["photo" as const]), ...(profile?.title || profile?.department ? [] : ["title" as const])];
     return (
       <ViewerHome
         devTools={devBypass ? <ViewAsSwitcher current={viewAsModeFor(session.user)} workspaceId={workspace.id} /> : null}
@@ -74,6 +78,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
         designerRequestPending={(await hasPendingDesignerRequest(session.user.id))}
         user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
         homeHref="/workspace"
+        notice={<ProfileNudge href={`/workspace/${workspace.id}/profile`} image={profile?.image ?? null} missing={missing} name={session.user.name} />}
         title={workspace.name}
       />
     );
@@ -93,7 +98,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
       .all(workspaceId, new Date().toISOString()) as Promise<WorkspaceInvite[]>,
     listMembers(workspace.id),
   ]);
-  const navSections = await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects, page: "overview" });
+  const navSections = await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, isOwner: workspace.role === "owner", projects, page: "overview", canManage });
 
   return (
     <WorkspaceShell
@@ -108,13 +113,49 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
             <h1 className="font-semibold text-foreground">Projects</h1>
             <p className="mt-2 text-[13px] leading-5 text-foreground-muted">Each project keeps its source canvases, frozen versions, and review decisions together.</p>
           </div>
-          <span className="workspace-role px-3 py-1.5 text-[11px] capitalize">{workspace.role}</span>
         </header>
+
+        {await (async () => {
+          const profile = await getProfile(session.user.id);
+          const missing = [...(profile?.image ? [] : ["photo" as const]), ...(profile?.title || profile?.department ? [] : ["title" as const])];
+          return <ProfileNudge className="mt-6" href={`/workspace/${workspace.id}/profile`} image={profile?.image ?? null} missing={missing} name={session.user.name} />;
+        })()}
 
         <NeedsYou className="mt-6" initial={(await listOpenMentions(session.user.id, workspace.id, viewer))} />
 
+        {await (async () => {
+          const stale = await listStaleHandoffs(workspace.id, null);
+          if (!stale.length) return null;
+          return (
+            <section aria-labelledby="stale-title" className="workspace-pane mt-6 p-3 pt-4">
+              <div className="workspace-pane-heading px-2.5">
+                <h2 className="text-[14px] font-semibold text-foreground" id="stale-title">Going stale</h2>
+                <span className="workspace-pane-count font-mono text-[11px]">{stale.length.toString().padStart(2, "0")}</span>
+              </div>
+              <p className="px-2.5 pb-2 text-[12px] text-foreground-subtle">Not approved, and no new version, comment or status change in {staleAfterDays}+ days. Nudge reviewers or mark them approved.</p>
+              <ul className="workspace-list">
+                {stale.slice(0, 6).map((handoff) => {
+                  const days = Math.floor((Date.now() - new Date(handoff.lastActivityAt).getTime()) / 86_400_000);
+                  return (
+                    <li key={handoff.handoffId}>
+                      <Link className="workspace-list-item flex items-center gap-3 px-2.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspace.id}/projects/${handoff.projectId}/handoffs/${handoff.handoffId}`}>
+                        <span aria-hidden="true" className={"size-1.5 shrink-0 rounded-full " + handoffStatusMeta[handoff.reviewStatus].dot} />
+                        <span className="min-w-0 flex-1">
+                          <span className="block truncate text-[13px] font-medium text-foreground">{handoff.handoffName}</span>
+                          <span className="block truncate text-[11px] text-foreground-subtle">{handoff.projectName} · {handoffStatusMeta[handoff.reviewStatus].label}</span>
+                        </span>
+                        <span className="shrink-0 font-mono text-[11px] text-foreground-subtle">{days}d quiet</span>
+                      </Link>
+                    </li>
+                  );
+                })}
+              </ul>
+            </section>
+          );
+        })()}
+
         <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} iconVersions={(await projectIconVersions(workspace.id))} />
+          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} iconVersions={(await projectIconVersions(workspace.id))} pinnedIds={(await listPinKeys(session.user.id)).filter((key) => key.startsWith("project:")).map((key) => key.slice("project:".length))} />
 
           {canManage ? (
             <section aria-labelledby="invite-title" className="workspace-pane p-5 sm:p-6">
@@ -122,19 +163,13 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
                 <h2 className="text-[14px] font-semibold text-foreground" id="invite-title">Invite your team</h2>
               </div>
               <div className="mt-4"><CreateInviteForm key={workspace.id} workspaceId={workspace.id} initialInvites={invites} /></div>
-              <div className="mt-6 border-t border-border pt-5">
+              <div className="mt-8">
                 <div className="mb-3 flex items-center justify-between">
                   <h3 className="text-[13px] font-semibold text-foreground" id="members-title">Members</h3>
                   <span className="font-mono text-[11px] text-foreground-subtle">{members.length}</span>
                 </div>
-                <MembersPanel canEdit={workspace.role === "owner"} currentUserId={session.user.id} initial={members} workspaceId={workspace.id} />
+                <MembersPanel canEdit={workspace.role === "owner"} currentUserId={session.user.id} initial={members} limit={5} manageHref={`/workspace/${workspace.id}/team`} workspaceId={workspace.id} />
               </div>
-              {workspace.role === "owner" ? (
-                <div className="mt-6 border-t border-border pt-5">
-                  <h3 className="text-[13px] font-semibold text-foreground" id="admins-title">Add an owner by email</h3>
-                  <div className="mt-3"><SuperadminsPanel currentEmail={session.user.email} initial={(await listSuperadmins())} /></div>
-                </div>
-              ) : null}
             </section>
           ) : (
             <section aria-labelledby="updates-title" className="workspace-pane p-5 sm:p-6">

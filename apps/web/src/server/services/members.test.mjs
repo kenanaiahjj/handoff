@@ -6,7 +6,8 @@ const fixture = await createPostgresTestFixture();
 const { database, pool } = fixture;
 
 await pool.query(`
-  CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT, email TEXT);
+  CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT, email TEXT, image TEXT);
+  CREATE TABLE user_about (user_id TEXT PRIMARY KEY, title TEXT, department TEXT);
   CREATE TABLE workspace (id TEXT PRIMARY KEY);
   INSERT INTO workspace VALUES ('ws');
   CREATE TABLE workspace_membership (workspace_id TEXT, user_id TEXT, role TEXT, created_at TEXT, PRIMARY KEY (workspace_id, user_id));
@@ -14,9 +15,12 @@ await pool.query(`
   CREATE TABLE superadmin (email TEXT PRIMARY KEY, invited_by_user_id TEXT, created_at TEXT);
   CREATE UNIQUE INDEX superadmin_email_nocase_unique ON superadmin (lower(email));
   CREATE TABLE handoff_invite (id TEXT, workspace_id TEXT, email TEXT, revoked_at TEXT);
+  CREATE TABLE IF NOT EXISTS project_member (project_id TEXT, workspace_id TEXT, email TEXT, role TEXT, added_by_user_id TEXT, created_at TEXT);
   CREATE TABLE project (id TEXT, workspace_id TEXT, pd_in_charge_user_id TEXT);
   CREATE TABLE viewer_pin (user_id TEXT, kind TEXT, target_id TEXT, created_at TEXT);
   CREATE TABLE comment_mention (comment_id TEXT, user_id TEXT, workspace_id TEXT, done_at TEXT);
+  CREATE TABLE session (id TEXT PRIMARY KEY, "userId" TEXT, "updatedAt" timestamptz);
+  CREATE TABLE user_presence (user_id TEXT PRIMARY KEY, last_seen_at timestamptz);
 `);
 
 const { changeMemberRole, declineDesignerRequest, hasPendingDesignerRequest, listMembers, removeMember } = await import("./members.ts");
@@ -24,10 +28,10 @@ const { changeMemberRole, declineDesignerRequest, hasPendingDesignerRequest, lis
 after(async () => fixture.close());
 
 beforeEach(async () => {
-  for (const table of ['"user"', "workspace_membership", "user_profile", "superadmin", "handoff_invite", "project", "viewer_pin", "comment_mention"]) {
+  for (const table of ['"user"', "session", "workspace_membership", "user_profile", "superadmin", "handoff_invite", "project", "viewer_pin", "comment_mention"]) {
     await database.prepare(`DELETE FROM ${table}`).run();
   }
-  await database.prepare(`INSERT INTO "user" VALUES ('owner', 'Olive', 'olive@lmf.ventures'), ('admin', 'Ada', 'ada@gmail.com'), ('dee', 'Dee', 'dee@lmf.ventures'), ('riley', 'Riley', 'riley@lmf.ventures')`).run();
+  await database.prepare(`INSERT INTO "user" (id, name, email) VALUES ('owner', 'Olive', 'olive@lmf.ventures'), ('admin', 'Ada', 'ada@gmail.com'), ('dee', 'Dee', 'dee@lmf.ventures'), ('riley', 'Riley', 'riley@lmf.ventures')`).run();
   await database.prepare("INSERT INTO workspace_membership VALUES ('ws', 'owner', 'owner', 't'), ('ws', 'admin', 'owner', 't'), ('ws', 'dee', 'reviewer', 't'), ('ws', 'riley', 'reviewer', 't')").run();
   await database.prepare("INSERT INTO user_profile VALUES ('dee', 'designer', 't', 'designer'), ('riley', 'pm', 't', NULL)").run();
   await database.prepare("INSERT INTO superadmin VALUES ('ada@gmail.com', NULL, 't')").run();
@@ -77,4 +81,11 @@ test("removing someone revokes their shares, PD role, pins and open mentions", a
   assert.equal((await database.prepare("SELECT pd_in_charge_user_id AS pd FROM project").get()).pd, null);
   assert.equal((await database.prepare("SELECT COUNT(*) AS n FROM viewer_pin").get()).n, 0);
   assert.ok((await database.prepare("SELECT done_at FROM comment_mention").get()).done_at);
+});
+
+test("members show when they last used the app, or that they never signed in", async () => {
+  await database.prepare(`INSERT INTO session VALUES ('s1', 'riley', '2026-11-01T10:00:00Z'), ('s2', 'riley', '2026-11-17T09:30:00Z')`).run();
+  const members = await listMembers("ws");
+  assert.equal(members.find((member) => member.id === "riley").lastActiveAt, "2026-11-17T09:30:00.000Z", "the newest session wins");
+  assert.equal(members.find((member) => member.id === "dee").lastActiveAt, null);
 });

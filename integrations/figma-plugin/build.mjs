@@ -5,7 +5,11 @@ import { fileURLToPath } from "node:url";
 import { buildPluginNetworkAccess, deriveStorageOrigin } from "./src/network-access.mjs";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const outputDirectory = path.join(here, "dist");
+// PLUGIN_OUT_DIR builds a separate copy (the web app's downloadable template) without touching
+// the local dist/ folder or manifest.json that Figma is loading during development.
+const separateOutput = process.env.PLUGIN_OUT_DIR?.trim();
+const outputDirectory = separateOutput ? path.resolve(separateOutput, "dist") : path.join(here, "dist");
+const manifestPath = separateOutput ? path.resolve(separateOutput, "manifest.json") : path.join(here, "manifest.json");
 const publicUrl = process.env.HANDOFF_PUBLIC_URL?.trim() || "http://localhost:3000";
 const supabaseUrl = process.env.SUPABASE_URL?.trim() || "http://127.0.0.1:54321";
 const storageUrl = process.env.SUPABASE_STORAGE_URL?.trim() || supabaseUrl;
@@ -33,5 +37,5 @@ await Promise.all([
 const manifest = JSON.parse(await readFile(path.join(here, "manifest.template.json"), "utf8"));
 // Only the capture route and its configured private Storage origin are available to the plugin.
 manifest.networkAccess = networkAccess;
-await writeFile(path.join(here, "manifest.json"), `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
-process.stdout.write(`Built Figma plugin for ${endpoint.origin} and ${storageOrigin}. Load integrations/figma-plugin/manifest.json in Figma.\n`);
+await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`, { mode: 0o600 });
+process.stdout.write(`Built Figma plugin for ${endpoint.origin} and ${storageOrigin}. Load ${path.relative(process.cwd(), manifestPath)} in Figma.\n`);

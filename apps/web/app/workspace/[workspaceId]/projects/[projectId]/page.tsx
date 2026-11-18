@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { ProjectActions } from "@/src/components/shell/ProjectActions";
 import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { getSessionForHeaders } from "@/src/server/auth-session";
@@ -9,6 +10,10 @@ import { ProjectIcon, ProjectIconEditor } from "@/src/components/shell/ProjectIc
 import { listHandoffs } from "@/src/server/repositories/handoffs";
 import { listProjects } from "@/src/server/repositories/projects";
 import { ProjectPdInChargeForm } from "./project-actions";
+import { HandoffStatusChip } from "@/src/components/shell/HandoffStatus";
+import { handoffStatusMeta, type HandoffReviewStatus } from "@/src/lib/handoff-status";
+import { ProjectAccessPanel } from "@/src/components/shell/ProjectAccessPanel";
+import { listProjectAccess } from "@/src/server/services/project-access";
 import { HandoffSetupForm } from "./handoff-setup-form";
 import { DeleteHandoffButton, RenameHandoffButton } from "@/src/components/canvas/HandoffLifecycleActions";
 import { HandoffAccessDialog } from "@/src/components/canvas/HandoffAccessDialog";
@@ -21,6 +26,7 @@ export const instant = false;
 
 type ProjectPageProps = {
   params: Promise<{ workspaceId: string; projectId: string }>;
+  searchParams: Promise<{ status?: string }>;
 };
 
 type ProjectHandoff = {
@@ -31,9 +37,10 @@ type ProjectHandoff = {
   latestVersionAt: string | null;
   publishedVersionId: string | null;
   sharingMode: "workspace" | "invited" | "anyone";
+  reviewStatus: HandoffReviewStatus;
 };
 
-export default async function ProjectPage({ params }: ProjectPageProps) {
+export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
   const session = await getSessionForHeaders(await headers());
   if (!session) redirect("/sign-in");
 
@@ -54,14 +61,21 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
 
   const viewer = { id: session.user.id, email: session.user.email, role: membership.role };
   const visible = (await visibleHandoffIds(workspaceId, viewer));
-  const handoffs = allHandoffs.filter((handoff) => !visible || visible.has(handoff.id));
-  if (visible && !handoffs.length) notFound();
+  const visibleHandoffs = allHandoffs.filter((handoff) => !visible || visible.has(handoff.id));
+  if (visible && !visibleHandoffs.length) notFound();
+  const requestedStatus = (await searchParams).status;
+  const statusFilter = requestedStatus && requestedStatus in handoffStatusMeta ? (requestedStatus as HandoffReviewStatus) : null;
+  const statusCounts = visibleHandoffs.reduce<Record<string, number>>((counts, handoff) => {
+    counts[handoff.reviewStatus] = (counts[handoff.reviewStatus] ?? 0) + 1;
+    return counts;
+  }, {});
+  const handoffs = statusFilter ? visibleHandoffs.filter((handoff) => handoff.reviewStatus === statusFilter) : visibleHandoffs;
   if (!workspace) notFound();
   const [newness, projects] = await Promise.all([
     handoffNewness(session.user.id, handoffs.map((handoff) => handoff.id)),
     listProjects(workspaceId).then((all) => filterProjectsForViewer(workspaceId, viewer, all as Array<{ id: string; name: string; handoffCount: number; versionCount: number }>)),
   ]);
-  const navSections = await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, projects, page: "project", activeProjectId: projectId });
+  const navSections = await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, isOwner: workspace.role === "owner", projects, page: "project", activeProjectId: projectId, canManage: canManageHandoffs });
 
   return (
     <WorkspaceShell
@@ -79,35 +93,60 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
               <ProjectIcon name={project.name} size={48} src={projectIconUrl(workspaceId, projectId, (await projectIconVersions(workspaceId))[projectId])} />
             )}
           <div className="min-w-0">
-            <h1 className="font-semibold text-foreground">{project.name}</h1>
+            <div className="flex items-center gap-1.5">
+              <h1 className="font-semibold text-foreground">{project.name}</h1>
+              {canManageHandoffs ? <ProjectActions afterDeleteHref={`/workspace/${workspaceId}`} align="start" handoffCount={allHandoffs.length} projectId={projectId} projectName={project.name} workspaceId={workspaceId} /> : null}
+            </div>
             <p className="mt-2 text-[13px] leading-5 text-foreground-muted">{canManageHandoffs ? "Keep the app’s design canvas and every reviewed version in this project." : "Handoffs shared with you in this project. New versions are marked until you open them."}</p>
           </div>
           </div>
         </header>
 
         <div className={"workspace-dashboard-columns mt-6 grid gap-5 " + (canManageHandoffs ? "xl:grid-cols-[minmax(0,1fr)_390px]" : "max-w-4xl")}>
-          <section aria-labelledby="handoff-list-title" className="workspace-pane p-5 sm:p-6" id="handoffs">
-            <div className="workspace-pane-heading">
+          <section aria-labelledby="handoff-list-title" className="workspace-pane p-3 pt-4 sm:p-3 sm:pt-4" id="handoffs">
+            <div className="workspace-pane-heading px-2.5">
               <h2 className="text-[14px] font-semibold text-foreground" id="handoff-list-title">Handoffs</h2>
-              <span className="workspace-pane-count font-mono text-[11px]">{handoffs.length.toString().padStart(2, "0")}</span>
+              <span className="workspace-pane-count font-mono text-[11px]">{visibleHandoffs.length.toString().padStart(2, "0")}</span>
             </div>
+            {visibleHandoffs.length > 1 ? (
+              <nav aria-label="Filter by status" className="mb-2 flex flex-wrap gap-1 px-2">
+                {([null, "draft", "in_review", "approved"] as const).map((key) => {
+                  const active = statusFilter === key;
+                  const count = key ? statusCounts[key] ?? 0 : visibleHandoffs.length;
+                  return (
+                    <Link
+                      aria-current={active ? "page" : undefined}
+                      className={"inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[12px] transition-colors " + (active ? "bg-white/[0.1] text-foreground" : "text-foreground-subtle hover:bg-white/[0.05] hover:text-foreground")}
+                      href={`/workspace/${workspaceId}/projects/${projectId}${key ? `?status=${key}` : ""}`}
+                      key={key ?? "all"}
+                      replace
+                      scroll={false}
+                    >
+                      {key ? <span aria-hidden="true" className={"size-1.5 rounded-full " + handoffStatusMeta[key].dot} /> : null}
+                      {key ? handoffStatusMeta[key].label : "All"}
+                      <span className="font-mono text-[10px] text-foreground-subtle">{count}</span>
+                    </Link>
+                  );
+                })}
+              </nav>
+            ) : null}
             {handoffs.length ? (
-              <ul className="workspace-handoff-list mt-2">
+              <ul className="workspace-handoff-list">
                 {handoffs.map((handoff) => (
-                  <li className="py-1" key={handoff.id}>
-                    <article className="workspace-handoff-item flex min-h-[104px] flex-col px-2.5 py-3">
+                  <li key={handoff.id}>
+                    <article className="workspace-handoff-item flex flex-wrap items-center gap-x-3 gap-y-2 px-2.5 py-2.5">
                       <Link
                         aria-label={`Open handoff ${handoff.name}`}
-                        className="group/link flex min-w-0 items-start gap-3 rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                        className="group/link flex min-w-0 flex-1 basis-64 items-center gap-3 rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
                         href={`/workspace/${workspaceId}/projects/${projectId}/handoffs/${handoff.id}`}
                       >
                         <span aria-hidden="true" className="workspace-mark grid size-9 shrink-0 place-items-center text-foreground"><svg className="size-4" fill="none" viewBox="0 0 16 16"><path d="M3 3.5h10v9H3zM5.5 6h5M5.5 8.5h3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.2" /></svg></span>
-                        <span className="min-w-0 flex-1 pt-0.5">
+                        <span className="min-w-0 flex-1">
                           <span className="flex min-w-0 items-center gap-2">
                             <span className="truncate text-sm font-medium leading-5 text-foreground">{handoff.name}</span>
                             {newness.get(handoff.id)?.isNew ? <NewVersionBadge /> : null}
                           </span>
-                          <span className="mt-1.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] leading-4 text-foreground-subtle">
+                          <span className="mt-0.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-[11px] leading-4 text-foreground-subtle">
                             <span>{handoff.versionCount} {handoff.versionCount === 1 ? "version" : "versions"}</span>
                             <span aria-hidden="true">·</span>
                             <span>{handoff.latestVersionAt ? new Date(handoff.latestVersionAt).toLocaleDateString() : "No versions yet"}</span>
@@ -115,10 +154,11 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
                             <span>{!handoff.publishedVersionId ? "Not published" : handoff.sharingMode === "anyone" ? "Anyone with link" : handoff.sharingMode === "invited" ? "Only invited" : "Workspace members"}</span>
                           </span>
                         </span>
-                        <svg aria-hidden="true" className="mt-1 size-4 shrink-0 text-foreground-subtle transition-transform group-hover/link:translate-x-0.5" fill="none" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
+                        <svg aria-hidden="true" className="size-4 shrink-0 text-foreground-subtle opacity-0 transition group-hover/link:translate-x-0.5 group-hover/link:opacity-100" fill="none" viewBox="0 0 16 16"><path d="m6 3 5 5-5 5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
                       </Link>
-                      {canManageHandoffs ? (
-                        <div className="workspace-handoff-actions mt-3 flex flex-wrap items-center justify-end gap-1.5 pt-1">
+                      <div className="ml-auto flex shrink-0 items-center gap-1">
+                        {canManageHandoffs ? (
+                          <div className="workspace-handoff-actions flex shrink-0 items-center gap-0.5">
                           <RenameHandoffButton
                             endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoff.id)}`}
                             handoffName={handoff.name}
@@ -133,19 +173,33 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
                             returnHref={`/workspace/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}`}
                           />
                         </div>
-                      ) : null}
+                        ) : null}
+                        <HandoffStatusChip
+                          endpoint={canManageHandoffs ? `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoff.id)}` : undefined}
+                          key={handoff.reviewStatus}
+                          status={handoff.reviewStatus ?? "draft"}
+                        />
+                      </div>
                     </article>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="workspace-empty-state px-2 py-7 text-sm">No handoffs yet. Capture a Figma canvas to create the first version.</p>
+              <p className="workspace-empty-state px-2 py-7 text-sm">{statusFilter ? `No handoffs are ${handoffStatusMeta[statusFilter].label.toLowerCase()} right now.` : "No handoffs yet. Capture a Figma canvas to create the first version."}</p>
             )}
           </section>
 
           {canManageHandoffs ? (
             <aside aria-label="Start a design handoff" className="space-y-3" id="start-handoff">
               <ProjectPdInChargeForm input={{ workspaceId, projectId, candidates: (await listProjectPdCandidates(workspaceId)), selectedId: project.pdInChargeUserId }} />
+              <ProjectAccessPanel
+                initial={await listProjectAccess(workspaceId, projectId)}
+                projectId={projectId}
+                suggestions={(await getDatabase()
+                  .prepare(`SELECT "user".email, "user".name FROM workspace_membership JOIN "user" ON "user".id = workspace_membership.user_id WHERE workspace_membership.workspace_id = ? AND workspace_membership.role NOT IN ('owner', 'designer') ORDER BY lower("user".name)`)
+                  .all(workspaceId)) as Array<{ email: string; name: string }>}
+                workspaceId={workspaceId}
+              />
               <HandoffSetupForm mode="project" input={{ workspaceId, projectId, handoffs: handoffs.map(({ id, name }) => ({ id, name })) }} />
             </aside>
           ) : null}

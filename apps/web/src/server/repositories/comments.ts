@@ -13,6 +13,7 @@ export async function listHandoffComments(input: { workspaceId: string; versionI
               comment.resolved_by_user_id AS resolvedBy,
               comment.created_by_user_id AS createdBy,
               COALESCE(comment.author_label, author.name) AS authorName,
+              CASE WHEN comment.author_label IS NULL THEN author.image END AS authorImage,
               comment.author_role AS authorRole, comment.created_at AS createdAt
        FROM handoff_comment AS comment
        LEFT JOIN "user" AS author ON author.id = comment.created_by_user_id
@@ -38,6 +39,7 @@ export async function listHandoffCommentsPage(input: { workspaceId: string; vers
               comment.resolved_by_user_id AS resolvedBy,
               comment.created_by_user_id AS createdBy,
               COALESCE(comment.author_label, author.name) AS authorName,
+              CASE WHEN comment.author_label IS NULL THEN author.image END AS authorImage,
               comment.author_role AS authorRole, comment.created_at AS createdAt
        FROM handoff_comment AS comment
        LEFT JOIN "user" AS author ON author.id = comment.created_by_user_id

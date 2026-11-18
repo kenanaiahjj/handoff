@@ -1,5 +1,6 @@
 "use client";
 
+import { Avatar } from "@/src/components/Avatar";
 import { useId, useRef, useState, type FormEvent } from "react";
 import { activeMentionQuery, CommentBody, encodeMentions, type MentionPerson, useMentionMatches } from "./mentions";
 import type { CanvasFrameOption } from "../canvas/FrameNavigator";
@@ -280,7 +281,7 @@ export function CommentThread({
                 <article>
                   <div className="flex flex-wrap items-center justify-between gap-2">
                     <button className="flex min-w-0 items-center gap-2 text-left" onClick={() => onSelect(comment.id)} type="button">
-                      <span className="grid size-5 shrink-0 place-items-center rounded-full bg-surface-strong font-mono text-[10px] text-white">{index + 1}</span>
+                      <span className="relative shrink-0"><Avatar name={comment.authorName} size={22} src={comment.authorImage} /><span className="absolute -bottom-1 -right-1.5 grid min-w-3.5 place-items-center rounded-full bg-surface-raised px-0.5 font-mono text-[8px] leading-3.5 text-foreground ring-2 ring-surface-inset">{index + 1}</span></span>
                     <span className="truncate text-[11px] font-medium text-foreground">{comment.authorName}{comment.authorRole ? <span className="ml-1 rounded bg-surface-strong px-1 py-0.5 text-[9px] uppercase tracking-wide text-foreground-muted">{comment.authorRole}</span> : null}</span>
                     </button>
                     <span className="text-[10px] text-foreground-subtle">{new Date(comment.createdAt).toLocaleString()}</span>
@@ -297,7 +298,7 @@ export function CommentThread({
                     <ol className="ml-7 mt-3 space-y-2 border-l border-border-strong pl-3">
                       {replies.map((reply) => (
                         <li key={reply.id}>
-                          <p className="text-[10px] text-foreground-subtle"><span className="font-medium text-foreground-muted">{reply.authorName}{reply.authorRole ? <span className="ml-1 uppercase tracking-wide">{reply.authorRole}</span> : null}</span> · {new Date(reply.createdAt).toLocaleString()}</p>
+                          <p className="flex items-center gap-1.5 text-[10px] text-foreground-subtle"><Avatar name={reply.authorName} size={16} src={reply.authorImage} /><span className="font-medium text-foreground-muted">{reply.authorName}{reply.authorRole ? <span className="ml-1 uppercase tracking-wide">{reply.authorRole}</span> : null}</span> · {new Date(reply.createdAt).toLocaleString()}</p>
                           <p className="mt-1 text-[11px] leading-5 text-foreground-muted"><CommentBody body={reply.body} /></p>
                         </li>
                       ))}

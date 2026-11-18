@@ -15,8 +15,8 @@ const groups: Array<{ title: string; items: Array<[string[], string]> }> = [
   {
     title: "Screens",
     items: [
-      [["["], "Previous screen"],
-      [["]"], "Next screen"],
+      [["["], "Previous screen (zooms to it)"],
+      [["]"], "Next screen (zooms to it)"],
       [["⌘", "F"], "Search text, colors and elements"],
     ],
   },
@@ -27,7 +27,8 @@ const groups: Array<{ title: string; items: Array<[string[], string]> }> = [
       [["G"], "Layout grids"],
       [["D"], "Outline what changed in this version"],
       [["+", "−"], "Zoom in and out"],
-      [["⇧", "1"], "Fit to screen"],
+      [["0"], "Fit everything"],
+      [["⇧", "2"], "Zoom to the selected screen"],
       [["Alt"], "Hold over an element to measure distances"],
     ],
   },

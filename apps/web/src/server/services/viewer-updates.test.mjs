@@ -10,6 +10,7 @@ await pool.query(`
   CREATE TABLE project (id TEXT, workspace_id TEXT, pd_in_charge_user_id TEXT);
   CREATE TABLE handoff (id TEXT PRIMARY KEY, workspace_id TEXT, project_id TEXT);
   CREATE TABLE handoff_invite (id TEXT, workspace_id TEXT, handoff_id TEXT, email TEXT, revoked_at TEXT, expires_at TEXT);
+  CREATE TABLE IF NOT EXISTS project_member (project_id TEXT, workspace_id TEXT, email TEXT, role TEXT, added_by_user_id TEXT, created_at TEXT);
   CREATE TABLE handoff_version (id TEXT PRIMARY KEY, handoff_id TEXT, snapshot_json TEXT, created_at TEXT);
   CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BYTEA NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
   CREATE TABLE handoff_asset (handoff_version_id TEXT, asset_key TEXT, object_key TEXT);

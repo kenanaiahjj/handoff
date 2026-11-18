@@ -28,6 +28,8 @@
         color: var(--foreground);
       }
       * { box-sizing: border-box; }
+      /* hidden must win over the display rules below (the result card used to show before any upload). */
+      [hidden] { display: none !important; }
       body { margin: 0; padding: 16px; background: var(--background); color: var(--foreground); font-size: 12px; line-height: 1.5; }
       main { display: grid; gap: 16px; }
       header { display: grid; gap: 4px; }
@@ -43,9 +45,10 @@
       button:hover:not(:disabled) { background: var(--border-strong); }
       button.primary { background: var(--primary); color: var(--primary-foreground); }
       button.primary:hover:not(:disabled) { background: var(--primary-hover); }
-      button.secondary { background: var(--surface); color: var(--foreground-muted); }
+      /* A visible edge so secondary and disabled buttons still read as buttons, not text. */
+      button.secondary { border: 1px solid var(--border-strong); background: var(--surface-raised); color: var(--foreground-muted); }
       button.secondary:hover:not(:disabled) { background: var(--surface-raised); color: var(--foreground); }
-      button:disabled { opacity: .48; cursor: not-allowed; }
+      button:disabled { opacity: .55; cursor: not-allowed; }
       .panel { overflow: hidden; border-radius: 8px; background: var(--surface); }
       .panel-head { display: flex; justify-content: space-between; align-items: center; padding: 9px 11px; color: var(--foreground-muted); font-size: 12px; font-weight: 600; letter-spacing: .03em; text-transform: uppercase; }
       .preview-wrap { display: grid; place-items: center; min-height: 150px; max-height: 230px; padding: 8px; overflow: auto; background-color: var(--background); background-image: radial-gradient(#383838 1px, transparent 1px); background-size: 10px 10px; }
@@ -55,7 +58,8 @@
       #frame-manifest-intro, #frame-selection-count, #asset-report-copy { margin: 0; padding: 0 11px 9px; color: var(--foreground-muted); font-size: 12px; }
       #frame-selection-count { min-height: 18px; padding-top: 8px; color: var(--foreground-subtle); }
       .frame-actions { display: flex; gap: 8px; padding: 0 11px 9px; }
-      .frame-actions button { min-height: 30px; padding: 0 9px; font-size: 11px; }
+      .frame-actions button { flex: 0 0 auto; min-height: 30px; padding: 0 9px; font-size: 11px; }
+      #frame-filter { min-height: 30px; flex: 1 1 auto; min-width: 0; font-size: 11px; }
       #frame-list-fieldset { min-width: 0; margin: 0 11px; padding: 0; border: 0; }
       #frame-list { display: grid; gap: 2px; max-height: 220px; overflow: auto; margin: 0; padding: 4px; list-style: none; border: 1px solid var(--border); border-radius: 6px; background: var(--surface-inset); }
       .frame-row { display: flex; align-items: flex-start; gap: 8px; padding: 6px; border-radius: 4px; cursor: pointer; }
@@ -74,7 +78,17 @@
       #status[data-kind="success"] { color: var(--success); border-color: color-mix(in srgb, var(--success) 45%, transparent); }
       #upload-progress { width: 100%; height: 8px; accent-color: var(--accent); }
       .upload-controls { display: flex; gap: 8px; }
-      .upload-controls button { flex: 0 0 auto; }
+      .upload-controls #upload-button { flex: 1 1 auto; min-height: 40px; }
+      .upload-controls #cancel-upload-button { flex: 0 0 auto; }
+      #upload-hint { margin: -8px 0 0; color: var(--foreground-subtle); font-size: 11px; }
+      #upload-hint:empty { display: none; }
+      kbd { padding: 0 4px; border: 1px solid var(--border-strong); border-radius: 4px; font: 10px/16px ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--foreground-muted); }
+      .result-card { padding: 12px; border: 1px solid color-mix(in srgb, var(--success) 45%, transparent); border-radius: 8px; background: var(--surface); }
+      .result-actions { display: flex; gap: 8px; }
+      .button-link { display: inline-flex; flex: 1 1 auto; align-items: center; justify-content: center; min-height: 40px; border-radius: 6px; padding: 0 12px; background: var(--primary); color: var(--primary-foreground) !important; font-weight: 600; text-decoration: none !important; }
+      .button-link:hover { background: var(--primary-hover); }
+      details.note summary, #result details summary { cursor: pointer; color: var(--foreground-muted); font-weight: 600; }
+      details.note p { margin: 6px 0 0; }
       #result { display: grid; gap: 8px; }
       #result a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 3px; }
       #capture-identifiers { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; margin: 0; }
@@ -139,7 +153,7 @@
         </select>
         <p id="layer-asset-mode-help" class="hint">Frame renders and structured layers are always captured. This setting controls separate image and vector files.</p>
       </div>
-      <button id="capture-button" type="button">Capture canvas</button>
+      <button id="capture-button" class="primary" type="button">Capture canvas</button>
       <section class="panel" aria-label="Snapshot overview preview">
         <div class="panel-head"><span>Figma canvas render</span><span>Preview</span></div>
         <div class="preview-wrap"><canvas id="canvas-preview" width="1" height="1" aria-label="Figma-rendered preview with structured layer data"></canvas></div>
@@ -149,6 +163,8 @@
         <div class="panel-head"><span id="frame-manifest-title">Frames for upload</span><span id="frame-manifest-summary"></span></div>
         <p id="frame-manifest-intro"></p>
         <div class="frame-actions">
+          <label class="sr-only" for="frame-filter">Filter frames</label>
+          <input id="frame-filter" type="search" placeholder="Filter frames" autocomplete="off" spellcheck="false" />
           <button id="select-all-frames" class="secondary" type="button">Select all</button>
           <button id="clear-frame-selection" class="secondary" type="button">Select none</button>
         </div>
@@ -167,6 +183,26 @@
       </section>
       <div id="status" role="status" aria-live="polite"></div>
       <progress id="upload-progress" max="100" value="0" aria-label="Direct upload progress" hidden></progress>
+      <div class="upload-controls">
+        <button id="upload-button" class="secondary" type="button" disabled>Upload to Handoff</button>
+        <button id="cancel-upload-button" class="secondary" type="button" hidden>Cancel upload</button>
+      </div>
+      <p id="upload-hint" aria-live="polite"></p>
+      <section id="result" class="result-card" aria-labelledby="result-title" hidden>
+        <strong id="result-title">Uploaded to Handoff</strong>
+        <div class="result-actions">
+          <a id="result-link" class="button-link" href="#" target="_blank" rel="noopener noreferrer">Open in Handoff</a>
+          <button id="copy-result-link" class="secondary" type="button">Copy link</button>
+        </div>
+        <details>
+          <summary>Details</summary>
+          <dl id="capture-identifiers" aria-label="Created handoff identifiers">
+            <dt>Project</dt><dd id="result-project-id"></dd>
+            <dt>Handoff</dt><dd id="result-handoff-id"></dd>
+            <dt>Version</dt><dd id="result-version-id"></dd>
+          </dl>
+        </details>
+      </section>
       <section id="replacement-review" class="panel" aria-labelledby="replacement-title" hidden>
         <div class="panel-head"><span id="replacement-title">Possible frame replacements</span></div>
         <p id="replacement-intro">A new frame with the same name may replace an earlier screen. Choose only the pairs that are the same screen. Unmatched frames stay separate.</p>
@@ -190,20 +226,10 @@
           <button id="confirm-page-choice-button" class="primary" type="button">Continue and upload</button>
         </div>
       </section>
-      <div class="note">Figma does not store CSS margins. Handoff records source padding and spacing as exact values, and labels geometric gaps as measured margins.</div>
-      <div class="upload-controls">
-        <button id="upload-button" class="secondary" type="button" disabled>Upload frozen snapshot</button>
-        <button id="cancel-upload-button" class="secondary" type="button" hidden>Cancel upload</button>
-      </div>
-      <section id="result" aria-labelledby="result-title" hidden>
-        <strong id="result-title">Snapshot imported</strong>
-        <dl id="capture-identifiers" aria-label="Created handoff identifiers">
-          <dt>Project</dt><dd id="result-project-id"></dd>
-          <dt>Handoff</dt><dd id="result-handoff-id"></dd>
-          <dt>Version</dt><dd id="result-version-id"></dd>
-        </dl>
-        <a id="result-link" href="#" target="_blank" rel="noopener noreferrer">Open the frozen canvas in Handoff</a>
-      </section>
+      <details class="note">
+        <summary>About measurements</summary>
+        <p>Figma does not store CSS margins. Handoff records source padding and spacing as exact values, and labels geometric gaps as measured margins.</p>
+      </details>
     </main>
     <script src="./ui.js"></script>
   </body>

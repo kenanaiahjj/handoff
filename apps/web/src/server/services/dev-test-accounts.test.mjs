@@ -11,6 +11,7 @@ process.env.BETTER_AUTH_URL ??= "http://localhost:3000";
 
 await pool.query(`
   CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT, email TEXT, "emailVerified" BOOLEAN, image TEXT, "createdAt" TEXT, "updatedAt" TEXT);
+  CREATE TABLE IF NOT EXISTS user_presence (user_id TEXT PRIMARY KEY, last_seen_at TIMESTAMPTZ);
   CREATE TABLE account (
     id TEXT PRIMARY KEY, "accountId" TEXT NOT NULL, "providerId" TEXT NOT NULL, "userId" TEXT NOT NULL,
     "accessToken" TEXT, "refreshToken" TEXT, "idToken" TEXT, "accessTokenExpiresAt" TIMESTAMPTZ,
@@ -34,6 +35,7 @@ await pool.query(`
   CREATE TABLE IF NOT EXISTS handoff_version_snapshot (version_id TEXT PRIMARY KEY, encoding TEXT NOT NULL, compressed BYTEA NOT NULL, raw_bytes INTEGER NOT NULL, frame_index TEXT NOT NULL);
   CREATE TABLE handoff_invite (id TEXT PRIMARY KEY, workspace_id TEXT, handoff_id TEXT, email TEXT, token_hash TEXT, expires_at TEXT,
     revoked_at TEXT, invited_by_user_id TEXT, created_at TEXT, role TEXT, UNIQUE (handoff_id, email));
+  CREATE TABLE IF NOT EXISTS project_member (project_id TEXT, workspace_id TEXT, email TEXT, role TEXT, added_by_user_id TEXT, created_at TEXT);
   CREATE TABLE handoff_view (user_id TEXT REFERENCES "user" (id) ON DELETE CASCADE, workspace_id TEXT, handoff_id TEXT,
     last_seen_version_id TEXT, seen_at TEXT, PRIMARY KEY (user_id, handoff_id));
 `);

@@ -26,7 +26,7 @@ export function NotificationSettingsButton() {
       <button
         aria-expanded={open}
         aria-label="Notification settings"
-        className="grid size-7 place-items-center rounded-[7px] text-foreground-subtle transition-colors hover:bg-surface-inset hover:text-foreground"
+        className="grid size-8 place-items-center rounded-control text-foreground-subtle transition-colors hover:bg-white/[0.07] hover:text-foreground"
         onClick={() => setOpen((value) => !value)}
         title="Notifications"
         type="button"

@@ -25,6 +25,12 @@ export async function visibleHandoffIds(workspaceId: string, viewer: Viewer): Pr
          AND (
            project.pd_in_charge_user_id = ?
            OR EXISTS (
+             SELECT 1 FROM project_member
+             WHERE project_member.project_id = handoff.project_id
+               AND project_member.workspace_id = handoff.workspace_id
+               AND project_member.email = lower(?)
+           )
+           OR EXISTS (
              SELECT 1 FROM handoff_invite
              WHERE handoff_invite.handoff_id = handoff.id
                AND handoff_invite.workspace_id = handoff.workspace_id
@@ -34,7 +40,7 @@ export async function visibleHandoffIds(workspaceId: string, viewer: Viewer): Pr
            )
          )`,
     )
-    .all(workspaceId, viewer.id, viewer.email, new Date().toISOString())) as Array<{ id: string }>;
+    .all(workspaceId, viewer.id, viewer.email, viewer.email, new Date().toISOString())) as Array<{ id: string }>;
   return new Set(rows.map((row) => row.id));
 }
 

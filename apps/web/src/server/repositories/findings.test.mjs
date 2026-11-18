@@ -13,6 +13,7 @@ const { database, pool } = fixture;
 
 await pool.query(`
   CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT NOT NULL);
+  CREATE TABLE IF NOT EXISTS user_presence (user_id TEXT PRIMARY KEY, last_seen_at TIMESTAMPTZ);
   CREATE TABLE layout_finding_state (
     id TEXT PRIMARY KEY,
     workspace_id TEXT NOT NULL,

@@ -6,7 +6,9 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "prebuild": "node scripts/build-figma-plugin-template.mjs",
+    "plugin:template": "node scripts/build-figma-plugin-template.mjs"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.118",
@@ -20,7 +22,8 @@
     "next": "16.4.5",
     "pg": "^8.23.1",
     "react": "19.3.0",
-    "react-dom": "19.3.0"
+    "react-dom": "19.3.0",
+    "web-push": "^3.6.7"
   },
   "devDependencies": {
     "@electric-sql/pglite": "^0.5.16",
@@ -30,6 +33,7 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "@types/web-push": "^3.6.4",
     "better-sqlite3": "^13.2.0",
     "eslint": "^9.39.5",
     "eslint-config-next": "^16.4.5",

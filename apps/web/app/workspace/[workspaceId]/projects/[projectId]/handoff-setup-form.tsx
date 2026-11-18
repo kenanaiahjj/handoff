@@ -275,7 +275,7 @@ export function HandoffSetupForm({ input, mode }: {
       </p>
 
       {token ? (
-        <div className="mt-4 border-t border-border/80 pt-4">
+        <div className="mt-5">
           <label className="block text-xs font-medium text-foreground-muted" htmlFor="figma-capture-token">One-time capture token</label>
           <div className="mt-2 flex gap-2">
             <input id="figma-capture-token" readOnly value={token} className="min-h-11 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
@@ -286,7 +286,7 @@ export function HandoffSetupForm({ input, mode }: {
           <button type="button" onClick={() => { setToken(null); setExpiresAt(null); setVersionLabel(""); setReleaseNote(""); setNotice(""); setErrorMessage(""); }} className="mt-4 min-h-10 rounded-control bg-surface-raised px-4 text-xs font-medium text-foreground transition-colors hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Hide token</button>
         </div>
       ) : (
-        <form className="mt-4 grid gap-x-3 gap-y-4 border-t border-border/80 pt-4 sm:grid-cols-2" onSubmit={submit}>
+        <form className="mt-5 grid gap-x-3 gap-y-4 sm:grid-cols-2" onSubmit={submit}>
           {mode === "project" && input.handoffs.length ? (
             <label className="block text-xs font-medium text-foreground-muted sm:col-span-2" htmlFor="handoff-destination">
               Handoff

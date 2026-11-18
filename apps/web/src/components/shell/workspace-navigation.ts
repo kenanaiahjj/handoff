@@ -1,8 +1,10 @@
 import { projectIconUrl, projectIconVersions } from "@/src/server/services/project-icons";
+import { getDatabase } from "@/src/server/db";
+import { workspaceLogoUrl } from "@/src/server/services/workspace-settings";
 import type { WorkspaceNavSection } from "./WorkspaceShell";
 
 type WorkspaceNavigationProject = { id: string; name: string };
-type WorkspacePage = "overview" | "projects" | "project" | "integrations";
+type WorkspacePage = "overview" | "projects" | "project" | "integrations" | "team" | "profile" | "activity" | "settings";
 
 export async function createWorkspaceNavigation({
   workspaceId,
@@ -10,6 +12,8 @@ export async function createWorkspaceNavigation({
   projects,
   page,
   activeProjectId,
+  canManage = false,
+  isOwner = false,
 }: {
   workspaceId: string;
   /** The team's name, e.g. "Asbir Tech", shown above the main links. */
@@ -17,15 +21,26 @@ export async function createWorkspaceNavigation({
   projects: WorkspaceNavigationProject[];
   page: WorkspacePage;
   activeProjectId?: string;
+  /** Owners and designers also get the Team page. */
+  canManage?: boolean;
+  /** Owners also get workspace Settings. */
+  isOwner?: boolean;
 }): Promise<WorkspaceNavSection[]> {
-  const iconVersions = projects.length ? await projectIconVersions(workspaceId) : {};
+  const [iconVersions, logo] = await Promise.all([
+    projects.length ? projectIconVersions(workspaceId) : Promise.resolve({} as Record<string, string>),
+    (getDatabase().prepare("SELECT substr(sha256, 1, 12) AS version FROM workspace_logo WHERE workspace_id = ?").get(workspaceId) as Promise<{ version: string } | undefined>).catch(() => undefined),
+  ]);
   return [
     {
       label: companyName ?? "Main",
       hideLabel: !companyName,
+      imageUrl: workspaceLogoUrl(workspaceId, logo?.version),
       items: [
         { label: "Projects", href: `/workspace/${workspaceId}`, icon: "home", active: page === "overview" || page === "projects" },
-        { label: "Integrations", href: `/workspace/${workspaceId}/integrations`, icon: "settings", active: page === "integrations" },
+        { label: "Activity", href: `/workspace/${workspaceId}/activity`, icon: "activity" as const, active: page === "activity" },
+        ...(canManage ? [{ label: "Team", href: `/workspace/${workspaceId}/team`, icon: "users" as const, active: page === "team" }] : []),
+        { label: "Integrations", href: `/workspace/${workspaceId}/integrations`, icon: "plug" as const, active: page === "integrations" },
+        ...(isOwner ? [{ label: "Settings", href: `/workspace/${workspaceId}/settings`, icon: "settings" as const, active: page === "settings" }] : []),
       ],
     },
     ...(projects.length

@@ -16,6 +16,8 @@ export type HandoffComment = {
   resolvedAt: string | null;
   createdBy: string | null;
   authorName: string;
+  /** Photo of the signed-in author; null for guests and people without one. */
+  authorImage?: string | null;
   authorRole: HandoffInviteRole | null;
   createdAt: string;
 };

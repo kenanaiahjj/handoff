@@ -11,6 +11,7 @@ await pool.query(`
   CREATE TABLE handoff (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, project_id TEXT NOT NULL, name TEXT NOT NULL, created_at TEXT NOT NULL);
   CREATE TABLE handoff_version (id TEXT PRIMARY KEY, handoff_id TEXT NOT NULL, version_label TEXT NOT NULL, created_at TEXT NOT NULL, created_by_user_id TEXT, snapshot_json TEXT);
   CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT NOT NULL, image TEXT);
+  CREATE TABLE IF NOT EXISTS user_presence (user_id TEXT PRIMARY KEY, last_seen_at TIMESTAMPTZ);
   CREATE TABLE handoff_view (user_id TEXT, workspace_id TEXT, handoff_id TEXT, last_seen_version_id TEXT, seen_at TEXT, PRIMARY KEY (user_id, handoff_id));
   CREATE TABLE handoff_asset (handoff_version_id TEXT, asset_key TEXT, object_key TEXT, content_type TEXT, width INTEGER, height INTEGER);
   CREATE TABLE project_icon (project_id TEXT PRIMARY KEY, sha256 TEXT);

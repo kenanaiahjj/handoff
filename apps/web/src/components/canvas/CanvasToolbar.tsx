@@ -6,7 +6,7 @@ import { AssetExportMenu, type AssetExportTarget } from "./AssetExportMenu";
 import { HandoffAccessDialog } from "./HandoffAccessDialog";
 
 type CanvasToolbarProps = {
-  scale: number;
+  scale: number | null;
   exportTargets: AssetExportTarget[];
   shareUrl: string | null;
   shareTitle: string;
@@ -166,13 +166,14 @@ export function CanvasToolbar({
 
 /** Zoom out, fit and zoom in. On phones it sits in the tools row so the version picker keeps its room. */
 export function ZoomControls({ scale, onZoomOut, onFit, onZoomIn, className }: {
-  scale: number;
+  /** null while the canvas is still loading. */
+  scale: number | null;
   onZoomOut: () => void;
   onFit: () => void;
   onZoomIn: () => void;
   className?: string;
 }) {
-  const zoomPercentage = Math.round(scale * 100) + "%";
+  const zoomPercentage = scale === null ? "–" : Math.round(scale * 100) + "%";
   return (
     <div aria-label="Zoom" className={"canvas-toolgroup shrink-0" + (className ? " " + className : "")} role="group">
       <button aria-label="Zoom out" className="canvas-tool !min-w-7 !px-0" onClick={onZoomOut} title="Zoom out (−)" type="button">
@@ -182,7 +183,7 @@ export function ZoomControls({ scale, onZoomOut, onFit, onZoomIn, className }: {
         aria-label={"Fit to screen. Current zoom " + zoomPercentage}
         className="canvas-tool !min-w-12 !px-1 font-mono !text-[11px] tabular-nums"
         onClick={onFit}
-        title="Fit to screen (⇧1)"
+        title="Fit everything (0 or ⇧1)"
         type="button"
       >
         {zoomPercentage}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useState, useTransition, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useConfirm, type ConfirmOptions } from "@/src/components/ConfirmDialog";
 
@@ -10,23 +10,26 @@ function useDeleteAction(input: {
   fallbackError: string;
   afterDelete: (payload: Record<string, unknown>) => void;
 }) {
-  const [pending, setPending] = useState(false);
+  const [requesting, setRequesting] = useState(false);
+  // Covers the in-app refresh after the delete, so the button reads "Deleting…" until the list updates.
+  const [refreshing, startRefresh] = useTransition();
+  const pending = requesting || refreshing;
   const [error, setError] = useState<string | null>(null);
   const { confirm, dialog } = useConfirm();
 
   async function remove() {
     if (pending || !(await confirm(input.confirmation))) return;
-    setPending(true);
+    setRequesting(true);
     setError(null);
     try {
       const response = await fetch(input.endpoint, { method: "DELETE" });
       const payload = await response.json() as Record<string, unknown> & { error?: string };
       if (!response.ok) throw new Error(payload.error ?? input.fallbackError);
-      input.afterDelete(payload);
+      startRefresh(() => input.afterDelete(payload));
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : input.fallbackError);
     } finally {
-      setPending(false);
+      setRequesting(false);
     }
   }
 
@@ -122,6 +125,7 @@ export function DeleteHandoffButton({ endpoint, handoffName, returnHref }: {
   handoffName: string;
   returnHref: string;
 }) {
+  const router = useRouter();
   const action = useDeleteAction({
     endpoint,
     confirmation: {
@@ -130,7 +134,11 @@ export function DeleteHandoffButton({ endpoint, handoffName, returnHref }: {
       confirmLabel: "Delete handoff",
     },
     fallbackError: "Could not delete this handoff.",
-    afterDelete: () => window.location.assign(returnHref),
+    // Stay in the app (no full reload or loading screen): refresh the list, or go back to it.
+    afterDelete: () => {
+      if (window.location.pathname === new URL(returnHref, window.location.origin).pathname) router.refresh();
+      else router.replace(returnHref);
+    },
   });
   return (
     <div className="shrink-0">
@@ -149,6 +157,7 @@ export function DeleteHandoffVersionButton({ endpoint, handoffName, versionLabel
   versionLabel: string;
   handoffHref: string;
 }) {
+  const router = useRouter();
   const action = useDeleteAction({
     endpoint,
     confirmation: {
@@ -160,7 +169,8 @@ export function DeleteHandoffVersionButton({ endpoint, handoffName, versionLabel
     afterDelete: (payload) => {
       const nextVersionId = typeof payload.remainingLatestVersionId === "string" ? payload.remainingLatestVersionId : null;
       const target = nextVersionId ? `${handoffHref}?versionId=${encodeURIComponent(nextVersionId)}` : handoffHref;
-      window.location.assign(target);
+      router.replace(target);
+      router.refresh();
     },
   });
   return (

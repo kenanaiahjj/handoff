@@ -49,3 +49,37 @@ export function workspaceRoleForInvite(role: InviteRole): WorkspaceRoleName {
 export function workspaceRoleLabel(role: string) {
   return ({ owner: "Owner", designer: "Product designer", reviewer: "Reviewer", developer: "Developer", qa: "QA" } as Record<string, string>)[role] ?? role;
 }
+
+/** What each workspace role can do, for the role guide on the Team page. Keep in sync with the access checks. */
+export const workspaceRoleDetails: Array<{ role: WorkspaceRoleName; label: string; summary: string; can: string[] }> = [
+  {
+    role: "owner",
+    label: "Owner",
+    summary: "Runs the workspace.",
+    can: ["Everything a designer can do", "Invite people, change roles and remove members", "Approve designer requests", "Add owners by email"],
+  },
+  {
+    role: "designer",
+    label: "Product designer",
+    summary: "Captures and publishes handoffs.",
+    can: ["Capture from the Figma plugin", "Create projects and handoffs, publish versions", "Share handoffs and see the whole workspace", "See the member list"],
+  },
+  {
+    role: "reviewer",
+    label: "Reviewer",
+    summary: "Reviews what is shared with them.",
+    can: ["Open handoffs shared with them or with the workspace", "Inspect, measure and export assets", "Comment and reply"],
+  },
+  {
+    role: "developer",
+    label: "Developer",
+    summary: "Same access as Reviewer.",
+    can: ["Builds from specs; the role tells teammates what they do"],
+  },
+  {
+    role: "qa",
+    label: "QA",
+    summary: "Same access as Reviewer.",
+    can: ["Checks builds against the design; the role tells teammates what they do"],
+  },
+];

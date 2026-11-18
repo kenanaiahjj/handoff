@@ -3,15 +3,40 @@
 import { useRouter } from "next/navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 
-export type QuickOpenItem = { id: string; label: string; detail: string; href: string; isNew?: boolean };
+export type QuickOpenItem = { id: string; label: string; detail: string; href: string; isNew?: boolean; kind?: "project" | "handoff" | "screen" };
 
-/** ⌘K / Ctrl+K: type part of a project or handoff name, arrows to move, Enter to open. */
-export function QuickOpen({ items }: { items: QuickOpenItem[] }) {
+/**
+ * ⌘K / Ctrl+K: type part of a project, handoff or screen name, arrows to move, Enter to open.
+ * Pass `items`, or an `endpoint` that returns { items } and is fetched the first time it opens.
+ */
+export function QuickOpen({ items: givenItems, endpoint }: { items?: QuickOpenItem[]; endpoint?: string }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const [loaded, setLoaded] = useState<QuickOpenItem[] | null>(null);
+  const [loading, setLoading] = useState(false);
+  const items = useMemo(() => givenItems ?? loaded ?? [], [givenItems, loaded]);
+
+  useEffect(() => {
+    if (!open || givenItems || loaded || !endpoint) return;
+    let cancelled = false;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- show the loading row while the index loads.
+    setLoading(true);
+    fetch(endpoint)
+      .then((response) => (response.ok ? response.json() : { items: [] }))
+      .then((payload: { items?: QuickOpenItem[] }) => { if (!cancelled) setLoaded(payload.items ?? []); })
+      .catch(() => { if (!cancelled) setLoaded([]); })
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [open, givenItems, loaded, endpoint]);
+
+  useEffect(() => {
+    const onOpen = () => setOpen(true);
+    window.addEventListener("asbir:quick-open", onOpen);
+    return () => window.removeEventListener("asbir:quick-open", onOpen);
+  }, []);
 
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
@@ -36,10 +61,16 @@ export function QuickOpen({ items }: { items: QuickOpenItem[] }) {
 
   const results = useMemo(() => {
     const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
-    const matching = words.length
-      ? items.filter((item) => words.every((word) => `${item.label} ${item.detail}`.toLowerCase().includes(word)))
-      : items;
-    return matching.slice(0, 12);
+    if (!words.length) return items.filter((item) => item.kind !== "screen").slice(0, 12);
+    const rank = (item: QuickOpenItem) => {
+      const label = item.label.toLowerCase();
+      const kindOrder = item.kind === "project" ? 0 : item.kind === "handoff" ? 1 : 2;
+      return (label.startsWith(words[0]) ? 0 : label.includes(words[0]) ? 3 : 6) + kindOrder;
+    };
+    return items
+      .filter((item) => words.every((word) => `${item.label} ${item.detail}`.toLowerCase().includes(word)))
+      .sort((a, b) => rank(a) - rank(b))
+      .slice(0, 20);
   }, [items, query]);
 
   function go(item: QuickOpenItem | undefined) {
@@ -67,7 +98,7 @@ export function QuickOpen({ items }: { items: QuickOpenItem[] }) {
           <input
             aria-activedescendant={results[active] ? `quick-open-${results[active].id}` : undefined}
             aria-controls="quick-open-results"
-            className="h-12 min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-foreground-subtle"
+            className="h-12 min-w-0 flex-1 bg-transparent text-[15px] text-foreground outline-none placeholder:text-foreground-subtle focus-visible:outline-none"
             onChange={(event) => {
               setQuery(event.target.value);
               setActive(0);
@@ -84,7 +115,7 @@ export function QuickOpen({ items }: { items: QuickOpenItem[] }) {
                 go(results[active]);
               }
             }}
-            placeholder="Jump to a project or handoff…"
+            placeholder={endpoint ? "Search projects, handoffs and screens…" : "Jump to a project or handoff…"}
             ref={inputRef}
             role="combobox"
             aria-expanded="true"
@@ -105,6 +136,13 @@ export function QuickOpen({ items }: { items: QuickOpenItem[] }) {
                 onMouseMove={() => setActive(index)}
                 role="option"
               >
+                {item.kind ? (
+                  <span aria-hidden="true" className="grid size-7 shrink-0 place-items-center rounded-[7px] bg-white/[0.05] text-foreground-subtle">
+                    <svg className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 16 16">
+                      {item.kind === "project" ? <path d="M2.5 4.5h4l1.3 1.4h5.7v6.6h-11z" /> : item.kind === "handoff" ? <path d="M3 3.5h10v9H3zM5.5 6h5M5.5 8.5h3" /> : <path d="M5 2.5h6v11H5zM7 11.5h2" />}
+                    </svg>
+                  </span>
+                ) : null}
                 <span className="min-w-0 flex-1">
                   <span className="block truncate text-[13px] font-medium text-foreground">{item.label}</span>
                   <span className="block truncate text-[12px] text-foreground-subtle">{item.detail}</span>
@@ -113,7 +151,7 @@ export function QuickOpen({ items }: { items: QuickOpenItem[] }) {
               </li>
             ))
           ) : (
-            <li className="px-3 py-6 text-center text-[13px] text-foreground-subtle">No matches</li>
+            <li className="px-3 py-6 text-center text-[13px] text-foreground-subtle">{loading ? <span className="loading-sheen-text">Loading…</span> : "No matches"}</li>
           )}
         </ul>
       </div>

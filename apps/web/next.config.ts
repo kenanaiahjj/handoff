@@ -34,6 +34,8 @@ const nextConfig: NextConfig = {
   /* config options here */
   distDir: process.env.ASBIR_NEXT_DIST_DIR || ".next",
   transpilePackages: ["@asbir/snapshot-contract"],
+  // The downloadable Figma plugin is read from disk by its route, so ship the built template with it.
+  outputFileTracingIncludes: { "/api/figma-plugin": ["./figma-plugin-template/**/*"] },
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

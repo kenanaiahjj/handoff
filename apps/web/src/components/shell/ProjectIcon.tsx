@@ -32,7 +32,7 @@ export function ProjectIcon({ name, src, size = 36, className = "" }: { name: st
 }
 
 /** Crops the picked image to a centred square and scales it to 256 px, so uploads stay small. */
-async function squareImage(file: File): Promise<Blob> {
+export async function squareImage(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   const side = Math.min(bitmap.width, bitmap.height);
   const canvas = document.createElement("canvas");

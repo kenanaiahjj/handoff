@@ -7,6 +7,7 @@ const { database, pool } = fixture;
 
 await pool.query(`
   CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT, email TEXT);
+  CREATE TABLE IF NOT EXISTS user_presence (user_id TEXT PRIMARY KEY, last_seen_at TIMESTAMPTZ);
   CREATE TABLE workspace (id TEXT PRIMARY KEY, name TEXT, created_at TEXT);
   CREATE TABLE workspace_membership (workspace_id TEXT, user_id TEXT, role TEXT, created_at TEXT, PRIMARY KEY (workspace_id, user_id));
   CREATE TABLE superadmin (email TEXT PRIMARY KEY, invited_by_user_id TEXT, created_at TEXT NOT NULL);

@@ -9,7 +9,7 @@ export const projectIconMaxBytes = 512 * 1024;
 export class ProjectIconError extends Error {}
 
 /** Checks the file really is the image type it claims (no SVG: it can carry scripts). */
-function sniffType(bytes: Uint8Array): ProjectIconType | null {
+export function sniffImageType(bytes: Uint8Array): ProjectIconType | null {
   if (bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47) return "image/png";
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return "image/jpeg";
   if (bytes.length >= 12 && String.fromCharCode(...bytes.slice(0, 4)) === "RIFF" && String.fromCharCode(...bytes.slice(8, 12)) === "WEBP") return "image/webp";
@@ -19,7 +19,7 @@ function sniffType(bytes: Uint8Array): ProjectIconType | null {
 export async function setProjectIcon(input: { projectId: string; bytes: Uint8Array; userId: string }) {
   if (!input.bytes.length) throw new ProjectIconError("Choose an image.");
   if (input.bytes.length > projectIconMaxBytes) throw new ProjectIconError("Images can be up to 512 KB.");
-  const contentType = sniffType(input.bytes);
+  const contentType = sniffImageType(input.bytes);
   if (!contentType) throw new ProjectIconError("Use a PNG, JPEG or WebP image.");
   const sha256 = createHash("sha256").update(input.bytes).digest("hex");
   (await getDatabase()

@@ -14,6 +14,7 @@ async function createDatabase() {
   const { database, pool } = fixture;
   await pool.query(`
     CREATE TABLE "user" (id TEXT PRIMARY KEY);
+  CREATE TABLE IF NOT EXISTS user_presence (user_id TEXT PRIMARY KEY, last_seen_at TIMESTAMPTZ);
     CREATE TABLE project (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, UNIQUE (id, workspace_id));
     CREATE TABLE handoff (
       id TEXT PRIMARY KEY,
@@ -59,6 +60,7 @@ async function createDatabase() {
       invited_by_user_id TEXT NOT NULL,
       created_at TEXT NOT NULL
     );
+  CREATE TABLE IF NOT EXISTS project_member (project_id TEXT, workspace_id TEXT, email TEXT, role TEXT, added_by_user_id TEXT, created_at TEXT);
   `);
   await pool.query("CREATE UNIQUE INDEX handoff_invite_active_email_unique ON handoff_invite (handoff_id, email) WHERE revoked_at IS NULL");
   await database.prepare('INSERT INTO "user" (id) VALUES (?)').run("designer-1");

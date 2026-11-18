@@ -81,6 +81,7 @@ export type OpenMention = {
   versionId: string;
   frameId: string;
   authorName: string;
+  authorImage: string | null;
   excerpt: string;
   createdAt: string;
 };
@@ -93,7 +94,7 @@ export async function listOpenMentions(userId: string, workspaceId: string, view
               comment_mention.handoff_id AS handoffId, handoff.name AS handoffName,
               project.id AS projectId, project.name AS projectName, comment_mention.workspace_id AS workspaceId,
               handoff_comment.handoff_version_id AS versionId, handoff_comment.frame_id AS frameId,
-              COALESCE(author.name, handoff_comment.author_label, 'Someone') AS authorName,
+              COALESCE(author.name, handoff_comment.author_label, 'Someone') AS authorName, author.image AS authorImage,
               handoff_comment.body, comment_mention.created_at AS createdAt
        FROM comment_mention
        JOIN handoff_comment ON handoff_comment.id = comment_mention.comment_id

@@ -14,3 +14,5 @@ data/
 integrations/figma-plugin/dist/
 # The plugin build generates a host-specific manifest; see docs/figma-plugin.md.
 integrations/figma-plugin/manifest.json
+# Built by apps/web prebuild; the download route fills in the server address.
+apps/web/figma-plugin-template/

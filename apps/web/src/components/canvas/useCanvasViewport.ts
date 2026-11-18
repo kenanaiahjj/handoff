@@ -34,6 +34,8 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
   const restoreRef = useRef<CanvasTransform | null>(null);
   const touchedRef = useRef(false);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
+  // False until the first fit or restore, so the canvas isn't shown at the placeholder zoom.
+  const [fitted, setFitted] = useState(false);
   const [transform, setTransform] = useState<CanvasTransform>({
     scale: 0.3,
     offsetX: 0,
@@ -55,11 +57,16 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
     );
 
     setTransform({ scale, offsetX: 0, offsetY: 0 });
+    setFitted(true);
   }, [frameHeight, frameWidth]);
 
+  // Layout changes (panels opening, window resizes) refit only until the person pans, zooms or
+  // jumps to a screen; after that their view is kept.
   const autoFit = useCallback(() => {
-    if (restoreRef.current && !touchedRef.current) {
+    if (touchedRef.current) return;
+    if (restoreRef.current) {
       setTransform(restoreRef.current);
+      setFitted(true);
       return;
     }
     fitToFrame();
@@ -102,6 +109,26 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
     restoreRef.current = null;
     fitToFrame();
   }, [fitToFrame]);
+
+  /** Centres an area of the canvas (in canvas pixels from its top-left) and zooms so it fits, up to 100%. */
+  const zoomToRect = useCallback((rect: { x: number; y: number; width: number; height: number }) => {
+    const container = containerRef.current;
+    if (!container || rect.width <= 0 || rect.height <= 0) return;
+    const bounds = container.getBoundingClientRect();
+    const scale = Math.max(
+      MIN_SCALE,
+      Math.min(1, Math.max(1, bounds.width - 120) / rect.width, Math.max(1, bounds.height - 120) / rect.height),
+    );
+    touchedRef.current = true;
+    restoreRef.current = null;
+    setFitted(true);
+    // The canvas is drawn centred on the viewport, so offsets are measured from its centre.
+    setTransform({
+      scale,
+      offsetX: -(rect.x + rect.width / 2 - frameWidth / 2) * scale,
+      offsetY: -(rect.y + rect.height / 2 - frameHeight / 2) * scale,
+    });
+  }, [frameHeight, frameWidth]);
 
   const zoomBy = useCallback((factor: number) => {
     touchedRef.current = true;
@@ -147,7 +174,9 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
     containerRef,
     viewportSize,
     transform,
+    fitted,
     fitToFrame: fitByUser,
+    zoomToRect,
     zoomBy,
     zoomAt,
     panBy,

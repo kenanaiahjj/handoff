@@ -20,8 +20,8 @@ test("PostgreSQL test databases are isolated and load the production schema", as
       FROM information_schema.tables
       WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
     `);
-    // Every migration: 35 existing tables plus the three chunked-snapshot tables.
-    assert.equal(relations[0].count, 38);
+    // Every migration: 35 existing tables, three chunked-snapshot tables, and the two profile tables.
+    assert.equal(relations[0].count, 44);
   } finally {
     await Promise.all([left.close(), right.close()]);
   }
