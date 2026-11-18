@@ -197,6 +197,7 @@ test("sends small payloads as signed PUTs and large payloads through signed TUS 
   assert.equal(smallPut.headers.apikey, undefined);
   const tusRequests = fake.requests.filter((request) => ["POST", "HEAD", "PATCH"].includes(request.method));
   assert.ok(tusRequests.every((request) => request.url.startsWith(storageUrl)));
+  assert.equal(tusRequests.find((request) => request.method === "POST").url, `${storageUrl}/storage/v1/upload/resumable/sign`);
   assert.equal(tusRequests.find((request) => request.method === "POST").headers["x-signature"], "frame-signature");
   assert.ok(tusRequests.every((request) => request.headers.authorization === undefined && request.headers.apikey === undefined));
   assert.ok(tusRequests.filter((request) => request.method === "PATCH").every((request) => request.body.byteLength <= 6 * 1024 * 1024));

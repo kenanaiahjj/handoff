@@ -323,7 +323,7 @@ async function uploadTusAsset(input: {
 }) {
   let uploadUrl = input.session.resumableUrls.get(input.stateKey);
   if (!uploadUrl) {
-    const endpoint = `${input.intent.storageUrl}/storage/v1/upload/resumable`;
+    const endpoint = `${input.intent.storageUrl}/storage/v1/upload/resumable/sign`;
     const created = await xhrRequest({
       method: "POST",
       url: endpoint,
