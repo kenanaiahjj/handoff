@@ -1135,7 +1135,6 @@ export async function captureFigmaCanvas(
 
   const frameRenders: CaptureAssetBytes[] = [];
   const vectorRenders: CaptureAssetBytes[] = [];
-  const vectorAssetKeys = new Set<string>();
   const maxRenderBytes = MAX_CAPTURE_ASSET_BYTES;
   let totalRenderBytes = 0;
   for (let offset = 0; offset < roots.length; offset += frameRenderBatchSize) {
@@ -1215,33 +1214,6 @@ export async function captureFigmaCanvas(
         sourceHeight: entry.rect.height,
         renderBounds: entry.renderRect,
       });
-      try {
-        const svg = await entry.root.exportAsync({
-          format: "SVG_STRING",
-          svgOutlineText: true,
-          svgIdAttribute: true,
-        });
-        const vectorKey = `${entry.key}-vector`;
-        const vectorBytes = encodeUtf8(svg);
-        if (totalRenderBytes + vectorBytes.byteLength > maxRenderBytes) {
-          report(`Skipping the SVG companion for “${frameName}” to stay within the capture transfer limit.`);
-        } else {
-          vectorRenders.push({
-            key: vectorKey,
-            fileName: `${entry.key}.svg`,
-            contentType: "image/svg+xml",
-            bytes: vectorBytes,
-            sourceX: entry.rect.x + entry.pageOffsetX,
-            sourceY: entry.rect.y + entry.pageOffsetY,
-            sourceWidth: entry.rect.width,
-            sourceHeight: entry.rect.height,
-          });
-          vectorAssetKeys.add(vectorKey);
-          totalRenderBytes += vectorBytes.byteLength;
-        }
-      } catch {
-        report(`Figma's SVG source is unavailable for “${frameName}”; the pixel render and layer data are retained.`);
-      }
       if (totalRenderBytes > maxRenderBytes) {
         throw renderTransferLimitError(totalRenderBytes);
       }
@@ -1363,13 +1335,6 @@ export async function captureFigmaCanvas(
   warnings.splice(0, warnings.length, ...captureWarnings);
   sourceMetadata.captureWarnings = warnings;
 
-  for (const frame of snapshotFrames) {
-    const vectorKey = `${frame.renderAssetKey}-vector`;
-    if (vectorAssetKeys.has(vectorKey)) frame.vectorAssetKey = vectorKey;
-  }
-
-  sourceMetadata.vectorSourcePreserved = vectorRenders.length === roots.length;
-  sourceMetadata.vectorSourceFrameCount = vectorRenders.length;
   const finalPayloadBytes = jsonByteLength(payload);
   if (finalPayloadBytes > maxStructuredPayloadBytes) throw structuredPayloadLimitError(finalPayloadBytes);
   const excludedSectionCounts = [...excludedSectionFrameCounts].map(([name, frameCount]) => ({ name, frameCount }));

@@ -294,9 +294,7 @@ function updateCaptureSummary(capture: CaptureReadyMessage, width: number, heigh
   const fallbackFrameIds = Array.isArray(capture.payload.sourceMetadata.renderScaleFallbackFrameIds)
     ? capture.payload.sourceMetadata.renderScaleFallbackFrameIds.filter((frameId): frameId is string => typeof frameId === "string")
     : [];
-  const vectorSummary = vectorSourceCount === frameCount
-    ? "SVG sources retained"
-    : `${vectorSourceCount}/${frameCount} SVG sources retained`;
+  const vectorSummary = vectorSourceCount ? ` · ${vectorSourceCount}/${frameCount} frame SVGs retained` : "";
   const scaleSummary = fallbackFrameIds.length === frameCount
     ? "1× Figma render"
     : fallbackFrameIds.length
@@ -318,7 +316,7 @@ function updateCaptureSummary(capture: CaptureReadyMessage, width: number, heigh
   const exclusionSummary = excludedSections.length
     ? ` · excluded sections: ${excludedSections.map(({ name, frameCount }) => `${name} (${frameCount})`).join(", ")}`
     : "";
-  summary.textContent = `${scopeSummary}${frameCount} frame${frameCount === 1 ? "" : "s"}${pageSummary}${exclusionSummary} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary} · ${vectorSummary} · ${layerExportCount} individual layer asset${layerExportCount === 1 ? "" : "s"}${warningSummary}${duplicateNameSummary}`;
+  summary.textContent = `${scopeSummary}${frameCount} frame${frameCount === 1 ? "" : "s"}${pageSummary}${exclusionSummary} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary}${vectorSummary} · ${layerExportCount} individual layer asset${layerExportCount === 1 ? "" : "s"}${warningSummary}${duplicateNameSummary}`;
   const duplicateNameMessage = duplicateFrameNames.length
     ? `This capture contains duplicate screen names: ${duplicateFrameNames.slice(0, 4).map(({ name, count }) => `${name} (${count})`).join(", ")}${duplicateFrameNames.length > 4 ? `, and ${duplicateFrameNames.length - 4} more` : ""}. Matching these screens by name may be ambiguous.`
     : "";

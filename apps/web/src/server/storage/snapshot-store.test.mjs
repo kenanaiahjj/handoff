@@ -29,8 +29,8 @@ async function insertVersion(database, id, json = snapshotJson) {
   await database.prepare(`INSERT INTO handoff_version
     (id, workspace_id, handoff_id, version_label, source, source_file_id, captured_at,
      content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
-    VALUES (?, 'ws', 'h', '1.0', 'figma', 'file', 'now', ?, false, ?, 'user-1', 'now')`)
-    .run(id, "b".repeat(64), json);
+    VALUES (?, 'ws', 'h', ?, 'figma', 'file', 'now', ?, false, ?, 'user-1', 'now')`)
+    .run(id, id === "v1" ? "1.0" : id, "b".repeat(64), json);
 }
 
 async function assertUpdateRejected(database, sql) {
@@ -65,6 +65,48 @@ test("existing captures are compressed, read back byte for byte, and keep a scre
   } finally {
     await fixture.close();
   }
+});
+
+test("chunked versions reuse unchanged screens and reject missing screen data", async () => {
+  const { storeChunkedSnapshot, readChunkedFrame, readChunkedSnapshotJson } = await import("./snapshot-store.ts");
+  const { fixture, database } = await createDatabase();
+  try {
+    await insertVersion(database, "chunk-v1", "{}");
+    await insertVersion(database, "chunk-v2", "{}");
+    const first = { schemaVersion: 1, frames: frames.slice(0, 3), contentHash: "a".repeat(64) };
+    const second = { ...first, frames: [{ ...first.frames[0], name: "Changed" }, ...first.frames.slice(1)] };
+    await database.transaction(async () => storeChunkedSnapshot(database, "ws", "chunk-v1", first))();
+    await database.transaction(async () => storeChunkedSnapshot(database, "ws", "chunk-v2", second))();
+    assert.deepEqual(JSON.parse(await readChunkedSnapshotJson(database, "chunk-v1", "ws")), first);
+    assert.deepEqual(JSON.parse(await readChunkedSnapshotJson(database, "chunk-v2", "ws")), second);
+    assert.deepEqual(await readChunkedFrame(database, "ws", "chunk-v2", "1:1"), first.frames[1]);
+    assert.equal(await readChunkedFrame(database, "other", "chunk-v2", "1:1"), null);
+    const { count } = await database.prepare("SELECT count(*) AS count FROM handoff_snapshot_frame_chunk").get();
+    assert.equal(Number(count), 4);
+    await database.prepare("UPDATE handoff_snapshot_frame_ref SET frame_id = 'wrong' WHERE version_id = 'chunk-v2' AND frame_position = 1").run();
+    await assert.rejects(readChunkedFrame(database, "ws", "chunk-v2", "wrong"), /does not match/);
+    await assert.rejects(readChunkedSnapshotJson(database, "chunk-v2", "ws"), /does not match/);
+    await database.prepare("UPDATE handoff_snapshot_frame_ref SET frame_id = '1:1' WHERE version_id = 'chunk-v2' AND frame_position = 1").run();
+    await database.prepare("UPDATE handoff_snapshot_frame_chunk SET compressed = ? WHERE content_hash = (SELECT content_hash FROM handoff_snapshot_frame_ref WHERE version_id = 'chunk-v2' AND frame_position = 0)").run(Buffer.from('damaged'));
+    await assert.rejects(readChunkedFrame(database, "ws", "chunk-v2", "1:0"));
+    await insertVersion(database, "chunk-v3", "{}");
+    await assert.rejects(storeChunkedSnapshot(database, "ws", "chunk-v3", second));
+    assert.equal(await readChunkedSnapshotJson(database, "chunk-v3", "ws"), null);
+  } finally { await fixture.close(); }
+});
+
+test("a failed chunk write rolls back the entire version manifest", async () => {
+  const { storeChunkedSnapshot, readChunkedSnapshotJson } = await import("./snapshot-store.ts");
+  const { fixture, database } = await createDatabase();
+  try {
+    await insertVersion(database, "incomplete", "{}");
+    await assert.rejects(storeChunkedSnapshot(database, "ws", "incomplete", {
+      frames: [frames[0], { ...frames[1], sourceFrameId: frames[0].sourceFrameId }],
+    }));
+    assert.equal(await readChunkedSnapshotJson(database, "incomplete", "ws"), null);
+    const { count } = await database.prepare("SELECT count(*) AS count FROM handoff_snapshot_frame_chunk").get();
+    assert.equal(Number(count), 0);
+  } finally { await fixture.close(); }
 });
 
 test("versions stay immutable apart from swapping in the verified compressed copy", async () => {

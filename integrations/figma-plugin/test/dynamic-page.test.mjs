@@ -151,6 +151,17 @@ test("uses the Figma file key as the snapshot source identity", async () => {
   assert.equal(result.payload.sourceFileId, "figma-file-key-123");
 });
 
+test("captures frame pixels and layers without exporting whole-frame SVGs", async () => {
+  const { exportSettings } = installCaptureFixture();
+  const result = await captureFigmaCanvas("selected", () => {});
+
+  assert.ok(result.renders.length > 0);
+  assert.ok(result.payload.frames[0].nodes.length > 0);
+  assert.equal(exportSettings.some((settings) => settings.format === "SVG_STRING"), false);
+  assert.deepEqual(result.vectorRenders, []);
+  assert.equal(result.payload.sourceMetadata.vectorSourcePreserved, false);
+});
+
 test("rejects capture when Figma does not provide a unique file key", async () => {
   installCaptureFixture();
   globalThis.figma.fileKey = undefined;
@@ -1121,7 +1132,7 @@ test("captures frames from every page in the Figma file", async () => {
 
   assert.equal(loadedPageCount, 3);
   assert.equal(result.payload.frames.length, 201);
-  assert.ok(result.renders.length + result.vectorRenders.length + 1 > 300, "full-file assets can exceed the former server count limit");
+  assert.equal(result.renders.length, 201);
   assert.deepEqual(
     [...new Set(result.payload.frames.map((frame) => frame.sourcePageId))].sort(),
     ["file-page-0", "file-page-1", "file-page-2"],

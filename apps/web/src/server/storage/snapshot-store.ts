@@ -80,6 +80,62 @@ export function decompressSnapshot(encoding: string, compressed: Buffer) {
   return brotliDecompressSync(compressed).toString("utf8");
 }
 
+type ChunkedFrame = { sourceFrameId: string; [key: string]: unknown };
+type ChunkedSnapshot = { frames: ChunkedFrame[]; [key: string]: unknown };
+type StoredFrameChunk = { compressed: Buffer; rawBytes: number; contentHash: string };
+
+/** The manifest and its screen references are committed together, including within a caller's transaction. */
+export async function storeChunkedSnapshot(database: PostgresDatabase, workspaceId: string, versionId: string, snapshot: ChunkedSnapshot) {
+  return database.transaction(async () => {
+    const { frames, ...metadata } = snapshot;
+    await database.prepare(`INSERT INTO handoff_snapshot_manifest (version_id, workspace_id, metadata_json, frame_count)
+      VALUES (?, ?, ?, ?)`).run(versionId, workspaceId, JSON.stringify(metadata), frames.length);
+    const insertChunk = database.prepare(`INSERT INTO handoff_snapshot_frame_chunk (workspace_id, content_hash, compressed, raw_bytes)
+      VALUES (?, ?, ?, ?) ON CONFLICT (workspace_id, content_hash) DO NOTHING`);
+    const existingChunk = database.prepare(`SELECT compressed, raw_bytes AS rawBytes, content_hash AS contentHash
+      FROM handoff_snapshot_frame_chunk WHERE workspace_id = ? AND content_hash = ?`);
+    const insertRef = database.prepare(`INSERT INTO handoff_snapshot_frame_ref (version_id, workspace_id, frame_position, frame_id, content_hash)
+      VALUES (?, ?, ?, ?, ?)`);
+    for (const [position, frame] of frames.entries()) {
+      if (!frame.sourceFrameId) throw new Error("Every chunked screen must have a source frame ID.");
+      const raw = Buffer.from(JSON.stringify(frame), "utf8");
+      const digest = createHash("sha256").update(raw).digest("hex");
+      let existing = await existingChunk.get(workspaceId, digest) as StoredFrameChunk | undefined;
+      if (!existing) {
+        const compressed = brotliCompressSync(raw, brotliOptions);
+        if (!brotliDecompressSync(compressed).equals(raw)) throw new Error("Compressed screen did not read back identically.");
+        const inserted = await insertChunk.run(workspaceId, digest, compressed, raw.length);
+        if (!inserted.changes) {
+          existing = await existingChunk.get(workspaceId, digest) as StoredFrameChunk | undefined;
+          if (!existing) throw new Error("The shared screen chunk could not be read.");
+        }
+      }
+      if (existing) decodeFrameChunk(existing);
+      await insertRef.run(versionId, workspaceId, position, frame.sourceFrameId, digest);
+    }
+  })();
+}
+
+function decodeFrameChunk(row: StoredFrameChunk) {
+  const raw = brotliDecompressSync(row.compressed);
+  if (raw.length !== Number(row.rawBytes) || createHash("sha256").update(raw).digest("hex") !== row.contentHash) {
+    throw new Error("Stored screen chunk failed its integrity check.");
+  }
+  return JSON.parse(raw.toString("utf8")) as ChunkedFrame;
+}
+
+export async function readChunkedFrame(database: PostgresDatabase, workspaceId: string, versionId: string, frameId: string) {
+  const row = await database.prepare(`SELECT c.compressed, c.raw_bytes AS rawBytes, c.content_hash AS contentHash
+    FROM handoff_snapshot_frame_ref r JOIN handoff_snapshot_frame_chunk c
+      ON c.workspace_id = r.workspace_id AND c.content_hash = r.content_hash
+    WHERE r.workspace_id = ? AND r.version_id = ? AND r.frame_id = ?`).get(workspaceId, versionId, frameId) as
+    StoredFrameChunk | undefined;
+  if (!row) return null;
+  const frame = decodeFrameChunk(row);
+  if (frame.sourceFrameId !== frameId) throw new Error("Stored screen chunk does not match its reference.");
+  return frame;
+}
+
 /** Writes the compressed copy of a version's capture (inside the caller's transaction). */
 export async function storeCompressedSnapshot(database: PostgresDatabase, versionId: string, snapshotJson: string) {
   const stored = compressSnapshotJson(snapshotJson);
@@ -145,7 +201,30 @@ export async function refreshFrameIndexes(database: PostgresDatabase) {
   return refreshed;
 }
 
-/** A version's capture JSON, whichever way it is stored. */
+/** Reads a chunked version for consumers that support the new format. */
+export async function readChunkedSnapshotJson(database: PostgresDatabase, versionId: string, workspaceId: string) {
+  const manifest = await database.prepare(`SELECT metadata_json AS metadataJson, frame_count AS frameCount
+    FROM handoff_snapshot_manifest WHERE version_id = ? AND workspace_id = ?`).get(versionId, workspaceId) as
+    { metadataJson: string; frameCount: number } | undefined;
+  if (manifest) {
+    const rows = await database.prepare(`SELECT c.compressed, c.raw_bytes AS rawBytes, c.content_hash AS contentHash,
+        r.frame_position AS framePosition, r.frame_id AS frameId
+      FROM handoff_snapshot_frame_ref r JOIN handoff_snapshot_frame_chunk c
+        ON c.workspace_id = r.workspace_id AND c.content_hash = r.content_hash
+      WHERE r.version_id = ? AND r.workspace_id = ? ORDER BY r.frame_position`).all(versionId, workspaceId) as
+      Array<StoredFrameChunk & { framePosition: number; frameId: string }>;
+    if (rows.length !== Number(manifest.frameCount)) throw new Error("Stored capture is missing screen chunks.");
+    const frames = rows.map((row, position) => {
+      const frame = decodeFrameChunk(row);
+      if (Number(row.framePosition) !== position || frame.sourceFrameId !== row.frameId) throw new Error("Stored screen chunk does not match its reference.");
+      return frame;
+    });
+    return JSON.stringify({ ...JSON.parse(manifest.metadataJson), frames });
+  }
+  return null;
+}
+
+/** A version's capture JSON, whichever legacy format it is stored in. */
 export async function readSnapshotJson(database: PostgresDatabase, versionId: string, workspaceId: string) {
   const row = (await database
     .prepare(
