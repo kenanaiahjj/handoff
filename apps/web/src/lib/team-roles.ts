@@ -23,6 +23,13 @@ export function isJobRole(value: unknown): value is JobRole {
   return typeof value === "string" && Object.hasOwn(jobRoles, value);
 }
 
+/** Roles people can pick for themselves at sign-up. Executives are added by an owner instead. */
+export const selfServeJobRoles: readonly JobRole[] = (Object.keys(jobRoles) as JobRole[]).filter((role) => role !== "exec");
+
+export function isSelfServeJobRole(value: unknown): value is JobRole {
+  return isJobRole(value) && selfServeJobRoles.includes(value);
+}
+
 /** What an invite link can grant: every job role, plus Owner. */
 export const inviteRoles = [...(Object.keys(jobRoles) as JobRole[]), "owner"] as const;
 export type InviteRole = JobRole | "owner";

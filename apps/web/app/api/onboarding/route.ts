@@ -1,8 +1,9 @@
 import { z } from "zod";
-import { completeOnboarding, isJobRole } from "@/src/server/services/onboarding";
+import { completeOnboarding } from "@/src/server/services/onboarding";
+import { isSelfServeJobRole } from "@/src/lib/team-roles";
 import { getSessionForRequest } from "@/src/server/workspace-access";
 
-const onboardingSchema = z.object({ jobRole: z.string().refine(isJobRole) });
+const onboardingSchema = z.object({ jobRole: z.string().refine(isSelfServeJobRole) });
 
 /** Saves the role a new teammate picked and joins them to the company workspace. */
 export async function POST(request: Request) {
@@ -10,7 +11,7 @@ export async function POST(request: Request) {
   if (!session) return Response.json({ error: "Sign in to continue." }, { status: 401 });
 
   const parsed = onboardingSchema.safeParse(await request.json().catch(() => null));
-  if (!parsed.success || !isJobRole(parsed.data.jobRole)) {
+  if (!parsed.success || !isSelfServeJobRole(parsed.data.jobRole)) {
     return Response.json({ error: "Choose what you do on the team." }, { status: 400 });
   }
 
