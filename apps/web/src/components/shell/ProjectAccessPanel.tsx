@@ -4,21 +4,20 @@ import { type FormEvent, useState } from "react";
 import { Avatar } from "@/src/components/Avatar";
 import { useConfirm } from "@/src/components/ConfirmDialog";
 import type { ProjectAccess } from "@/src/server/services/project-access";
-
-const roleLabels = { pd: "PD", dev: "Developer", qa: "QA", exec: "Reviewer" } as const;
-type Role = keyof typeof roleLabels;
+import { projectRoleLabels as roleLabels, projectRoles, type ProjectRole as Role } from "@/src/lib/project-roles";
 
 type Suggestion = { email: string; name: string };
 
 /**
- * Who can see this project, in one place: owners and designers (everything), people added to the
- * whole project (every handoff, now and later), and people invited to single handoffs.
+ * The project team, and who else can see the project: the team with their roles (designers,
+ * developers, QA, reviewers; editable here), people invited to single handoffs, and the owners and
+ * designers who see everything anyway.
  */
 export function ProjectAccessPanel({ workspaceId, projectId, initial, suggestions }: {
   workspaceId: string;
   projectId: string;
   initial: ProjectAccess;
-  /** Workspace members without full access, offered while typing an email. */
+  /** Workspace members, offered while typing an email. */
   suggestions: Suggestion[];
 }) {
   const [access, setAccess] = useState(initial);
@@ -52,9 +51,13 @@ export function ProjectAccessPanel({ workspaceId, projectId, initial, suggestion
     if (await send("add", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email, role }) })) setEmail("");
   }
 
+  async function changeRole(person: { email: string }, next: Role) {
+    await send(person.email, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: person.email, role: next }) });
+  }
+
   async function remove(person: { email: string; name: string | null }, fromHandoffs: boolean) {
     const confirmed = await confirm({
-      title: `Remove ${person.name ?? person.email}?`,
+      title: `Remove ${person.name ?? person.email} from the team?`,
       description: fromHandoffs
         ? "They lose access to every handoff in this project they were invited to."
         : "They lose access to this project's handoffs, including any they were invited to one by one.",
@@ -63,17 +66,17 @@ export function ProjectAccessPanel({ workspaceId, projectId, initial, suggestion
     if (confirmed) await send(person.email, { method: "DELETE" }, `${endpoint}?email=${encodeURIComponent(person.email)}`);
   }
 
-  const taken = new Set([...access.members, ...access.fullAccess].map((person) => person.email.toLowerCase()));
+  const taken = new Set(access.members.map((person) => person.email.toLowerCase()));
   const available = suggestions.filter((suggestion) => !taken.has(suggestion.email.toLowerCase()));
   const total = access.fullAccess.length + access.members.length + access.handoffOnly.length;
 
   return (
     <section aria-labelledby="project-access-title" className="workspace-pane p-5">
       <div className="flex items-baseline justify-between gap-3">
-        <h2 className="text-sm font-semibold tracking-[-0.02em] text-foreground" id="project-access-title">People with access</h2>
+        <h2 className="text-sm font-semibold tracking-[-0.02em] text-foreground" id="project-access-title">Project team</h2>
         <span className="font-mono text-[11px] text-foreground-subtle">{total}</span>
       </div>
-      <p className="mt-1.5 text-[13px] leading-5 text-foreground-muted">Add someone to see every handoff in this project, including new ones.</p>
+      <p className="mt-1.5 text-[13px] leading-5 text-foreground-muted">Everyone who opens this project sees the team. People you add also get every handoff in it.</p>
 
       <form className="mt-4 flex flex-wrap gap-1.5" onSubmit={add}>
         <label className="sr-only" htmlFor={`project-access-email-${projectId}`}>Email</label>
@@ -91,7 +94,7 @@ export function ProjectAccessPanel({ workspaceId, projectId, initial, suggestion
         </datalist>
         <label className="sr-only" htmlFor={`project-access-role-${projectId}`}>Role</label>
         <select className="h-9 rounded-control bg-surface-inset px-2 text-[12px] text-foreground outline-none" id={`project-access-role-${projectId}`} onChange={(event) => setRole(event.target.value as Role)} value={role}>
-          {(Object.keys(roleLabels) as Role[]).map((key) => <option key={key} value={key}>{roleLabels[key]}</option>)}
+          {projectRoles.map((key) => <option key={key} value={key}>{roleLabels[key]}</option>)}
         </select>
         <button className="h-9 rounded-control bg-primary px-3 text-[12px] font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-50" disabled={!email.trim() || busy === "add"} type="submit">
           {busy === "add" ? "Adding…" : "Add"}
@@ -100,20 +103,36 @@ export function ProjectAccessPanel({ workspaceId, projectId, initial, suggestion
       {error ? <p className="mt-2 text-[12px] text-danger" role="alert">{error}</p> : null}
 
       <ul className="mt-4 space-y-0.5">
+        {!access.members.length ? (
+          <li className="px-1.5 py-2 text-[12px] text-foreground-subtle">No one on the team yet.</li>
+        ) : null}
         {access.members.map((person) => (
           <li className="group flex items-center gap-2.5 rounded-[8px] px-1.5 py-1.5 hover:bg-white/[0.03]" key={person.email}>
             <Avatar name={person.name ?? person.email} size={26} src={person.image} />
             <span className="min-w-0 flex-1">
               <span className="block truncate text-[12px] font-medium text-foreground">{person.name ?? person.email}</span>
               <span className="block truncate text-[11px] text-foreground-subtle">
-                {roleLabels[person.role]} · whole project{person.workspaceRole ? "" : " · hasn't joined the workspace"}
+                {person.name ? person.email : null}{person.workspaceRole ? "" : `${person.name ? " · " : ""}hasn't joined yet`}
               </span>
             </span>
+            <label className="sr-only" htmlFor={`project-team-role-${person.email}`}>Role for {person.name ?? person.email}</label>
+            <select
+              className="h-7 shrink-0 rounded-control bg-transparent px-1.5 text-[11px] text-foreground-muted outline-none hover:bg-white/[0.07] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
+              disabled={busy === person.email}
+              id={`project-team-role-${person.email}`}
+              onChange={(event) => void changeRole(person, event.target.value as Role)}
+              value={person.role}
+            >
+              {projectRoles.map((key) => <option key={key} value={key}>{roleLabels[key]}</option>)}
+            </select>
             <button aria-label={`Remove ${person.name ?? person.email}`} className="grid size-7 shrink-0 place-items-center rounded-control text-foreground-subtle opacity-60 hover:bg-white/[0.07] hover:text-danger group-hover:opacity-100 disabled:opacity-30" disabled={busy === person.email} onClick={() => void remove(person, false)} type="button">
               <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8" /></svg>
             </button>
           </li>
         ))}
+        {access.handoffOnly.length ? (
+          <li className="px-1.5 pb-1 pt-3 text-[11px] font-medium text-foreground-subtle">Invited to single handoffs</li>
+        ) : null}
         {access.handoffOnly.map((person) => (
           <li className="group flex items-center gap-2.5 rounded-[8px] px-1.5 py-1.5 hover:bg-white/[0.03]" key={person.email}>
             <Avatar name={person.name ?? person.email} size={26} src={person.image} />
@@ -123,17 +142,15 @@ export function ProjectAccessPanel({ workspaceId, projectId, initial, suggestion
                 {person.handoffNames.length === 1 ? person.handoffNames[0] : `${person.handoffNames.length} of ${access.handoffCount} handoffs`} only
               </span>
             </span>
-            <button className="h-7 shrink-0 rounded-control px-2 text-[11px] text-foreground-subtle opacity-0 hover:bg-white/[0.07] hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100" disabled={busy !== null} onClick={() => void send("add", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: person.email, role: "exec" }) })} title="Give access to every handoff in this project" type="button">
-              Whole project
+            <button className="h-7 shrink-0 rounded-control px-2 text-[11px] text-foreground-subtle opacity-0 hover:bg-white/[0.07] hover:text-foreground group-hover:opacity-100 focus-visible:opacity-100" disabled={busy !== null} onClick={() => void send("add", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ email: person.email, role: "exec" }) })} title="Add to the team as a reviewer, with every handoff in this project" type="button">
+              Add to team
             </button>
             <button aria-label={`Remove ${person.name ?? person.email}`} className="grid size-7 shrink-0 place-items-center rounded-control text-foreground-subtle opacity-60 hover:bg-white/[0.07] hover:text-danger group-hover:opacity-100 disabled:opacity-30" disabled={busy === person.email} onClick={() => void remove(person, true)} type="button">
               <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8" /></svg>
             </button>
           </li>
         ))}
-        {!access.members.length && !access.handoffOnly.length ? (
-          <li className="px-1.5 py-2 text-[12px] text-foreground-subtle">Only owners and designers can see this project so far.</li>
-        ) : null}
+
       </ul>
 
       <button
@@ -146,7 +163,7 @@ export function ProjectAccessPanel({ workspaceId, projectId, initial, suggestion
           <span className="flex -space-x-1.5">
             {access.fullAccess.slice(0, 4).map((person) => <Avatar className="ring-2 ring-surface" key={person.email} name={person.name ?? person.email} size={20} src={person.image} />)}
           </span>
-          {access.fullAccess.length} owner{access.fullAccess.length === 1 ? "" : "s"} and designer{access.fullAccess.length === 1 ? "" : "s"} see everything
+          {access.fullAccess.length} more owner{access.fullAccess.length === 1 ? "" : "s"} and designer{access.fullAccess.length === 1 ? "" : "s"} see everything
         </span>
         <svg aria-hidden="true" className={"size-3.5 transition-transform " + (showFull ? "rotate-180" : "")} fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" /></svg>
       </button>

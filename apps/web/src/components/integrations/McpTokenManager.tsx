@@ -1,7 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { workspaceMcpEndpoint } from "./mcp-configuration";
+import { useEffect, useState, useSyncExternalStore } from "react";
+import {
+  claudeCodeMcpConfiguration,
+  codexMcpConfiguration,
+  geminiCliMcpConfiguration,
+  genericMcpConfiguration,
+  workspaceMcpEndpoint,
+} from "./mcp-configuration";
 import { useConfirm } from "@/src/components/ConfirmDialog";
 
 type McpScope = "handoffs:read" | "comments:write" | "changelog:write" | "tasks:write";
@@ -18,35 +24,61 @@ type TokenRecord = {
 };
 
 const scopeLabels: Record<McpScope, string> = {
-  "handoffs:read": "Read projects, snapshots, measurements, diffs, comments, and findings",
+  "handoffs:read": "Read projects, snapshots, measurements, diffs, comments and findings",
   "comments:write": "Add comments to a frozen version",
-  "changelog:write": "Draft, review, approve, and publish AI changelogs",
+  "changelog:write": "Draft, review, approve and publish AI changelogs",
   "tasks:write": "Link tasks created through your AI client’s other MCP tools",
 };
+
+type ClientKind = "codex" | "claude" | "gemini" | "other";
+const clients: Array<{ kind: ClientKind; label: string; where: string; variable: string }> = [
+  { kind: "codex", label: "Codex", where: "Add to ~/.codex/config.toml", variable: "ASBIR_MCP_TOKEN" },
+  { kind: "claude", label: "Claude Code", where: "Add to the project’s .mcp.json", variable: "ASBIR_HANDOFF_ACCESS" },
+  { kind: "gemini", label: "Gemini CLI", where: "Merge into ~/.gemini/settings.json", variable: "ASBIR_HANDOFF_ACCESS" },
+  { kind: "other", label: "Other", where: "Streamable HTTP; use your client’s variable syntax", variable: "ASBIR_MCP_TOKEN" },
+];
+
+const field = "min-h-9 w-full rounded-control border border-transparent bg-surface-inset px-3 text-[13px] text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
+const quietButton = "min-h-8 shrink-0 rounded-control bg-surface-raised px-3 text-[12px] font-medium text-foreground-muted transition-colors hover:bg-border hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary";
 
 export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: string; canManageAll: boolean }) {
   const { confirm, dialog } = useConfirm();
   const endpoint = `/api/workspaces/${encodeURIComponent(workspaceId)}/mcp-tokens`;
   const [tokens, setTokens] = useState<TokenRecord[]>([]);
+  const [creating, setCreating] = useState(false);
   const [name, setName] = useState("");
   const [scopes, setScopes] = useState<McpScope[]>(["handoffs:read"]);
   const [expiresInDays, setExpiresInDays] = useState(90);
   const [oneTimeToken, setOneTimeToken] = useState<string | null>(null);
+  const [client, setClient] = useState<ClientKind>("codex");
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+
+  const endpointUrl = useSyncExternalStore(
+    () => () => {},
+    () => workspaceMcpEndpoint(window.location.origin, workspaceId),
+    () => `/api/mcp?workspaceId=${encodeURIComponent(workspaceId)}`,
+  );
+  const activeClient = clients.find((item) => item.kind === client)!;
+  const configuration = {
+    codex: codexMcpConfiguration,
+    claude: claudeCodeMcpConfiguration,
+    gemini: geminiCliMcpConfiguration,
+    other: genericMcpConfiguration,
+  }[client](endpointUrl);
 
   useEffect(() => {
     let active = true;
     fetch(endpoint, { cache: "no-store" })
       .then(async (response) => {
         const payload = await response.json();
-        if (!response.ok) throw new Error(payload.error || "Could not load MCP tokens.");
+        if (!response.ok) throw new Error(payload.error || "Could not load tokens.");
         if (active) setTokens(payload.tokens ?? []);
       })
       .catch((loadError: unknown) => {
-        if (active) setError(loadError instanceof Error ? loadError.message : "Could not load MCP tokens.");
+        if (active) setError(loadError instanceof Error ? loadError.message : "Could not load tokens.");
       })
       .finally(() => { if (active) setLoading(false); });
     return () => { active = false; };
@@ -64,13 +96,13 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
         body: JSON.stringify({ name, scopes, expiresInDays }),
       });
       const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || "Could not create this MCP token.");
+      if (!response.ok) throw new Error(payload.error || "Could not create this token.");
       setOneTimeToken(payload.token);
       setTokens((current) => [{ ...payload.metadata, createdBy: "", createdByName: "You" }, ...current]);
       setName("");
-      setNotice("Copy this token now. Asbir Handoff will not show it again.");
+      setCreating(false);
     } catch (createError) {
-      setError(createError instanceof Error ? createError.message : "Could not create this MCP token.");
+      setError(createError instanceof Error ? createError.message : "Could not create this token.");
     } finally {
       setSaving(false);
     }
@@ -79,7 +111,7 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
   async function revokeToken(tokenId: string) {
     const confirmed = await confirm({
       title: "Revoke this token?",
-      description: "Any MCP client using it will lose access immediately. This cannot be undone.",
+      description: "Any MCP client using it loses access immediately. This can’t be undone.",
       confirmLabel: "Revoke token",
     });
     if (!confirmed) return;
@@ -101,6 +133,7 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
   }
 
   async function copy(value: string, label: string) {
+    setError(null);
     try {
       await navigator.clipboard.writeText(value);
       setNotice(`${label} copied.`);
@@ -113,93 +146,125 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
     setScopes((current) => current.includes(scope) ? current.filter((item) => item !== scope) : [...current, scope]);
   }
 
-  const endpointUrl = typeof window === "undefined"
-    ? `/api/mcp?workspaceId=${encodeURIComponent(workspaceId)}`
-    : workspaceMcpEndpoint(window.location.origin, workspaceId);
-
   return (
-    <div className="space-y-5">
-      <section className="rounded-panel bg-surface p-4 sm:p-5" aria-labelledby="mcp-endpoint-title">
-        <h2 id="mcp-endpoint-title" className="text-sm font-semibold text-foreground">MCP endpoint</h2>
-        <p className="mt-1 text-xs leading-5 text-foreground-muted">Connect an MCP-compatible agent to read your team’s frozen handoffs. Writes require a token scope.</p>
-        <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-          <label className="sr-only" htmlFor="mcp-endpoint-url">MCP endpoint URL</label>
-          <input id="mcp-endpoint-url" readOnly value={endpointUrl} className="min-h-10 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
-          <button type="button" onClick={() => void copy(endpointUrl, "Endpoint URL")} className="min-h-10 rounded-control bg-surface-raised px-3 text-xs font-medium text-foreground-muted hover:bg-border hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Copy endpoint</button>
-        </div>
-      </section>
-
-      <section className="rounded-panel bg-surface p-4 sm:p-5" aria-labelledby="create-token-title">
-        <h2 id="create-token-title" className="text-sm font-semibold text-foreground">Create access token</h2>
-        <p className="mt-1 text-xs leading-5 text-foreground-muted">Use a separate token for each of your agents. You can revoke your tokens at any time{canManageAll ? ", and workspace members can revoke any workspace token while flows are under review" : ""}.</p>
-        <form className="mt-4 space-y-4" onSubmit={createToken}>
-          <label className="block text-xs font-medium text-foreground-muted">
-            Token name
-            <input autoComplete="off" maxLength={80} required value={name} onChange={(event) => setName(event.target.value)} placeholder="For example, QA agent" className="mt-1.5 min-h-10 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
-          </label>
-          <fieldset className="space-y-2">
-            <legend className="text-xs font-medium text-foreground-muted">Access scopes</legend>
-            {(Object.keys(scopeLabels) as McpScope[]).map((scope) => (
-              <label className="flex cursor-pointer items-start gap-2.5 rounded-control bg-surface-raised/70 px-3 py-2.5 text-xs leading-5 text-foreground-muted transition-colors hover:bg-surface-strong" key={scope}>
-                <input type="checkbox" checked={scopes.includes(scope)} onChange={() => toggleScope(scope)} className="mt-0.5 size-4 accent-[var(--color-accent)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
-                <span><span className="font-mono text-foreground">{scope}</span><span className="mt-0.5 block">{scopeLabels[scope]}</span></span>
-              </label>
+    <div className="space-y-8">
+      <section aria-labelledby="mcp-connect-title">
+        <h2 className="text-[14px] font-semibold text-foreground" id="mcp-connect-title">Connect a client</h2>
+        <div className="mt-3 overflow-hidden rounded-panel border border-border">
+          <div aria-label="MCP client" className="flex gap-1 border-b border-border bg-surface px-2 pt-2" role="tablist">
+            {clients.map((item) => (
+              <button
+                aria-selected={client === item.kind}
+                className={"-mb-px rounded-t-[7px] border-b-2 px-3 py-2 text-[12px] font-medium transition-colors focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary " + (client === item.kind ? "border-foreground text-foreground" : "border-transparent text-foreground-subtle hover:text-foreground")}
+                key={item.kind}
+                onClick={() => setClient(item.kind)}
+                role="tab"
+                type="button"
+              >
+                {item.label}
+              </button>
             ))}
-          </fieldset>
-          <label className="block text-xs font-medium text-foreground-muted">
-            Expires after
-            <select value={expiresInDays} onChange={(event) => setExpiresInDays(Number(event.target.value))} className="mt-1.5 min-h-10 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">
-              <option value={30}>30 days</option>
-              <option value={90}>90 days</option>
-              <option value={180}>180 days</option>
-              <option value={365}>365 days</option>
-            </select>
-          </label>
-          <button disabled={saving || scopes.length === 0} className="min-h-10 rounded-control bg-primary px-4 text-xs font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50" type="submit">{saving ? "Creating…" : "Create token"}</button>
-        </form>
-      </section>
-
-      {oneTimeToken ? (
-        <section className="rounded-panel bg-surface p-4 sm:p-5" aria-labelledby="new-token-title">
-          <h2 id="new-token-title" className="text-sm font-semibold text-foreground">Copy your new token</h2>
-          <p className="mt-1 text-xs leading-5 text-foreground-muted">This is the only time the token is shown. Store it in your MCP client’s secret settings.</p>
-          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
-            <label className="sr-only" htmlFor="new-mcp-token">New MCP token</label>
-            <input id="new-mcp-token" readOnly value={oneTimeToken} className="min-h-10 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
-            <button type="button" onClick={() => void copy(oneTimeToken, "Token")} className="min-h-10 rounded-control bg-surface-raised px-3 text-xs font-medium text-foreground hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Copy token</button>
-            <button type="button" onClick={() => setOneTimeToken(null)} className="min-h-10 rounded-control bg-surface-raised px-3 text-xs font-medium text-foreground-muted hover:bg-border focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary">Hide token</button>
           </div>
-        </section>
-      ) : null}
-
-      <section className="rounded-panel bg-surface p-4 sm:p-5" aria-labelledby="active-tokens-title">
-        <div className="flex items-center justify-between gap-3">
-          <h2 id="active-tokens-title" className="text-sm font-semibold text-foreground">{canManageAll ? "Workspace tokens" : "Your tokens"}</h2>
-          <span className="font-mono text-xs text-foreground-subtle">{tokens.length.toString().padStart(2, "0")}</span>
+          <div className="bg-surface-inset/60 p-4" role="tabpanel">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <p className="text-[12px] text-foreground-muted">{activeClient.where}. Then set <code className="font-mono text-foreground">{activeClient.variable}</code> to your token and restart the client.</p>
+              <button className={quietButton} onClick={() => void copy(configuration, `${activeClient.label} config`)} type="button">Copy config</button>
+            </div>
+            <pre className="mt-3 overflow-x-auto rounded-control bg-background/60 p-3 font-mono text-[11px] leading-[1.6] text-foreground"><code>{configuration}</code></pre>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-[12px] text-foreground-subtle">
+              <span>Endpoint</span>
+              <code className="min-w-0 truncate font-mono text-[11px] text-foreground-muted">{endpointUrl}</code>
+              <button className="text-foreground-muted underline-offset-2 hover:text-foreground hover:underline" onClick={() => void copy(endpointUrl, "Endpoint")} type="button">Copy</button>
+            </div>
+          </div>
         </div>
-        {loading ? <p className="mt-3 text-xs text-foreground-subtle" role="status">Loading tokens…</p> : null}
-        {!loading && tokens.length === 0 ? <p className="mt-3 rounded-control bg-surface-raised px-3 py-3 text-xs leading-5 text-foreground-subtle">No MCP tokens have been created.</p> : null}
-        <ul className="mt-3 space-y-2">
-          {tokens.map((token) => {
-            const inactive = Boolean(token.revokedAt) || token.expired;
-            return (
-              <li className="rounded-control bg-surface-raised/70 p-3" key={token.id}>
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <span className="text-sm font-medium text-foreground">{token.name}</span>
-                  <span className={`rounded-pill px-2 py-1 font-mono text-[10px] uppercase tracking-wide ${inactive ? "bg-surface text-foreground-subtle" : "bg-success/15 text-success"}`}>{token.revokedAt ? "Revoked" : inactive ? "Expired" : "Active"}</span>
-                </div>
-                <p className="mt-1 text-xs text-foreground-subtle">Expires {new Date(token.expiresAt).toLocaleDateString()}</p>
-                {canManageAll ? <p className="mt-1 text-xs text-foreground-subtle">Created by {token.createdByName}</p> : null}
-                <div className="mt-2 flex flex-wrap gap-1.5">{token.scopes.map((scope) => <span className="rounded-pill bg-surface-raised px-2 py-1 font-mono text-[10px] text-foreground-muted" key={scope}>{scope}</span>)}</div>
-                {!inactive ? <button type="button" className="mt-3 min-h-8 rounded-control px-2.5 text-xs text-danger hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger" onClick={() => void revokeToken(token.id)}>Revoke token</button> : null}
-              </li>
-            );
-          })}
-        </ul>
       </section>
 
-      {error ? <p className="rounded-control border border-warning/40 bg-warning/10 px-3 py-2.5 text-xs leading-5 text-warning" role="alert">{error}</p> : null}
-      {notice ? <p className="text-xs text-success" role="status">{notice}</p> : null}
+      <section aria-labelledby="mcp-tokens-title">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-[14px] font-semibold text-foreground" id="mcp-tokens-title">{canManageAll ? "Workspace tokens" : "Your tokens"}</h2>
+          {!creating ? (
+            <button className="min-h-8 rounded-control bg-primary px-3 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" onClick={() => { setCreating(true); setOneTimeToken(null); }} type="button">New token</button>
+          ) : null}
+        </div>
+        <p className="mt-1 text-[12px] text-foreground-subtle">One token per client. A token stops working when it’s revoked or expires, or when its owner leaves the workspace.</p>
+
+        {oneTimeToken ? (
+          <div className="mt-3 rounded-panel border border-success/30 bg-success/5 p-4">
+            <p className="text-[13px] font-medium text-foreground">Copy your new token now. It won’t be shown again.</p>
+            <div className="mt-2.5 flex flex-col gap-2 sm:flex-row">
+              <label className="sr-only" htmlFor="new-mcp-token">New MCP token</label>
+              <input className={field + " font-mono text-[12px]"} id="new-mcp-token" readOnly value={oneTimeToken} />
+              <button className={quietButton + " min-h-9"} onClick={() => void copy(oneTimeToken, "Token")} type="button">Copy token</button>
+              <button className={quietButton + " min-h-9"} onClick={() => setOneTimeToken(null)} type="button">Done</button>
+            </div>
+          </div>
+        ) : null}
+
+        {creating ? (
+          <form className="mt-3 space-y-4 rounded-panel border border-border bg-surface p-4" onSubmit={createToken}>
+            <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_160px]">
+              <label className="block text-[12px] font-medium text-foreground-muted">
+                Name
+                <input autoComplete="off" autoFocus className={field + " mt-1.5"} maxLength={80} onChange={(event) => setName(event.target.value)} placeholder="For example, Codex on my laptop" required value={name} />
+              </label>
+              <label className="block text-[12px] font-medium text-foreground-muted">
+                Expires after
+                <select className={field + " mt-1.5"} onChange={(event) => setExpiresInDays(Number(event.target.value))} value={expiresInDays}>
+                  <option value={30}>30 days</option>
+                  <option value={90}>90 days</option>
+                  <option value={180}>180 days</option>
+                  <option value={365}>365 days</option>
+                </select>
+              </label>
+            </div>
+            <fieldset>
+              <legend className="text-[12px] font-medium text-foreground-muted">Access</legend>
+              <div className="mt-1.5 divide-y divide-border rounded-control border border-border">
+                {(Object.keys(scopeLabels) as McpScope[]).map((scope) => (
+                  <label className="flex cursor-pointer items-start gap-3 px-3 py-2.5 hover:bg-surface-raised/50" key={scope}>
+                    <input checked={scopes.includes(scope)} className="mt-0.5 size-4 accent-[var(--color-accent)]" onChange={() => toggleScope(scope)} type="checkbox" />
+                    <span className="min-w-0">
+                      <span className="block text-[12px] text-foreground">{scopeLabels[scope]}</span>
+                      <span className="block font-mono text-[11px] text-foreground-subtle">{scope}</span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            </fieldset>
+            <div className="flex gap-2">
+              <button className="min-h-9 rounded-control bg-primary px-4 text-[12px] font-semibold text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary disabled:cursor-not-allowed disabled:opacity-50" disabled={saving || scopes.length === 0} type="submit">{saving ? "Creating…" : "Create token"}</button>
+              <button className={quietButton + " min-h-9"} onClick={() => setCreating(false)} type="button">Cancel</button>
+            </div>
+          </form>
+        ) : null}
+
+        {loading ? <p className="mt-3 text-[12px] text-foreground-subtle" role="status">Loading tokens…</p> : null}
+        {!loading && tokens.length === 0 && !creating ? <p className="mt-3 rounded-panel border border-dashed border-border px-4 py-6 text-center text-[12px] text-foreground-subtle">No tokens yet.</p> : null}
+        {tokens.length ? (
+          <ul className="mt-3 divide-y divide-border rounded-panel border border-border">
+            {tokens.map((token) => {
+              const inactive = Boolean(token.revokedAt) || token.expired;
+              return (
+                <li className={"flex flex-wrap items-center gap-x-4 gap-y-1.5 px-4 py-3 " + (inactive ? "opacity-60" : "")} key={token.id}>
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-[13px] font-medium text-foreground">{token.name}</span>
+                    <span className="block truncate text-[11px] text-foreground-subtle">
+                      {token.revokedAt ? "Revoked" : token.expired ? "Expired" : `Expires ${new Date(token.expiresAt).toLocaleDateString()}`}
+                      {canManageAll ? ` · ${token.createdByName}` : ""}
+                      {" · "}{token.scopes.join(", ")}
+                    </span>
+                  </span>
+                  {!inactive ? <button className="min-h-8 rounded-control px-2.5 text-[12px] text-danger hover:bg-danger/10 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-danger" onClick={() => void revokeToken(token.id)} type="button">Revoke</button> : null}
+                </li>
+              );
+            })}
+          </ul>
+        ) : null}
+      </section>
+
+      {error ? <p className="rounded-control border border-warning/40 bg-warning/10 px-3 py-2.5 text-[12px] leading-5 text-warning" role="alert">{error}</p> : null}
+      {notice ? <p className="text-[12px] text-success" role="status">{notice}</p> : null}
       {dialog}
     </div>
   );

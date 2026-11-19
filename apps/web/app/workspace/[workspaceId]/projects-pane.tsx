@@ -37,7 +37,7 @@ export function ProjectsPane({ workspaceId, projects: unsorted, canManage = true
     <section aria-labelledby="projects-title" className="workspace-pane p-3 pt-4" id="projects">
       <div className="workspace-pane-heading px-2.5">
         <h2 className="text-[14px] font-semibold text-foreground" id="projects-title">Projects</h2>
-        <span className="workspace-pane-count font-mono text-[11px]">{projects.length.toString().padStart(2, "0")}</span>
+        <span className="workspace-pane-count text-[11px] tabular-nums">{projects.length}</span>
       </div>
       {projects.length ? (
         <ul className="workspace-list">

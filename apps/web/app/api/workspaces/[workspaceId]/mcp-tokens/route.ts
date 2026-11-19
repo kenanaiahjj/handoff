@@ -6,6 +6,7 @@ import {
   revokeWorkspaceMcpToken,
 } from "@/src/server/repositories/mcp-tokens";
 import { requireWorkspaceRole, WorkspaceAccessError, workspaceRoles } from "@/src/server/workspace-access";
+import { canSeeWholeWorkspace } from "@/src/server/services/review-visibility";
 
 type McpTokensRoute = { params: Promise<{ workspaceId: string }> };
 
@@ -23,7 +24,7 @@ export async function GET(request: Request, context: McpTokensRoute) {
   const { workspaceId } = await context.params;
   try {
     const access = await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
-    return Response.json({ tokens: (await listWorkspaceMcpTokens({ workspaceId, userId: access.userId, includeAll: true })) });
+    return Response.json({ tokens: (await listWorkspaceMcpTokens({ workspaceId, userId: access.userId, includeAll: canSeeWholeWorkspace(access.role) })) });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });
     throw error;
@@ -47,10 +48,11 @@ export async function POST(request: Request, context: McpTokensRoute) {
 export async function DELETE(request: Request, context: McpTokensRoute) {
   const { workspaceId } = await context.params;
   try {
+    // Owners and designers can revoke anyone's token; everyone else only their own.
     const actor = await requireWorkspaceRole(request, workspaceId, [...workspaceRoles]);
     const parsed = z.object({ id: z.string().uuid() }).safeParse(await request.json().catch(() => null));
     if (!parsed.success) return Response.json({ error: "Choose a valid token." }, { status: 400 });
-    if (!(await revokeWorkspaceMcpToken({ workspaceId, tokenId: parsed.data.id, actorId: actor.userId, canManageAll: true }))) {
+    if (!(await revokeWorkspaceMcpToken({ workspaceId, tokenId: parsed.data.id, actorId: actor.userId, canManageAll: canSeeWholeWorkspace(actor.role) }))) {
       return Response.json({ error: "Token not found or already revoked." }, { status: 404 });
     }
     return Response.json({ revoked: true });

@@ -13,9 +13,13 @@ export type ProjectAccessPerson = {
 };
 
 export type ProjectAccess = {
-  /** Owners and designers: they see every project. */
+  /** Owners and designers not on the project team: they see every project anyway. */
   fullAccess: Array<ProjectAccessPerson & { isPdInCharge: boolean }>;
-  /** Added to the whole project: every handoff, including future ones. */
+  /**
+   * The project team: people added to the whole project with a role, so everyone knows who to talk
+   * to. Designers and owners can be on it too; for everyone else it also grants every handoff,
+   * including future ones.
+   */
   members: Array<ProjectAccessPerson & { role: HandoffInviteRole; addedAt: string }>;
   /** Invited to some handoffs only (from a handoff's Access dialog). */
   handoffOnly: Array<ProjectAccessPerson & { handoffNames: string[] }>;
@@ -66,18 +70,19 @@ export async function listProjectAccess(workspaceId: string, projectId: string):
   ]);
 
   const memberEmails = new Set(members.map((member) => member.email));
-  const fullEmails = new Set(fullAccess.map((person) => person.email.toLowerCase()));
   const byEmail = new Map<string, ProjectAccessPerson & { handoffNames: string[] }>();
   for (const invite of invites) {
-    if (memberEmails.has(invite.email) || fullEmails.has(invite.email)) continue;
+    if (memberEmails.has(invite.email) || fullAccess.some((person) => person.email.toLowerCase() === invite.email)) continue;
     const entry = byEmail.get(invite.email) ?? { email: invite.email, name: invite.name, image: invite.image, userId: invite.userId, workspaceRole: invite.workspaceRole, handoffNames: [] };
     if (!entry.handoffNames.includes(invite.handoffName)) entry.handoffNames.push(invite.handoffName);
     byEmail.set(invite.email, entry);
   }
 
   return {
-    fullAccess: fullAccess.map((person) => ({ ...person, isPdInCharge: person.userId === project.pdInChargeUserId })),
-    members: members.filter((member) => !fullEmails.has(member.email)),
+    fullAccess: fullAccess
+      .filter((person) => !memberEmails.has(person.email.toLowerCase()))
+      .map((person) => ({ ...person, isPdInCharge: person.userId === project.pdInChargeUserId })),
+    members,
     handoffOnly: [...byEmail.values()],
     handoffCount: handoffCount.total,
   };
@@ -121,4 +126,49 @@ export async function removeProjectMember(input: { workspaceId: string; projectI
     }
   })();
   return { removed, revoked };
+}
+
+const roleOrder: Record<HandoffInviteRole, number> = { pd: 0, dev: 1, qa: 2, exec: 3 };
+
+export type ProjectTeamMember = {
+  email: string;
+  name: string | null;
+  image: string | null;
+  role: HandoffInviteRole;
+  isPdInCharge: boolean;
+};
+
+/**
+ * Who works on a project, for anyone who can open it: the PD in charge first, then the team by role
+ * (designers, developers, QA, reviewers). People invited to single handoffs are not listed.
+ */
+export async function listProjectTeam(workspaceId: string, projectId: string): Promise<ProjectTeamMember[]> {
+  const database = getDatabase();
+  const [project, members] = await Promise.all([
+    database
+      .prepare(
+        `SELECT "user".email, "user".name, "user".image
+         FROM project LEFT JOIN "user" ON "user".id = project.pd_in_charge_user_id
+         WHERE project.id = ? AND project.workspace_id = ?`,
+      )
+      .get(projectId, workspaceId) as Promise<{ email: string | null; name: string | null; image: string | null } | undefined>,
+    database
+      .prepare(
+        `SELECT project_member.email, project_member.role, "user".name, "user".image
+         FROM project_member LEFT JOIN "user" ON lower("user".email) = project_member.email
+         WHERE project_member.project_id = ? AND project_member.workspace_id = ?`,
+      )
+      .all(projectId, workspaceId) as Promise<Array<{ email: string; role: HandoffInviteRole; name: string | null; image: string | null }>>,
+  ]);
+  if (!project) throw new ProjectAccessError("Project not found.");
+  const pdEmail = project.email?.toLowerCase() ?? null;
+  const team: ProjectTeamMember[] = members.map((member) => ({ ...member, isPdInCharge: member.email === pdEmail }));
+  if (pdEmail && !team.some((member) => member.isPdInCharge)) {
+    team.push({ email: pdEmail, name: project.name, image: project.image, role: "pd", isPdInCharge: true });
+  }
+  const display = (member: ProjectTeamMember) => (member.name ?? member.email).toLowerCase();
+  return team.sort((a, b) =>
+    Number(b.isPdInCharge) - Number(a.isPdInCharge) ||
+    roleOrder[a.role] - roleOrder[b.role] ||
+    display(a).localeCompare(display(b)));
 }

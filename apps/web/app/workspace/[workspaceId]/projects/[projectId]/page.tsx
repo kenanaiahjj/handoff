@@ -13,7 +13,8 @@ import { ProjectPdInChargeForm } from "./project-actions";
 import { HandoffStatusChip } from "@/src/components/shell/HandoffStatus";
 import { handoffStatusMeta, type HandoffReviewStatus } from "@/src/lib/handoff-status";
 import { ProjectAccessPanel } from "@/src/components/shell/ProjectAccessPanel";
-import { listProjectAccess } from "@/src/server/services/project-access";
+import { listProjectAccess, listProjectTeam } from "@/src/server/services/project-access";
+import { ProjectTeamCard } from "@/src/components/shell/ProjectTeamCard";
 import { HandoffSetupForm } from "./handoff-setup-form";
 import { DeleteHandoffButton, RenameHandoffButton } from "@/src/components/canvas/HandoffLifecycleActions";
 import { HandoffAccessDialog } from "@/src/components/canvas/HandoffAccessDialog";
@@ -102,7 +103,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           </div>
         </header>
 
-        <div className={"workspace-dashboard-columns mt-6 grid gap-5 " + (canManageHandoffs ? "xl:grid-cols-[minmax(0,1fr)_390px]" : "max-w-4xl")}>
+        <div className={"workspace-dashboard-columns mt-6 grid gap-5 " + "xl:grid-cols-[minmax(0,1fr)_390px]"}>
           <section aria-labelledby="handoff-list-title" className="workspace-pane p-3 pt-4 sm:p-3 sm:pt-4" id="handoffs">
             <div className="workspace-pane-heading px-2.5">
               <h2 className="text-[14px] font-semibold text-foreground" id="handoff-list-title">Handoffs</h2>
@@ -196,13 +197,17 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
                 initial={await listProjectAccess(workspaceId, projectId)}
                 projectId={projectId}
                 suggestions={(await getDatabase()
-                  .prepare(`SELECT "user".email, "user".name FROM workspace_membership JOIN "user" ON "user".id = workspace_membership.user_id WHERE workspace_membership.workspace_id = ? AND workspace_membership.role NOT IN ('owner', 'designer') ORDER BY lower("user".name)`)
+                  .prepare(`SELECT "user".email, "user".name FROM workspace_membership JOIN "user" ON "user".id = workspace_membership.user_id WHERE workspace_membership.workspace_id = ? ORDER BY lower("user".name)`)
                   .all(workspaceId)) as Array<{ email: string; name: string }>}
                 workspaceId={workspaceId}
               />
               <HandoffSetupForm mode="project" input={{ workspaceId, projectId, handoffs: handoffs.map(({ id, name }) => ({ id, name })) }} />
             </aside>
-          ) : null}
+          ) : (
+            <aside aria-label="Project team" className="space-y-3">
+              <ProjectTeamCard team={await listProjectTeam(workspaceId, projectId)} />
+            </aside>
+          )}
         </div>
 
         {/* Layout QA rules are hidden for now; ProjectRulesForm and the rules API remain. */}

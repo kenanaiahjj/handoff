@@ -9,7 +9,6 @@ import { hasPendingDesignerRequest, listMembers } from "@/src/server/services/me
 import { projectIconVersions } from "@/src/server/services/project-icons";
 import { ProjectsPane, type ProjectCard } from "./projects-pane";
 import Link from "next/link";
-import { NewVersionBadge } from "@/src/components/shell/NewVersionBadge";
 import { canSeeWholeWorkspace, countUpdatesByProject, filterProjectsForViewer, listViewerHome, listViewerUpdates } from "@/src/server/services/review-visibility";
 import { ViewerHome } from "@/src/components/shell/ViewerHome";
 import { listPinKeys } from "@/src/server/services/viewer-pins";
@@ -109,10 +108,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
     >
       <main className="workspace-dashboard mx-auto px-5 py-7 text-foreground sm:px-8 sm:py-9">
         <header className="workspace-dashboard-heading">
-          <div>
-            <h1 className="font-semibold text-foreground">Projects</h1>
-            <p className="mt-2 text-[13px] leading-5 text-foreground-muted">Each project keeps its source canvases, frozen versions, and review decisions together.</p>
-          </div>
+          <h1 className="font-semibold text-foreground">{workspace.name}</h1>
         </header>
 
         {await (async () => {
@@ -130,9 +126,9 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
             <section aria-labelledby="stale-title" className="workspace-pane mt-6 p-3 pt-4">
               <div className="workspace-pane-heading px-2.5">
                 <h2 className="text-[14px] font-semibold text-foreground" id="stale-title">Going stale</h2>
-                <span className="workspace-pane-count font-mono text-[11px]">{stale.length.toString().padStart(2, "0")}</span>
+                <span className="workspace-pane-count text-[11px] tabular-nums">{stale.length}</span>
               </div>
-              <p className="px-2.5 pb-2 text-[12px] text-foreground-subtle">Not approved, and no new version, comment or status change in {staleAfterDays}+ days. Nudge reviewers or mark them approved.</p>
+              <p className="px-2.5 pb-2 text-[12px] text-foreground-subtle">No new version, comment or status change in {staleAfterDays}+ days.</p>
               <ul className="workspace-list">
                 {stale.slice(0, 6).map((handoff) => {
                   const days = Math.floor((Date.now() - new Date(handoff.lastActivityAt).getTime()) / 86_400_000);
@@ -157,45 +153,19 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
         <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} iconVersions={(await projectIconVersions(workspace.id))} pinnedIds={(await listPinKeys(session.user.id)).filter((key) => key.startsWith("project:")).map((key) => key.slice("project:".length))} />
 
-          {canManage ? (
-            <section aria-labelledby="invite-title" className="workspace-pane p-5 sm:p-6">
-              <div className="workspace-pane-heading">
-                <h2 className="text-[14px] font-semibold text-foreground" id="invite-title">Invite your team</h2>
+          <section aria-labelledby="invite-title" className="workspace-pane p-5 sm:p-6">
+            <div className="workspace-pane-heading">
+              <h2 className="text-[14px] font-semibold text-foreground" id="invite-title">Invite your team</h2>
+            </div>
+            <div className="mt-4"><CreateInviteForm key={workspace.id} workspaceId={workspace.id} initialInvites={invites} /></div>
+            <div className="mt-8">
+              <div className="mb-3 flex items-center justify-between">
+                <h3 className="text-[13px] font-semibold text-foreground" id="members-title">Members</h3>
+                <span className="text-[11px] tabular-nums text-foreground-subtle">{members.length}</span>
               </div>
-              <div className="mt-4"><CreateInviteForm key={workspace.id} workspaceId={workspace.id} initialInvites={invites} /></div>
-              <div className="mt-8">
-                <div className="mb-3 flex items-center justify-between">
-                  <h3 className="text-[13px] font-semibold text-foreground" id="members-title">Members</h3>
-                  <span className="font-mono text-[11px] text-foreground-subtle">{members.length}</span>
-                </div>
-                <MembersPanel canEdit={workspace.role === "owner"} currentUserId={session.user.id} initial={members} limit={5} manageHref={`/team`} workspaceId={workspace.id} />
-              </div>
-            </section>
-          ) : (
-            <section aria-labelledby="updates-title" className="workspace-pane p-5 sm:p-6">
-              <div className="workspace-pane-heading">
-                <h2 className="text-[14px] font-semibold text-foreground" id="updates-title">Updates for you</h2>
-                <span className="workspace-pane-count font-mono text-[11px]">{updates.length.toString().padStart(2, "0")}</span>
-              </div>
-              {updates.length ? (
-                <ul className="workspace-list mt-2">
-                  {updates.map((update) => (
-                    <li className="py-1" key={update.handoffId}>
-                      <Link className="workspace-list-item flex flex-col gap-1 px-2.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/projects/${update.projectId}/handoffs/${update.handoffId}`}>
-                        <span className="flex min-w-0 items-center gap-2">
-                          <span className="truncate text-[13px] font-medium text-foreground">{update.handoffName}</span>
-                          <NewVersionBadge label="New" />
-                        </span>
-                        <span className="truncate text-[11px] text-foreground-subtle">Version {update.versionLabel} · {update.projectName} · {new Date(update.createdAt).toLocaleDateString()}</span>
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="workspace-empty-state px-2 py-7 text-[12px]">You’re up to date. New versions of handoffs shared with you show up here.</p>
-              )}
-            </section>
-          )}
+              <MembersPanel canEdit={workspace.role === "owner"} currentUserId={session.user.id} initial={members} limit={5} manageHref={`/team`} workspaceId={workspace.id} />
+            </div>
+          </section>
         </div>
       </main>
     </WorkspaceShell>

@@ -246,8 +246,8 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
 
   return (
     <div className="space-y-4">
-      <p className="max-w-[68ch] text-[12px] leading-5 text-foreground-muted">Anyone with a link can join with this role. Links can be reused until they expire or you revoke them. Copy each link before leaving; you can’t retrieve it later.</p>
-      <form className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,170px)]" onSubmit={createInvite}>
+      <p className="max-w-[68ch] text-[12px] leading-5 text-foreground-muted">Anyone with the link joins with this role until it expires or you revoke it. Copy it right away; it can’t be shown again.</p>
+      <form className="grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-3" onSubmit={createInvite}>
         <label className="space-y-1.5 text-[12px] text-foreground" htmlFor="invite-role">
           <span className="block font-medium">Team role</span>
           <select
@@ -275,11 +275,11 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
             <option value="30">30 days</option>
             <option value="90">90 days</option>
             <option value="365">1 year</option>
-            <option value="never">Never (until revoked)</option>
+            <option value="never">Never</option>
           </select>
         </label>
         <button
-          className="capture-primary-action h-9 self-end px-3 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60 sm:col-span-2"
+          className="capture-primary-action h-9 self-end px-3 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60 col-span-2"
           disabled={pending}
           type="submit"
         >
@@ -291,7 +291,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
         <section aria-labelledby="active-invites-title" className="pt-3">
           <div className="flex items-center justify-between gap-3">
             <h3 className="text-[12px] font-semibold text-foreground" id="active-invites-title">Active invite links</h3>
-            <span className="font-mono text-[10px] text-foreground-subtle">{invites.length.toString().padStart(2, "0")}</span>
+            <span className="text-[11px] tabular-nums text-foreground-subtle">{invites.length}</span>
           </div>
           <ul className="mt-2 divide-y divide-border">
             {invites.map((invite) => (
