@@ -1,3 +1,4 @@
+import { isPluginOutdated, pluginVersionUrl } from "./plugin-version";
 import {
   createSnapshotEnvelope,
   MAX_CAPTURE_ASSET_BYTES,
@@ -47,6 +48,7 @@ import {
 
 declare const __ASBIR_HANDOFF_ORIGIN__: string;
 declare const __ASBIR_STORAGE_ORIGIN__: string;
+declare const __ASBIR_PLUGIN_BUILD__: string;
 
 // Name the unreachable address instead of a bare "Failed to fetch", and retry safe requests once.
 globalThis.fetch = withNetworkDiagnostics(globalThis.fetch.bind(globalThis));
@@ -1377,3 +1379,11 @@ window.onmessage = (event: MessageEvent) => {
 
 setBusy(false);
 setStatus("Connect with the one-time token from a Handoff project.");
+
+// Tell people when Integrations hands out a newer build. Quiet on any failure: it's only a hint.
+const updateBanner = document.querySelector<HTMLElement>("#update-banner")!;
+document.querySelector<HTMLButtonElement>("#update-button")!.addEventListener("click", () => pluginMessage({ type: "open-update" }));
+void fetch(pluginVersionUrl(__ASBIR_HANDOFF_ORIGIN__), { cache: "no-store" })
+  .then((response) => (response.ok ? response.json() : null))
+  .then((payload: unknown) => { updateBanner.hidden = !isPluginOutdated(__ASBIR_PLUGIN_BUILD__, payload); })
+  .catch(() => {});

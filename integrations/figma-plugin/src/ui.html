@@ -35,6 +35,9 @@
       header { display: grid; gap: 4px; }
       h1 { margin: 0; font-size: 18px; line-height: 1.3; font-weight: 600; letter-spacing: -0.02em; }
       header p, .hint { margin: 0; color: var(--foreground-subtle); font-size: 12px; }
+      #update-banner { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 8px 8px 8px 11px; border-radius: 6px; background: var(--surface-raised); color: var(--foreground); font-size: 12px; }
+      #update-banner p { margin: 0; }
+      #update-banner button { flex: none; }
       .field { display: grid; gap: 6px; }
       #page-exclusions[hidden], #frame-manifest[hidden], #layer-asset-report[hidden] { display: none; }
       label { color: var(--foreground-muted); font-size: 12px; font-weight: 500; }
@@ -116,6 +119,10 @@
   </head>
   <body>
     <main>
+      <div id="update-banner" role="status" hidden>
+        <p>A newer version of this plugin is available.</p>
+        <button id="update-button" type="button">Get update</button>
+      </div>
       <header>
         <h1>Capture a Figma canvas</h1>
         <p>Capture Figma's rendered pixels alongside its inspectable layers, exact geometry, styles, and variable bindings.</p>

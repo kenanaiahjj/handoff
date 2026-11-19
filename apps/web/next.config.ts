@@ -35,7 +35,10 @@ const nextConfig: NextConfig = {
   distDir: process.env.ASBIR_NEXT_DIST_DIR || ".next",
   transpilePackages: ["@asbir/snapshot-contract"],
   // The downloadable Figma plugin is read from disk by its route, so ship the built template with it.
-  outputFileTracingIncludes: { "/api/figma-plugin": ["./figma-plugin-template/**/*"] },
+  outputFileTracingIncludes: {
+    "/api/figma-plugin": ["./figma-plugin-template/**/*"],
+    "/api/capture-sessions/plugin-version": ["./figma-plugin-template/build-id.txt"],
+  },
   // Addresses used to carry the company workspace's id (/workspace/<id>/projects/…). Links shared
   // before it was dropped keep working.
   async redirects() {

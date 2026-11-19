@@ -1,11 +1,18 @@
 import { captureFigmaCanvas } from "./capture";
+import { pluginUpdatePageUrl } from "./plugin-version";
 import type { CaptureErrorMessage, CaptureProgressMessage, CaptureReadyMessage } from "./types";
+
+declare const __ASBIR_HANDOFF_ORIGIN__: string;
 
 figma.showUI(__html__, { width: 430, height: 720, themeColors: true });
 
 figma.ui.onmessage = async (message: unknown) => {
   if (!message || typeof message !== "object") return;
   const data = message as { type?: unknown; scope?: unknown; captureAllTopLevel?: unknown; excludedTopLevelSections?: unknown; layerAssetMode?: unknown };
+  if (data.type === "open-update") {
+    figma.openExternal(pluginUpdatePageUrl(__ASBIR_HANDOFF_ORIGIN__));
+    return;
+  }
   if (data.type !== "capture" || (data.scope !== "selected" && data.scope !== "page" && data.scope !== "file")) return;
   const scope = data.scope;
   const captureAllTopLevel = data.captureAllTopLevel === true;
