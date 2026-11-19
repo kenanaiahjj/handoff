@@ -60,6 +60,14 @@ function LogoTile({ children, size = "md" }: { children: ReactNode; size?: "md" 
   );
 }
 
+/** Slack's "create an app from a manifest" link, pre-filled with the name and the scopes slack.ts needs. */
+const slackAppManifestUrl = "https://api.slack.com/apps?new_app=1&manifest_json=" + encodeURIComponent(JSON.stringify({
+  display_information: { name: "Asbir Handoff", description: "New versions, mentions and a weekly digest from Asbir Handoff." },
+  features: { bot_user: { display_name: "Asbir Handoff", always_online: false } },
+  oauth_config: { scopes: { bot: ["chat:write", "users:read", "users:read.email"] } },
+  settings: { org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false },
+}));
+
 export default async function IntegrationsPage({ params, searchParams }: IntegrationsPageProps) {
   const session = await getSessionForHeaders(await headers());
   if (!session) redirect("/sign-in");
@@ -174,16 +182,36 @@ export default async function IntegrationsPage({ params, searchParams }: Integra
                 <div>
                   <h2 className="text-[14px] font-semibold text-foreground" id="slack-title">What it sends</h2>
                   <ul className="mt-3 divide-y divide-border rounded-panel border border-border text-[13px]">
-                    <li className="px-4 py-3"><span className="text-foreground">New versions</span><span className="block text-[12px] text-foreground-muted">A direct message to everyone on the handoff, with a button to open it.</span></li>
+                    <li className="px-4 py-3"><span className="text-foreground">New versions</span><span className="block text-[12px] text-foreground-muted">A direct message to the project team and everyone invited to the handoff, with a button to open it.</span></li>
                     <li className="px-4 py-3"><span className="text-foreground">Mentions</span><span className="block text-[12px] text-foreground-muted">When someone @mentions you in a comment.</span></li>
                     <li className="px-4 py-3"><span className="text-foreground">Weekly digest</span><span className="block text-[12px] text-foreground-muted">Monday summary of what changed across your projects.</span></li>
                   </ul>
                 </div>
-                <p className="text-[12px] leading-5 text-foreground-subtle">
-                  {slackOn
-                    ? "People are matched to Slack by email address. Each person picks everything, mentions only or nothing from the bell in the sidebar."
-                    : "Slack is off for this workspace. To turn it on, create a Slack app with the chat:write, users:read and users:read.email scopes, then set its bot token as SLACK_BOT_TOKEN in the server’s environment and redeploy."}
-                </p>
+                {slackOn ? (
+                  <p className="text-[12px] leading-5 text-foreground-subtle">People are matched to Slack by email address. Each person picks everything, mentions only or nothing from the bell in the sidebar.</p>
+                ) : canManage ? (
+                  <div>
+                    <h2 className="text-[14px] font-semibold text-foreground">Turn it on</h2>
+                    <ol className="mt-3 divide-y divide-border rounded-panel border border-border">
+                      {[
+                        ["Create the Slack app", "Opens Slack with the app’s name and permissions filled in. Pick your workspace and create it."],
+                        ["Install it and copy the bot token", "In the app’s OAuth & Permissions page, install it to your workspace, then copy the Bot User OAuth Token (it starts with xoxb-)."],
+                        ["Add the token to the server", "In Vercel, add it as SLACK_BOT_TOKEN for Production and Preview, then redeploy."],
+                      ].map(([title, body], index) => (
+                        <li className="flex gap-3 px-4 py-3.5" key={title}>
+                          <span className="w-4 shrink-0 text-[13px] tabular-nums text-foreground-subtle">{index + 1}</span>
+                          <span>
+                            <span className="block text-[13px] font-medium text-foreground">{title}</span>
+                            <span className="mt-0.5 block text-[12px] leading-5 text-foreground-muted">{body}</span>
+                          </span>
+                        </li>
+                      ))}
+                    </ol>
+                    <a className="mt-4 inline-flex min-h-9 items-center rounded-control bg-primary px-4 text-[13px] font-medium text-primary-foreground transition-colors hover:bg-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" href={slackAppManifestUrl} rel="noreferrer" target="_blank">Create the Slack app</a>
+                  </div>
+                ) : (
+                  <p className="text-[12px] leading-5 text-foreground-subtle">Slack is off for this workspace. An owner or designer can turn it on.</p>
+                )}
               </section>
             ) : null}
           </>
