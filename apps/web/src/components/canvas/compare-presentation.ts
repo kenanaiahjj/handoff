@@ -28,13 +28,16 @@ export function comparisonFrameStatusLabel(
   return "Removed";
 }
 
-/** Badge-sized label for tight rows (the screen list, canvas labels); pair it with the full label as a tooltip. */
+/**
+ * Badge for tight rows (the screen list, canvas labels). Handoff only flags what a builder needs to
+ * look at: "Changed" or "New". A screen that is the same as before, or that left the handoff, gets none.
+ */
 export function comparisonFrameStatusShortLabel(
-  status: SnapshotDiff["frames"][number]["status"],
-) {
-  if (status === "only-in-after-capture") return "New";
-  if (status === "only-in-before-capture") return "Removed";
-  return comparisonFrameStatusLabel(status);
+  status: SnapshotDiff["frames"][number]["status"] | undefined,
+): "Changed" | "New" | null {
+  if (status === "changed") return "Changed";
+  if (status === "added" || status === "only-in-after-capture") return "New";
+  return null;
 }
 
 export function captureCoverageAvailabilityLabel(availableIn: "before" | "after") {
@@ -53,7 +56,7 @@ export function sourceIdentityNotice(identity: SnapshotSourceIdentity) {
     return "At least one snapshot has a legacy Figma file ID. The source file identity cannot be verified.";
   }
   if (identity === "different") {
-    return "These versions have different Figma file IDs. Handoff does not auto-pair screens by name across files.";
+    return "These versions come from different Figma files. Screens are paired by frame name, so keep screen names unique.";
   }
   return null;
 }

@@ -135,7 +135,7 @@ type CaptureMergeContext = {
   overviewWidth: number | null;
   overviewHeight: number | null;
   canvasBounds: SnapshotEnvelope["canvasBounds"] | null;
-  frames: Array<Pick<SnapshotFrame, "sourceFrameId" | "sourcePageId" | "bounds" | "renderBounds">>;
+  frames: Array<Pick<SnapshotFrame, "sourceFrameId" | "sourcePageId" | "bounds" | "renderBounds"> & { name?: string }>;
   pageLayout: unknown;
 };
 type PendingUpload = {

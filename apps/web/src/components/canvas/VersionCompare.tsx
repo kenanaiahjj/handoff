@@ -15,6 +15,7 @@ import {
   captureScopeNotice,
   captureCoverageAvailabilityLabel,
   comparisonFrameStatusLabel,
+  comparisonFrameStatusShortLabel,
   groupComparisonChanges,
   separateSupplementalChanges,
   sourceIdentityNotice,
@@ -435,11 +436,11 @@ export function VersionCompare({
                     >
                       <span className="flex items-center justify-between gap-2 text-[12px]">
                         <span className="truncate" title={frame.name}>{frame.name}</span>
-                        {frame.status === "unchanged" ? null : (
+                        {comparisonFrameStatusShortLabel(frame.status) ? (
                           <span className={"compare-status shrink-0 rounded-[5px] px-1.5 py-0.5 text-[10px] font-medium"} data-status={frame.status} title={comparisonFrameStatusLabel(frame.status)}>
-                            {frame.status === "changed" ? "Changed" : frame.status === "added" ? "New" : frame.status === "removed" ? "Removed" : "Partial"}
+                            {comparisonFrameStatusShortLabel(frame.status)}
                           </span>
-                        )}
+                        ) : null}
                       </span>
                     </button>
                   </li>

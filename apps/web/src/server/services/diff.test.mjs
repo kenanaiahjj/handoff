@@ -416,15 +416,17 @@ test("automatically compares a uniquely named screen when its Figma frame ID cha
   assert.equal(result.unmatchedFrameCandidates.length, 0);
 });
 
-test("does not automatically pair same-name screens from different source files", () => {
+test("pairs uniquely named screens from a duplicated Figma file", () => {
   const before = snapshot("file-before", "review-before", styleIds("same"));
   const after = snapshot("file-after", "review-after", styleIds("same"));
 
   const result = compare(before, after);
 
+  // Still reported so the compare view can say the files differ, but the screen pairs by name.
   assert.equal(result.sourceIdentity, "different");
-  assert.equal(result.frames.length, 2);
-  assert.ok(result.frames.every((frame) => frame.beforeFrameId === null || frame.afterFrameId === null));
+  assert.equal(result.frames.length, 1);
+  assert.equal(result.frames[0].beforeFrameId, "review-before");
+  assert.equal(result.frames[0].afterFrameId, "review-after");
 });
 
 test("does not automatically pair same-name screens when legacy file identity is only inferred", () => {

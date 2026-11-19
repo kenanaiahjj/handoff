@@ -9,7 +9,22 @@ type PageLayoutEntry = Record<string, unknown> & {
   offsetY: number;
 };
 
-type CaptureFrameRef = Pick<SnapshotFrame, "sourceFrameId" | "sourcePageId" | "bounds" | "renderBounds">;
+type CaptureFrameRef = Pick<SnapshotFrame, "sourceFrameId" | "sourcePageId" | "bounds" | "renderBounds"> & { name?: string };
+
+/** Frames in `candidates` keyed by trimmed name, keeping only names that appear once in `all`. */
+function uniqueFramesByName<T extends CaptureFrameRef>(candidates: readonly T[], all: readonly CaptureFrameRef[]) {
+  const counts = new Map<string, number>();
+  for (const frame of all) {
+    const name = frame.name?.trim();
+    if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+  }
+  const byName = new Map<string, T>();
+  for (const frame of candidates) {
+    const name = frame.name?.trim();
+    if (name && counts.get(name) === 1) byName.set(name, frame);
+  }
+  return byName;
+}
 
 type CaptureSnapshotFields<TFrame extends CaptureFrameRef> = {
   frames: readonly TFrame[];
@@ -192,6 +207,17 @@ export function createFigmaCaptureMergePlan<TBaseline extends CaptureFrameRef, T
     replacedFrameIds.add(match.beforeFrameId);
   }
 
+  // A screen whose Figma ID changed (re-created, or edited in a duplicated file) still replaces
+  // the old screen when its name is unique on both sides, instead of showing up twice.
+  const beforeByName = uniqueFramesByName(input.baseline.frames.filter((frame) => !replacedFrameIds.has(frame.sourceFrameId)), input.baseline.frames);
+  const afterByName = uniqueFramesByName(input.incoming.frames.filter((frame) => !baselineIds.has(frame.sourceFrameId) && !usedAfterIds.has(frame.sourceFrameId)), input.incoming.frames);
+  for (const [name, before] of beforeByName) {
+    const replacement = afterByName.get(name);
+    if (!replacement) continue;
+    replacementByOldId.set(before.sourceFrameId, replacement);
+    replacedFrameIds.add(before.sourceFrameId);
+  }
+
   const capturedPageIds = new Set(input.incoming.frames.flatMap((frame) => frame.sourcePageId ? [frame.sourcePageId] : []));
   if (scope === "page") {
     for (const frame of input.baseline.frames) {
@@ -304,8 +330,9 @@ export function mergeFigmaCaptureSnapshots(input: {
   inheritedAssetKeys: string[];
   replacedFrameIds: string[];
 } | null {
-  if (input.baseline.source !== "figma" || input.incoming.source !== "figma" || input.baseline.sourceFileId !== input.incoming.sourceFileId) {
-    throw new Error("A partial Figma capture can only merge into a version from the same Figma file.");
+  // A duplicated Figma file may update the handoff too; its screens pair by frame ID, then by unique name.
+  if (input.baseline.source !== "figma" || input.incoming.source !== "figma") {
+    throw new Error("A partial Figma capture can only merge into a Figma version.");
   }
   const plan = createFigmaCaptureMergePlan({
     baseline: input.baseline,

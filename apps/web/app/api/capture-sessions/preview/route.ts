@@ -100,12 +100,13 @@ export async function POST(request: Request) {
     overviewWidth: number | null;
     overviewHeight: number | null;
     canvasBounds: SnapshotEnvelope["canvasBounds"] | null;
-    frames: Array<Pick<SnapshotEnvelope["frames"][number], "sourceFrameId" | "sourcePageId" | "bounds" | "renderBounds">>;
+    frames: Array<Pick<SnapshotEnvelope["frames"][number], "sourceFrameId" | "sourcePageId" | "bounds" | "renderBounds" | "name">>;
     pageLayout: unknown;
   } | undefined;
   if (scope === "selected" || scope === "page") {
-    if (baseline.snapshot.source !== "figma" || baseline.snapshot.sourceFileId !== snapshot.sourceFileId) {
-      return jsonResponse({ error: "A selected-frame or page capture can only update the same Figma file. Capture the full file to replace this handoff." }, { status: 409 });
+    // A duplicated Figma file counts as the same design: screens pair by frame ID, then by unique name.
+    if (baseline.snapshot.source !== "figma") {
+      return jsonResponse({ error: "A selected-frame or page capture can only update a Figma handoff. Capture the full file to replace this handoff." }, { status: 409 });
     }
     const overviewAsset = baseline.assets.find((asset) => asset.assetKey === baseline.snapshot.overviewAssetKey);
     if (!overviewAsset) return jsonResponse({ error: "The previous canvas overview is missing. Capture the full page to replace it." }, { status: 409 });
@@ -116,7 +117,7 @@ export async function POST(request: Request) {
       overviewHeight: overviewAsset.height,
       canvasBounds: baseline.snapshot.canvasBounds ?? null,
       frames: baseline.snapshot.source === "figma"
-        ? baseline.snapshot.frames.map(({ sourceFrameId, sourcePageId, bounds, renderBounds }) => ({ sourceFrameId, sourcePageId, bounds, renderBounds }))
+        ? baseline.snapshot.frames.map(({ sourceFrameId, sourcePageId, bounds, renderBounds, name }) => ({ sourceFrameId, sourcePageId, bounds, renderBounds, name }))
         : [],
       pageLayout: baseline.snapshot.source === "figma" ? baseline.snapshot.sourceMetadata.pageLayout ?? [] : [],
     };
@@ -128,7 +129,7 @@ export async function POST(request: Request) {
     snapshot.frames,
     {
       sourceFileId: baseline.snapshot.sourceFileId,
-      exactSourceIdentity: baseline.snapshot.sourceFileId === snapshot.sourceFileId && !hasLegacyFileId,
+      exactSourceIdentity: !hasLegacyFileId,
     },
   );
   const replacementCandidates = scope === "selected" || scope === "page"

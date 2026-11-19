@@ -64,6 +64,9 @@ test("explains one-sided frames when selected capture scopes have the same label
 
 test("badge labels stay short enough to leave room for the screen name", () => {
   assert.equal(comparisonFrameStatusShortLabel("only-in-after-capture"), "New");
-  assert.equal(comparisonFrameStatusShortLabel("only-in-before-capture"), "Removed");
+  assert.equal(comparisonFrameStatusShortLabel("only-in-before-capture"), null);
+  assert.equal(comparisonFrameStatusShortLabel("removed"), null);
+  assert.equal(comparisonFrameStatusShortLabel("unchanged"), null);
+  assert.equal(comparisonFrameStatusShortLabel("added"), "New");
   assert.equal(comparisonFrameStatusShortLabel("changed"), "Changed");
 });

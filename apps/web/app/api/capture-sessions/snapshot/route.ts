@@ -318,8 +318,9 @@ export async function POST(request: Request) {
   if (baselineVersionId && !baseline) return jsonResponse({ error: "The replacement baseline could not be loaded." }, { status: 409 });
   logStage("baseline_loaded");
   if (isPartialCapture && baseline) {
-    if (baseline.snapshot.source !== "figma" || baseline.snapshot.sourceFileId !== snapshot.sourceFileId) {
-      return jsonResponse({ error: "A selected-frame or page capture can only update the same Figma file. Capture the full file to replace this handoff." }, { status: 409 });
+    // A duplicated Figma file counts as the same design: screens pair by frame ID, then by unique name.
+    if (baseline.snapshot.source !== "figma") {
+      return jsonResponse({ error: "A selected-frame or page capture can only update a Figma handoff. Capture the full file to replace this handoff." }, { status: 409 });
     }
   }
 

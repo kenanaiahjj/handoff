@@ -215,10 +215,8 @@ export function FrameNavigator({
           // In select mode "selected" means marked for removal; otherwise it's the open screen.
           const selected = selecting ? picked.has(frame.id) : frame.id === activeFrameId;
           const status = frameStatuses[frame.id];
-          const statusLabel = status && status !== "unchanged" ? comparisonFrameStatusShortLabel(status) : null;
-          const statusTone = status === "added" || status === "only-in-after-capture" ? "bg-[#183a2d] text-success"
-            : status === "removed" || status === "only-in-before-capture" ? "bg-[#3b2525] text-danger"
-              : "bg-[#43331f] text-[#efae3d]";
+          const statusLabel = comparisonFrameStatusShortLabel(status);
+          const statusTone = statusLabel === "New" ? "bg-[#183a2d] text-success" : "bg-[#43331f] text-[#efae3d]";
           return (
             <li data-frame-id={frame.id} key={frame.id}>
               <button

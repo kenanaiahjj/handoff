@@ -318,3 +318,36 @@ test("merged captures retain layer export assets and remap incoming layer refere
   assert.equal(merged.snapshot.assets.some((item) => item.key === merged.incomingAssetKeyMap.get("home-icon-new")), true);
   assert.equal(merged.snapshot.frames[0].nodes[0].sourcePayload.layerExportAssetKey, merged.incomingAssetKeyMap.get("home-icon-new"));
 });
+
+test("a capture from a duplicated Figma file updates the handoff, pairing screens by unique frame name", () => {
+  const named = (id, name, x) => ({ ...frame(id, "page-1", `${id}-render`, x), name });
+  const baseline = snapshot([
+    named("1:1", "Home", 0),
+    named("1:2", "Checkout", 120),
+    named("1:3", "Profile", 240),
+  ], "all top-level frames and components on current page");
+  // The duplicate gave Checkout a new frame ID; designers kept its name.
+  const incoming = snapshot([named("9:9", "Checkout", 120), named("9:10", "Settings", 360)], "selected frames and components");
+  incoming.sourceFileId = "file-duplicate";
+  incoming.assets.find((item) => item.key === "9:9-render").sha256 = "edited-checkout";
+
+  const merged = mergeFigmaCaptureSnapshots({ baseline, incoming, baselineVersionId: "version-1", assetPrefix: "capture-test", frameMatches: [] });
+  assert.ok(merged, "a duplicated file must merge into the handoff");
+  assert.deepEqual(merged.snapshot.frames.map((item) => item.name), ["Home", "Checkout", "Profile", "Settings"]);
+
+  const diff = diffSnapshots({ versionId: "version-1", snapshot: baseline }, { versionId: "version-2", snapshot: merged.snapshot });
+  assert.deepEqual(Object.fromEntries(diff.frames.map((item) => [item.name, item.status])), {
+    Home: "unchanged",
+    Checkout: "changed",
+    Profile: "unchanged",
+    Settings: "added",
+  });
+});
+
+test("duplicate frame names are not auto-paired and stay for the designer to confirm", () => {
+  const named = (id, name, x) => ({ ...frame(id, "page-1", `${id}-render`, x), name });
+  const baseline = snapshot([named("1:1", "Card", 0), named("1:2", "Card", 120)], "all top-level frames and components on current page");
+  const incoming = snapshot([named("9:9", "Card", 0)], "selected frames and components");
+  const plan = createFigmaCaptureMergePlan({ baseline, incoming });
+  assert.deepEqual(plan.replacedFrameIds, []);
+});

@@ -1163,6 +1163,9 @@ export function diffSnapshots(
   const beforeFrameIds = new Set(beforeFrames.map((frame) => frame.sourceFrameId));
   const hasSharedFrameId = afterFrames.some((frame) => beforeFrameIds.has(frame.sourceFrameId));
   const exactSourceIdentity = fromFileId === toFileId && !hasLegacyFileId;
+  // Versions of one handoff are the same design even when captured from a duplicated Figma file,
+  // so screens still pair by frame ID and then by unique frame name. Only legacy IDs are unverifiable.
+  const pairsAsOneDesign = !hasLegacyFileId;
   const inferredSourceIdentity = hasLegacyFileId && (sourceNamesMatch || hasSharedFrameId);
   const sourceIdentity: SnapshotSourceIdentity = exactSourceIdentity
     ? "exact"
@@ -1181,9 +1184,9 @@ export function diffSnapshots(
         ? null
         : { status: "different", before: beforeScope, after: afterScope };
   }
-  const canInferFrameMembership = canInferFrameMembershipChanges(from, to, sourceIdentity, captureScopeComparison);
-  const sharedSourceFileId = exactSourceIdentity
-    ? fromFileId
+  const canInferFrameMembership = canInferFrameMembershipChanges(from, to, pairsAsOneDesign ? "exact" : sourceIdentity, captureScopeComparison);
+  const sharedSourceFileId = pairsAsOneDesign
+    ? toFileId
     : inferredSourceIdentity
       ? fromFileId === legacyFileId ? toFileId : fromFileId
       : null;
@@ -1214,7 +1217,7 @@ export function diffSnapshots(
   const matchedAfterFrameKeys = new Set(explicitPairs.map((pair) => pair.afterKey));
   const framePairs = [...explicitPairs];
 
-  if (exactSourceIdentity) {
+  if (pairsAsOneDesign) {
     const beforeFramesByName = indexUniqueFramesByName(beforeFrames);
     const afterFramesByName = indexUniqueFramesByName(afterFrames);
     for (const [name, before] of beforeFramesByName) {

@@ -115,7 +115,7 @@ type CanvasViewportProps = {
 };
 
 function statusLabel(status: CanvasFrameChangeStatus | undefined) {
-  return status && status !== "unchanged" ? comparisonFrameStatusShortLabel(status) : null;
+  return comparisonFrameStatusShortLabel(status);
 }
 
 type MeasuredRect = {
@@ -593,9 +593,8 @@ export function CanvasViewport({
             const label = statusLabel(status);
             const selected = screen.id === selectedFrameId;
             const showLabel = shouldShowCanvasFrameLabel(visualScale, selected, screens.length);
-              const isNew = status === "added" || status === "only-in-after-capture";
-              const isGone = status === "removed" || status === "only-in-before-capture";
-              const borderColor = status === "changed" ? "#e3a13a" : isNew ? "#55c987" : isGone ? "#df7770" : selected ? "#888888" : "#4c4c4c";
+              const isNew = label === "New";
+              const borderColor = label === "Changed" ? "#e3a13a" : isNew ? "#55c987" : selected ? "#888888" : "#4c4c4c";
             return (
               <div
                 className="pointer-events-none absolute"
@@ -651,8 +650,8 @@ export function CanvasViewport({
                             padding: 2 * inverseScale + "px " + 4 * inverseScale + "px",
                             borderRadius: 4 * inverseScale + "px",
                             fontSize: 10 * inverseScale + "px",
-                            color: status === "added" || status === "only-in-after-capture" ? "#76e0a5" : status === "removed" || status === "only-in-before-capture" ? "#f18b84" : "#ffca71",
-                            backgroundColor: status === "added" || status === "only-in-after-capture" ? "#173b2b" : status === "removed" || status === "only-in-before-capture" ? "#3b2323" : "#46351e",
+                            color: isNew ? "#76e0a5" : "#ffca71",
+                            backgroundColor: isNew ? "#173b2b" : "#46351e",
                           }}
                         >
                           {label}
