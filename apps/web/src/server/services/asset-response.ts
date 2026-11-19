@@ -2,8 +2,17 @@ import { createHash } from "node:crypto";
 import { verifyRenderAssetBytes } from "./import-snapshot";
 import { assetEtag, notModifiedResponse } from "./asset-caching";
 import { objectStore } from "../storage/supabase-object-store";
+import { canMakeAssetVariant, ensureAssetVariant, parseAssetVariantSize } from "./asset-variants";
 
 const maxInlineSvgBytes = 2 * 1024 * 1024;
+/**
+ * Images redirect to a signed Storage URL. The redirect is cached for a little less than the URL
+ * lives, so within that window the browser reuses the same URL and its cached image instead of
+ * asking the server again and downloading the image again on every visit.
+ */
+const signedUrlSeconds = 60 * 60;
+const redirectCacheSeconds = 55 * 60;
+// Redirects carry no ETag: revalidating one would let the browser keep a URL that has expired.
 const imageTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
 
 export type AssetResponseInput = {
@@ -20,11 +29,32 @@ function safeFileName(fileName: string) {
 
 /** Authorize at the caller, then redirect large/private assets to short-lived Storage URLs. */
 export async function createAssetResponse(request: Request, asset: AssetResponseInput) {
+  const searchParams = new URL(request.url).searchParams;
+  const isImage = imageTypes.has(asset.contentType);
+  const download = searchParams.get("download") === "1" || !isImage;
+  const variantSize = !download && canMakeAssetVariant(asset.contentType) ? parseAssetVariantSize(searchParams.get("size")) : null;
   const unchanged = notModifiedResponse(request, asset.sha256);
   if (unchanged) return unchanged;
 
-  const isImage = imageTypes.has(asset.contentType);
-  const download = new URL(request.url).searchParams.get("download") === "1" || !isImage;
+  if (variantSize) {
+    try {
+      const variantKey = await ensureAssetVariant(asset.objectKey, variantSize);
+      const url = await objectStore.createSignedDownloadUrl(variantKey, { expiresIn: signedUrlSeconds, download: false });
+      return new Response(null, {
+        status: 307,
+        headers: {
+          Location: url,
+          "Cache-Control": `private, max-age=${redirectCacheSeconds}`,
+          "Referrer-Policy": "no-referrer",
+          "X-Content-Type-Options": "nosniff",
+        },
+      });
+    } catch (error) {
+      // Fall back to the full-size original rather than leaving a hole in the canvas.
+      console.warn("[assets] Could not make a smaller copy; serving the original:", error instanceof Error ? error.message : error);
+    }
+  }
+
   const safeName = safeFileName(asset.fileName);
   const encodedName = encodeURIComponent(safeName);
 
@@ -54,15 +84,15 @@ export async function createAssetResponse(request: Request, asset: AssetResponse
   }
 
   const url = await objectStore.createSignedDownloadUrl(asset.objectKey, {
-    expiresIn: 300,
+    expiresIn: download ? 300 : signedUrlSeconds,
     download: download ? safeName : false,
   });
   return new Response(null, {
     status: 307,
     headers: {
       Location: url,
-      "Cache-Control": "private, no-store",
-      ETag: assetEtag(asset.sha256),
+      // Downloads stay uncached and short-lived; inline images reuse their URL (see above).
+      "Cache-Control": download ? "private, no-store" : `private, max-age=${redirectCacheSeconds}`,
       "Referrer-Policy": "no-referrer",
       "X-Content-Type-Options": "nosniff",
     },

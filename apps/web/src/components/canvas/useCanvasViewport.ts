@@ -36,11 +36,53 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   // False until the first fit or restore, so the canvas isn't shown at the placeholder zoom.
   const [fitted, setFitted] = useState(false);
-  const [transform, setTransform] = useState<CanvasTransform>({
+  const [transform, setTransformState] = useState<CanvasTransform>({
     scale: 0.3,
     offsetX: 0,
     offsetY: 0,
   });
+  // Wheel, trackpad and drag events can arrive far faster than the screen refreshes (and each one
+  // re-renders the canvas), so gestures update `latestRef` and commit at most once per frame.
+  const latestRef = useRef(transform);
+  const frameRequestRef = useRef<number | null>(null);
+  // True while a gesture is moving the canvas, so it can be promoted to its own GPU layer.
+  const [interacting, setInteracting] = useState(false);
+  const idleTimerRef = useRef<number | null>(null);
+
+  const markInteracting = useCallback(() => {
+    setInteracting(true);
+    if (idleTimerRef.current !== null) window.clearTimeout(idleTimerRef.current);
+    idleTimerRef.current = window.setTimeout(() => {
+      idleTimerRef.current = null;
+      setInteracting(false);
+    }, 180);
+  }, []);
+
+  /** Applies a view right away (fit, focus, restore), dropping any gesture frame still queued. */
+  const setTransform = useCallback((next: CanvasTransform) => {
+    if (frameRequestRef.current !== null) {
+      cancelAnimationFrame(frameRequestRef.current);
+      frameRequestRef.current = null;
+    }
+    latestRef.current = next;
+    setTransformState(next);
+  }, []);
+
+  /** A gesture step: builds on the newest view (including steps not yet drawn) and draws next frame. */
+  const updateTransform = useCallback((update: (current: CanvasTransform) => CanvasTransform) => {
+    latestRef.current = update(latestRef.current);
+    markInteracting();
+    if (frameRequestRef.current !== null) return;
+    frameRequestRef.current = requestAnimationFrame(() => {
+      frameRequestRef.current = null;
+      setTransformState(latestRef.current);
+    });
+  }, [markInteracting]);
+
+  useEffect(() => () => {
+    if (frameRequestRef.current !== null) cancelAnimationFrame(frameRequestRef.current);
+    if (idleTimerRef.current !== null) window.clearTimeout(idleTimerRef.current);
+  }, []);
 
   const fitToFrame = useCallback(() => {
     const container = containerRef.current;
@@ -58,7 +100,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
 
     setTransform({ scale, offsetX: 0, offsetY: 0 });
     setFitted(true);
-  }, [frameHeight, frameWidth]);
+  }, [frameHeight, frameWidth, setTransform]);
 
   // Layout changes (panels opening, window resizes) refit only until the person pans, zooms or
   // jumps to a screen; after that their view is kept.
@@ -70,7 +112,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
       return;
     }
     fitToFrame();
-  }, [fitToFrame]);
+  }, [fitToFrame, setTransform]);
 
   useEffect(() => {
     restoreRef.current = readView(memoryKey);
@@ -128,15 +170,13 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
       offsetX: -(rect.x + rect.width / 2 - frameWidth / 2) * scale,
       offsetY: -(rect.y + rect.height / 2 - frameHeight / 2) * scale,
     });
-  }, [frameHeight, frameWidth]);
+  }, [frameHeight, frameWidth, setTransform]);
 
   const zoomBy = useCallback((factor: number) => {
     touchedRef.current = true;
-    setTransform((current) => ({
-      ...current,
-      scale: Math.max(MIN_SCALE, Math.min(MAX_SCALE, current.scale * factor)),
-    }));
-  }, []);
+    const current = latestRef.current;
+    setTransform({ ...current, scale: Math.max(MIN_SCALE, Math.min(MAX_SCALE, current.scale * factor)) });
+  }, [setTransform]);
 
   const zoomAt = useCallback((factor: number, point: { x: number; y: number }) => {
     const container = containerRef.current;
@@ -146,7 +186,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
     const pointer = { x: point.x - rect.left, y: point.y - rect.top };
     touchedRef.current = true;
 
-    setTransform((current) => {
+    updateTransform((current) => {
       const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, current.scale * factor));
       const contentPoint = {
         x: (pointer.x - center.x - current.offsetX) / current.scale,
@@ -159,21 +199,22 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
         offsetY: pointer.y - center.y - contentPoint.y * scale,
       };
     });
-  }, []);
+  }, [updateTransform]);
 
   const panBy = useCallback((deltaX: number, deltaY: number) => {
     touchedRef.current = true;
-    setTransform((current) => ({
+    updateTransform((current) => ({
       ...current,
       offsetX: current.offsetX + deltaX,
       offsetY: current.offsetY + deltaY,
     }));
-  }, []);
+  }, [updateTransform]);
 
   return {
     containerRef,
     viewportSize,
     transform,
+    interacting,
     fitted,
     fitToFrame: fitByUser,
     zoomToRect,

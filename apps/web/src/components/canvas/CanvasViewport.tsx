@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { RetryingCanvasImage } from "./RetryingImage";
-import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent } from "react";
 import type { CanvasFrameChangeStatus, CanvasFrameOption } from "./FrameNavigator";
 import { useCanvasViewport } from "./useCanvasViewport";
 import { attachCanvasWheelZoom } from "./canvas-wheel-zoom";
@@ -19,11 +19,21 @@ import { getCanvasFrameLabelMaxWidth, shouldShowCanvasFrameLabel } from "./canva
 import { getElementDistanceGuides, type ElementRect } from "./element-distance-guides";
 import { formatPrecisePixelValue } from "./format-captured-measurement";
 import { overviewClipPath } from "./overview-clip";
+import { CanvasScreenImages } from "./CanvasScreenImages";
+import { resolutionNeed, sameScreenIds, screensInView } from "./canvas-screen-culling";
+
+/** Re-reads devicePixelRatio when the window moves to a screen with a different density, or zooms. */
+function subscribeToPixelRatio(onChange: () => void) {
+  const query = window.matchMedia(`(resolution: ${window.devicePixelRatio || 1}dppx)`);
+  query.addEventListener("change", onChange);
+  window.addEventListener("resize", onChange);
+  return () => {
+    query.removeEventListener("change", onChange);
+    window.removeEventListener("resize", onChange);
+  };
+}
 
 /** CSS mask that hides the given rectangles of an image (xor/exclude of a full layer and each rect). */
-/** The canvas colour behind the dot grid (.review-dot-grid). */
-const canvasBackground = "var(--background)";
-
 function cutOutMaskStyle(rects: CanvasFrameOption["maskRects"]) {
   if (!rects?.length) return {};
   const layers = ["linear-gradient(#000 0 0)", ...rects.map(() => "linear-gradient(#000 0 0)")].join(", ");
@@ -179,7 +189,7 @@ export function CanvasViewport({
   const [altHeld, setAltHeld] = useState(false);
   const [hoveredNode, setHoveredNode] = useState<{ nodeId: string; frameId: string } | null>(null);
   const hoveredNodeId = hoveredNode?.frameId === frame.id ? hoveredNode.nodeId : null;
-  const { containerRef, viewportSize, transform, fitted, fitToFrame, zoomToRect, zoomBy, zoomAt, panBy } = useCanvasViewport(
+  const { containerRef, viewportSize, transform, interacting, fitted, fitToFrame, zoomToRect, zoomBy, zoomAt, panBy } = useCanvasViewport(
     frame.sourceWidth,
     frame.sourceHeight,
     viewMemoryKey,
@@ -365,7 +375,13 @@ export function CanvasViewport({
       y: position.y,
     }];
   });
-  const inverseScale = 1 / Math.max(transform.scale, 0.01);
+  // Borders, labels and image sizes follow the zoom only once a gesture settles. While zooming they
+  // stay as they were, so the canvas layer's content doesn't change and the browser can scale the
+  // picture it already drew instead of redrawing every screen on every frame.
+  const [settledScale, setSettledScale] = useState(transform.scale);
+  if (!interacting && settledScale !== transform.scale) setSettledScale(transform.scale);
+  const visualScale = interacting ? settledScale : transform.scale;
+  const inverseScale = 1 / Math.max(visualScale, 0.01);
   // Flip the comment popover to the pin's left when it would run off the viewport's right edge.
   const popoverFlips = (x: number) =>
     (x - frame.sourceWidth / 2) * transform.scale + transform.offsetX + viewportSize.width / 2 + 340 > viewportSize.width;
@@ -390,28 +406,41 @@ export function CanvasViewport({
     // Only re-center when a different thread opens, not on every pan or zoom.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openThreadKey]);
-  const canvasFrameLabelMaxWidth = getCanvasFrameLabelMaxWidth(viewportSize.width, transform.scale);
+  const canvasFrameLabelMaxWidth = getCanvasFrameLabelMaxWidth(viewportSize.width, visualScale);
   const overviewResolutionScale = Math.min(
     frame.pixelWidth / Math.max(frame.sourceWidth, 1),
     frame.pixelHeight / Math.max(frame.sourceHeight, 1),
   );
-  // Sharp screen images sit on top of the overview image, which is soft when zoomed in. Where a
-  // screen is transparent (text with no fill, its edges) the soft copy would show through as a
-  // glow, so each screen gets a backdrop in the canvas colour once its sharp image has loaded.
-  // The backdrop reaches about one overview pixel past the edge to cover the soft image's bleed.
-  const [loadedScreenIds, setLoadedScreenIds] = useState<ReadonlySet<string>>(() => new Set());
-  const markScreenLoaded = useCallback((id: string) => {
-    setLoadedScreenIds((current) => (current.has(id) ? current : new Set(current).add(id)));
-  }, []);
   const imageRenderPlan = getCanvasImageRenderPlan({
     kind: frame.kind,
     exact: frame.exact,
     changedOnly,
     frameVisible: visibleScreenIds.has(frame.id),
     hasScreenFrames: screens.length > 0,
-    zoomScale: transform.scale,
+    zoomScale: visualScale,
     overviewResolutionScale,
   });
+  // Only screens near the viewport are drawn. The list keeps its identity while the same screens
+  // stay in view, so the memoised image layer doesn't re-render as the canvas pans.
+  const inViewScreens = frame.kind === "overview"
+    ? screensInView(screens, {
+        frameSourceX: frame.sourceX,
+        frameSourceY: frame.sourceY,
+        frameWidth: frame.sourceWidth,
+        frameHeight: frame.sourceHeight,
+        viewportWidth: viewportSize.width,
+        viewportHeight: viewportSize.height,
+        offsetX: transform.offsetX,
+        offsetY: transform.offsetY,
+        scale: transform.scale,
+      })
+    : screens;
+  const [stableInViewScreens, setStableInViewScreens] = useState(inViewScreens);
+  if (!sameScreenIds(stableInViewScreens, inViewScreens)) setStableInViewScreens(inViewScreens);
+  const devicePixelRatio = useSyncExternalStore(subscribeToPixelRatio, () => window.devicePixelRatio || 1, () => 1);
+  const imageNeed = resolutionNeed(visualScale, devicePixelRatio);
+  // The backdrop reaches about one overview pixel past the edge to cover the soft image's bleed.
+  const backdropBleed = Math.ceil(1.5 / Math.max(overviewResolutionScale, 0.05));
   const sourceOverlayNodes = frame.overlayNodes ?? frame.nodes;
   const overlayNodes = useMemo(
     () => frame.kind === "overview" && changedOnly
@@ -513,6 +542,8 @@ export function CanvasViewport({
             // Hidden until the first fit, so the canvas doesn't flash at a placeholder zoom while loading.
             visibility: fitted ? undefined : "hidden",
             transformOrigin: "center center",
+            // Its own GPU layer only while moving; afterwards it's redrawn sharp at the new zoom.
+            willChange: interacting ? "transform" : undefined,
           }}
         >
           {imageRenderPlan.showBaseImage ? (
@@ -529,50 +560,20 @@ export function CanvasViewport({
             />
           ) : null}
 
-          {imageRenderPlan.showFrameImages && imageRenderPlan.showBaseImage ? screens.map((screen) => {
-            if (!loadedScreenIds.has(screen.id)) return null;
-            const bleed = Math.ceil(1.5 / Math.max(overviewResolutionScale, 0.05));
-            return (
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute"
-                key={"backdrop:" + screen.id}
-                style={{
-                  left: screen.sourceX - frame.sourceX,
-                  top: screen.sourceY - frame.sourceY,
-                  width: screen.sourceWidth,
-                  height: screen.sourceHeight,
-                  backgroundColor: canvasBackground,
-                  boxShadow: `0 0 0 ${bleed}px ${canvasBackground}`,
-                }}
-              />
-            );
-          }) : null}
-
-          {imageRenderPlan.showFrameImages ? screens.map((screen) => (
-            <RetryingCanvasImage
-              alt={(screen.fileName.toLowerCase().endsWith(".svg") ? "Figma vector render: " : "Frozen design render: ") + screen.name}
-              className="pointer-events-none absolute select-none object-fill"
-              draggable={false}
-              height={screen.pixelHeight}
-              key={screen.id}
-              loading="lazy"
-              onLoad={() => markScreenLoaded(screen.id)}
-              src={screen.imageSrc}
-              style={{
-                left: screen.sourceX - frame.sourceX,
-                top: screen.sourceY - frame.sourceY,
-                width: screen.sourceWidth,
-                height: screen.sourceHeight,
-              }}
-              unoptimized
-              width={screen.pixelWidth}
+          {imageRenderPlan.showFrameImages ? (
+            <CanvasScreenImages
+              backdrops={imageRenderPlan.showBaseImage}
+              bleed={backdropBleed}
+              need={imageNeed}
+              originX={frame.sourceX}
+              originY={frame.sourceY}
+              screens={stableInViewScreens}
             />
-          )) : null}
+          ) : null}
 
           {layoutGridsVisible
             ? frame.kind === "overview" && frame.exact
-              ? screens.map((screen) => (
+              ? stableInViewScreens.map((screen) => (
                   <LayoutGridOverlay
                     frame={screen}
                     key={screen.id}
@@ -583,11 +584,11 @@ export function CanvasViewport({
               : frame.kind === "frame" ? <LayoutGridOverlay frame={frame} /> : null
             : null}
 
-            {frame.kind === "overview" && frame.exact ? screens.map((screen) => {
+            {frame.kind === "overview" && frame.exact ? stableInViewScreens.map((screen) => {
             const status = frameStatuses[screen.id];
             const label = statusLabel(status);
             const selected = screen.id === selectedFrameId;
-            const showLabel = shouldShowCanvasFrameLabel(transform.scale, selected, screens.length);
+            const showLabel = shouldShowCanvasFrameLabel(visualScale, selected, screens.length);
               const isNew = status === "added" || status === "only-in-after-capture";
               const isGone = status === "removed" || status === "only-in-before-capture";
               const borderColor = status === "changed" ? "#e3a13a" : isNew ? "#55c987" : isGone ? "#df7770" : selected ? "#888888" : "#4c4c4c";
