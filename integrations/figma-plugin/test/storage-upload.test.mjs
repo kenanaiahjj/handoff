@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   buildFinalizeManifest,
   createUploadSessionState,
+  gzipSnapshotBytes,
   requestCaptureUploadIntent,
   uploadCaptureAssets,
 } from "../src/storage-upload.ts";
@@ -366,4 +367,47 @@ test("does not retry a rejected upload, and stops retrying after the last attemp
   const offline = FakeXHRFactory({ PUT: () => { dropped += 1; return { error: true }; } });
   await assert.rejects(() => uploadCaptureAssets({ intent, snapshotAsset, assets: [], expectedStorageOrigin: storageUrl, session: createUploadSessionState(), xhrFactory: offline.xhrFactory, retryDelaysMs: [0, 0] }), /network connection was interrupted/);
   assert.equal(dropped, 3);
+});
+
+test("gzips snapshot JSON losslessly and declares it as a gzip upload", async () => {
+  const { gunzipSync } = await import("node:zlib");
+  const json = new TextEncoder().encode(JSON.stringify({ frames: Array.from({ length: 2000 }, (_, i) => ({ id: `1:${i}`, name: "Card", x: i })) }));
+  const gzipped = await gzipSnapshotBytes(json);
+  assert.ok(gzipped && gzipped.byteLength < json.byteLength / 4);
+  assert.deepEqual(new Uint8Array(gunzipSync(gzipped)), json);
+
+  let sent;
+  await requestCaptureUploadIntent({
+    handoffOrigin: "https://handoff.example.com",
+    expectedStorageOrigin: storageUrl,
+    token: "ash_cap_x",
+    snapshot: { sizeBytes: gzipped.byteLength, sha256: "c".repeat(64), encoding: "gzip" },
+    assets: [],
+    fetcher: async (_url, init) => {
+      sent = JSON.parse(init.body);
+      return makeResponse({ storageUrl, bucket, snapshot: { path: snapshotPath, token: "t" }, uploads: [] });
+    },
+  });
+  assert.deepEqual(sent.snapshot, { sizeBytes: gzipped.byteLength, sha256: "c".repeat(64), encoding: "gzip" });
+
+  const { xhrFactory, requests } = FakeXHRFactory();
+  await uploadCaptureAssets({
+    intent: { storageUrl, bucket, snapshot: { path: snapshotPath, token: "t" }, uploads: [] },
+    snapshotAsset: { fileName: "snapshot.json.gz", contentType: "application/octet-stream", sizeBytes: gzipped.byteLength, sha256: "c".repeat(64), bytes: gzipped },
+    assets: [],
+    expectedStorageOrigin: storageUrl,
+    session: createUploadSessionState(),
+    xhrFactory,
+  });
+  assert.equal(requests[0].headers["content-type"], "application/octet-stream");
+});
+
+test("explains a Storage size rejection instead of showing a bare 413", async () => {
+  const intent = { storageUrl, bucket, snapshot: { path: snapshotPath, token: "t" }, uploads: [] };
+  const snapshotAsset = { fileName: "snapshot.json.gz", contentType: "application/octet-stream", sizeBytes: 1, sha256: "1".repeat(64), bytes: new Uint8Array([1]) };
+  const tooBig = FakeXHRFactory({ PUT: () => ({ status: 413, responseText: "Payload too large" }) });
+  await assert.rejects(
+    () => uploadCaptureAssets({ intent, snapshotAsset, assets: [], expectedStorageOrigin: storageUrl, session: createUploadSessionState(), xhrFactory: tooBig.xhrFactory, retryDelaysMs: [0] }),
+    /snapshot\.json\.gz .*per-file upload limit/,
+  );
 });

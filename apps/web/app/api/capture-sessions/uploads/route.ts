@@ -18,6 +18,8 @@ const requestSchema = z.object({
   snapshot: z.object({
     sizeBytes: z.number().int().positive().max(MAX_SNAPSHOT_JSON_BYTES),
     sha256: z.string().regex(/^[a-f0-9]{64}$/),
+    // Newer plugins gzip the snapshot JSON so large pages fit Storage's per-file limit.
+    encoding: z.literal("gzip").optional(),
   }).strict(),
   assets: z.array(assetSchema).max(20_000),
   renew: z.boolean().optional(),
@@ -96,7 +98,14 @@ export async function POST(request: Request) {
       if (rows.some((row) => row.finalizedAt)) throw new Error("Capture uploads have already been finalized.");
 
       const declarations = [
-        { kind: "snapshot" as const, assetKey: null, fileName: "snapshot.json", contentType: "application/json", ...parsed.data.snapshot },
+        {
+          kind: "snapshot" as const,
+          assetKey: null,
+          fileName: parsed.data.snapshot.encoding === "gzip" ? "snapshot.json.gz" : "snapshot.json",
+          contentType: parsed.data.snapshot.encoding === "gzip" ? "application/octet-stream" : "application/json",
+          sizeBytes: parsed.data.snapshot.sizeBytes,
+          sha256: parsed.data.snapshot.sha256,
+        },
         ...parsed.data.assets.map((asset) => ({ kind: "asset" as const, ...asset })),
       ];
       const result: typeof declaredUploads = [];

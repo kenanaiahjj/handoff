@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { createHash, randomUUID } from "node:crypto";
+import { gunzipSync } from "node:zlib";
 import { z } from "zod";
 import { hashSnapshotPayload, MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES, normalizeFigmaCaptureScope, snapshotEnvelopeSchema, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { notifyNewVersion } from "@/src/server/services/slack";
@@ -154,15 +155,28 @@ export async function POST(request: Request) {
   const uploadedSnapshot = await objectStore.get(snapshotUpload.objectKey);
   if (!uploadedSnapshot) return retryUploadResponse("The snapshot upload is missing. Upload it again.");
   const snapshotChecksum = createHash("sha256").update(uploadedSnapshot.bytes).digest("hex");
-  if (uploadedSnapshot.contentType !== "application/json" ||
+  const snapshotIsGzipped = snapshotUpload.contentType === "application/octet-stream";
+  if (uploadedSnapshot.contentType !== snapshotUpload.contentType ||
+      (snapshotUpload.contentType !== "application/json" && !snapshotIsGzipped) ||
       uploadedSnapshot.bytes.byteLength !== snapshotUpload.sizeBytes ||
       uploadedSnapshot.bytes.byteLength > MAX_SNAPSHOT_JSON_BYTES ||
       snapshotChecksum !== snapshotUpload.sha256) {
     return retryUploadResponse("The snapshot upload failed its size, content type, or checksum check.");
   }
 
+  let snapshotJsonBytes: Buffer;
+  try {
+    snapshotJsonBytes = snapshotIsGzipped
+      ? gunzipSync(uploadedSnapshot.bytes, { maxOutputLength: MAX_SNAPSHOT_JSON_BYTES })
+      : Buffer.from(uploadedSnapshot.bytes);
+  } catch (error) {
+    const tooLarge = (error as { code?: string }).code === "ERR_BUFFER_TOO_LARGE" || error instanceof RangeError;
+    return tooLarge
+      ? jsonResponse({ error: `The structured snapshot exceeds Handoff’s ${Math.round(MAX_SNAPSHOT_JSON_BYTES / (1024 * 1024))} MiB JSON limit. Capture fewer frames in each update.` }, { status: 413 })
+      : jsonResponse({ error: "The uploaded snapshot could not be unzipped." }, { status: 400 });
+  }
   let json: unknown;
-  try { json = JSON.parse(Buffer.from(uploadedSnapshot.bytes).toString("utf8")); }
+  try { json = JSON.parse(snapshotJsonBytes.toString("utf8")); }
   catch { return jsonResponse({ error: "The uploaded snapshot is not valid JSON." }, { status: 400 }); }
   const parsedSnapshot = snapshotEnvelopeSchema.safeParse(json);
   if (!parsedSnapshot.success) {

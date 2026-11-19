@@ -33,7 +33,10 @@ import { requireExactOrigin } from "./network-access.mjs";
 import {
   buildFinalizeManifest,
   createUploadSessionState,
+  gzipSnapshotBytes,
   requestCaptureUploadIntent,
+  SNAPSHOT_GZIP_CONTENT_TYPE,
+  SNAPSHOT_JSON_CONTENT_TYPE,
   renewCaptureSession,
   uploadCaptureAssets,
   type CaptureUploadIntent,
@@ -919,10 +922,13 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
       vectorRenders: CaptureAssetBytes[],
       layerRenders: CaptureReadyMessage["layerRenders"],
     ) => {
-      const snapshotBytes = encodeUtf8(JSON.stringify(snapshot));
+      const jsonBytes = encodeUtf8(JSON.stringify(snapshot));
+      // Gzip keeps every byte of the capture but makes large pages fit Storage's per-file limit.
+      const gzippedBytes = await gzipSnapshotBytes(jsonBytes);
+      const snapshotBytes = gzippedBytes ?? jsonBytes;
       const snapshotAsset: SnapshotUploadAsset = {
-        fileName: "snapshot.json",
-        contentType: "application/json",
+        fileName: gzippedBytes ? "snapshot.json.gz" : "snapshot.json",
+        contentType: gzippedBytes ? SNAPSHOT_GZIP_CONTENT_TYPE : SNAPSHOT_JSON_CONTENT_TYPE,
         sizeBytes: snapshotBytes.byteLength,
         sha256: await sha256(snapshotBytes),
         bytes: snapshotBytes,
@@ -937,7 +943,11 @@ async function finishUpload(frameMatches: FrameReplacementMatch[]) {
           handoffOrigin: pending.origin,
           expectedStorageOrigin: __ASBIR_STORAGE_ORIGIN__,
           token: pending.token,
-          snapshot: { sizeBytes: snapshotAsset.sizeBytes, sha256: snapshotAsset.sha256 },
+          snapshot: {
+            sizeBytes: snapshotAsset.sizeBytes,
+            sha256: snapshotAsset.sha256,
+            ...(gzippedBytes ? { encoding: "gzip" as const } : {}),
+          },
           assets: assets.map(({ assetKey, fileName, contentType, sizeBytes, sha256: assetHash }) => ({
             assetKey,
             fileName,

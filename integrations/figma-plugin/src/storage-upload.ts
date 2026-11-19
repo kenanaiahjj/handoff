@@ -29,6 +29,22 @@ export type SnapshotUploadAsset = {
 
 export type RenderUploadAsset = UploadDescriptor & { bytes: Uint8Array };
 
+/** Snapshot JSON can be uploaded as is, or gzipped, which Storage keeps as an opaque binary file. */
+export const SNAPSHOT_JSON_CONTENT_TYPE = "application/json";
+export const SNAPSHOT_GZIP_CONTENT_TYPE = "application/octet-stream";
+
+/**
+ * Gzips the snapshot JSON before upload. Storage caps the size of a single file (50 MB on Supabase's
+ * Free plan), and the structured JSON of a large Figma page can be bigger than that. Gzip is lossless and
+ * usually shrinks it 8 to 15 times; the server unzips it before reading. Returns null where the browser
+ * has no CompressionStream, so the caller can upload the plain JSON instead.
+ */
+export async function gzipSnapshotBytes(bytes: Uint8Array): Promise<Uint8Array | null> {
+  if (typeof CompressionStream === "undefined") return null;
+  const stream = new Blob([bytes as BlobPart]).stream().pipeThrough(new CompressionStream("gzip"));
+  return new Uint8Array(await new Response(stream).arrayBuffer());
+}
+
 export type UploadSessionState = {
   snapshotComplete: boolean;
   completedAssetKeys: Set<string>;
@@ -67,7 +83,9 @@ function assertDescriptor(value: UploadDescriptor) {
 }
 
 function assertSnapshotDescriptor(value: Omit<SnapshotUploadAsset, "bytes">) {
-  if (!value.fileName || value.contentType !== "application/json") throw new Error("The snapshot upload must be JSON.");
+  if (!value.fileName || (value.contentType !== SNAPSHOT_JSON_CONTENT_TYPE && value.contentType !== SNAPSHOT_GZIP_CONTENT_TYPE)) {
+    throw new Error("The snapshot upload must be JSON or gzipped JSON.");
+  }
   if (!Number.isSafeInteger(value.sizeBytes) || value.sizeBytes < 0) throw new Error("The snapshot size is invalid.");
   if (!/^[a-f0-9]{64}$/i.test(value.sha256)) throw new Error("The snapshot SHA-256 is invalid.");
 }
@@ -127,7 +145,7 @@ export async function requestCaptureUploadIntent(input: {
   handoffOrigin: string;
   expectedStorageOrigin: string;
   token: string;
-  snapshot: { sizeBytes: number; sha256: string };
+  snapshot: { sizeBytes: number; sha256: string; encoding?: "gzip" };
   assets: UploadDescriptor[];
   renew?: boolean;
   signal?: AbortSignal;
@@ -135,8 +153,17 @@ export async function requestCaptureUploadIntent(input: {
 }): Promise<CaptureUploadIntent> {
   const fetcher = input.fetcher ?? fetch;
   const requestUrl = new URL("/api/capture-sessions/uploads", input.handoffOrigin);
-  const snapshot = { sizeBytes: input.snapshot.sizeBytes, sha256: input.snapshot.sha256 };
-  assertSnapshotDescriptor({ ...snapshot, fileName: "snapshot.json", contentType: "application/json" });
+  const snapshot = {
+    sizeBytes: input.snapshot.sizeBytes,
+    sha256: input.snapshot.sha256,
+    ...(input.snapshot.encoding === "gzip" ? { encoding: "gzip" as const } : {}),
+  };
+  assertSnapshotDescriptor({
+    sizeBytes: snapshot.sizeBytes,
+    sha256: snapshot.sha256,
+    fileName: snapshot.encoding === "gzip" ? "snapshot.json.gz" : "snapshot.json",
+    contentType: snapshot.encoding === "gzip" ? SNAPSHOT_GZIP_CONTENT_TYPE : SNAPSHOT_JSON_CONTENT_TYPE,
+  });
   input.assets.forEach(assertDescriptor);
   const requestInit: RequestInit = {
     method: "POST",
@@ -469,9 +496,21 @@ export async function uploadCaptureAssets(input: {
     input.onProgress?.(uploadedBytes, totalBytes);
   };
   for (const row of uploadRows) {
+    try {
+      await uploadRow(row);
+    } catch (error) {
+      throw explainStorageRejection(error, row.asset);
+    }
+  }
+  return {
+    snapshotPath: intent.snapshot.path,
+    assets: Object.fromEntries(intent.uploads.map(({ assetKey, path }) => [assetKey, path])),
+  };
+
+  async function uploadRow(row: (typeof uploadRows)[number]) {
     if (row.completed) {
       reportProgress(row.key, row.asset.sizeBytes);
-      continue;
+      return;
     }
     const progress = (loaded: number) => reportProgress(row.key, loaded);
     const retryDelays = input.retryDelaysMs ?? DEFAULT_RETRY_DELAYS_MS;
@@ -503,8 +542,16 @@ export async function uploadCaptureAssets(input: {
     if (row.key === snapshotKey) input.session.snapshotComplete = true;
     else input.session.completedAssetKeys.add(row.key);
   }
-  return {
-    snapshotPath: intent.snapshot.path,
-    assets: Object.fromEntries(intent.uploads.map(({ assetKey, path }) => [assetKey, path])),
-  };
+}
+
+/** Turns Storage's bare "413" into a message that names the file and says what to change. */
+export function explainStorageRejection(error: unknown, asset: { fileName: string; sizeBytes: number }) {
+  const status = (error as { status?: number })?.status;
+  const message = (error as { message?: string })?.message ?? "";
+  if (status !== 413 && !/maximum (allowed )?size|payload too large|exceeded the maximum/i.test(message)) return error;
+  const megabytes = (asset.sizeBytes / (1024 * 1024)).toFixed(1);
+  return Object.assign(new Error(
+    `Storage refused ${asset.fileName} (${megabytes} MB) because it is larger than the Supabase project's per-file upload limit. ` +
+    "Raise the limit in Supabase (Project Settings → Storage, and the handoff-assets bucket), or capture fewer frames at once.",
+  ), { status: 413, cause: error });
 }
