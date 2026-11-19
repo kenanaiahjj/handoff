@@ -10,7 +10,6 @@ import { WorkspaceShell } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 import { Avatar } from "@/src/components/Avatar";
 import { LocalTime } from "@/src/components/LocalTime";
-import { handoffStatusMeta, type HandoffReviewStatus } from "@/src/lib/handoff-status";
 
 export const instant = false;
 
@@ -18,10 +17,6 @@ type ActivityPageProps = { params: Promise<{ workspaceId: string }> };
 
 function describe(event: ActivityEvent) {
   if (event.kind === "version") return <>published version <span className="font-mono text-[12px] text-foreground">{event.detail}</span> of</>;
-  if (event.kind === "status") {
-    const meta = handoffStatusMeta[event.detail as HandoffReviewStatus];
-    return <>marked <span className="text-foreground">{meta?.label.toLowerCase() ?? event.detail}</span></>;
-  }
   return <>commented on</>;
 }
 
@@ -60,7 +55,7 @@ export default async function ActivityPage({ params }: ActivityPageProps) {
     >
       <main className="mx-auto w-full max-w-3xl px-5 py-7 sm:px-8 sm:py-9">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Activity</h1>
-        <p className="mt-2 text-sm leading-6 text-foreground-muted">New versions, comments and status changes across the handoffs you can see.</p>
+        <p className="mt-2 text-sm leading-6 text-foreground-muted">New versions and comments across the handoffs you can see.</p>
         {events.length ? (
           <div className="mt-8 space-y-8">
             {[...days].map(([key, dayEvents]) => (

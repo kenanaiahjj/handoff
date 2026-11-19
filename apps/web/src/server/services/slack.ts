@@ -192,8 +192,6 @@ export async function sendSlackDigest(digest: import("./digest").Digest, fetcher
   const lines: string[] = [];
   if (digest.openMentions) lines.push(`• *${digest.openMentions}* ${digest.openMentions === 1 ? "mention needs" : "mentions need"} your reply`);
   if (digest.newVersions) lines.push(`• *${digest.newVersions}* new ${digest.newVersions === 1 ? "version" : "versions"} this week`);
-  if (digest.inReview.length) lines.push(`• In review: ${digest.inReview.map((handoff) => link(handoff.path, handoff.name)).join(", ")}`);
-  if (digest.stale.length) lines.push(`• Going stale: ${digest.stale.map((handoff) => `${link(handoff.path, handoff.name)} (${handoff.days}d)`).join(", ")}`);
   const text = "Your week in Asbir Handoff";
   return sendSlackDirectMessages(
     [digest.email],

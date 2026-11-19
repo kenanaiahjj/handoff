@@ -12,8 +12,6 @@ import Link from "next/link";
 import { canSeeWholeWorkspace, countUpdatesByProject, filterProjectsForViewer, listViewerHome, listViewerUpdates } from "@/src/server/services/review-visibility";
 import { ViewerHome } from "@/src/components/shell/ViewerHome";
 import { listPinKeys } from "@/src/server/services/viewer-pins";
-import { listStaleHandoffs, staleAfterDays } from "@/src/server/services/workspace-activity";
-import { handoffStatusMeta } from "@/src/lib/handoff-status";
 import { listOpenMentions } from "@/src/server/services/mentions";
 import { NeedsYou } from "@/src/components/shell/NeedsYou";
 import { ProfileNudge } from "@/src/components/shell/ProfileNudge";
@@ -118,37 +116,6 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
         })()}
 
         <NeedsYou className="mt-6" initial={(await listOpenMentions(session.user.id, workspace.id, viewer))} />
-
-        {await (async () => {
-          const stale = await listStaleHandoffs(workspace.id, null);
-          if (!stale.length) return null;
-          return (
-            <section aria-labelledby="stale-title" className="workspace-pane mt-6 p-3 pt-4">
-              <div className="workspace-pane-heading px-2.5">
-                <h2 className="text-[14px] font-semibold text-foreground" id="stale-title">Going stale</h2>
-                <span className="workspace-pane-count text-[11px] tabular-nums">{stale.length}</span>
-              </div>
-              <p className="px-2.5 pb-2 text-[12px] text-foreground-subtle">No new version, comment or status change in {staleAfterDays}+ days.</p>
-              <ul className="workspace-list">
-                {stale.slice(0, 6).map((handoff) => {
-                  const days = Math.floor((Date.now() - new Date(handoff.lastActivityAt).getTime()) / 86_400_000);
-                  return (
-                    <li key={handoff.handoffId}>
-                      <Link className="workspace-list-item flex items-center gap-3 px-2.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/projects/${handoff.projectId}/handoffs/${handoff.handoffId}`}>
-                        <span aria-hidden="true" className={"size-1.5 shrink-0 rounded-full " + handoffStatusMeta[handoff.reviewStatus].dot} />
-                        <span className="min-w-0 flex-1">
-                          <span className="block truncate text-[13px] font-medium text-foreground">{handoff.handoffName}</span>
-                          <span className="block truncate text-[11px] text-foreground-subtle">{handoff.projectName} · {handoffStatusMeta[handoff.reviewStatus].label}</span>
-                        </span>
-                        <span className="shrink-0 font-mono text-[11px] text-foreground-subtle">{days}d quiet</span>
-                      </Link>
-                    </li>
-                  );
-                })}
-              </ul>
-            </section>
-          );
-        })()}
 
         <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
           <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} iconVersions={(await projectIconVersions(workspace.id))} pinnedIds={(await listPinKeys(session.user.id)).filter((key) => key.startsWith("project:")).map((key) => key.slice("project:".length))} />

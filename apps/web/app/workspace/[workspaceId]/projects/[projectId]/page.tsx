@@ -10,8 +10,6 @@ import { ProjectIcon, ProjectIconEditor } from "@/src/components/shell/ProjectIc
 import { listHandoffs } from "@/src/server/repositories/handoffs";
 import { listProjects } from "@/src/server/repositories/projects";
 import { ProjectPdInChargeForm } from "./project-actions";
-import { HandoffStatusChip } from "@/src/components/shell/HandoffStatus";
-import { handoffStatusMeta, type HandoffReviewStatus } from "@/src/lib/handoff-status";
 import { ProjectAccessPanel } from "@/src/components/shell/ProjectAccessPanel";
 import { listProjectAccess, listProjectTeam } from "@/src/server/services/project-access";
 import { ProjectTeamCard } from "@/src/components/shell/ProjectTeamCard";
@@ -27,7 +25,6 @@ export const instant = false;
 
 type ProjectPageProps = {
   params: Promise<{ workspaceId: string; projectId: string }>;
-  searchParams: Promise<{ status?: string }>;
 };
 
 type ProjectHandoff = {
@@ -38,10 +35,9 @@ type ProjectHandoff = {
   latestVersionAt: string | null;
   publishedVersionId: string | null;
   sharingMode: "workspace" | "invited" | "anyone";
-  reviewStatus: HandoffReviewStatus;
 };
 
-export default async function ProjectPage({ params, searchParams }: ProjectPageProps) {
+export default async function ProjectPage({ params }: ProjectPageProps) {
   const session = await getSessionForHeaders(await headers());
   if (!session) redirect("/sign-in");
 
@@ -64,13 +60,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
   const visible = (await visibleHandoffIds(workspaceId, viewer));
   const visibleHandoffs = allHandoffs.filter((handoff) => !visible || visible.has(handoff.id));
   if (visible && !visibleHandoffs.length) notFound();
-  const requestedStatus = (await searchParams).status;
-  const statusFilter = requestedStatus && requestedStatus in handoffStatusMeta ? (requestedStatus as HandoffReviewStatus) : null;
-  const statusCounts = visibleHandoffs.reduce<Record<string, number>>((counts, handoff) => {
-    counts[handoff.reviewStatus] = (counts[handoff.reviewStatus] ?? 0) + 1;
-    return counts;
-  }, {});
-  const handoffs = statusFilter ? visibleHandoffs.filter((handoff) => handoff.reviewStatus === statusFilter) : visibleHandoffs;
+  const handoffs = visibleHandoffs;
   if (!workspace) notFound();
   const [newness, projects] = await Promise.all([
     handoffNewness(session.user.id, handoffs.map((handoff) => handoff.id)),
@@ -107,30 +97,8 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           <section aria-labelledby="handoff-list-title" className="workspace-pane p-3 pt-4 sm:p-3 sm:pt-4" id="handoffs">
             <div className="workspace-pane-heading px-2.5">
               <h2 className="text-[14px] font-semibold text-foreground" id="handoff-list-title">Handoffs</h2>
-              <span className="workspace-pane-count font-mono text-[11px]">{visibleHandoffs.length.toString().padStart(2, "0")}</span>
+              <span className="workspace-pane-count font-mono text-[11px]">{visibleHandoffs.length}</span>
             </div>
-            {visibleHandoffs.length > 1 ? (
-              <nav aria-label="Filter by status" className="mb-2 flex flex-wrap gap-1 px-2">
-                {([null, "draft", "in_review", "approved"] as const).map((key) => {
-                  const active = statusFilter === key;
-                  const count = key ? statusCounts[key] ?? 0 : visibleHandoffs.length;
-                  return (
-                    <Link
-                      aria-current={active ? "page" : undefined}
-                      className={"inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[12px] transition-colors " + (active ? "bg-white/[0.1] text-foreground" : "text-foreground-subtle hover:bg-white/[0.05] hover:text-foreground")}
-                      href={`/projects/${projectId}${key ? `?status=${key}` : ""}`}
-                      key={key ?? "all"}
-                      replace
-                      scroll={false}
-                    >
-                      {key ? <span aria-hidden="true" className={"size-1.5 rounded-full " + handoffStatusMeta[key].dot} /> : null}
-                      {key ? handoffStatusMeta[key].label : "All"}
-                      <span className="font-mono text-[10px] text-foreground-subtle">{count}</span>
-                    </Link>
-                  );
-                })}
-              </nav>
-            ) : null}
             {handoffs.length ? (
               <ul className="workspace-handoff-list">
                 {handoffs.map((handoff) => (
@@ -175,18 +143,13 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
                           />
                         </div>
                         ) : null}
-                        <HandoffStatusChip
-                          endpoint={canManageHandoffs ? `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoff.id)}` : undefined}
-                          key={handoff.reviewStatus}
-                          status={handoff.reviewStatus ?? "draft"}
-                        />
                       </div>
                     </article>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="workspace-empty-state px-2 py-7 text-sm">{statusFilter ? `No handoffs are ${handoffStatusMeta[statusFilter].label.toLowerCase()} right now.` : "No handoffs yet. Capture a Figma canvas to create the first version."}</p>
+              <p className="workspace-empty-state px-2 py-7 text-sm">No handoffs yet. Capture a Figma canvas to create the first version.</p>
             )}
           </section>
 
