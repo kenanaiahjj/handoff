@@ -3,7 +3,7 @@ import test from "node:test";
 import { createSnapshotEnvelope } from "../src/envelope.ts";
 import { countBlankFrameNames, findDuplicateFrameNames } from "../src/frame-names.ts";
 import { hashSnapshotPayload } from "../src/hash.ts";
-import { snapshotEnvelopeSchema } from "../src/schema.ts";
+import { parseSnapshotEnvelopeInPlace, snapshotEnvelopeSchema } from "../src/schema.ts";
 
 function measurement(value = 0) {
   return { value, unit: "px", provenance: "source", sourceProperty: "x" };
@@ -68,6 +68,41 @@ test("createSnapshotEnvelope hashes the validated snapshot that the server recei
   const serverParsed = snapshotEnvelopeSchema.parse(JSON.parse(JSON.stringify(result.data)));
   assert.equal(serverParsed.frames[0].sourceFrameId, "frame-id");
   assert.equal(serverParsed.contentHash, await hashSnapshotPayload(serverParsed));
+});
+
+test("validates an envelope in place with the same normalized data as the full parser", async () => {
+  const created = await createSnapshotEnvelope(snapshotPayload());
+  assert.equal(created.success, true);
+  if (!created.success) return;
+
+  const input = JSON.parse(JSON.stringify(created.data));
+  input.unrecognizedRootField = "discard me";
+  input.frames[0].unrecognizedFrameField = "discard me";
+  input.frames[0].nodes[0].unrecognizedNodeField = "discard me";
+  const expected = snapshotEnvelopeSchema.safeParse(input);
+  const originalInput = input;
+  const parsed = parseSnapshotEnvelopeInPlace(input);
+
+  assert.equal(expected.success, true);
+  assert.equal(parsed.success, true);
+  if (!expected.success || !parsed.success) return;
+  assert.deepEqual(parsed.data, expected.data);
+  assert.equal(originalInput.frames[0], parsed.data.frames[0], "the input frame is replaced with its normalized copy");
+  assert.equal(originalInput.frames[0].nodes[0], parsed.data.frames[0].nodes[0], "the input node is replaced with its normalized copy");
+  assert.equal("unrecognizedRootField" in parsed.data, false);
+});
+
+test("in-place envelope validation reports frame reference errors with the usual paths", async () => {
+  const created = await createSnapshotEnvelope(snapshotPayload());
+  assert.equal(created.success, true);
+  if (!created.success) return;
+  const input = JSON.parse(JSON.stringify(created.data));
+  input.frames[0].nodes[0].sourceFrameId = "another-frame";
+
+  const parsed = parseSnapshotEnvelopeInPlace(input);
+  assert.equal(parsed.success, false);
+  if (parsed.success) return;
+  assert.deepEqual(parsed.error.issues.map((issue) => issue.path), [["frames", 0, "nodes", 0, "sourceFrameId"]]);
 });
 
 test("accepts blank and duplicate Figma screen names so naming warnings do not block upload", async () => {

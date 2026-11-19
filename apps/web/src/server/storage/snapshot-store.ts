@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { brotliCompressSync, brotliDecompressSync, constants } from "node:zlib";
+import { Readable, Writable } from "node:stream";
+import { pipeline } from "node:stream/promises";
+import { brotliCompressSync, brotliDecompressSync, createBrotliCompress, createBrotliDecompress, constants } from "node:zlib";
 import type { PostgresDatabase } from "../db";
 
 /** Quality 6: ~100x smaller for capture JSON, ~0.2 s to compress and ~0.02 s to read a large capture. */
@@ -10,12 +12,6 @@ const designHashVersion = 3;
 
 type IndexedFrame = { sourceFrameId?: string; name?: string; renderAssetKey?: string; bounds?: unknown; nodes?: Array<Record<string, unknown>> };
 
-
-/**
- * Normalizes numbers so Figma's float noise (193.66667 vs 193.66699, which can straddle any fine
- * rounding line) isn't a "change": pixel measurements ({ value, unit: "px" }) round to the nearest
- * half pixel, and every other number (opacity, colors, percentages) to 0.001.
- */
 function normalizeNumbers(value: unknown): unknown {
   if (typeof value === "number") return Math.round(value * 1000) / 1000;
   if (Array.isArray(value)) return value.map(normalizeNumbers);
@@ -29,6 +25,12 @@ function normalizeNumbers(value: unknown): unknown {
   return value;
 }
 
+
+/**
+ * Normalizes numbers so Figma's float noise (193.66667 vs 193.66699, which can straddle any fine
+ * rounding line) isn't a "change": pixel measurements ({ value, unit: "px" }) round to the nearest
+ * half pixel, and every other number (opacity, colors, percentages) to 0.001.
+ */
 /**
  * A fingerprint of a screen's design: its size plus every layer's measurements, layout and styles.
  * Left out on purpose, because none of them change what a developer builds: layer and screen names
@@ -82,9 +84,112 @@ export function compressSnapshotJson(snapshotJson: string, frames?: readonly Ind
 
 export type CompressedSnapshot = ReturnType<typeof compressSnapshotJson>;
 
-/** Compresses a capture already in memory, so the slow part can run before a transaction opens. */
-export function compressSnapshot(snapshot: { frames?: readonly IndexedFrame[] }) {
-  return compressSnapshotJson(JSON.stringify(snapshot), snapshot.frames ?? []);
+export class SnapshotSizeLimitError extends Error {
+  constructor(maxRawBytes: number) {
+    super(`Snapshot exceeds the ${maxRawBytes} byte limit.`);
+    this.name = "SnapshotSizeLimitError";
+  }
+}
+
+/** Serializes top-level arrays one item at a time, using native JSON serialization for each item. */
+function* snapshotJsonChunks(
+  snapshot: Record<string, unknown>,
+  onChunk: (chunk: Buffer) => void,
+  onComplete: () => void,
+): Generator<Buffer> {
+  const encode = (text: string) => {
+    const chunk = Buffer.from(text, "utf8");
+    onChunk(chunk);
+    return chunk;
+  };
+  const keys = Object.keys(snapshot).filter((key) => snapshot[key] !== undefined);
+  yield encode("{");
+  for (const [index, key] of keys.entries()) {
+    if (index) yield encode(",");
+    yield encode(JSON.stringify(key));
+    yield encode(":");
+    const value = snapshot[key];
+    if (Array.isArray(value)) {
+      yield encode("[");
+      for (const [itemIndex, item] of value.entries()) {
+        if (itemIndex) yield encode(",");
+        yield encode(JSON.stringify(item) ?? "null");
+      }
+      yield encode("]");
+      continue;
+    }
+    const json = JSON.stringify(value);
+    if (json === undefined) throw new TypeError("Snapshot payloads must contain JSON-compatible values.");
+    yield encode(json);
+  }
+  yield encode("}");
+  onComplete();
+}
+
+/** Streams frame-wise native JSON serialization through Brotli to avoid a full-size JSON copy. */
+export async function compressSnapshot(
+  snapshot: { frames?: readonly IndexedFrame[] },
+  options: { maxRawBytes?: number; quality?: number; onStage?: (stage: string) => void } = {},
+) {
+  const quality = options.quality ?? 6;
+  if (!Number.isInteger(quality) || quality < 0 || quality > 11) {
+    throw new RangeError("Brotli quality must be an integer from 0 through 11.");
+  }
+  const compressionOptions = options.quality === undefined ? brotliOptions : {
+    params: { ...brotliOptions.params, [constants.BROTLI_PARAM_QUALITY]: quality },
+  };
+  const compressedChunks: Buffer[] = [];
+  const collectCompressed = new Writable({
+    write(chunk: Buffer | string, _encoding, callback) {
+      compressedChunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      callback();
+    },
+  });
+  const inputHash = createHash("sha256");
+  let rawBytes = 0;
+  const trackInput = (chunk: Buffer) => {
+    rawBytes += chunk.byteLength;
+    if (options.maxRawBytes !== undefined && rawBytes > options.maxRawBytes) {
+      throw new SnapshotSizeLimitError(options.maxRawBytes);
+    }
+    inputHash.update(chunk);
+  };
+  options.onStage?.("json_stream_started");
+  await pipeline(
+    Readable.from(snapshotJsonChunks(snapshot as Record<string, unknown>, trackInput, () => options.onStage?.("json_stream_complete")), { objectMode: false }),
+    createBrotliCompress(compressionOptions),
+    collectCompressed,
+  );
+  options.onStage?.("brotli_encode_complete");
+  const expectedHash = inputHash.digest("hex");
+  const compressed = Buffer.concat(compressedChunks);
+  compressedChunks.length = 0;
+
+  const outputHash = createHash("sha256");
+  let outputBytes = 0;
+  const verifyOutput = new Writable({
+    write(chunk: Buffer | string, _encoding, callback) {
+      const bytes = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      outputBytes += bytes.byteLength;
+      outputHash.update(bytes);
+      callback();
+    },
+  });
+  await pipeline(Readable.from([compressed]), createBrotliDecompress(), verifyOutput);
+  if (outputBytes !== rawBytes || outputHash.digest("hex") !== expectedHash) {
+    throw new Error("Compressed capture did not read back identically.");
+  }
+  options.onStage?.("round_trip_verified");
+
+  const frameIndex = frameIndexForFrames(snapshot.frames ?? []);
+  options.onStage?.("frame_index_complete");
+
+  return {
+    encoding: "br" as const,
+    compressed,
+    rawBytes,
+    frameIndex,
+  };
 }
 
 export function decompressSnapshot(encoding: string, compressed: Buffer) {

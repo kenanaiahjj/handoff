@@ -2,6 +2,7 @@ export {
   boundsSchema,
   measurementProvenanceSchema,
   measurementSchema,
+  parseSnapshotEnvelopeInPlace,
   snapshotAssetSchema,
   snapshotEnvelopeSchema,
   snapshotFrameSchema,

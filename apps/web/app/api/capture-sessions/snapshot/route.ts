@@ -2,7 +2,7 @@ import { after } from "next/server";
 import { createHash, randomUUID } from "node:crypto";
 import { gunzipSync } from "node:zlib";
 import { z } from "zod";
-import { hashSnapshotPayload, MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES, normalizeFigmaCaptureScope, snapshotEnvelopeSchema, type SnapshotEnvelope } from "@asbir/snapshot-contract";
+import { hashSnapshotPayload, MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES, normalizeFigmaCaptureScope, parseSnapshotEnvelopeInPlace, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { notifyNewVersion } from "@/src/server/services/slack";
 import {
   getCaptureSession,
@@ -13,22 +13,23 @@ import { createHandoffVersion, getVersion, HandoffVersionConflictError, type Ver
 import { getDatabase, isUniqueConstraintViolation } from "@/src/server/db";
 import { createUnmatchedFramePairValidator, diffSnapshots } from "@/src/server/services/diff";
 import { SnapshotImportError, verifyRenderAssetBytes } from "@/src/server/services/import-snapshot";
-import { createSnapshotEnvelope } from "@asbir/snapshot-contract";
 import { mergeFigmaCaptureSnapshots } from "@/src/server/services/merge-figma-capture";
 import { findReusableAsset } from "@/src/server/services/reusable-assets";
 import { primeCanvasCopy } from "@/src/server/services/version-canvas";
 import { storeScreenCopiesLater } from "@/src/server/services/frame-store";
-import { objectStore } from "@/src/server/storage/supabase-object-store";
 import { mapWithConcurrency } from "@/src/server/map-with-concurrency";
+import { objectStore } from "@/src/server/storage/supabase-object-store";
+import { compressSnapshot, SnapshotSizeLimitError } from "@/src/server/storage/snapshot-store";
 
 /**
- * Large captures (250 MB of JSON) take tens of seconds to verify, merge and store. 300 s is the
- * highest limit every Vercel plan accepts; on Pro it can be raised to 800 here.
+ * Large captures (250 MB of JSON) can take several minutes to verify, merge and store. The active
+ * Vercel Pro plan supports an 800 s maximum, which gives large captures room to finish.
  */
-export const maxDuration = 300;
+export const maxDuration = 800;
 
 const supportedContentTypes = new Set(["image/png", "image/jpeg", "image/webp", "image/svg+xml"]);
 const objectKeySchema = z.string().regex(/^[a-f0-9]{48}$/);
+const ASSET_VERIFY_CONCURRENCY = 8;
 const frameMatchesSchema = z.array(z.object({
   beforeFrameId: z.string().trim().min(1).max(200),
   afterFrameId: z.string().trim().min(1).max(200),
@@ -41,6 +42,18 @@ const finalizeSchema = z.object({
   /** For a page capture: "replace" makes the captured page the whole new version instead of merging it. */
   pageMode: z.enum(["add", "replace"]).optional(),
 }).strict();
+
+type CaptureUploadRow = {
+  kind: "snapshot" | "asset";
+  assetKey: string | null;
+  objectKey: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+};
+
+type CaptureSnapshotUpload = Pick<CaptureUploadRow, "objectKey" | "contentType" | "sizeBytes" | "sha256">;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -57,13 +70,71 @@ function retryUploadResponse(message: string) {
   return jsonResponse({ error: message, code: "upload_integrity_failed", retryUpload: true }, { status: 409 });
 }
 
-const ASSET_VERIFY_CONCURRENCY = 8;
-
 /** A failed check on one uploaded asset, carrying the response to send. */
 class AssetCheckFailure extends Error {
   constructor(readonly response: Response) {
     super("Uploaded asset check failed.");
   }
+}
+
+function logCaptureStage(startedAt: number, stage: string) {
+  if (process.env.NODE_ENV !== "production") return;
+  const memory = process.memoryUsage();
+  const mib = (bytes: number) => Math.round(bytes / (1024 * 1024));
+  console.info("[capture finalize]", JSON.stringify({
+    stage,
+    elapsedMs: Date.now() - startedAt,
+    rssMiB: mib(memory.rss),
+    heapUsedMiB: mib(memory.heapUsed),
+    externalMiB: mib(memory.external),
+    arrayBuffersMiB: mib(memory.arrayBuffers),
+  }));
+}
+
+async function loadUploadedSnapshot(upload: CaptureSnapshotUpload, logStage: (stage: string) => void) {
+  let uploadedSnapshot: NonNullable<Awaited<ReturnType<typeof objectStore.get>>> | null = await objectStore.get(upload.objectKey);
+  if (!uploadedSnapshot) return { response: retryUploadResponse("The snapshot upload is missing. Upload it again.") };
+  logStage("snapshot_downloaded");
+
+  let uploadBytes: Buffer | undefined = Buffer.from(uploadedSnapshot.bytes.buffer, uploadedSnapshot.bytes.byteOffset, uploadedSnapshot.bytes.byteLength);
+  const snapshotChecksum = createHash("sha256").update(uploadBytes).digest("hex");
+  const snapshotIsGzipped = upload.contentType === "application/octet-stream";
+  if (uploadedSnapshot.contentType !== upload.contentType ||
+      (upload.contentType !== "application/json" && !snapshotIsGzipped) ||
+      uploadBytes.byteLength !== upload.sizeBytes ||
+      uploadBytes.byteLength > MAX_SNAPSHOT_JSON_BYTES ||
+      snapshotChecksum !== upload.sha256) {
+    return { response: retryUploadResponse("The snapshot upload failed its size, content type, or checksum check.") };
+  }
+
+  let snapshotJsonBytes: Buffer | undefined;
+  try {
+    snapshotJsonBytes = snapshotIsGzipped
+      ? gunzipSync(uploadBytes, { maxOutputLength: MAX_SNAPSHOT_JSON_BYTES })
+      : uploadBytes;
+  } catch (error) {
+    const tooLarge = (error as { code?: string }).code === "ERR_BUFFER_TOO_LARGE" || error instanceof RangeError;
+    return {
+      response: tooLarge
+        ? jsonResponse({ error: `The structured snapshot exceeds Handoff’s ${Math.round(MAX_SNAPSHOT_JSON_BYTES / (1024 * 1024))} MiB JSON limit. Capture fewer frames in each update.` }, { status: 413 })
+        : jsonResponse({ error: "The uploaded snapshot could not be unzipped." }, { status: 400 }),
+    };
+  }
+
+  let json: unknown;
+  try { json = JSON.parse(snapshotJsonBytes.toString("utf8")); }
+  catch { return { response: jsonResponse({ error: "The uploaded snapshot is not valid JSON." }, { status: 400 }) }; }
+  snapshotJsonBytes = undefined;
+  uploadBytes = undefined;
+  uploadedSnapshot = null;
+  logStage("snapshot_json_parsed");
+  const parsedSnapshot = parseSnapshotEnvelopeInPlace(json);
+  json = undefined;
+  if (!parsedSnapshot.success) {
+    return { response: jsonResponse({ error: "The Figma capture does not match the structured snapshot format.", issues: parsedSnapshot.error.issues.slice(0, 30) }, { status: 400 }) };
+  }
+  logStage("snapshot_schema_validated");
+  return { snapshot: parsedSnapshot.data };
 }
 
 /**
@@ -95,6 +166,8 @@ export function OPTIONS() {
 }
 
 export async function POST(request: Request) {
+  const startedAt = Date.now();
+  const logStage = (stage: string) => logCaptureStage(startedAt, stage);
   const authHeader = request.headers.get("authorization");
   const token = authHeader?.match(/^Bearer\s+(asbir_capture_[A-Za-z0-9_-]{32,})$/)?.[1];
   if (!token) return jsonResponse({ error: "A valid capture token is required.", code: "invalid_capture_token" }, { status: 401 });
@@ -128,6 +201,7 @@ export async function POST(request: Request) {
   const parsedManifest = finalizeSchema.safeParse(body);
   if (!parsedManifest.success) return jsonResponse({ error: "The finalization manifest is invalid." }, { status: 400 });
   const manifest = parsedManifest.data;
+  logStage("manifest_validated");
   const frameMatches = manifest.frameMatches ?? [];
   const assetPaths = manifest.assets;
   if (new Set(Object.values(assetPaths)).size !== Object.keys(assetPaths).length) {
@@ -143,15 +217,7 @@ export async function POST(request: Request) {
        FROM capture_upload
        WHERE capture_session_id = ? AND is_current AND finalized_at IS NULL`,
     )
-    .all(session.id)) as Array<{
-      kind: "snapshot" | "asset";
-      assetKey: string | null;
-      objectKey: string;
-      fileName: string;
-      contentType: string;
-      sizeBytes: number;
-      sha256: string;
-    }>;
+    .all(session.id)) as CaptureUploadRow[];
   const snapshotUpload = declaredUploads.find((upload) => upload.kind === "snapshot");
   const assetUploads = new Map(declaredUploads
     .filter((upload) => upload.kind === "asset" && upload.assetKey !== null)
@@ -162,43 +228,16 @@ export async function POST(request: Request) {
     return jsonResponse({ error: "The uploaded objects do not match this capture session.", code: "upload_manifest_invalid" }, { status: 400 });
   }
 
-  const uploadedSnapshot = await objectStore.get(snapshotUpload.objectKey);
-  if (!uploadedSnapshot) return retryUploadResponse("The snapshot upload is missing. Upload it again.");
-  const snapshotChecksum = createHash("sha256").update(uploadedSnapshot.bytes).digest("hex");
-  const snapshotIsGzipped = snapshotUpload.contentType === "application/octet-stream";
-  if (uploadedSnapshot.contentType !== snapshotUpload.contentType ||
-      (snapshotUpload.contentType !== "application/json" && !snapshotIsGzipped) ||
-      uploadedSnapshot.bytes.byteLength !== snapshotUpload.sizeBytes ||
-      uploadedSnapshot.bytes.byteLength > MAX_SNAPSHOT_JSON_BYTES ||
-      snapshotChecksum !== snapshotUpload.sha256) {
-    return retryUploadResponse("The snapshot upload failed its size, content type, or checksum check.");
-  }
-
-  let snapshotJsonBytes: Buffer;
-  try {
-    snapshotJsonBytes = snapshotIsGzipped
-      ? gunzipSync(uploadedSnapshot.bytes, { maxOutputLength: MAX_SNAPSHOT_JSON_BYTES })
-      : Buffer.from(uploadedSnapshot.bytes);
-  } catch (error) {
-    const tooLarge = (error as { code?: string }).code === "ERR_BUFFER_TOO_LARGE" || error instanceof RangeError;
-    return tooLarge
-      ? jsonResponse({ error: `The structured snapshot exceeds Handoff’s ${Math.round(MAX_SNAPSHOT_JSON_BYTES / (1024 * 1024))} MiB JSON limit. Capture fewer frames in each update.` }, { status: 413 })
-      : jsonResponse({ error: "The uploaded snapshot could not be unzipped." }, { status: 400 });
-  }
-  let json: unknown;
-  try { json = JSON.parse(snapshotJsonBytes.toString("utf8")); }
-  catch { return jsonResponse({ error: "The uploaded snapshot is not valid JSON." }, { status: 400 }); }
-  const parsedSnapshot = snapshotEnvelopeSchema.safeParse(json);
-  if (!parsedSnapshot.success) {
-    return jsonResponse({ error: "The Figma capture does not match the structured snapshot format.", issues: parsedSnapshot.error.issues.slice(0, 30) }, { status: 400 });
-  }
-  const snapshot = parsedSnapshot.data;
+  const snapshotResult = await loadUploadedSnapshot(snapshotUpload, logStage);
+  if ("response" in snapshotResult) return snapshotResult.response;
+  const snapshot = snapshotResult.snapshot;
   if (snapshot.source !== "figma" || snapshot.sourceMetadata.sourceTool !== "figma") {
     return jsonResponse({ error: "This capture endpoint accepts Figma plugin snapshots." }, { status: 400 });
   }
   if (snapshot.contentHash !== await hashSnapshotPayload(snapshot)) {
     return jsonResponse({ error: "Snapshot content hash does not match its content." }, { status: 400 });
   }
+  logStage("snapshot_hash_verified");
   const snapshotAssetKeys = new Set(snapshot.assets.map((asset) => asset.key));
   if (snapshotAssetKeys.size !== snapshot.assets.length ||
       snapshotAssetKeys.size !== Object.keys(assetPaths).length ||
@@ -217,10 +256,11 @@ export async function POST(request: Request) {
     totalAssetBytes += upload.sizeBytes;
     if (totalAssetBytes > MAX_CAPTURE_ASSET_BYTES) return jsonResponse({ error: "This capture exceeds Handoff’s 256 MiB asset limit." }, { status: 413 });
   }
-  // Read back and verify the uploads several at a time: one by one, hundreds of Storage round trips
-  // could take most of the function's time limit. The first failed check stops the rest.
+
   let assets: VersionAssetInput[];
   try {
+    // Read several objects at once to avoid hundreds of serial Storage round trips. Return only
+    // metadata so the asset buffers can be released before the merged snapshot is compressed.
     assets = await mapWithConcurrency(snapshot.assets, ASSET_VERIFY_CONCURRENCY, async (asset) => {
       const upload = assetUploads.get(asset.key)!;
       const stored = await objectStore.get(upload.objectKey);
@@ -235,15 +275,17 @@ export async function POST(request: Request) {
           throw new AssetCheckFailure(jsonResponse({ error: `Render dimensions do not match for "${asset.fileName}".` }, { status: 400 }));
         }
       } catch (error) {
+        if (error instanceof AssetCheckFailure) throw error;
         if (error instanceof SnapshotImportError) throw new AssetCheckFailure(jsonResponse({ error: error.message }, { status: error.status }));
         throw error;
       }
-      return { ...asset, bytes: stored.bytes, uploadedObjectKey: upload.objectKey };
+      return { ...asset, uploadedObjectKey: upload.objectKey } satisfies VersionAssetInput;
     });
   } catch (error) {
     if (error instanceof AssetCheckFailure) return error.response;
     throw error;
   }
+  logStage("assets_verified");
 
   const baselineVersionId = manifest.baselineVersionId ?? null;
   const captureScope = normalizeFigmaCaptureScope(snapshot.sourceMetadata.captureScope);
@@ -274,6 +316,7 @@ export async function POST(request: Request) {
     ? await getVersion({ workspaceId: session.workspaceId, versionId: baselineVersionId })
     : null;
   if (baselineVersionId && !baseline) return jsonResponse({ error: "The replacement baseline could not be loaded." }, { status: 409 });
+  logStage("baseline_loaded");
   if (isPartialCapture && baseline) {
     if (baseline.snapshot.source !== "figma" || baseline.snapshot.sourceFileId !== snapshot.sourceFileId) {
       return jsonResponse({ error: "A selected-frame or page capture can only update the same Figma file. Capture the full file to replace this handoff." }, { status: 409 });
@@ -323,21 +366,14 @@ export async function POST(request: Request) {
         frameMatches,
       });
       if (!merged) return jsonResponse({ error: "This capture scope cannot be merged. Capture the full file to replace this handoff." }, { status: 400 });
-      const finalized = await createSnapshotEnvelope(merged.snapshot);
-      if (!finalized.success) {
-        return jsonResponse({ error: "The merged capture does not match the structured snapshot format.", issues: finalized.error.issues.slice(0, 30) }, { status: 400 });
-      }
-      if (Buffer.byteLength(JSON.stringify(finalized.data), "utf8") > MAX_SNAPSHOT_JSON_BYTES) {
-        return jsonResponse({ error: `The merged structured snapshot exceeds Handoff’s ${Math.round(MAX_SNAPSHOT_JSON_BYTES / (1024 * 1024))} MiB JSON limit. Capture fewer frames in each update.` }, { status: 413 });
-      }
-
-      versionSnapshot = finalized.data;
+      const contentHash = await hashSnapshotPayload(merged.snapshot);
+      versionSnapshot = { ...merged.snapshot, contentHash };
       reuseAssetsFromVersionId = baselineVersionId;
       const uploadedByKey = new Map(assets.map((asset) => [asset.key, asset] as const));
       const baselineByKey = new Map(baseline.assets.map((asset) => [asset.assetKey, asset] as const));
       const inheritedKeys = new Set(merged.inheritedAssetKeys);
       const incomingKeyByMergedKey = new Map([...merged.incomingAssetKeyMap].map(([incomingKey, mergedKey]) => [mergedKey, incomingKey] as const));
-      versionAssets = finalized.data.assets.map((asset): VersionAssetInput => {
+      versionAssets = versionSnapshot.assets.map((asset): VersionAssetInput => {
         if (inheritedKeys.has(asset.key)) {
           const previous = baselineByKey.get(asset.key);
           if (!previous) throw new Error(`The baseline asset "${asset.fileName}" could not be reused.`);
@@ -345,15 +381,22 @@ export async function POST(request: Request) {
         }
         const sourceKey = incomingKeyByMergedKey.get(asset.key);
         const uploaded = sourceKey ? uploadedByKey.get(sourceKey) : undefined;
-        if (!uploaded?.bytes || !uploaded.uploadedObjectKey) throw new Error(`The captured asset "${asset.fileName}" could not be matched to its upload.`);
+        if (!uploaded?.uploadedObjectKey) throw new Error(`The captured asset "${asset.fileName}" could not be matched to its upload.`);
         const duplicate = findReusableAsset(asset, baseline.assets);
-        // The merged snapshot renames incoming assets ("overview" → "merge-…-overview"); the version's
-        // asset rows must use the merged key, as before the migration, with the uploaded bytes.
+        // The merged snapshot renames incoming assets ("overview" → "merge-…-overview"); keep the
+        // uploaded object path while using the renamed key in the new version.
         return duplicate
           ? { ...asset, reuseObjectKey: duplicate.objectKey }
-          : { ...asset, bytes: uploaded.bytes, uploadedObjectKey: uploaded.uploadedObjectKey };
+          : { ...asset, uploadedObjectKey: uploaded.uploadedObjectKey };
       });
+      logStage("partial_merge_built");
     }
+
+    const compressedSnapshot = await compressSnapshot(versionSnapshot, {
+      maxRawBytes: MAX_SNAPSHOT_JSON_BYTES,
+      onStage: (stage) => logStage(`snapshot_${stage}`),
+    });
+    logStage("snapshot_compressed");
 
     const created = await createHandoffVersion({
       workspaceId: session.workspaceId,
@@ -367,7 +410,8 @@ export async function POST(request: Request) {
       snapshot: versionSnapshot,
       assets: versionAssets,
       reuseAssetsFromVersionId,
-      // Parsed with the schema and hash-checked above, or rebuilt by createSnapshotEnvelope after a merge.
+      compressedSnapshot,
+      // Parsed with the schema and hash-checked above, or built by the validated merge function.
       snapshotVerified: true,
       consumeCaptureSessionId: session.id,
       captureUploadPaths: { snapshotKey: snapshotUpload.objectKey, assetKeys: assetPaths },
@@ -375,6 +419,7 @@ export async function POST(request: Request) {
         ? { baselineVersionId, matches: frameMatches }
         : undefined,
     });
+    logStage("version_committed");
     await primeCanvasCopy(created.versionId, versionSnapshot.contentHash, versionSnapshot);
     storeScreenCopiesLater(session.workspaceId, created.versionId, versionSnapshot);
     const origin = process.env.BETTER_AUTH_URL || new URL(request.url).origin;
@@ -383,6 +428,7 @@ export async function POST(request: Request) {
     const usedUploadedKeys = new Set(versionAssets.flatMap((asset) => "uploadedObjectKey" in asset && asset.uploadedObjectKey ? [asset.uploadedObjectKey] : []));
     const unreferencedUploads = [snapshotUpload.objectKey, ...Object.values(assetPaths).filter((key) => !usedUploadedKeys.has(key))];
     await cleanupObjects(unreferencedUploads);
+    logStage("finalize_complete");
 
     const reviewUrl = new URL(`/projects/${encodeURIComponent(session.projectId)}/handoffs/${encodeURIComponent(created.handoffId)}?versionId=${encodeURIComponent(created.versionId)}`, origin).toString();
     return jsonResponse({ ...created, projectId: session.projectId, reviewUrl }, { status: 201 });
@@ -398,7 +444,6 @@ export async function POST(request: Request) {
       ).toString();
       return jsonResponse({ handoffId: finalizedMeanwhile.handoffId, versionId: finalizedMeanwhile.versionId, projectId: finalizedMeanwhile.projectId, reviewUrl }, { status: 200 });
     }
-    await cleanupObjects([snapshotUpload.objectKey, ...Object.values(assetPaths)]);
     if (error instanceof HandoffVersionConflictError) {
       return jsonResponse({ error: error.message }, { status: 409 });
     }
@@ -408,11 +453,15 @@ export async function POST(request: Request) {
     if (isUniqueConstraintViolation(error)) {
       return jsonResponse({ error: "A handoff with that name and version already exists." }, { status: 409 });
     }
-    // Database and Storage errors carry internals (SQL, constraint names): log them, don't send them.
-    if (!(error instanceof Error) || typeof (error as { code?: unknown }).code === "string" || error.message.startsWith("Supabase Storage ")) {
-      console.error("[capture] Finalize failed:", error);
-      return jsonResponse({ error: "Could not store this Figma capture. Try again in a moment." }, { status: 500 });
+    if (error instanceof SnapshotSizeLimitError) {
+      return jsonResponse({ error: `The merged structured snapshot exceeds Handoff’s ${Math.round(MAX_SNAPSHOT_JSON_BYTES / (1024 * 1024))} MiB JSON limit. Capture fewer frames in each update.` }, { status: 413 });
     }
-    return jsonResponse({ error: error.message }, { status: 400 });
+    logStage("finalize_retryable_failure");
+    console.error("[capture finalize] Failed before commit; uploaded objects were kept for a safe retry.", error);
+    return jsonResponse({
+      error: "Finalization failed before the version was saved. Your uploaded data is still available; retry finalization.",
+      code: "capture_finalize_retryable",
+      retryFinalize: true,
+    }, { status: 503 });
   }
 }

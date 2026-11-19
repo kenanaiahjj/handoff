@@ -16,3 +16,4 @@ integrations/figma-plugin/dist/
 integrations/figma-plugin/manifest.json
 # Built by apps/web prebuild; the download route fills in the server address.
 apps/web/figma-plugin-template/
+.vercel

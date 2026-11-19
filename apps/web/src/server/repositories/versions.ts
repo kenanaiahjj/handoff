@@ -8,7 +8,7 @@ import {
   type VisualOnlySnapshot,
 } from "@asbir/snapshot-contract";
 import { getDatabase } from "../db";
-import { compressSnapshot, readSnapshotJson, storeCompressedSnapshot } from "../storage/snapshot-store";
+import { compressSnapshot, readSnapshotJson, storeCompressedSnapshot, type CompressedSnapshot } from "../storage/snapshot-store";
 import { objectStore } from "../storage/supabase-object-store";
 import {
   assertReusableAssetReferences,
@@ -41,6 +41,7 @@ export type StoredVersionAsset = {
 export type VersionAssetInput = SnapshotAsset & (
   | { bytes: Uint8Array; reuseObjectKey?: never; uploadedObjectKey?: never }
   | { bytes: Uint8Array; reuseObjectKey?: never; uploadedObjectKey: string }
+  | { bytes?: never; reuseObjectKey?: never; uploadedObjectKey: string }
   | { bytes?: never; reuseObjectKey: string; uploadedObjectKey?: never }
 );
 
@@ -64,6 +65,8 @@ export type CreateHandoffVersionInput = {
    * seconds and hundreds of megabytes.
    */
   snapshotVerified?: boolean;
+  /** A bounded, integrity-checked compressed form computed before the database transaction. */
+  compressedSnapshot?: CompressedSnapshot;
   frameReplacementMatches?: {
     baselineVersionId: string;
     matches: Array<{ beforeFrameId: string; afterFrameId: string }>;
@@ -109,6 +112,9 @@ function assertAssetBytes(snapshot: StoredSnapshot, assets: VersionAssetInput[])
     if (asset.fileName !== uploaded.fileName || asset.contentType !== uploaded.contentType) {
       throw new Error(`Asset metadata does not match for "${asset.key}".`);
     }
+    if (uploaded.uploadedObjectKey && !/^[a-f0-9]{48}$/.test(uploaded.uploadedObjectKey)) {
+      throw new Error(`Uploaded asset path is invalid for "${asset.key}".`);
+    }
     if (uploaded.bytes) {
       if (asset.sizeBytes !== uploaded.bytes.byteLength || asset.sizeBytes !== uploaded.sizeBytes) {
         throw new Error(`Asset size does not match for "${asset.key}".`);
@@ -117,8 +123,9 @@ function assertAssetBytes(snapshot: StoredSnapshot, assets: VersionAssetInput[])
       if (asset.sha256 !== digest || uploaded.sha256 !== digest) {
         throw new Error(`Asset checksum does not match for "${asset.key}".`);
       }
-      if (uploaded.uploadedObjectKey && !/^[a-f0-9]{48}$/.test(uploaded.uploadedObjectKey)) {
-        throw new Error(`Uploaded asset path is invalid for "${asset.key}".`);
+    } else if (uploaded.uploadedObjectKey) {
+      if (asset.sizeBytes !== uploaded.sizeBytes || asset.sha256 !== uploaded.sha256) {
+        throw new Error(`Uploaded asset metadata does not match for "${asset.key}".`);
       }
     } else if (!uploaded.reuseObjectKey || !/^[a-f0-9]{48}$/.test(uploaded.reuseObjectKey)) {
       throw new Error(`Asset bytes are missing for "${asset.key}".`);
@@ -134,7 +141,7 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
   }
   assertAssetBytes(snapshot, input.assets);
   // Compressed (and verified to read back) before the transaction, which holds the handoff's lock.
-  const compressedSnapshot = compressSnapshot(snapshot);
+  const compressedSnapshot = input.compressedSnapshot ?? await compressSnapshot(snapshot);
 
   const database = getDatabase();
   const project = (await database
@@ -165,14 +172,23 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
     throw new Error("Reusable assets must belong to an earlier version in this handoff.");
   }
   const storedAssets = await Promise.all(input.assets.map(async (asset) => {
+    if (asset.uploadedObjectKey) {
+      return {
+        asset,
+        id: randomUUID(),
+        objectKey: asset.uploadedObjectKey,
+      };
+    }
     if (asset.bytes) {
       return {
         asset,
         id: randomUUID(),
-        objectKey: asset.uploadedObjectKey ?? randomBytes(24).toString("hex"),
+        objectKey: randomBytes(24).toString("hex"),
       };
     }
     if (!input.reuseAssetsFromVersionId) throw new Error("Reusable assets require a baseline handoff version.");
+    const reuseObjectKey = asset.reuseObjectKey;
+    if (!reuseObjectKey) throw new Error(`Reusable asset path is missing for "${asset.key}".`);
     const source = (await database
       .prepare(
         `SELECT file_name AS fileName, content_type AS contentType,
@@ -180,7 +196,7 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
          FROM handoff_asset
          WHERE workspace_id = ? AND handoff_version_id = ? AND object_key = ?`,
       )
-      .get(input.workspaceId, input.reuseAssetsFromVersionId, asset.reuseObjectKey)) as
+      .get(input.workspaceId, input.reuseAssetsFromVersionId, reuseObjectKey)) as
       | { fileName: string; contentType: string; sizeBytes: number; sha256: string; width: number | null; height: number | null }
       | undefined;
     if (!source || source.fileName !== asset.fileName || source.contentType !== asset.contentType ||
@@ -191,18 +207,17 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
     return {
       asset,
       id: randomUUID(),
-      objectKey: asset.reuseObjectKey,
+      objectKey: reuseObjectKey,
     };
   }));
   const writtenObjectKeys: string[] = [];
 
   try {
     for (const { asset, objectKey } of storedAssets) {
-      if (!asset.bytes) continue;
+      if (!asset.bytes || asset.uploadedObjectKey) continue;
       // Uploaded straight to Storage by the plugin. Never delete it here on failure: a finalize retry
       // that loses the race would remove the files of the version that won. The capture route cleans
       // up unreferenced uploads itself.
-      if (asset.uploadedObjectKey) continue;
       await objectStore.put(objectKey, asset.bytes, asset.contentType);
       writtenObjectKeys.push(objectKey);
     }
@@ -236,7 +251,10 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
           workspaceId: input.workspaceId,
           handoffId: newHandoffId,
           sourceVersionId: input.reuseAssetsFromVersionId,
-          objectKeys: input.assets.flatMap((asset) => asset.bytes ? [] : [asset.reuseObjectKey]),
+          objectKeys: input.assets.flatMap((asset) => {
+            if (asset.bytes || asset.uploadedObjectKey || !asset.reuseObjectKey) return [];
+            return [asset.reuseObjectKey];
+          }),
         }));
       }
 

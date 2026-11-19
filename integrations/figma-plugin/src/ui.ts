@@ -1,4 +1,5 @@
 import { isPluginOutdated, pluginVersionUrl } from "./plugin-version";
+import { retainPendingUploadForToken } from "./pending-upload.ts";
 import {
   createSnapshotEnvelope,
   MAX_CAPTURE_ASSET_BYTES,
@@ -161,6 +162,23 @@ let pendingUpload: PendingUpload | null = null;
 let busy = false;
 let previewGeneration = 0;
 let activeUploadController: AbortController | null = null;
+
+function discardStalePendingUpload() {
+  const previous = pendingUpload;
+  pendingUpload = retainPendingUploadForToken(previous, tokenInput.value);
+  if (!previous || pendingUpload) return false;
+
+  replacementReview.hidden = true;
+  replacementList.replaceChildren();
+  replacementValidation.textContent = "";
+  pageChoicePanel.hidden = true;
+  pageChoiceValidation.textContent = "";
+  uploadButton.hidden = false;
+  updateReplacementActions();
+  refreshPrimaryAction();
+  setStatus("Capture token changed. Upload again to recheck this captured version before sending it.", "warning");
+  return true;
+}
 
 function setStatus(message: string, kind: "plain" | "error" | "success" | "warning" = "plain") {
   status.textContent = message;
@@ -890,7 +908,12 @@ function uploadSessionKey(snapshotAsset: SnapshotUploadAsset, assets: RenderUplo
 }
 
 async function finishUpload(frameMatches: FrameReplacementMatch[]) {
-  if (!currentCapture || !overviewBytes || !pendingUpload) return;
+  if (!currentCapture || !overviewBytes) return;
+  if (discardStalePendingUpload()) {
+    void uploadCapture();
+    return;
+  }
+  if (!pendingUpload) return;
   const pending = pendingUpload;
   const controller = new AbortController();
   activeUploadController = controller;
@@ -1146,8 +1169,12 @@ function mergedSizeError(pending: PendingUpload) {
 }
 
 async function continueAfterPreview() {
+  if (!pendingUpload) return;
+  if (discardStalePendingUpload()) {
+    void uploadCapture();
+    return;
+  }
   const pending = pendingUpload;
-  if (!pending) return;
   if (pending.pageMode === "replace") pending.mergeContext = undefined;
   const sizeError = mergedSizeError(pending);
   if (sizeError) {
@@ -1253,6 +1280,9 @@ async function uploadCapture() {
       retainedBaselineBytesEstimate?: number;
     };
     if (!previewResponse.ok || !previewBody.candidates) throw new Error(previewBody.error || `The replacement check failed with status ${previewResponse.status}.`);
+    if (tokenInput.value.trim() !== token) {
+      throw new Error("The capture token changed during the replacement check. Upload again to recheck this captured version.");
+    }
     if (previewBody.mergeContext && previewBody.mergeContext.versionId !== previewBody.baselineVersionId) {
       throw new Error("The selected capture’s merge preview does not match the current handoff version. Capture again before uploading.");
     }
@@ -1326,8 +1356,17 @@ clearFrameSelectionButton.addEventListener("click", () => {
   void updateSelectedCapture();
 });
 
-uploadButton.addEventListener("click", () => { void (pendingUpload ? finishUpload([]) : uploadCapture()); });
-tokenInput.addEventListener("input", refreshPrimaryAction);
+uploadButton.addEventListener("click", () => {
+  if (discardStalePendingUpload()) {
+    void uploadCapture();
+    return;
+  }
+  void (pendingUpload ? finishUpload([]) : uploadCapture());
+});
+tokenInput.addEventListener("input", () => {
+  discardStalePendingUpload();
+  refreshPrimaryAction();
+});
 
 // Figma's plugin frame can block the async clipboard API; fall back to a selected text field.
 copyResultLinkButton.addEventListener("click", async () => {

@@ -167,7 +167,7 @@ const snapshotPayloadObjectSchema = z.object({
 
 function addReferenceIssues(
   snapshot: z.infer<typeof snapshotPayloadObjectSchema>,
-  context: z.RefinementCtx,
+  context: Pick<z.RefinementCtx, "addIssue">,
 ) {
   const assetKeys = new Set<string>();
   snapshot.assets.forEach((asset, index) => {
@@ -246,6 +246,64 @@ export const snapshotEnvelopeSchema = snapshotPayloadObjectSchema
     contentHash: z.string().regex(/^[a-f0-9]{64}$/),
   })
   .superRefine(addReferenceIssues);
+
+const snapshotEnvelopeMetadataSchema = snapshotPayloadObjectSchema
+  .extend({
+    frames: z.array(z.unknown()).min(1),
+    contentHash: z.string().regex(/^[a-f0-9]{64}$/),
+  });
+const snapshotFrameMetadataSchema = snapshotFrameSchema.extend({ nodes: z.array(z.unknown()) });
+
+/**
+ * Validates an envelope parsed from JSON without cloning the full layer tree at once. It consumes a
+ * mutable JSON value: each validated frame and node replaces its raw counterpart so the input and
+ * normalized output do not retain duplicate copies of a large capture.
+ */
+export function parseSnapshotEnvelopeInPlace(value: unknown) {
+  const root = snapshotEnvelopeMetadataSchema.safeParse(value);
+  if (!root.success) return root;
+
+  const input = value as Record<string, unknown>;
+  const rawFrames = input.frames as unknown[];
+  if (Object.isFrozen(rawFrames) || rawFrames.some((frame) => {
+    if (typeof frame !== "object" || frame === null) return false;
+    const nodes = (frame as Record<string, unknown>).nodes;
+    return Array.isArray(nodes) && Object.isFrozen(nodes);
+  })) {
+    return snapshotEnvelopeSchema.safeParse(value);
+  }
+
+  const issues: unknown[] = [];
+  for (let frameIndex = 0; frameIndex < rawFrames.length; frameIndex += 1) {
+    const frame = snapshotFrameMetadataSchema.safeParse(rawFrames[frameIndex]);
+    if (!frame.success) {
+      issues.push(...frame.error.issues.map((issue) => ({ ...issue, path: ["frames", frameIndex, ...issue.path] })));
+      continue;
+    }
+
+    const rawFrame = rawFrames[frameIndex] as Record<string, unknown>;
+    const rawNodes = rawFrame.nodes as unknown[];
+    if (Object.isFrozen(rawNodes)) return snapshotEnvelopeSchema.safeParse(value);
+    for (let nodeIndex = 0; nodeIndex < rawNodes.length; nodeIndex += 1) {
+      const node = snapshotNodeSchema.safeParse(rawNodes[nodeIndex]);
+      if (!node.success) {
+        issues.push(...node.error.issues.map((issue) => ({ ...issue, path: ["frames", frameIndex, "nodes", nodeIndex, ...issue.path] })));
+        continue;
+      }
+      rawNodes[nodeIndex] = node.data;
+      frame.data.nodes[nodeIndex] = node.data;
+    }
+    rawFrames[frameIndex] = frame.data;
+    root.data.frames[frameIndex] = frame.data;
+  }
+
+  if (issues.length) return { success: false as const, error: { issues } };
+  const snapshot = root.data as unknown as z.infer<typeof snapshotEnvelopeSchema>;
+  const referenceIssues: unknown[] = [];
+  addReferenceIssues(snapshot, { addIssue: (issue) => referenceIssues.push(issue) });
+  if (referenceIssues.length) return { success: false as const, error: { issues: referenceIssues } };
+  return { success: true as const, data: snapshot };
+}
 
 export const visualOnlySnapshotSchema = z
   .object({

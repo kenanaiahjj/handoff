@@ -1,8 +1,37 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { PostgresDatabase } from "../db.ts";
 import { createPostgresTestDatabase } from "../test-support/postgres-test-database.mjs";
-import { compressStoredSnapshots, readSnapshotJson, refreshFrameIndexes } from "./snapshot-store.ts";
+import { compressSnapshot, compressStoredSnapshots, decompressSnapshot, frameDesignHash, frameIndexForFrames, readSnapshotJson, refreshFrameIndexes } from "./snapshot-store.ts";
+
+function legacyFrameDesignHash(frame) {
+  function normalizeNumbers(value) {
+    if (typeof value === "number") return Math.round(value * 1000) / 1000;
+    if (Array.isArray(value)) return value.map(normalizeNumbers);
+    if (value && typeof value === "object") {
+      const record = value;
+      if (record.unit === "px" && typeof record.value === "number") {
+        return { ...record, value: Math.round(record.value * 2) / 2 };
+      }
+      return Object.fromEntries(Object.entries(record).map(([key, entry]) => [key, normalizeNumbers(entry)]));
+    }
+    return value;
+  }
+  const bounds = frame.bounds ?? {};
+  const nodes = frame.nodes.map((node) => {
+    const rest = { ...node };
+    delete rest.name;
+    if (rest.sourcePayload && typeof rest.sourcePayload === "object") {
+      const payload = { ...rest.sourcePayload };
+      delete payload.layerExportAssetKey;
+      rest.sourcePayload = payload;
+    }
+    return rest;
+  });
+  const design = { width: normalizeNumbers(bounds.width), height: normalizeNumbers(bounds.height), nodes };
+  return createHash("sha256").update(JSON.stringify(normalizeNumbers(design))).digest("hex");
+}
 
 async function createDatabase() {
   const fixture = await createPostgresTestDatabase();
@@ -130,7 +159,6 @@ test("versions stay immutable apart from swapping in the verified compressed cop
 });
 
 test("screen design fingerprints ignore renames but catch real changes", async () => {
-  const { frameDesignHash } = await import("./snapshot-store.ts");
   const frame = { name: "Screen - Home", bounds: { width: 390 }, nodes: [{ sourceNodeId: "1", name: "Button", fills: ["#ff7a30"], bounds: { width: 120 } }] };
   const renamed = { ...frame, name: "Home", nodes: [{ ...frame.nodes[0], name: "Primary button" }] };
   const resized = { ...frame, nodes: [{ ...frame.nodes[0], bounds: { width: 140 } }] };
@@ -145,6 +173,48 @@ test("screen design fingerprints ignore renames but catch real changes", async (
   assert.equal(frameDesignHash(moved), frameDesignHash(placed));
   const taller = { ...placed, bounds: { ...placed.bounds, height: m(900) } };
   assert.notEqual(frameDesignHash(taller), frameDesignHash(placed));
+});
+
+test("screen design fingerprints preserve their stored hash format", () => {
+  const frame = {
+    bounds: { width: { value: 393.7777, unit: "px", metric: { raw: 3.14159 } }, height: { value: 852.2222, unit: "px" } },
+    nodes: [{
+      sourceNodeId: "1:1",
+      name: "Primary button",
+      bounds: { x: { value: 193.6666717529297, unit: "px" }, width: { value: 120.12345, unit: "px" } },
+      fills: [{ color: [0.123456, 0.5, 0.987654], opacity: 0.99991 }],
+      sourcePayload: { label: "Save · 😀", opacity: 0.333333, layerExportAssetKey: "render-1" },
+    }],
+  };
+  assert.equal(frameDesignHash(frame), legacyFrameDesignHash(frame));
+});
+
+test("capture compression preserves snapshot JSON and its index while enforcing a raw-size limit", async () => {
+  const snapshot = {
+    schemaVersion: 1,
+    source: "figma",
+    contentHash: "a".repeat(64),
+    sourceMetadata: { longText: `${"x".repeat(16_383)}😀${"y".repeat(40_000)}` },
+    frames: [{
+      sourceFrameId: "1:0",
+      name: "Home · Café",
+      renderAssetKey: "frame-0",
+      bounds: { width: { value: 390.6667, unit: "px" } },
+      nodes: [{
+        sourceNodeId: "1:1",
+        name: "Primary button",
+        bounds: { width: { value: 120.4999, unit: "px" } },
+        sourcePayload: { opacity: 0.99991, layerExportAssetKey: "asset-1", label: "😀" },
+      }],
+    }],
+  };
+  const expectedJson = JSON.stringify(snapshot);
+  const compressed = await compressSnapshot(snapshot);
+
+  assert.equal(compressed.rawBytes, Buffer.byteLength(expectedJson, "utf8"));
+  assert.equal(decompressSnapshot(compressed.encoding, compressed.compressed), expectedJson);
+  assert.deepEqual(JSON.parse(compressed.frameIndex), JSON.parse(frameIndexForFrames(snapshot.frames)));
+  await assert.rejects(compressSnapshot(snapshot, { maxRawBytes: Buffer.byteLength(expectedJson) - 1 }), /snapshot exceeds.*byte limit/i);
 });
 
 test("older screen indexes get design fingerprints added once", async () => {
