@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { createHash } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto";
 import { mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -20,6 +20,7 @@ let fixture;
 let database;
 let createHandoffVersion;
 let hashSnapshotPayload;
+let store;
 
 before(async () => {
   process.chdir(applicationDirectory);
@@ -28,7 +29,8 @@ before(async () => {
   process.env.ASBIR_DATA_DIR = dataDirectory;
   fixture = await createPostgresTestDatabase();
   setDatabasePoolForTests(fixture.pool);
-  setObjectStoreForTests(new LocalObjectStore(path.join(dataDirectory, "objects")));
+  store = new LocalObjectStore(path.join(dataDirectory, "objects"));
+  setObjectStoreForTests(store);
 
   const [versions, snapshotContract] = await Promise.all([
     import("./versions.ts"),
@@ -127,4 +129,46 @@ test("rejects a capture when its baseline stopped being the latest version durin
     readdirSync(path.join(dataDirectory, "objects")).filter((name) => !name.endsWith(".json")),
     storedObjectsBeforeStaleCapture,
   );
+});
+
+test("a losing finalize retry leaves the uploads of the version that won in place", async () => {
+  const bytes = new Uint8Array(Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+i3XsAAAAASUVORK5CYII=",
+    "base64",
+  ));
+  const snapshot = {
+    schemaVersion: 1,
+    source: "bundle",
+    sourceFileId: "bundle-file-2",
+    sourceRevisionId: null,
+    sourceFileName: "uploaded bundle",
+    capturedAt: "2026-11-10T00:03:00.000Z",
+    contentHash: "0".repeat(64),
+    visualOnly: true,
+    overviewAssetKey: "overview",
+    frames: [{ sourceFrameId: "screen-1", name: "Screen 1", renderAssetKey: "overview" }],
+    assets: [{
+      key: "overview",
+      fileName: "overview.png",
+      contentType: "image/png",
+      sizeBytes: bytes.byteLength,
+      sha256: createHash("sha256").update(bytes).digest("hex"),
+      width: 1,
+      height: 1,
+    }],
+    sourceMetadata: {},
+  };
+  snapshot.contentHash = await hashSnapshotPayload(snapshot);
+  // The plugin uploaded this object straight to Storage; finalize points the version at it.
+  const uploadedKey = randomBytes(24).toString("hex");
+  await store.put(uploadedKey, bytes, "image/png");
+  const asset = { ...snapshot.assets[0], bytes, uploadedObjectKey: uploadedKey };
+  const latest = await database.prepare("SELECT id FROM handoff_version WHERE handoff_id = 'handoff-1' ORDER BY created_at DESC, id DESC LIMIT 1").get();
+
+  const first = { workspaceId: "workspace-1", projectId: "project-1", handoffId: "handoff-1", versionLabel: "From uploads", createdBy: "user-1", snapshot, assets: [asset], expectedLatestVersionId: latest.id };
+  await createHandoffVersion(first);
+  // The retry of the same finalize arrives after the first committed, and loses.
+  await assert.rejects(createHandoffVersion({ ...first, versionLabel: "From uploads (retry)" }), /handoff changed/i);
+
+  assert.ok(await store.get(uploadedKey), "the saved version's upload must survive the failed retry");
 });

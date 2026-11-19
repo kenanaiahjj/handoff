@@ -449,6 +449,9 @@ function waitBeforeRetry(ms: number, signal?: AbortSignal) {
  * retried on transient errors; resumable uploads continue from Storage's offset, and a small upload that
  * actually landed is accepted as "already exists".
  */
+/** Files uploaded at once. Storage handles this comfortably, and it hides most per-request latency. */
+const UPLOAD_CONCURRENCY = 6;
+
 async function withUploadRetries<T>(upload: () => Promise<T>, delays: readonly number[], signal?: AbortSignal): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
     try {
@@ -490,18 +493,37 @@ export async function uploadCaptureAssets(input: {
       return { key: asset.assetKey, path: signed.path, token: signed.token, asset, completed: input.session.completedAssetKeys.has(asset.assetKey) };
     }),
   ];
+  // Bytes counted per file, plus their running total, so a progress event costs O(1) however many files there are.
+  const sizeByKey = new Map(uploadRows.map((row) => [row.key, row.asset.sizeBytes]));
+  const countedBytes = new Map(uploadRows.map((row) => [row.key, row.completed ? row.asset.sizeBytes : input.session.progressByUpload.get(row.key) ?? 0]));
+  let uploadedBytes = [...countedBytes.values()].reduce((sum, value) => sum + value, 0);
   const reportProgress = (key: string, value: number) => {
-    input.session.progressByUpload.set(key, Math.min(Math.max(value, 0), uploadRows.find((row) => row.key === key)!.asset.sizeBytes));
-    const uploadedBytes = uploadRows.reduce((sum, row) => sum + (row.completed ? row.asset.sizeBytes : input.session.progressByUpload.get(row.key) ?? 0), 0);
+    const clamped = Math.min(Math.max(value, 0), sizeByKey.get(key)!);
+    input.session.progressByUpload.set(key, clamped);
+    uploadedBytes += clamped - (countedBytes.get(key) ?? 0);
+    countedBytes.set(key, clamped);
     input.onProgress?.(uploadedBytes, totalBytes);
   };
-  for (const row of uploadRows) {
-    try {
-      await uploadRow(row);
-    } catch (error) {
-      throw explainStorageRejection(error, row.asset);
+  // Most files are small, so latency dominates: keep several in flight. After the first failure no new
+  // file starts; the ones already in flight finish, and the session remembers them for a resume.
+  let nextRow = 0;
+  let failed = false;
+  let failure: unknown;
+  const worker = async () => {
+    while (!failed && nextRow < uploadRows.length) {
+      const row = uploadRows[nextRow++];
+      try {
+        await uploadRow(row);
+      } catch (error) {
+        if (!failed) {
+          failed = true;
+          failure = explainStorageRejection(error, row.asset);
+        }
+      }
     }
-  }
+  };
+  await Promise.all(Array.from({ length: Math.min(UPLOAD_CONCURRENCY, uploadRows.length) }, worker));
+  if (failed) throw failure;
   return {
     snapshotPath: intent.snapshot.path,
     assets: Object.fromEntries(intent.uploads.map(({ assetKey, path }) => [assetKey, path])),

@@ -884,9 +884,21 @@ function unionRects(rects: readonly Rect[]): Rect | null {
   }, { ...rects[0] });
 }
 
-async function loadVariablesAndStyles(nodes: readonly { node: SceneNode }[], textSegmentsCache: TextSegmentsCache) {
-  const variables = new Map<string, Variable | null>();
-  const collectionsById = new Map<string, VariableCollection | null>();
+/** Variables, collections and styles already looked up during this capture, shared by every frame. */
+type LookupCache = {
+  variables: Map<string, Variable | null>;
+  collections: Map<string, VariableCollection | null>;
+  styles: Map<string, BaseStyle | null>;
+};
+
+function createLookupCache(): LookupCache {
+  return { variables: new Map(), collections: new Map(), styles: new Map() };
+}
+
+async function loadVariablesAndStyles(nodes: readonly { node: SceneNode }[], textSegmentsCache: TextSegmentsCache, cache: LookupCache) {
+  // Frames built from one design system share most variables and styles, so only new ids are fetched.
+  const variables = cache.variables;
+  const collectionsById = cache.collections;
   const aliasIds = new Set<string>();
   const styleIds = new Set<string>();
   const warnings: string[] = [];
@@ -900,18 +912,19 @@ async function loadVariablesAndStyles(nodes: readonly { node: SceneNode }[], tex
       if (id) styleIds.add(id);
     }
   }
-  const missingVariables = [...aliasIds];
+  const missingVariables = [...aliasIds].filter((id) => !variables.has(id));
   const resolvedVariables = await mapInBatches(missingVariables, (id) => figma.variables.getVariableByIdAsync(id).catch(() => null));
   for (const [index, variable] of resolvedVariables.entries()) variables.set(missingVariables[index], variable);
   const unresolvedVariableCount = resolvedVariables.filter((variable) => !variable).length;
   if (unresolvedVariableCount) warnings.push(`${unresolvedVariableCount} Figma variable binding${unresolvedVariableCount === 1 ? " could" : "s could"} not be resolved. The capture retains all layers and other readable properties.`);
-  const missingCollectionIds = [...new Set(resolvedVariables.flatMap((variable) => variable?.variableCollectionId ? [variable.variableCollectionId] : []))];
+  const missingCollectionIds = [...new Set(resolvedVariables.flatMap((variable) => variable?.variableCollectionId && !collectionsById.has(variable.variableCollectionId) ? [variable.variableCollectionId] : []))];
   const resolvedCollections = await mapInBatches(missingCollectionIds, (id) => figma.variables.getVariableCollectionByIdAsync(id).catch(() => null));
   for (const [index, collection] of resolvedCollections.entries()) collectionsById.set(missingCollectionIds[index], collection);
   if (resolvedCollections.some((collection) => !collection)) warnings.push("Some Figma variable collections could not be resolved. The capture retains layer bindings and other readable properties.");
-  const styleEntries = await mapInBatches([...styleIds], async (id) => [id, await figma.getStyleByIdAsync(id).catch(() => null)] as const);
+  const styleEntries = await mapInBatches([...styleIds].filter((id) => !cache.styles.has(id)), async (id) => [id, await figma.getStyleByIdAsync(id).catch(() => null)] as const);
+  for (const [id, style] of styleEntries) cache.styles.set(id, style);
   if (styleEntries.some(([, style]) => !style)) warnings.push("Some Figma styles could not be resolved. The capture retains style references and other readable properties.");
-  return { variables, styles: new Map(styleEntries), collections: collectionsById, warnings };
+  return { variables, styles: cache.styles, collections: collectionsById, warnings };
 }
 
 export async function captureFigmaCanvas(
@@ -1016,6 +1029,7 @@ export async function captureFigmaCanvas(
       fallbackCount: 0,
     });
   }
+  const lookupCache = createLookupCache();
   for (const [index, entry] of roots.entries()) {
     if (index === 0 || (index + 1) % 10 === 0 || index === roots.length - 1) {
       report(`Reading layers and properties from frame ${index + 1} of ${roots.length}: ${entry.root.name || "Untitled frame"}…`);
@@ -1024,7 +1038,7 @@ export async function captureFigmaCanvas(
     totalNodes += frameNodes.length;
     const textSegmentsCache: TextSegmentsCache = new WeakMap();
     const [{ variables, styles, collections, warnings: lookupWarnings }, componentsByInstanceId] = await Promise.all([
-      loadVariablesAndStyles(frameNodes, textSegmentsCache).catch(() => {
+      loadVariablesAndStyles(frameNodes, textSegmentsCache, lookupCache).catch(() => {
         warnings.push("Variable and style lookups were unavailable. The pixel renders, layer tree, geometry, and other readable properties were retained.");
         return {
           variables: new Map<string, Variable | null>(),

@@ -2,7 +2,7 @@ import { randomBytes, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES } from "@asbir/snapshot-contract";
 import { getCaptureSession, isCaptureSessionExpired } from "@/src/server/repositories/capture-sessions";
-import { getDatabase } from "@/src/server/db";
+import { getDatabase, isUniqueConstraintViolation } from "@/src/server/db";
 import { mapWithConcurrency } from "@/src/server/map-with-concurrency";
 import { getSupabaseStorageUrl, objectStore } from "@/src/server/storage/supabase-object-store";
 
@@ -24,6 +24,9 @@ const requestSchema = z.object({
   assets: z.array(assetSchema).max(20_000),
   renew: z.boolean().optional(),
 }).strict();
+
+/** Renewals of a capture's upload slots before it must be started again. */
+const MAX_UPLOAD_RENEWALS = 10;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -76,6 +79,27 @@ export async function POST(request: Request) {
   const now = new Date().toISOString();
   let declaredUploads: Array<{ kind: "snapshot" | "asset"; assetKey: string | null; objectKey: string; fileName: string; contentType: string; sizeBytes: number; sha256: string }>;
   try {
+    // One statement for all new rows: per-row inserts meant hundreds of round trips inside this transaction.
+    const insertUploads = async (uploads: typeof declaredUploads) => {
+      if (!uploads.length) return;
+      await database.prepare(
+        `INSERT INTO capture_upload
+          (id, capture_session_id, upload_kind, asset_key, object_key, file_name, content_type, size_bytes, sha256, created_at)
+         SELECT id, ?, kind, asset_key, object_key, file_name, content_type, size_bytes, sha256, ?
+         FROM unnest(?::text[], ?::text[], ?::text[], ?::text[], ?::text[], ?::text[], ?::bigint[], ?::text[])
+           AS u(id, kind, asset_key, object_key, file_name, content_type, size_bytes, sha256)`,
+      ).run(
+        session.id, now,
+        uploads.map(() => randomUUID()),
+        uploads.map((upload) => upload.kind),
+        uploads.map((upload) => upload.assetKey),
+        uploads.map((upload) => upload.objectKey),
+        uploads.map((upload) => upload.fileName),
+        uploads.map((upload) => upload.contentType),
+        uploads.map((upload) => upload.sizeBytes),
+        uploads.map((upload) => upload.sha256),
+      );
+    };
     declaredUploads = await database.transaction(async () => {
       const rows = (await database
         .prepare(
@@ -111,27 +135,23 @@ export async function POST(request: Request) {
       const result: typeof declaredUploads = [];
 
       if (parsed.data.renew && rows.length) {
+        // Each renewal hands out up to 512 MiB of fresh upload slots, so a leaked token can't loop it.
+        const renewals = (await database
+          .prepare("SELECT count(*)::int AS count FROM capture_upload WHERE capture_session_id = ? AND upload_kind = 'snapshot' AND NOT is_current")
+          .get(session.id)) as { count: number };
+        if (renewals.count >= MAX_UPLOAD_RENEWALS) throw new Error("This capture was restarted too many times. Start a new capture.");
         const deleteAfter = new Date(Date.now() + 25 * 60 * 60 * 1000).toISOString();
-        for (const row of rows) {
-          await database.prepare(
-            "INSERT INTO capture_upload_abandoned (object_key, created_at, delete_after) VALUES (?, ?, ?) ON CONFLICT DO NOTHING",
-          ).run(row.objectKey, now, deleteAfter);
-          await database.prepare(
-            "UPDATE capture_upload SET is_current = false WHERE id = ? AND is_current AND finalized_at IS NULL",
-          ).run(row.id);
-        }
+        await database.prepare(
+          `INSERT INTO capture_upload_abandoned (object_key, created_at, delete_after)
+           SELECT object_key, ?, ? FROM unnest(?::text[]) AS object_key ON CONFLICT DO NOTHING`,
+        ).run(now, deleteAfter, rows.map((row) => row.objectKey));
+        await database.prepare(
+          "UPDATE capture_upload SET is_current = false WHERE id = ANY(?::text[]) AND is_current AND finalized_at IS NULL",
+        ).run([rows.map((row) => row.id)]);
 
-        for (const declaration of declarations) {
-          const objectKey = randomBytes(24).toString("hex");
-          await database.prepare(
-            `INSERT INTO capture_upload
-              (id, capture_session_id, upload_kind, asset_key, object_key, file_name, content_type, size_bytes, sha256, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).run(randomUUID(), session.id, declaration.kind, declaration.assetKey, objectKey, declaration.fileName,
-            declaration.contentType, declaration.sizeBytes, declaration.sha256, now);
-          result.push({ ...declaration, objectKey });
-        }
-        return result;
+        const fresh = declarations.map((declaration) => ({ ...declaration, objectKey: randomBytes(24).toString("hex") }));
+        await insertUploads(fresh);
+        return fresh;
       }
 
       if (rows.length && rows.length !== declarations.length) {
@@ -148,23 +168,18 @@ export async function POST(request: Request) {
         )) {
           throw new Error("An upload declaration changed after upload began. Renew the upload credentials and try again.");
         }
-        const objectKey = existing?.objectKey ?? randomBytes(24).toString("hex");
-        if (!existing) {
-          await database.prepare(
-            `INSERT INTO capture_upload
-              (id, capture_session_id, upload_kind, asset_key, object_key, file_name, content_type, size_bytes, sha256, created_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-          ).run(randomUUID(), session.id, declaration.kind, declaration.assetKey, objectKey, declaration.fileName,
-            declaration.contentType, declaration.sizeBytes, declaration.sha256, now);
-        }
-        result.push({ ...declaration, objectKey });
+        result.push({ ...declaration, objectKey: existing?.objectKey ?? randomBytes(24).toString("hex") });
       }
-
+      await insertUploads(result.filter((upload) => !existingByIdentity.has(`${upload.kind}:${upload.assetKey ?? ""}`)));
       return result;
     })();
   } catch (error) {
-    if (error instanceof Error && /already been finalized|declaration set changed|declaration changed/.test(error.message)) {
+    if (error instanceof Error && /already been finalized|declaration set changed|declaration changed|restarted too many times/.test(error.message)) {
       return jsonResponse({ error: error.message }, { status: 409 });
+    }
+    // Two first requests for the same capture at once: the unique indexes let only one declare uploads.
+    if (isUniqueConstraintViolation(error)) {
+      return jsonResponse({ error: "Another upload for this capture started at the same time. Try again." }, { status: 409 });
     }
     throw error;
   }
@@ -180,7 +195,7 @@ export async function POST(request: Request) {
       await database.prepare(`DELETE FROM capture_upload_abandoned WHERE object_key IN (${placeholders})`).run(...cleanedKeys);
     }
 
-    const signedUploads = await mapWithConcurrency(declaredUploads, 4, async (upload) => {
+    const signedUploads = await mapWithConcurrency(declaredUploads, 12, async (upload) => {
       const signed = await objectStore.createSignedUploadUrl(upload.objectKey);
       return {
         kind: upload.kind,

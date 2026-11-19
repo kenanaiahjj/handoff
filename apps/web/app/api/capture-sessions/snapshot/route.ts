@@ -19,6 +19,7 @@ import { findReusableAsset } from "@/src/server/services/reusable-assets";
 import { primeCanvasCopy } from "@/src/server/services/version-canvas";
 import { storeScreenCopiesLater } from "@/src/server/services/frame-store";
 import { objectStore } from "@/src/server/storage/supabase-object-store";
+import { mapWithConcurrency } from "@/src/server/map-with-concurrency";
 
 /**
  * Large captures (250 MB of JSON) take tens of seconds to verify, merge and store. 300 s is the
@@ -54,6 +55,15 @@ function jsonResponse(body: unknown, init: ResponseInit = {}) {
 
 function retryUploadResponse(message: string) {
   return jsonResponse({ error: message, code: "upload_integrity_failed", retryUpload: true }, { status: 409 });
+}
+
+const ASSET_VERIFY_CONCURRENCY = 8;
+
+/** A failed check on one uploaded asset, carrying the response to send. */
+class AssetCheckFailure extends Error {
+  constructor(readonly response: Response) {
+    super("Uploaded asset check failed.");
+  }
 }
 
 /**
@@ -197,7 +207,6 @@ export async function POST(request: Request) {
   }
 
   let totalAssetBytes = 0;
-  const assets: VersionAssetInput[] = [];
   for (const asset of snapshot.assets) {
     const upload = assetUploads.get(asset.key)!;
     if (upload.fileName !== asset.fileName || upload.contentType !== asset.contentType ||
@@ -207,22 +216,33 @@ export async function POST(request: Request) {
     }
     totalAssetBytes += upload.sizeBytes;
     if (totalAssetBytes > MAX_CAPTURE_ASSET_BYTES) return jsonResponse({ error: "This capture exceeds Handoff’s 256 MiB asset limit." }, { status: 413 });
-    const stored = await objectStore.get(upload.objectKey);
-    if (!stored) return retryUploadResponse(`Render asset "${asset.fileName}" is missing. Upload it again.`);
-    const checksum = createHash("sha256").update(stored.bytes).digest("hex");
-    if (stored.contentType !== asset.contentType || stored.bytes.byteLength !== asset.sizeBytes || checksum !== asset.sha256) {
-      return retryUploadResponse(`Render asset "${asset.fileName}" failed its size, content type, or checksum check.`);
-    }
-    try {
-      const dimensions = verifyRenderAssetBytes(stored.bytes, asset.contentType, asset.fileName);
-      if (dimensions && ((asset.width !== undefined && asset.width !== dimensions.width) || (asset.height !== undefined && asset.height !== dimensions.height))) {
-        return jsonResponse({ error: `Render dimensions do not match for "${asset.fileName}".` }, { status: 400 });
+  }
+  // Read back and verify the uploads several at a time: one by one, hundreds of Storage round trips
+  // could take most of the function's time limit. The first failed check stops the rest.
+  let assets: VersionAssetInput[];
+  try {
+    assets = await mapWithConcurrency(snapshot.assets, ASSET_VERIFY_CONCURRENCY, async (asset) => {
+      const upload = assetUploads.get(asset.key)!;
+      const stored = await objectStore.get(upload.objectKey);
+      if (!stored) throw new AssetCheckFailure(retryUploadResponse(`Render asset "${asset.fileName}" is missing. Upload it again.`));
+      const checksum = createHash("sha256").update(stored.bytes).digest("hex");
+      if (stored.contentType !== asset.contentType || stored.bytes.byteLength !== asset.sizeBytes || checksum !== asset.sha256) {
+        throw new AssetCheckFailure(retryUploadResponse(`Render asset "${asset.fileName}" failed its size, content type, or checksum check.`));
       }
-    } catch (error) {
-      if (error instanceof SnapshotImportError) return jsonResponse({ error: error.message }, { status: error.status });
-      throw error;
-    }
-    assets.push({ ...asset, bytes: stored.bytes, uploadedObjectKey: upload.objectKey });
+      try {
+        const dimensions = verifyRenderAssetBytes(stored.bytes, asset.contentType, asset.fileName);
+        if (dimensions && ((asset.width !== undefined && asset.width !== dimensions.width) || (asset.height !== undefined && asset.height !== dimensions.height))) {
+          throw new AssetCheckFailure(jsonResponse({ error: `Render dimensions do not match for "${asset.fileName}".` }, { status: 400 }));
+        }
+      } catch (error) {
+        if (error instanceof SnapshotImportError) throw new AssetCheckFailure(jsonResponse({ error: error.message }, { status: error.status }));
+        throw error;
+      }
+      return { ...asset, bytes: stored.bytes, uploadedObjectKey: upload.objectKey };
+    });
+  } catch (error) {
+    if (error instanceof AssetCheckFailure) return error.response;
+    throw error;
   }
 
   const baselineVersionId = manifest.baselineVersionId ?? null;
@@ -388,6 +408,11 @@ export async function POST(request: Request) {
     if (isUniqueConstraintViolation(error)) {
       return jsonResponse({ error: "A handoff with that name and version already exists." }, { status: 409 });
     }
-    return jsonResponse({ error: error instanceof Error ? error.message : "Could not store this Figma capture." }, { status: 400 });
+    // Database and Storage errors carry internals (SQL, constraint names): log them, don't send them.
+    if (!(error instanceof Error) || typeof (error as { code?: unknown }).code === "string" || error.message.startsWith("Supabase Storage ")) {
+      console.error("[capture] Finalize failed:", error);
+      return jsonResponse({ error: "Could not store this Figma capture. Try again in a moment." }, { status: 500 });
+    }
+    return jsonResponse({ error: error.message }, { status: 400 });
   }
 }

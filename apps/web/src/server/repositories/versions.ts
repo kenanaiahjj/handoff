@@ -199,10 +199,10 @@ export async function createHandoffVersion(input: CreateHandoffVersionInput) {
   try {
     for (const { asset, objectKey } of storedAssets) {
       if (!asset.bytes) continue;
-      if (asset.uploadedObjectKey) {
-        writtenObjectKeys.push(objectKey);
-        continue;
-      }
+      // Uploaded straight to Storage by the plugin. Never delete it here on failure: a finalize retry
+      // that loses the race would remove the files of the version that won. The capture route cleans
+      // up unreferenced uploads itself.
+      if (asset.uploadedObjectKey) continue;
       await objectStore.put(objectKey, asset.bytes, asset.contentType);
       writtenObjectKeys.push(objectKey);
     }

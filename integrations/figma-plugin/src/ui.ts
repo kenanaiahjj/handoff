@@ -283,7 +283,7 @@ function renderFrameManifest(capture: CaptureReadyMessage) {
     label.append(checkbox, title);
     item.append(label);
     frameList.append(item);
-    checkbox.addEventListener("change", () => { void updateSelectedCapture(); });
+    checkbox.addEventListener("change", scheduleSelectedCaptureUpdate);
   });
   frameManifest.hidden = false;
   applyFrameFilter();
@@ -403,10 +403,8 @@ async function prepareSelectedCapture(capture: CaptureReadyMessage) {
     preview.height = overview.height;
     const context = preview.getContext("2d", { alpha: true });
     if (!context) throw new Error("The browser could not create the canvas preview.");
-    const pixelPreview = await loadImage(overview.bytes, "image/png");
-    if (generation !== previewGeneration) return;
     context.clearRect(0, 0, preview.width, preview.height);
-    context.drawImage(pixelPreview, 0, 0, preview.width, preview.height);
+    context.drawImage(overview.canvas, 0, 0, preview.width, preview.height);
     updateFrameManifestSummary(capture);
     updateLayerAssetReport(capture);
     updateCaptureSummary(capture, overview.width, overview.height);
@@ -420,7 +418,25 @@ async function prepareSelectedCapture(capture: CaptureReadyMessage) {
   }
 }
 
+let selectionTimer: ReturnType<typeof setTimeout> | undefined;
+
+/**
+ * Rebuilding the overview decodes every selected frame, so wait until the clicking stops instead of
+ * rebuilding (and locking the list) after each checkbox. Upload stays off until the rebuild is done.
+ */
+function scheduleSelectedCaptureUpdate() {
+  if (!fullCapture) return;
+  previewGeneration += 1;
+  currentCapture = null;
+  overviewBytes = null;
+  updateFrameManifestSummary(fullCapture);
+  refreshPrimaryAction();
+  clearTimeout(selectionTimer);
+  selectionTimer = setTimeout(() => { void updateSelectedCapture(); }, 300);
+}
+
 async function updateSelectedCapture() {
+  clearTimeout(selectionTimer);
   if (!fullCapture) return;
   const includedFrameIds = selectedFrameIds();
   updateFrameManifestSummary(fullCapture);
@@ -554,7 +570,7 @@ async function createOverviewPng(capture: CaptureReadyMessage) {
     }
 
     const bytes = await canvasPngBytes(overview);
-    if (bytes.byteLength <= overviewBudget) return { bytes, width: canvasWidth, height: canvasHeight };
+    if (bytes.byteLength <= overviewBudget) return { bytes, canvas: overview, width: canvasWidth, height: canvasHeight };
     overview.width = 1;
     overview.height = 1;
     scale *= Math.min(0.85, Math.sqrt(overviewBudget / bytes.byteLength) * 0.9);
@@ -1184,7 +1200,8 @@ async function uploadCapture() {
   pendingUpload = null;
   setStatus("Preparing the captured version…");
   try {
-    const frameRenders = await Promise.all(currentCapture.renders.map(cropFrameRender));
+    // A few at a time: each crop decodes a full 2x render, and all at once can exhaust the iframe's memory.
+    const frameRenders = await mapWithConcurrency(currentCapture.renders, 4, (render) => cropFrameRender(render));
     const frameDimensions = frameRenders.map(dimensionsOf);
     const renderMetadata = await mapWithConcurrency(frameRenders, 8, async (render, index) =>
       assetMetadata(render, frameDimensions[index], await sha256(render.bytes)),
