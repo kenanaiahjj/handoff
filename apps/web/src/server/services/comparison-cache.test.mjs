@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test, { after } from "node:test";
+import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { createPostgresTestFixture } from "../test-support/postgres-test-fixture.mjs";
 
@@ -22,6 +23,8 @@ after(async () => fixture.close());
 test("a saved comparison reads back exactly, until a match is confirmed", async () => {
   const json = JSON.stringify({ diff: { frames: [{ frameId: "a", status: "changed" }] }, frames: [{ name: "Home · Café" }] });
   const key = await matchStateKey("h");
+  const unversionedKey = createHash("sha256").update(JSON.stringify({ frames: [], nodes: [] })).digest("hex");
+  assert.notEqual(key, unversionedKey, "diff algorithm changes must invalidate saved comparisons");
   assert.equal(await readSavedComparison({ fromVersionId: "v1", toVersionId: "v2", matchKey: key }), null);
 
   await saveComparison({ handoffId: "h", fromVersionId: "v1", toVersionId: "v2", matchKey: key, json });

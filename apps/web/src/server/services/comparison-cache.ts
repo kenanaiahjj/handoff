@@ -5,9 +5,12 @@ import { getDatabase } from "../db";
 /** Keep the most recent comparisons; each is a few hundred KB compressed at most. */
 const maxEntries = 300;
 
+/** Bump when diff semantics change so saved comparisons are recomputed with the new algorithm. */
+const comparisonAlgorithmVersion = 2;
+
 /**
- * Fingerprint of every confirmed screen and layer match in a handoff. A new or removed match changes
- * it, so a saved comparison is never served after the matches it was computed with have changed.
+ * Fingerprint of the diff algorithm and every confirmed screen and layer match in a handoff. A new
+ * match or algorithm version makes old saved comparisons miss and recompute.
  */
 export async function matchStateKey(handoffId: string) {
   const database = getDatabase();
@@ -25,7 +28,7 @@ export async function matchStateKey(handoffId: string) {
        ORDER BY baseline_version_id, new_version_id, before_frame_id, before_node_id`,
     )
     .all(handoffId));
-  return createHash("sha256").update(JSON.stringify({ frames, nodes })).digest("hex");
+  return createHash("sha256").update(JSON.stringify({ version: comparisonAlgorithmVersion, frames, nodes })).digest("hex");
 }
 
 /** The saved comparison as JSON text, ready to send, or null when it hasn't been computed yet. */
