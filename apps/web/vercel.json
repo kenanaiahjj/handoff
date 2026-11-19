@@ -7,7 +7,7 @@
     },
     {
       "path": "/api/cron/capture-cleanup",
-      "schedule": "30 3 * * *"
+      "schedule": "0 17 * * *"
     }
   ],
   "installCommand": "cd ../.. && npm ci --workspaces --include-workspace-root"
