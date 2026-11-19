@@ -21,6 +21,8 @@ import { toMcpApprovedChangelog } from "@/src/server/services/mcp-changelog";
 import { scopedLoaders } from "@/src/server/services/mcp-access";
 import { summarizeChangedScreens } from "@/src/server/services/changed-screens";
 import { filterProjectsForViewer, visibleHandoffIds } from "@/src/server/services/review-visibility";
+import { listProjectTeam } from "@/src/server/services/project-access";
+import { projectRoleLabels } from "@/src/lib/project-roles";
 import { taskLinkFieldsSchema, taskLinkSchema } from "@/src/server/services/task-context";
 import { diffSnapshots, isStructuredSnapshot } from "@/src/server/services/diff";
 import { evaluateLayoutRules } from "@/src/server/services/layout-rules";
@@ -172,6 +174,25 @@ function registerReadTools(server: McpServer, workspaceId: string, viewer: McpVi
       }
       const result = (await listHandoffsPage({ workspaceId, projectId, offset, limit }));
       return textResult(pageItems(result.items, result.total, offset, limit));
+    } catch (error) { return failure(error); }
+  });
+
+  server.registerTool("list_project_team", {
+    title: "List a project's team",
+    description: "Who works on a project and in what role (Designer, Developer, QA, Reviewer), with the PD in charge first. Use it to tell someone who to ask about a design, a build or a test.",
+    inputSchema: z.object({ projectId: idSchema }),
+  }, async ({ projectId }) => {
+    try {
+      if (!(await getProject({ workspaceId, projectId }))) throw new Error("Project not found in this workspace.");
+      if (allowedHandoffIds && !((await listHandoffs({ workspaceId, projectId })) as Array<{ id: string }>).some((handoff) => allowedHandoffIds.has(handoff.id))) {
+        throw new Error("Project not found in this workspace.");
+      }
+      const team = (await listProjectTeam(workspaceId, projectId)).map((person) => ({
+        name: person.name,
+        email: person.email,
+        role: person.isPdInCharge ? "PD in charge" : projectRoleLabels[person.role],
+      }));
+      return textResult({ projectId, team });
     } catch (error) { return failure(error); }
   });
 

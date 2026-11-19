@@ -17,6 +17,9 @@ import { NeedsYou } from "@/src/components/shell/NeedsYou";
 import { ProfileNudge } from "@/src/components/shell/ProfileNudge";
 import { getProfile } from "@/src/server/services/profiles";
 import { ViewAsSwitcher } from "@/src/components/shell/ViewAsSwitcher";
+import { listRecentHandoffs } from "@/src/server/services/workspace-activity";
+import { NewVersionBadge } from "@/src/components/shell/NewVersionBadge";
+import { LocalTime } from "@/src/components/LocalTime";
 import { isDevelopmentAuthBypassActive, viewAsModeFor } from "@/src/server/auth-session";
 import { WorkspaceShell } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
@@ -81,7 +84,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
     );
   }
   // Independent reads run together: each is a network round trip on hosted PostgreSQL.
-  const [projects, updates, invites, members] = await Promise.all([
+  const [projects, updates, invites, members, recent] = await Promise.all([
     listProjects(workspace.id).then((all) => filterProjectsForViewer(workspace.id, viewer, all as ProjectCard[])),
     listViewerUpdates(workspace.id, viewer),
     getDatabase()
@@ -94,7 +97,9 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
       )
       .all(workspaceId, new Date().toISOString()) as Promise<WorkspaceInvite[]>,
     listMembers(workspace.id),
+    listRecentHandoffs(workspace.id, null),
   ]);
+  const updatedHandoffs = new Set(updates.map((update) => update.handoffId));
   const navSections = await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, isOwner: workspace.role === "owner", projects, page: "overview", canManage });
 
   return (
@@ -118,7 +123,34 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
         <NeedsYou className="mt-6" initial={(await listOpenMentions(session.user.id, workspace.id, viewer))} />
 
         <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
+<div className="space-y-5">
           <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} iconVersions={(await projectIconVersions(workspace.id))} pinnedIds={(await listPinKeys(session.user.id)).filter((key) => key.startsWith("project:")).map((key) => key.slice("project:".length))} />
+
+          {recent.length ? (
+            <section aria-labelledby="recent-title" className="workspace-pane p-3 pt-4">
+              <div className="workspace-pane-heading px-2.5">
+                <h2 className="text-[14px] font-semibold text-foreground" id="recent-title">Recently updated</h2>
+                <Link className="text-[12px] text-foreground-subtle hover:text-foreground" href="/activity">All activity</Link>
+              </div>
+              <ul className="workspace-list">
+                {recent.map((handoff) => (
+                  <li key={handoff.handoffId}>
+                    <Link className="workspace-list-item flex items-center gap-3 px-2.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/projects/${handoff.projectId}/handoffs/${handoff.handoffId}`}>
+                      <span className="min-w-0 flex-1">
+                        <span className="flex min-w-0 items-center gap-2">
+                          <span className="truncate text-[13px] font-medium text-foreground">{handoff.handoffName}</span>
+                          {updatedHandoffs.has(handoff.handoffId) ? <NewVersionBadge label="New" /> : null}
+                        </span>
+                        <span className="block truncate text-[11px] text-foreground-subtle">{handoff.projectName} · Version {handoff.versionLabel} · {handoff.versionCount} {handoff.versionCount === 1 ? "version" : "versions"}</span>
+                      </span>
+                      <span className="shrink-0 text-[11px] text-foreground-subtle"><LocalTime format="day" iso={handoff.updatedAt} /></span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
+          </div>
 
           <section aria-labelledby="invite-title" className="workspace-pane p-5 sm:p-6">
             <div className="workspace-pane-heading">

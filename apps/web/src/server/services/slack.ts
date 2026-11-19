@@ -76,8 +76,8 @@ function messageWithButton(text: string, detail: string | null, buttonLabel: str
 const escape = (value: string) => value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 
 /**
- * Who hears about a new version: people the handoff is shared with, the project's PD, and anyone who
- * pinned the project — never the person who published it.
+ * Who hears about a new version: people the handoff is shared with, the project's team and PD, and
+ * anyone who pinned the project — never the person who published it.
  */
 export async function newVersionRecipients(input: { workspaceId: string; handoffId: string; createdBy: string }) {
   const rows = (await getDatabase()
@@ -89,12 +89,16 @@ export async function newVersionRecipients(input: { workspaceId: string; handoff
        SELECT "user".email FROM handoff JOIN project ON project.id = handoff.project_id
          JOIN "user" ON "user".id = project.pd_in_charge_user_id WHERE handoff.id = ?
        UNION
+       SELECT project_member.email FROM handoff
+         JOIN project_member ON project_member.project_id = handoff.project_id AND project_member.workspace_id = handoff.workspace_id
+         WHERE handoff.id = ?
+       UNION
        SELECT "user".email FROM handoff
          JOIN viewer_pin ON viewer_pin.kind = 'project' AND viewer_pin.target_id = handoff.project_id
          JOIN workspace_membership ON workspace_membership.user_id = viewer_pin.user_id AND workspace_membership.workspace_id = handoff.workspace_id
          JOIN "user" ON "user".id = viewer_pin.user_id WHERE handoff.id = ?`,
     )
-    .all(input.handoffId, input.workspaceId, new Date().toISOString(), input.handoffId, input.handoffId)) as Array<{ email: string }>;
+    .all(input.handoffId, input.workspaceId, new Date().toISOString(), input.handoffId, input.handoffId, input.handoffId)) as Array<{ email: string }>;
   const publisher = (await getDatabase().prepare('SELECT lower(email) AS email FROM "user" WHERE id = ?').get(input.createdBy)) as { email: string } | undefined;
   return rows.map((row) => row.email.toLowerCase()).filter((email) => email !== publisher?.email);
 }

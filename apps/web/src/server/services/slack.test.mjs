@@ -26,6 +26,8 @@ await database.prepare("INSERT INTO project VALUES ('p', 'ws', 'Maayo', 'pd')").
 await database.prepare("INSERT INTO handoff VALUES ('h', 'ws', 'p', 'Rebooking')").run();
 await database.prepare("INSERT INTO handoff_invite VALUES ('i1', 'ws', 'h', 'qa@lmf.ventures', NULL, NULL), ('i2', 'ws', 'h', 'gone@lmf.ventures', 'revoked', NULL), ('i3', 'ws', 'h', 'dee@lmf.ventures', NULL, NULL)").run();
 await database.prepare("INSERT INTO viewer_pin VALUES ('fan', 'project', 'p', 'now')").run();
+// On the project team, so every handoff in it reaches them (QA is also a direct invitee: one DM, not two).
+await database.prepare("INSERT INTO project_member VALUES ('p', 'ws', 'devin@lmf.ventures', 'dev', 'designer', 'now'), ('p', 'ws', 'qa@lmf.ventures', 'qa', 'designer', 'now')").run();
 const frames = (keys) => JSON.stringify({ frames: keys.map((key) => ({ sourceFrameId: key, name: key, renderAssetKey: key })) });
 await database.prepare("INSERT INTO handoff_version VALUES ('v1', 'h', '1.0', 'designer', '2026-01-01', ?), ('v2', 'h', '1.1', 'designer', '2026-01-02', ?)").run(frames(["a", "b"]), frames(["a", "b", "c"]));
 await database.prepare("INSERT INTO handoff_asset VALUES ('v1', 'a', 'x'), ('v1', 'b', 'y'), ('v2', 'a', 'x'), ('v2', 'b', 'y2'), ('v2', 'c', 'z')").run();
@@ -61,13 +63,13 @@ test("does nothing until a Slack bot token is set", async () => {
   assert.equal(messages.length, 0);
 });
 
-test("new versions reach invitees, the PD and people who pinned the project, never the publisher", async () => {
+test("new versions reach invitees, the project team, the PD and people who pinned the project, never the publisher", async () => {
   process.env.SLACK_BOT_TOKEN = "xoxb-test";
-  assert.deepEqual((await newVersionRecipients({ workspaceId: "ws", handoffId: "h", createdBy: "designer" })).sort(), ["fay@lmf.ventures", "pat@lmf.ventures", "qa@lmf.ventures"]);
+  assert.deepEqual((await newVersionRecipients({ workspaceId: "ws", handoffId: "h", createdBy: "designer" })).sort(), ["devin@lmf.ventures", "fay@lmf.ventures", "pat@lmf.ventures", "qa@lmf.ventures"]);
 
   const { fetcher, messages } = fakeSlack();
   const result = await notifyNewVersion({ workspaceId: "ws", handoffId: "h", versionId: "v2", createdBy: "designer" }, fetcher);
-  assert.equal(result.sent, 3);
+  assert.equal(result.sent, 4);
   assert.match(messages[0].text, /\*Dee Designer\* published version \*1\.1\* of \*Rebooking\* in Maayo/);
   const section = messages[0].blocks[0].text.text;
   assert.match(section, /1 screen changed · 1 new/);

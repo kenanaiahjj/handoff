@@ -385,7 +385,7 @@ test("an MCP client can initialize, discover read-scoped tools, and read an immu
   });
   assert.equal(discovery.response.status, 200, JSON.stringify(discovery.body));
   const toolNames = discovery.body.result.tools.map((tool) => tool.name);
-  for (const name of ["list_handoffs", "list_frames", "list_elements", "get_snapshot", "get_measurements", "get_token_bindings", "get_version_diff", "list_comments"]) {
+  for (const name of ["list_handoffs", "list_project_team", "list_frames", "list_elements", "get_snapshot", "get_measurements", "get_token_bindings", "get_version_diff", "list_comments"]) {
     assert.ok(toolNames.includes(name), `${name} should be discoverable with handoffs:read`);
   }
   assert.ok(!toolNames.includes("link_task"), "read-only clients must not discover task-link writes");

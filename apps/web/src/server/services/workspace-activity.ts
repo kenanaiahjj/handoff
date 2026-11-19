@@ -47,3 +47,37 @@ export async function listWorkspaceActivity(workspaceId: string, visible: Set<st
     .slice(0, limit)
     .map((row) => (row.kind === "comment" ? { ...row, detail: plainCommentText(row.detail) } : row));
 }
+
+export type RecentHandoff = {
+  handoffId: string;
+  handoffName: string;
+  projectId: string;
+  projectName: string;
+  versionLabel: string;
+  versionCount: number;
+  updatedAt: string;
+};
+
+/** Handoffs with the newest versions first, for the dashboard. */
+export async function listRecentHandoffs(workspaceId: string, visible: Set<string> | null, limit = 6): Promise<RecentHandoff[]> {
+  const rows = (await getDatabase()
+    .prepare(
+      `SELECT handoff.id AS handoffId, handoff.name AS handoffName, project.id AS projectId, project.name AS projectName,
+              latest.version_label AS versionLabel, counts.versionCount, latest.created_at AS updatedAt
+       FROM handoff
+       JOIN project ON project.id = handoff.project_id AND project.workspace_id = handoff.workspace_id
+       JOIN LATERAL (
+         SELECT version_label, created_at FROM handoff_version
+         WHERE handoff_version.handoff_id = handoff.id
+         ORDER BY created_at DESC, id DESC LIMIT 1
+       ) AS latest ON true
+       JOIN LATERAL (
+         SELECT COUNT(*)::int AS versionCount FROM handoff_version WHERE handoff_version.handoff_id = handoff.id
+       ) AS counts ON true
+       WHERE handoff.workspace_id = ?
+       ORDER BY latest.created_at DESC
+       LIMIT ?`,
+    )
+    .all(workspaceId, visible ? limit * 5 : limit)) as RecentHandoff[];
+  return (visible ? rows.filter((row) => visible.has(row.handoffId)) : rows).slice(0, limit);
+}
