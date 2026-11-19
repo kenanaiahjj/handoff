@@ -75,7 +75,7 @@ export function McpConnectionPanel({
         </div>
         <Link
           className="mt-3 inline-flex min-h-8 items-center rounded-control bg-surface px-2.5 text-[10px] font-medium text-foreground hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-          href={"/workspace/" + encodeURIComponent(workspaceId) + "/integrations"}
+          href="/integrations"
         >
           {canManageIntegrations ? "Create or manage a token" : "Open integrations"}
           <span aria-hidden="true" className="ml-1.5">↗</span>

@@ -82,7 +82,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
       user={{ name: session.user.name, email: session.user.email }}
       workspace={workspace}
       navSections={navSections}
-      breadcrumbs={[{ label: "Projects", href: `/workspace/${workspaceId}` }, { label: project.name }]}
+      breadcrumbs={[{ label: "Projects", href: `/workspace` }, { label: project.name }]}
     >
       <main className="workspace-dashboard mx-auto px-5 py-7 sm:px-8 sm:py-9">
         <header className="workspace-dashboard-heading">
@@ -95,7 +95,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
           <div className="min-w-0">
             <div className="flex items-center gap-1.5">
               <h1 className="font-semibold text-foreground">{project.name}</h1>
-              {canManageHandoffs ? <ProjectActions afterDeleteHref={`/workspace/${workspaceId}`} align="start" handoffCount={allHandoffs.length} projectId={projectId} projectName={project.name} workspaceId={workspaceId} /> : null}
+              {canManageHandoffs ? <ProjectActions afterDeleteHref={`/workspace`} align="start" handoffCount={allHandoffs.length} projectId={projectId} projectName={project.name} workspaceId={workspaceId} /> : null}
             </div>
             <p className="mt-2 text-[13px] leading-5 text-foreground-muted">{canManageHandoffs ? "Keep the app’s design canvas and every reviewed version in this project." : "Handoffs shared with you in this project. New versions are marked until you open them."}</p>
           </div>
@@ -117,7 +117,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
                     <Link
                       aria-current={active ? "page" : undefined}
                       className={"inline-flex h-7 items-center gap-1.5 rounded-full px-2.5 text-[12px] transition-colors " + (active ? "bg-white/[0.1] text-foreground" : "text-foreground-subtle hover:bg-white/[0.05] hover:text-foreground")}
-                      href={`/workspace/${workspaceId}/projects/${projectId}${key ? `?status=${key}` : ""}`}
+                      href={`/projects/${projectId}${key ? `?status=${key}` : ""}`}
                       key={key ?? "all"}
                       replace
                       scroll={false}
@@ -138,7 +138,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
                       <Link
                         aria-label={`Open handoff ${handoff.name}`}
                         className="group/link flex min-w-0 flex-1 basis-64 items-center gap-3 rounded-control focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
-                        href={`/workspace/${workspaceId}/projects/${projectId}/handoffs/${handoff.id}`}
+                        href={`/projects/${projectId}/handoffs/${handoff.id}`}
                       >
                         <span aria-hidden="true" className="workspace-mark grid size-9 shrink-0 place-items-center text-foreground"><svg className="size-4" fill="none" viewBox="0 0 16 16"><path d="M3 3.5h10v9H3zM5.5 6h5M5.5 8.5h3" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.2" /></svg></span>
                         <span className="min-w-0 flex-1">
@@ -170,7 +170,7 @@ export default async function ProjectPage({ params, searchParams }: ProjectPageP
                           <DeleteHandoffButton
                             endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoff.id)}`}
                             handoffName={handoff.name}
-                            returnHref={`/workspace/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}`}
+                            returnHref={`/projects/${encodeURIComponent(projectId)}`}
                           />
                         </div>
                         ) : null}

@@ -36,6 +36,15 @@ const nextConfig: NextConfig = {
   transpilePackages: ["@asbir/snapshot-contract"],
   // The downloadable Figma plugin is read from disk by its route, so ship the built template with it.
   outputFileTracingIncludes: { "/api/figma-plugin": ["./figma-plugin-template/**/*"] },
+  // Addresses used to carry the company workspace's id (/workspace/<id>/projects/…). Links shared
+  // before it was dropped keep working.
+  async redirects() {
+    const workspaceId = ":workspaceId([0-9a-fA-F-]{36})";
+    return [
+      { source: `/workspace/${workspaceId}`, destination: "/workspace", permanent: false },
+      { source: `/workspace/${workspaceId}/:path+`, destination: "/:path+", permanent: false },
+    ];
+  },
   cacheComponents: true,
   partialPrefetching: true,
   turbopack: {

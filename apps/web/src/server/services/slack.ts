@@ -122,7 +122,7 @@ export async function notifyNewVersion(input: { workspaceId: string; handoffId: 
     )
     .get(input.handoffId, input.versionId)) as { id: string } | undefined;
 
-  const base = `/workspace/${input.workspaceId}/projects/${details.projectId}/handoffs/${input.handoffId}`;
+  const base = `/projects/${details.projectId}/handoffs/${input.handoffId}`;
   let detail: string | null = null;
   let url = appUrl(`${base}?versionId=${input.versionId}`);
   if (previous) {
@@ -167,7 +167,7 @@ export async function notifyMentions(
   const text = plainCommentText(input.body).replace(/\s+/g, " ").trim();
   const excerpt = text.length > 280 ? `${text.slice(0, 279)}…` : text;
   const recipients = await filterBySlackPreference(input.mentioned.map((person) => person.email), "mention");
-  const path = `/workspace/${input.workspaceId}/projects/${details.projectId}/handoffs/${input.handoffId}?versionId=${input.versionId}&comment=${input.commentId}`;
+  const path = `/projects/${details.projectId}/handoffs/${input.handoffId}?versionId=${input.versionId}&comment=${input.commentId}`;
   await sendPushToEmails(recipients, {
     title: `${details.author ?? "Someone"} mentioned you`,
     body: `${details.handoffName}: ${excerpt}`,
@@ -180,7 +180,7 @@ export async function notifyMentions(
       `*${escape(details.author ?? "Someone")}* mentioned you in *${escape(details.handoffName)}* · ${escape(details.projectName)}`,
       `> ${escape(excerpt)}`,
       "Open comment",
-      appUrl(`/workspace/${input.workspaceId}/projects/${details.projectId}/handoffs/${input.handoffId}?versionId=${input.versionId}&comment=${input.commentId}`),
+      appUrl(`/projects/${details.projectId}/handoffs/${input.handoffId}?versionId=${input.versionId}&comment=${input.commentId}`),
     ),
     fetcher,
   );

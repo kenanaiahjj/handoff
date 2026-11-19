@@ -75,7 +75,7 @@ export function CreateWorkspaceForm() {
         setErrorMessage(result.error ?? "Workspace creation failed.");
         return;
       }
-      router.push(`/workspace/${result.workspace.id}`);
+      router.push(`/workspace`);
       router.refresh();
     } catch {
       setErrorMessage("We couldn't reach the workspace service. Try again.");
@@ -130,7 +130,7 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
         setErrorMessage(result.error ?? "Project creation failed.");
         return;
       }
-      router.push(`/workspace/${workspaceId}/projects/${result.project.id}`);
+      router.push(`/projects/${result.project.id}`);
       router.refresh();
     } catch {
       setErrorMessage("We couldn't reach the project service. Try again.");

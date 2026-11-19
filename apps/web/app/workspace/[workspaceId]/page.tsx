@@ -78,7 +78,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
         designerRequestPending={(await hasPendingDesignerRequest(session.user.id))}
         user={{ name: session.user.name, email: session.user.email, image: session.user.image ?? null }}
         homeHref="/workspace"
-        notice={<ProfileNudge href={`/workspace/${workspace.id}/profile`} image={profile?.image ?? null} missing={missing} name={session.user.name} />}
+        notice={<ProfileNudge href={`/profile`} image={profile?.image ?? null} missing={missing} name={session.user.name} />}
         title={workspace.name}
       />
     );
@@ -118,7 +118,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
         {await (async () => {
           const profile = await getProfile(session.user.id);
           const missing = [...(profile?.image ? [] : ["photo" as const]), ...(profile?.title || profile?.department ? [] : ["title" as const])];
-          return <ProfileNudge className="mt-6" href={`/workspace/${workspace.id}/profile`} image={profile?.image ?? null} missing={missing} name={session.user.name} />;
+          return <ProfileNudge className="mt-6" href={`/profile`} image={profile?.image ?? null} missing={missing} name={session.user.name} />;
         })()}
 
         <NeedsYou className="mt-6" initial={(await listOpenMentions(session.user.id, workspace.id, viewer))} />
@@ -138,7 +138,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
                   const days = Math.floor((Date.now() - new Date(handoff.lastActivityAt).getTime()) / 86_400_000);
                   return (
                     <li key={handoff.handoffId}>
-                      <Link className="workspace-list-item flex items-center gap-3 px-2.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspace.id}/projects/${handoff.projectId}/handoffs/${handoff.handoffId}`}>
+                      <Link className="workspace-list-item flex items-center gap-3 px-2.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/projects/${handoff.projectId}/handoffs/${handoff.handoffId}`}>
                         <span aria-hidden="true" className={"size-1.5 shrink-0 rounded-full " + handoffStatusMeta[handoff.reviewStatus].dot} />
                         <span className="min-w-0 flex-1">
                           <span className="block truncate text-[13px] font-medium text-foreground">{handoff.handoffName}</span>
@@ -168,7 +168,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
                   <h3 className="text-[13px] font-semibold text-foreground" id="members-title">Members</h3>
                   <span className="font-mono text-[11px] text-foreground-subtle">{members.length}</span>
                 </div>
-                <MembersPanel canEdit={workspace.role === "owner"} currentUserId={session.user.id} initial={members} limit={5} manageHref={`/workspace/${workspace.id}/team`} workspaceId={workspace.id} />
+                <MembersPanel canEdit={workspace.role === "owner"} currentUserId={session.user.id} initial={members} limit={5} manageHref={`/team`} workspaceId={workspace.id} />
               </div>
             </section>
           ) : (
@@ -181,7 +181,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
                 <ul className="workspace-list mt-2">
                   {updates.map((update) => (
                     <li className="py-1" key={update.handoffId}>
-                      <Link className="workspace-list-item flex flex-col gap-1 px-2.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspace.id}/projects/${update.projectId}/handoffs/${update.handoffId}`}>
+                      <Link className="workspace-list-item flex flex-col gap-1 px-2.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/projects/${update.projectId}/handoffs/${update.handoffId}`}>
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="truncate text-[13px] font-medium text-foreground">{update.handoffName}</span>
                           <NewVersionBadge label="New" />

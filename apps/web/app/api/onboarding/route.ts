@@ -18,5 +18,5 @@ export async function POST(request: Request) {
     { id: session.user.id, email: session.user.email, emailVerified: session.user.emailVerified },
     parsed.data.jobRole,
   ));
-  return Response.json({ joined, redirectTo: joined.length === 1 ? `/workspace/${joined[0].id}` : "/workspace" });
+  return Response.json({ joined, redirectTo: joined.length === 1 ? `/workspace` : "/workspace" });
 }

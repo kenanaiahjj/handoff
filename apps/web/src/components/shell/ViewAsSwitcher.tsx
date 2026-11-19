@@ -23,7 +23,7 @@ export function ViewAsSwitcher({ current, workspaceId }: { current: ViewAsMode |
       if (!response.ok) throw new Error();
       // A full load drops every cached server render from the previous identity.
       // eslint-disable-next-line @next/next/no-location-assign-relative-destination
-      window.location.assign(`/workspace/${encodeURIComponent(workspaceId)}`);
+      window.location.assign(`/workspace`);
     } catch {
       setError("Could not switch views.");
       setPending(null);

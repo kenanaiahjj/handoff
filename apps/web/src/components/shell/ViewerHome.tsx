@@ -208,7 +208,7 @@ export function ViewerHome({
           id: handoff.handoffId,
           label: handoff.handoffName,
           detail: project.projectName + (handoff.versionLabel ? ` · ${handoff.versionLabel}` : ""),
-          href: `/workspace/${project.workspaceId}/projects/${project.projectId}/handoffs/${handoff.handoffId}${resume[handoff.handoffId] ?? ""}`,
+          href: `/projects/${project.projectId}/handoffs/${handoff.handoffId}${resume[handoff.handoffId] ?? ""}`,
           isNew: handoff.isNew,
         })),
       ),
@@ -309,8 +309,8 @@ export function ViewerHome({
 
   const hrefFor = (handoff: ViewerGroupItem) =>
     handoff.isNew && handoff.changesSinceSeen && handoff.seenVersionId && handoff.latestVersionId
-      ? `/workspace/${handoff.workspaceId}/projects/${handoff.projectId}/handoffs/${handoff.handoffId}?compare=1&compareFrom=${handoff.seenVersionId}&compareTo=${handoff.latestVersionId}&versionId=${handoff.latestVersionId}`
-      : `/workspace/${handoff.workspaceId}/projects/${handoff.projectId}/handoffs/${handoff.handoffId}${resume[handoff.handoffId] ?? ""}`;
+      ? `/projects/${handoff.projectId}/handoffs/${handoff.handoffId}?compare=1&compareFrom=${handoff.seenVersionId}&compareTo=${handoff.latestVersionId}&versionId=${handoff.latestVersionId}`
+      : `/projects/${handoff.projectId}/handoffs/${handoff.handoffId}${resume[handoff.handoffId] ?? ""}`;
   const versionText = (label: string | null) => (label ? `${/^\d/.test(label) ? "v" : ""}${label}` : "");
 
   return (

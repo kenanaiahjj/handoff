@@ -185,7 +185,7 @@ export function HandoffSetupForm({ input, mode }: {
       throw new Error("We couldn't confirm the finalization response. Retry finalization.");
     }
     setPendingFinalizeUploadId(null);
-    router.push(`/workspace/${encodeURIComponent(input.workspaceId)}/projects/${encodeURIComponent(input.projectId)}/handoffs/${encodeURIComponent(result.handoffId)}?versionId=${encodeURIComponent(result.versionId)}`);
+    router.push(`/projects/${encodeURIComponent(input.projectId)}/handoffs/${encodeURIComponent(result.handoffId)}?versionId=${encodeURIComponent(result.versionId)}`);
     router.refresh();
   }
 

@@ -7,12 +7,13 @@ import { ensureCompanyWorkspace } from "@/src/server/services/company-workspace"
 import { needsOnboarding } from "@/src/server/services/onboarding";
 import { syncSuperadminAccess } from "@/src/server/services/superadmins";
 import { SignOutButton } from "./workspace-actions";
+import WorkspacePage from "./[workspaceId]/page";
 
 export const instant = false;
 
 /**
- * Entry point after sign-in. There is one company workspace, so this only decides where to go:
- * onboarding for someone new, otherwise the projects home.
+ * Home after sign-in. There is one company workspace, so this is its projects home for members,
+ * onboarding for someone new, and a "no access yet" page for anyone else.
  */
 export default async function WorkspaceHomePage() {
   const session = await getSessionForHeaders(await headers());
@@ -25,7 +26,7 @@ export default async function WorkspaceHomePage() {
   const member = (await getDatabase()
     .prepare("SELECT 1 FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
     .get(company.id, session.user.id));
-  if (member) redirect(`/workspace/${company.id}`);
+  if (member) return <WorkspacePage params={Promise.resolve({ workspaceId: company.id })} />;
 
   // Signed in and onboarded, but not given access (for example, an email outside the company).
   return (

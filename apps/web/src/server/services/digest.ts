@@ -34,7 +34,7 @@ export async function buildDigest(workspaceId: string, member: { id: string; ema
     canSeeWholeWorkspace(member.role) ? listStaleHandoffs(workspaceId, null, now) : Promise.resolve([]),
     listWorkspaceActivity(workspaceId, visible, 200),
   ]);
-  const base = `/workspace/${workspaceId}`;
+  const base = "";
   const digest: Digest = {
     email: member.email,
     name: member.name,

@@ -14,7 +14,11 @@ const maxTabs = 8;
 function readTabs(): OpenTab[] {
   try {
     const parsed = JSON.parse(localStorage.getItem(tabsKey) ?? "[]");
-    return Array.isArray(parsed) ? parsed.filter((tab) => tab && typeof tab.id === "string" && typeof tab.href === "string") : [];
+    if (!Array.isArray(parsed)) return [];
+    return parsed
+      .filter((tab) => tab && typeof tab.id === "string" && typeof tab.href === "string")
+      // Tabs saved before addresses dropped the workspace id (/workspace/<id>/projects/…).
+      .map((tab) => ({ ...tab, href: tab.href.replace(/^\/workspace\/[0-9a-f-]{36}(?=\/)/i, "") }));
   } catch {
     return [];
   }

@@ -34,7 +34,7 @@ export default async function TeamPage({ params }: TeamPageProps) {
     .get(workspaceId, session.user.id)) as { id: string; name: string; role: string } | undefined;
   if (!workspace) notFound();
   // Reviewers, developers and QA don't see the team; send them home rather than to an error.
-  if (!canSeeWholeWorkspace(workspace.role)) redirect(`/workspace/${workspaceId}`);
+  if (!canSeeWholeWorkspace(workspace.role)) redirect(`/workspace`);
   const isOwner = workspace.role === "owner";
 
   const [projects, members, invites, superadmins] = await Promise.all([

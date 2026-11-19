@@ -1047,7 +1047,7 @@ export function HandoffCanvas({
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface text-foreground">
       <header className="canvas-topbar relative z-20 flex min-h-12 min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-border bg-surface px-2.5 py-1.5 text-foreground-muted lg:flex-nowrap lg:py-0">
         <div className="flex min-w-0 flex-1 items-center gap-2 lg:flex-initial lg:shrink">
-          <Link aria-label="Asbir Handoff home" className="flex min-h-9 shrink-0 items-center rounded-lg px-1 transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" href={metadata.projectHref.startsWith("/workspace") ? "/workspace" : metadata.projectHref}>
+          <Link aria-label="Asbir Handoff home" className="flex min-h-9 shrink-0 items-center rounded-lg px-1 transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" href={metadata.projectHref.startsWith("/projects") ? "/workspace" : metadata.projectHref}>
             <BrandMark compact />
           </Link>
           <span aria-hidden="true" className="h-5 w-px shrink-0 bg-white/[0.08]" />
@@ -1649,7 +1649,7 @@ export function HandoffCanvas({
             sourceRevisionId: metadata.sourceRevisionId,
             releaseNote: metadata.releaseNote,
             reviewHref: metadata.reviewHref,
-            integrationHref: `/workspace/${encodeURIComponent(workspaceId)}/integrations`,
+            integrationHref: `/integrations`,
             canManageIntegrations: metadata.canManageIntegrations,
             versions: metadata.versions,
             frames,

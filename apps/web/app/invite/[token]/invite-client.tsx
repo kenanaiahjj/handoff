@@ -52,7 +52,7 @@ export function InviteClient({ token }: { token: string }) {
         setErrorMessage(result.error ?? "We couldn't accept this invitation.");
         return;
       }
-      router.push(`/workspace/${result.workspaceId}`);
+      router.push(`/workspace`);
       router.refresh();
     } catch {
       setErrorMessage("We couldn't reach the invitation service. Try again.");

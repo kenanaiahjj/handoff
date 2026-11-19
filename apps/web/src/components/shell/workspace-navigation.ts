@@ -36,11 +36,11 @@ export async function createWorkspaceNavigation({
       hideLabel: !companyName,
       imageUrl: workspaceLogoUrl(workspaceId, logo?.version),
       items: [
-        { label: "Projects", href: `/workspace/${workspaceId}`, icon: "home", active: page === "overview" || page === "projects" },
-        { label: "Activity", href: `/workspace/${workspaceId}/activity`, icon: "activity" as const, active: page === "activity" },
-        ...(canManage ? [{ label: "Team", href: `/workspace/${workspaceId}/team`, icon: "users" as const, active: page === "team" }] : []),
-        { label: "Integrations", href: `/workspace/${workspaceId}/integrations`, icon: "plug" as const, active: page === "integrations" },
-        ...(isOwner ? [{ label: "Settings", href: `/workspace/${workspaceId}/settings`, icon: "settings" as const, active: page === "settings" }] : []),
+        { label: "Projects", href: `/workspace`, icon: "home", active: page === "overview" || page === "projects" },
+        { label: "Activity", href: `/activity`, icon: "activity" as const, active: page === "activity" },
+        ...(canManage ? [{ label: "Team", href: `/team`, icon: "users" as const, active: page === "team" }] : []),
+        { label: "Integrations", href: `/integrations`, icon: "plug" as const, active: page === "integrations" },
+        ...(isOwner ? [{ label: "Settings", href: `/settings`, icon: "settings" as const, active: page === "settings" }] : []),
       ],
     },
     ...(projects.length
@@ -48,7 +48,7 @@ export async function createWorkspaceNavigation({
           label: "Projects",
           items: projects.map((project) => ({
             label: project.name,
-            href: `/workspace/${workspaceId}/projects/${project.id}`,
+            href: `/projects/${project.id}`,
             icon: "folder" as const,
             imageUrl: projectIconUrl(workspaceId, project.id, iconVersions[project.id]),
             active: project.id === activeProjectId,

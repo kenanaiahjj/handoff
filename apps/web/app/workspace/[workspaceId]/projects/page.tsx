@@ -47,7 +47,7 @@ export default async function ProjectsPage({ params }: ProjectsPageProps) {
       user={{ name: session.user.name, email: session.user.email }}
       workspace={workspace}
       navSections={await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, isOwner: workspace.role === "owner", projects, page: "projects", canManage })}
-      breadcrumbs={[{ label: "Projects", href: `/workspace/${workspaceId}` }]}
+      breadcrumbs={[{ label: "Projects", href: `/workspace` }]}
     >
       <main className="workspace-dashboard mx-auto px-5 py-7 text-foreground sm:px-8 sm:py-9">
         <header className="workspace-dashboard-heading">

@@ -44,7 +44,7 @@ export function ProjectsPane({ workspaceId, projects: unsorted, canManage = true
           {projects.map((project) => (
             <li key={project.id}>
               <div className="workspace-list-item flex min-h-[60px] items-center gap-3 px-2.5">
-                <Link aria-label={`Open ${project.name}`} className="flex min-w-0 flex-1 items-center gap-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/workspace/${workspaceId}/projects/${project.id}`}>
+                <Link aria-label={`Open ${project.name}`} className="flex min-w-0 flex-1 items-center gap-3 py-2 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/projects/${project.id}`}>
                 <ProjectIcon name={project.name} size={36} src={iconVersions[project.id] ? `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(project.id)}/icon?v=${iconVersions[project.id]}` : null} />
                 <span className="min-w-0 flex-1">
                   <span className="flex min-w-0 items-center gap-2">
@@ -56,7 +56,7 @@ export function ProjectsPane({ workspaceId, projects: unsorted, canManage = true
               </Link>
               <ProjectPinButton pinned={pinned.has(project.id)} projectId={project.id} projectName={project.name} />
               {canManage ? (
-                <ProjectActions afterDeleteHref={`/workspace/${workspaceId}`} handoffCount={project.handoffCount} projectId={project.id} projectName={project.name} workspaceId={workspaceId} />
+                <ProjectActions afterDeleteHref={`/workspace`} handoffCount={project.handoffCount} projectId={project.id} projectName={project.name} workspaceId={workspaceId} />
               ) : null}
               </div>
             </li>

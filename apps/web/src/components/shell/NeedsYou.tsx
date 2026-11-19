@@ -43,7 +43,7 @@ export function NeedsYou({ initial, className = "" }: { initial: OpenMention[]; 
             <Avatar className="mt-0.5" name={mention.authorName} size={28} src={mention.authorImage} />
             <Link
               className="min-w-0 flex-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40"
-              href={`/workspace/${mention.workspaceId}/projects/${mention.projectId}/handoffs/${mention.handoffId}?versionId=${mention.versionId}&comment=${mention.commentId}`}
+              href={`/projects/${mention.projectId}/handoffs/${mention.handoffId}?versionId=${mention.versionId}&comment=${mention.commentId}`}
             >
               <span className="block truncate text-[13px] text-foreground">
                 <span className="font-medium">{mention.authorName}</span>

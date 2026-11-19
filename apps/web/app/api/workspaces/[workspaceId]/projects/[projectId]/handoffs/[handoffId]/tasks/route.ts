@@ -61,7 +61,7 @@ export async function POST(request: Request, context: TasksRoute) {
     const baseUrl = process.env.BETTER_AUTH_URL || new URL(request.url).origin;
     const canvasPath = handoff.reviewShareId
       ? `/review/${encodeURIComponent(handoff.reviewShareId)}`
-      : `/workspace/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`;
+      : `/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`;
     const handoffUrl = new URL(`${canvasPath}?versionId=${encodeURIComponent(version.id)}`, baseUrl).toString();
     const task = (await linkExternalTaskToHandoff({
       workspaceId,

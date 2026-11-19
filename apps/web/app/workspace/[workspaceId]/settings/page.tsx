@@ -25,7 +25,7 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
     )
     .get(workspaceId, session.user.id)) as { id: string; name: string; role: string } | undefined;
   if (!workspace) notFound();
-  if (workspace.role !== "owner") redirect(`/workspace/${workspaceId}`);
+  if (workspace.role !== "owner") redirect(`/workspace`);
   const [settings, projects] = await Promise.all([
     getWorkspaceSettings(workspaceId),
     listProjects(workspaceId) as Promise<Array<{ id: string; name: string }>>,

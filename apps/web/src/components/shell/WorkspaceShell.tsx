@@ -156,7 +156,7 @@ async function SidebarContents({ user, workspace, navSections }: Omit<WorkspaceS
             return workspace?.id ? (
               <Link
                 className="flex min-w-0 flex-1 items-center gap-2.5 rounded-[8px] px-1.5 py-1 transition-colors hover:bg-white/[0.05] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                href={`/workspace/${workspace.id}/profile`}
+                href={`/profile`}
                 title="Your profile"
               >
                 {identity}

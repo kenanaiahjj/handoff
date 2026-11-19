@@ -779,7 +779,7 @@ function registerWriteTools(server: McpServer, input: { workspaceId: string; cre
         if (!parsedTask.success) throw new Error(`Invalid task reference: ${parsedTask.error.issues[0]?.message ?? "check the task fields."}`);
         const canvasPath = handoff.reviewShareId
           ? `/review/${encodeURIComponent(handoff.reviewShareId)}`
-          : `/workspace/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`;
+          : `/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`;
         const handoffUrl = new URL(`${canvasPath}?versionId=${encodeURIComponent(versionId)}`, baseUrl).toString();
         const task = (await linkExternalTaskToHandoff({
           workspaceId,

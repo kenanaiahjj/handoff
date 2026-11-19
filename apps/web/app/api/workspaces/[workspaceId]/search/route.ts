@@ -48,7 +48,7 @@ export async function GET(request: Request, context: SearchRoute) {
       }
     }
 
-    const base = `/workspace/${workspaceId}`;
+    const base = "";
     const items: Item[] = [
       ...projects.map((project) => ({ id: `p:${project.id}`, kind: "project" as const, label: project.name, detail: `Project · ${project.handoffCount} ${project.handoffCount === 1 ? "handoff" : "handoffs"}`, href: `${base}/projects/${project.id}` })),
       ...shown.map((handoff) => ({ id: `h:${handoff.id}`, kind: "handoff" as const, label: handoff.name, detail: `Handoff · ${handoff.projectName}`, href: `${base}/projects/${handoff.projectId}/handoffs/${handoff.id}` })),

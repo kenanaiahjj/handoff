@@ -96,7 +96,7 @@ export async function POST(request: Request) {
       await cleanupObjects([finalized.snapshotObjectKey]);
       const origin = process.env.BETTER_AUTH_URL || new URL(request.url).origin;
       const reviewUrl = new URL(
-        `/workspace/${encodeURIComponent(finalized.workspaceId)}/projects/${encodeURIComponent(finalized.projectId)}/handoffs/${encodeURIComponent(finalized.handoffId)}?versionId=${encodeURIComponent(finalized.versionId)}`,
+        `/projects/${encodeURIComponent(finalized.projectId)}/handoffs/${encodeURIComponent(finalized.handoffId)}?versionId=${encodeURIComponent(finalized.versionId)}`,
         origin,
       ).toString();
       return jsonResponse({ handoffId: finalized.handoffId, versionId: finalized.versionId, projectId: finalized.projectId, reviewUrl }, { status: 200 });
@@ -364,7 +364,7 @@ export async function POST(request: Request) {
     const unreferencedUploads = [snapshotUpload.objectKey, ...Object.values(assetPaths).filter((key) => !usedUploadedKeys.has(key))];
     await cleanupObjects(unreferencedUploads);
 
-    const reviewUrl = new URL(`/workspace/${encodeURIComponent(session.workspaceId)}/projects/${encodeURIComponent(session.projectId)}/handoffs/${encodeURIComponent(created.handoffId)}?versionId=${encodeURIComponent(created.versionId)}`, origin).toString();
+    const reviewUrl = new URL(`/projects/${encodeURIComponent(session.projectId)}/handoffs/${encodeURIComponent(created.handoffId)}?versionId=${encodeURIComponent(created.versionId)}`, origin).toString();
     return jsonResponse({ ...created, projectId: session.projectId, reviewUrl }, { status: 201 });
   } catch (error) {
     // A second finalize for the same capture (a double click, or a retry after a dropped connection
@@ -373,7 +373,7 @@ export async function POST(request: Request) {
     if (finalizedMeanwhile) {
       const origin = process.env.BETTER_AUTH_URL || new URL(request.url).origin;
       const reviewUrl = new URL(
-        `/workspace/${encodeURIComponent(finalizedMeanwhile.workspaceId)}/projects/${encodeURIComponent(finalizedMeanwhile.projectId)}/handoffs/${encodeURIComponent(finalizedMeanwhile.handoffId)}?versionId=${encodeURIComponent(finalizedMeanwhile.versionId)}`,
+        `/projects/${encodeURIComponent(finalizedMeanwhile.projectId)}/handoffs/${encodeURIComponent(finalizedMeanwhile.handoffId)}?versionId=${encodeURIComponent(finalizedMeanwhile.versionId)}`,
         origin,
       ).toString();
       return jsonResponse({ handoffId: finalizedMeanwhile.handoffId, versionId: finalizedMeanwhile.versionId, projectId: finalizedMeanwhile.projectId, reviewUrl }, { status: 200 });

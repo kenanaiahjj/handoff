@@ -71,7 +71,7 @@ export default async function ActivityPage({ params }: ActivityPageProps) {
                     <li key={event.id}>
                       <Link
                         className="flex items-start gap-3 rounded-[10px] px-2 py-2.5 transition-colors hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                        href={`/workspace/${workspaceId}/projects/${event.projectId}/handoffs/${event.handoffId}`}
+                        href={`/projects/${event.projectId}/handoffs/${event.handoffId}`}
                       >
                         <Avatar name={event.actorName ?? "Someone"} size={26} src={event.actorImage} />
                         <span className="min-w-0 flex-1">

@@ -4,7 +4,7 @@ import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
 import { CanvasLoadingSkeleton } from "@/src/components/canvas/CanvasLoadingSkeleton";
 
-const handoffPath = /^\/workspace\/[^/]+\/projects\/[^/]+\/handoffs\/[^/]+\/?$/;
+const handoffPath = /^\/projects\/[^/]+\/handoffs\/[^/]+\/?$/;
 
 /**
  * Opening a handoff waits for the server before the page changes, which felt frozen. On a plain
