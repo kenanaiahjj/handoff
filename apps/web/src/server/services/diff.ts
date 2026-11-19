@@ -1002,9 +1002,6 @@ function compareFrame(
     );
   }
   compareValue(before.name, after.name, "name", frameId, sourceFileId, null, output);
-  if ("sourcePageId" in before && "sourcePageId" in after) {
-    compareValue(before.sourcePageId, after.sourcePageId, "sourcePageId", frameId, sourceFileId, null, output);
-  }
 
   const beforeRender = renderAssetSummary(beforeSnapshot, before);
   const afterRender = renderAssetSummary(afterSnapshot, after);

@@ -97,6 +97,30 @@ test("does not report a visual change when a render asset key changes but its by
   assert.equal(result.frames[0].status, "unchanged");
 });
 
+test("ignores Figma source page ID changes when a screen's design is unchanged", () => {
+  const before = snapshot("same-file", "frame", styleIds("shared"));
+  const after = snapshot("same-file", "frame", styleIds("shared"));
+  before.frames[0].sourcePageId = "2.0.4-page";
+  after.frames[0].sourcePageId = "2.0.5-page";
+
+  const result = compare(before, after);
+
+  assert.deepEqual(result.changes, []);
+  assert.equal(result.frames[0].status, "unchanged");
+});
+
+test("keeps design changes when the Figma source page ID also changes", () => {
+  const before = snapshot("same-file", "frame", { ...styleIds("shared"), text: "Review the booking" });
+  const after = snapshot("same-file", "frame", { ...styleIds("shared"), text: "Review your booking" });
+  before.frames[0].sourcePageId = "2.0.4-page";
+  after.frames[0].sourcePageId = "2.0.5-page";
+
+  const result = compare(before, after);
+
+  assert.equal(result.frames[0].status, "changed");
+  assert.deepEqual(result.changes.map((change) => change.path), ["sourcePayload.textSegments[0].characters"]);
+});
+
 test("compares Figma-native node geometry without duplicating screen-space bounds changes", () => {
   const before = snapshot("same-file", "frame", styleIds("shared"));
   const after = snapshot("same-file", "frame", styleIds("shared"));
