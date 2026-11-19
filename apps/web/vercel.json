@@ -4,6 +4,10 @@
     {
       "path": "/api/cron/digest",
       "schedule": "0 1 * * 1"
+    },
+    {
+      "path": "/api/cron/capture-cleanup",
+      "schedule": "30 3 * * *"
     }
   ],
   "installCommand": "cd ../.. && npm ci --workspaces --include-workspace-root"
