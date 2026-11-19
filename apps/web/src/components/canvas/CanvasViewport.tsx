@@ -21,6 +21,7 @@ import { formatPrecisePixelValue } from "./format-captured-measurement";
 import { overviewClipPath } from "./overview-clip";
 import { CanvasScreenImages } from "./CanvasScreenImages";
 import { resolutionNeed, sameScreenIds, screensInView } from "./canvas-screen-culling";
+import { createZoomScaleSource, type ZoomScaleSource } from "./zoom-scale-source";
 
 /** Re-reads devicePixelRatio when the window moves to a screen with a different density, or zooms. */
 function subscribeToPixelRatio(onChange: () => void) {
@@ -54,8 +55,9 @@ function cutOutMaskStyle(rects: CanvasFrameOption["maskRects"]) {
 }
 
 export type CanvasViewportControls = {
-  /** null until the canvas has been fitted to its viewport. */
-  scale: number | null;
+  /** The live zoom (null until the canvas has been fitted). A store rather than a number, so a zoom
+   * gesture updates the readout without handing the page a new value, and re-rendering it, every frame. */
+  scale: ZoomScaleSource;
   fitToFrame: () => void;
   zoomOut: () => void;
   zoomIn: () => void;
@@ -194,12 +196,14 @@ export function CanvasViewport({
     frame.sourceHeight,
     viewMemoryKey,
   );
+  const [scaleSource] = useState(createZoomScaleSource);
+  useEffect(() => scaleSource.set(fitted ? transform.scale : null), [fitted, scaleSource, transform.scale]);
   const controls = useMemo<CanvasViewportControls>(() => ({
-    scale: fitted ? transform.scale : null,
+    scale: scaleSource,
     fitToFrame,
     zoomOut: () => zoomBy(1 / 1.2),
     zoomIn: () => zoomBy(1.2),
-  }), [fitToFrame, fitted, transform.scale, zoomBy]);
+  }), [fitToFrame, scaleSource, zoomBy]);
   const visibleScreenIds = useMemo(() => new Set(screens.map((screen) => screen.id)), [screens]);
 
   useEffect(() => onViewportChange(controls), [controls, onViewportChange]);

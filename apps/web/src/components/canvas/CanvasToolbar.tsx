@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { AssetExportMenu, type AssetExportTarget } from "./AssetExportMenu";
 import { HandoffAccessDialog } from "./HandoffAccessDialog";
+import type { ZoomScaleSource } from "./zoom-scale-source";
 
 type CanvasToolbarProps = {
-  scale: number | null;
+  scale: ZoomScaleSource | null;
   exportTargets: AssetExportTarget[];
   shareUrl: string | null;
   shareTitle: string;
@@ -165,14 +166,17 @@ export function CanvasToolbar({
 }
 
 /** Zoom out, fit and zoom in. On phones it sits in the tools row so the version picker keeps its room. */
-export function ZoomControls({ scale, onZoomOut, onFit, onZoomIn, className }: {
-  /** null while the canvas is still loading. */
-  scale: number | null;
+const noScaleSubscription = () => () => {};
+
+export function ZoomControls({ scale: scaleSource, onZoomOut, onFit, onZoomIn, className }: {
+  /** The canvas zoom; null (or a null reading) while the canvas is still loading. */
+  scale: ZoomScaleSource | null;
   onZoomOut: () => void;
   onFit: () => void;
   onZoomIn: () => void;
   className?: string;
 }) {
+  const scale = useSyncExternalStore(scaleSource?.subscribe ?? noScaleSubscription, () => scaleSource?.get() ?? null, () => null);
   const zoomPercentage = scale === null ? "–" : Math.round(scale * 100) + "%";
   return (
     <div aria-label="Zoom" className={"canvas-toolgroup shrink-0" + (className ? " " + className : "")} role="group">
