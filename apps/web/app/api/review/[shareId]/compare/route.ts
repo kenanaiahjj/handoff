@@ -1,3 +1,4 @@
+import { dropRenderNoise } from "@/src/server/services/render-noise";
 import {
   getConfirmedFrameMatchesBetweenVersions,
   getConfirmedNodeMatchesBetweenVersions,
@@ -64,6 +65,8 @@ export async function GET(request: Request, context: ReviewCompareRoute) {
     { versionId: to.id, snapshot: to.snapshot },
     { frameMatches, nodeMatches },
   );
+  // Screens whose only difference is Figma re-rendering a few edge pixels are unchanged.
+  await dropRenderNoise(diff, from, to);
   const frames = diff.frames.map((frame) => ({
     ...frame,
     before: frame.beforeFrameId ? framePreview(from, frame.beforeFrameId, shareId) : null,
