@@ -7,14 +7,15 @@ export function inspectionMeasurementEntries<T>(values: Record<string, T>) {
   return Object.entries(values);
 }
 
-export function inspectionBounds(node: Pick<SnapshotNode, "bounds" | "layoutBounds">) {
-  return node.layoutBounds ?? node.bounds;
+/** Figma's own x, y, width and height. Older captures only have screen-space boxes, which aren't Figma values, so they get null. */
+export function inspectionBounds(node: Pick<SnapshotNode, "layoutBounds">) {
+  return node.layoutBounds ?? null;
 }
 
 export function inspectionGeometryNotice(node: Pick<SnapshotNode, "layoutBounds">) {
   return node.layoutBounds
     ? null
-    : "Positions are measured from the screen edge. Recapture from Figma for values relative to the parent layer.";
+    : "Position and size aren’t in this capture. Recapture from Figma to see them.";
 }
 
 export function formatFrameSize(width: number, height: number) {

@@ -81,7 +81,8 @@ export function readPaintDetails(value: unknown): TextRunFill[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((paintValue) => {
     const paint = recordOf(paintValue);
-    if (!paint) return [];
+    // Hidden paints (eye icon off in Figma) don't render, and Figma's inspect panel leaves them out.
+    if (!paint || paint.visible === false) return [];
     const type = stringOf(paint.type) ?? (typeof paint.color === "string" ? "SOLID" : "UNKNOWN");
     const color = recordOf(paint.color);
     const opacityRecord = recordOf(paint.opacity);

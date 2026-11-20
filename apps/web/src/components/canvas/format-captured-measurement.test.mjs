@@ -62,14 +62,14 @@ test("prefers Figma-native geometry for Inspect and falls back for older snapsho
   };
 
   assert.equal(inspectionBounds({ bounds: screenBounds, layoutBounds: figmaBounds }), figmaBounds);
-  assert.equal(inspectionBounds({ bounds: screenBounds }), screenBounds);
+  assert.equal(inspectionBounds({ bounds: screenBounds }), null);
 });
 
 test("identifies snapshots that lack Figma-native layer geometry", () => {
   assert.equal(typeof inspectionGeometryNotice, "function", "the inspector should explain legacy geometry");
   assert.equal(
     inspectionGeometryNotice({ layoutBounds: undefined }),
-    "Positions are measured from the screen edge. Recapture from Figma for values relative to the parent layer.",
+    "Position and size aren’t in this capture. Recapture from Figma to see them.",
   );
   assert.equal(inspectionGeometryNotice({ layoutBounds: { x: {}, y: {}, width: {}, height: {} } }), null);
 });

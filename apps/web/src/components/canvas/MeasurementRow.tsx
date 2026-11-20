@@ -32,9 +32,6 @@ export function MeasurementRow({ label, measurement }: MeasurementRowProps) {
     <div className="dial-row flex h-9 items-center justify-between gap-3 pl-3 pr-1">
       <dt className="flex min-w-0 items-center gap-1.5 text-[13px] font-medium leading-5 text-foreground-muted">
         <span className="truncate">{label}</span>
-        {measurement.provenance === "measured" ? (
-          <span className="shrink-0 rounded-chip bg-surface-strong px-1.5 text-[10px] leading-4 text-foreground-subtle" title="Measured from the captured bounds, not a Figma property">measured</span>
-        ) : null}
       </dt>
       <dd className="shrink-0">
         <button

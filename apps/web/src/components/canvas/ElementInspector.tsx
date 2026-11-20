@@ -6,7 +6,8 @@ import type { HandoffComment } from "../comments/CommentPin";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import { MeasurementRow } from "./MeasurementRow";
 import { formatLength, measureUnits, setMeasureUnit, useMeasureUnit } from "./measure-unit";
-import { formatFrameSize, formatPrecisePixelValue, formatWholeNumber, inspectionBounds, inspectionGeometryNotice, inspectionMargins, inspectionMeasurementEntries } from "./format-captured-measurement";
+import { InspectorExport } from "./InspectorExport";
+import { formatFrameSize, formatPixelValue, formatPrecisePixelValue, formatWholeNumber, inspectionBounds, inspectionGeometryNotice, inspectionMeasurementEntries } from "./format-captured-measurement";
 import { capturedGridTracks, formatGridTrack, shouldShowGridLayout } from "./grid-layout";
 import { formatFigmaTextMetric, readPaintDetails, readTextStyleRuns, type TextStyleRun } from "./text-style-runs";
 
@@ -50,17 +51,14 @@ function measurementText(value: unknown, unit = "px") {
 
 function typographyMeasurementText(measurement: NonNullable<SnapshotNode["typography"]>["fontSize"]) {
   if (measurement.value === null) return measurement.unit === "auto" ? "Auto" : "Unavailable";
-  if (measurement.unit === "px") return formatLength(measurement.value);
+  const unit = measurement.unit.toLowerCase();
+  if (unit === "px" || unit === "pixels") return formatLength(measurement.value);
+  if (unit === "percent" || unit === "%") return `${formatFigmaTextMetric(measurement.value)}%`;
   return `${formatFigmaTextMetric(measurement.value)} ${measurement.unit}`;
 }
 
 function finiteNumber(value: unknown) {
   return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function cornerRadiusLimit(width: number | null, height: number | null) {
-  if (width === null || height === null || width < 0 || height < 0) return null;
-  return Math.min(width, height) / 2;
 }
 
 function availableProperties(entries: Array<{ label: string; value: unknown }>) {
@@ -102,7 +100,9 @@ function MeasurementGroup({
   values: Record<string, { value: number | null; unit: string; provenance: "source" | "measured" | "unavailable"; sourceProperty: string | null }>;
   description?: string | null;
 }) {
-  const entries = inspectionMeasurementEntries(values);
+  // Only values Figma itself stores. Anything we derived from geometry ("measured") or couldn't
+  // read is left out: a dev should be able to type every number here straight into code.
+  const entries = inspectionMeasurementEntries(values).filter(([, measurement]) => measurement.provenance === "source" && measurement.value !== null);
   if (!entries.length) return null;
 
   return (
@@ -116,42 +116,6 @@ function MeasurementGroup({
       </dl>
     </section>
   );
-}
-
-function cssForNode(node: SnapshotNode) {
-  const bounds = inspectionBounds(node);
-  const typography = typographyFromTextSegments(node.typography, node.sourcePayload);
-  const declarations: string[] = [];
-  const addMeasurement = (name: string, value: number | null, unit: string) => {
-    if (value !== null) declarations.push(name + ": " + formatPrecisePixelValue(value) + unit + ";");
-  };
-  addMeasurement("width", bounds.width.value, "px");
-  addMeasurement("height", bounds.height.value, "px");
-  if (node.layout.mode) declarations.push("display: " + (/auto.?layout|flex/i.test(node.layout.mode) ? "flex" : node.layout.mode.toLowerCase()) + ";");
-  if (node.layout.direction) declarations.push("flex-direction: " + node.layout.direction.toLowerCase() + ";");
-  if ([node.padding.top.value, node.padding.right.value, node.padding.bottom.value, node.padding.left.value].every((value) => value !== null)) {
-    declarations.push("padding: " + [node.padding.top, node.padding.right, node.padding.bottom, node.padding.left].map((item) => formatPrecisePixelValue(item.value!) + item.unit).join(" ") + ";");
-  }
-  const uniformRadius = finiteNumber(node.sourcePayload.cornerRadius);
-  const radiusValues = [
-    finiteNumber(node.sourcePayload.topLeftRadius) ?? uniformRadius,
-    finiteNumber(node.sourcePayload.topRightRadius) ?? uniformRadius,
-    finiteNumber(node.sourcePayload.bottomRightRadius) ?? uniformRadius,
-    finiteNumber(node.sourcePayload.bottomLeftRadius) ?? uniformRadius,
-  ];
-  if (radiusValues.every((value) => value !== null)) {
-    const limit = cornerRadiusLimit(bounds.width.value, bounds.height.value);
-    const effectiveValues = radiusValues.map((value) => formatPrecisePixelValue(limit === null ? value! : Math.min(value!, limit)) + "px");
-    declarations.push("border-radius: " + effectiveValues.join(" ") + ";");
-  }
-  const gap = node.spacing.itemGap.value ?? node.spacing.rowGap.value ?? node.spacing.columnGap.value;
-  addMeasurement("gap", gap, "px");
-  const fill = node.fills.find((paint) => paint.color)?.color;
-  if (fill) declarations.push("background-color: " + fill + ";");
-  if (typography?.fontFamily) declarations.push("font-family: " + JSON.stringify(typography.fontFamily) + ";");
-  addMeasurement("font-size", typography?.fontSize.value ?? null, "px");
-  if (typography?.fontWeight !== null && typography?.fontWeight !== undefined) declarations.push("font-weight: " + typography.fontWeight + ";");
-  return declarations.join("\n");
 }
 
 function CopyValue({ label, value, displayValue = value, className }: { label: string; value: string; displayValue?: string; className?: string }) {
@@ -310,7 +274,6 @@ export function ElementInspector({
   removingScreen = false,
   screenMarkedForRemoval = false,
 }: ElementInspectorProps) {
-  const [cssCopied, setCssCopied] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
   const [textCopied, setTextCopied] = useState(false);
   // Re-render when the unit changes; the helpers above read it when formatting.
@@ -339,12 +302,7 @@ export function ElementInspector({
         ]
       : [];
   const selectedBounds = selectedNode ? inspectionBounds(selectedNode) : null;
-  const selectedWidth = selectedBounds?.width.value ?? null;
-  const selectedHeight = selectedBounds?.height.value ?? null;
   const layerExport = selectedNode ? frame.layerExports?.[selectedNode.sourceNodeId] ?? null : null;
-  const aspectRatio = selectedWidth !== null && selectedHeight !== null && selectedHeight > 0
-    ? Number((selectedWidth / selectedHeight).toFixed(2)) + ":1"
-    : null;
   const uniformRadius = finiteNumber(selectedNode?.sourcePayload.cornerRadius);
   const isGridContainer = selectedNode ? shouldShowGridLayout({
     mode: selectedNode.layout.mode,
@@ -382,19 +340,10 @@ export function ElementInspector({
   const radiusDisplayFields = radiiAreUniform
     ? [{ label: "Corner radius", value: resolvedRadiusFields[0].value }]
     : resolvedRadiusFields;
-  const radiusLimit = cornerRadiusLimit(selectedWidth, selectedHeight);
-  const hasCornerRadius = radiusDisplayFields.length > 0;
-
-  async function copyCss() {
-    if (!selectedNode) return;
-    try {
-      await navigator.clipboard.writeText(cssForNode(selectedNode));
-      setCssCopied(true);
-      window.setTimeout(() => setCssCopied(false), 1200);
-    } catch {
-      setCssCopied(false);
-    }
-  }
+  // Figma shows rotation and opacity only when set; float noise like 1e-14° counts as unset.
+  const rawRotation = finiteNumber(selectedNode?.sourcePayload.rotation);
+  const rotation = rawRotation !== null && Math.abs(rawRotation) >= 0.005 ? rawRotation : null;
+  const opacity = finiteNumber(selectedNode?.sourcePayload.opacity);
 
   async function copyText(text: string) {
     try {
@@ -474,25 +423,22 @@ export function ElementInspector({
               ) : null}
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
-              <button className="inspector-action" onClick={copyCss} type="button">{cssCopied ? "Copied" : "Copy CSS"}</button>
               {selectedTypography?.content ? <button className="inspector-action" onClick={() => void copyText(selectedTypography.content!)} title="Copy the exact text of this layer" type="button">{textCopied ? "Copied" : "Copy text"}</button> : null}
               <button className="inspector-action" onClick={copyLink} title="A link that opens this screen with this element selected" type="button">{linkCopied ? "Copied" : "Copy link"}</button>
-              {layerExport ? (
-                <a
-                  aria-label={`Export ${selectedNode.name || "selected layer"} as ${layerExport.contentType === "image/svg+xml" ? "SVG" : "PNG"}`}
-                  className="inspector-action"
-                  download={layerExport.fileName}
-                  href={layerExport.downloadUrl}
-                  title={`Download ${layerExport.fileName}`}
-                >
-                  {layerExport.contentType === "image/svg+xml" ? "SVG" : "PNG"}
-                  <svg aria-hidden="true" className="size-3" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="M8 3v7.5M4.5 7 8 10.5 11.5 7M3.5 13h9" /></svg>
-                </a>
-              ) : null}
               {canComment ? <button className="inspector-action" onClick={onAddComment} type="button">Comment</button> : null}
               {canCompare ? <button className="inspector-action" onClick={onCompare} type="button">Compare</button> : null}
             </div>
           </div>
+
+          <InspectorExport
+            element={{
+              name: selectedNode.name || "element",
+              bounds: { x: selectedNode.bounds.x.value, y: selectedNode.bounds.y.value, width: selectedNode.bounds.width.value, height: selectedNode.bounds.height.value },
+              layerExport,
+            }}
+            frame={frame}
+            key={selectedNode.sourceNodeId}
+          />
 
           {comments.length ? <section className="border-t border-border py-3">
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -504,56 +450,23 @@ export function ElementInspector({
             ))}
           </section> : null}
 
-            <MeasurementGroup title="Layout" values={selectedBounds ?? selectedNode.bounds} description={inspectionGeometryNotice(selectedNode)} />
-          <section className="border-t border-white/[0.06] pt-3">
-            <h3 className="dial-section-title mb-2">Size and shape</h3>
+            {selectedBounds ? <MeasurementGroup title="Layout" values={selectedBounds} /> : <p className="border-t border-white/[0.06] py-3 text-[11px] leading-4 text-foreground-subtle">{inspectionGeometryNotice(selectedNode)}</p>}
+          {radiusDisplayFields.length || rotation || (opacity !== null && opacity < 1) ? <section className="border-t border-white/[0.06] pt-3">
+            <h3 className="dial-section-title mb-2">Shape</h3>
             <dl className="space-y-1.5 text-[12px]">
-              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Aspect ratio</dt><dd className="font-mono text-right text-foreground">{aspectRatio ?? "Unavailable"}</dd></div>
-              {hasCornerRadius ? (
-                <>
-                  {radiusDisplayFields.map(({ label, value }) => {
-      const effectiveValue = radiusLimit === null ? value : Math.min(value, radiusLimit);
-                    const isClamped = effectiveValue < value;
-                    return (
-                      <div className="dial-row grid min-h-9 grid-cols-[1fr_auto] items-center gap-x-3 px-3 py-2" key={label}>
-                        <dt className="text-foreground-subtle">{label}</dt>
-                        <dd className="text-right"><CopyValue label={`${label.toLowerCase()} radius`} value={formatLength(effectiveValue)} /></dd>
-                        {isClamped ? (
-                          <dd className="col-span-2 mt-1 text-right text-[10px] text-foreground-subtle">
-                            Figma source: {" "}
-                            <CopyValue
-                              className="inline-block max-w-full break-all font-mono text-[10px] text-foreground-muted hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                              displayValue={formatLength(value)}
-                              label={`${label.toLowerCase()} radius source value`}
-                              value={formatLength(value)}
-                            />
-                            {" · clamped to fit"}
-                          </dd>
-                        ) : null}
-                      </div>
-                    );
-                  })}
-                </>
-              ) : <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Corner radius</dt><dd className="text-right text-foreground-subtle">Unavailable</dd></div>}
-              {finiteNumber(selectedNode.sourcePayload.rotation) !== null ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Rotation</dt><dd className="font-mono text-right text-foreground">{String(finiteNumber(selectedNode.sourcePayload.rotation))}°</dd></div> : null}
-              {finiteNumber(selectedNode.sourcePayload.opacity) !== null ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Opacity</dt><dd className="font-mono text-right text-foreground">{Math.round(finiteNumber(selectedNode.sourcePayload.opacity)! * 100)}%</dd></div> : null}
+              {radiusDisplayFields.map(({ label, value }) => (
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3" key={label}>
+                  <dt className="text-foreground-subtle">{label}</dt>
+                  <dd className="text-right"><CopyValue label={`${label.toLowerCase()} radius`} value={formatLength(value)} /></dd>
+                </div>
+              ))}
+              {rotation ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Rotation</dt><dd className="font-mono text-right text-foreground">{formatPixelValue(rotation)}°</dd></div> : null}
+              {opacity !== null && opacity < 1 ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Opacity</dt><dd className="font-mono text-right text-foreground">{percentText(opacity)}</dd></div> : null}
             </dl>
-            <p className="mt-2 text-[10px] leading-4 text-foreground-subtle">The aspect ratio is calculated from the captured source bounds.</p>
-          </section>
+          </section> : null}
           <MeasurementGroup title="Padding" values={selectedNode.padding} />
-          <MeasurementGroup title="Measured margins" values={inspectionMargins(selectedNode)} />
           <MeasurementGroup title="Spacing" values={selectedNode.spacing} />
 
-          <section className="border-t border-white/[0.06] pt-3">
-            <h3 className="dial-section-title mb-2">Layout properties</h3>
-            <dl className="space-y-1.5 text-[12px]">
-              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Mode</dt><dd className="text-right text-foreground">{selectedNode.layout.mode ?? "Unavailable"}</dd></div>
-              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Direction</dt><dd className="text-right text-foreground">{selectedNode.layout.direction ?? "Unavailable"}</dd></div>
-              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Primary alignment</dt><dd className="text-right text-foreground">{selectedNode.layout.primaryAxisAlign ?? "Unavailable"}</dd></div>
-              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Counter alignment</dt><dd className="text-right text-foreground">{selectedNode.layout.counterAxisAlign ?? "Unavailable"}</dd></div>
-              <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Wrap</dt><dd className="text-right text-foreground">{selectedNode.layout.wrap === null ? "Unavailable" : selectedNode.layout.wrap ? "Enabled" : "Disabled"}</dd></div>
-            </dl>
-          </section>
 
           {isGridContainer ? (
             <section className="border-t border-white/[0.06] pt-3">
@@ -645,7 +558,7 @@ export function ElementInspector({
                   </div>
                 ))}
               </div>
-            ) : <p className="text-[11px] text-foreground-subtle">No fills or strokes captured.</p>}
+            ) : <p className="text-[11px] text-foreground-subtle">No visible fills or strokes.</p>}
             {selectedNode.styleReferences.length ? (
               <ul className="mt-2 space-y-1">
                 {selectedNode.styleReferences.map((style) => <li className="text-[11px] text-foreground-muted" key={style.kind + style.sourceStyleId}>{style.kind}: {style.name ?? style.sourceStyleId}</li>)}
@@ -702,10 +615,11 @@ export function ElementInspector({
             </span>
             <p className="mt-3 text-[13px] font-medium text-foreground">{inspecting ? "Select an element" : "Pick the Inspect tool"}</p>
             <p className="mt-1 max-w-[230px] text-[12px] leading-5 text-foreground-subtle">
-              {inspecting ? "Click anything on a screen to see its size, spacing, colors and type." : "Press I, then click anything on a screen to see its size, spacing, colors and type."}
+              <span className="touch-hidden">{inspecting ? "Click anything on a screen to see its size, spacing, colors and type." : "Press I, then click anything on a screen to see its size, spacing, colors and type."}</span>
+              <span className="touch-only">{inspecting ? "Tap anything on a screen to see its size, spacing, colors and type." : "Tap the arrow tool, then tap anything on a screen to see its size, spacing, colors and type."}</span>
             </p>
           </div>
-          <ul className="mt-4 space-y-2 text-[12px]">
+          <ul className="touch-hidden mt-4 space-y-2 text-[12px]">
             <li className="flex items-center justify-between gap-3"><span>Measure distances</span><span className="flex gap-1"><kbd className="canvas-kbd">Alt</kbd><span className="text-foreground-subtle">+ hover</span></span></li>
             <li className="flex items-center justify-between gap-3"><span>Search text and colors</span><span className="flex gap-1"><kbd className="canvas-kbd">⌘</kbd><kbd className="canvas-kbd">F</kbd></span></li>
             <li className="flex items-center justify-between gap-3"><span>Next or previous screen</span><span className="flex gap-1"><kbd className="canvas-kbd">[</kbd><kbd className="canvas-kbd">]</kbd></span></li>
@@ -741,7 +655,7 @@ export function ElementInspector({
             <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Size</dt><dd className="font-mono text-foreground">{formatFrameSize(frame.sourceWidth, frame.sourceHeight)}</dd></div>
             <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Elements</dt><dd className="font-mono text-foreground">{frame.nodes.length}</dd></div>
           </dl>
-          <p className="mt-4 border-t border-border pt-3 text-[10px] leading-4 text-foreground-subtle">Measurements retain source or measured provenance.</p>
+          <div className="mt-4"><InspectorExport frame={frame} /></div>
         </div>
       )}
     </div>
