@@ -701,16 +701,32 @@ function matchFrameNodes(
   // Last resort for layers whose IDs were regenerated (a frame turned into a component, a detached
   // instance, a rebuilt list): the same kind of layer with the same name in the same spot of the screen
   // is the same layer. Repeated names (calendar days, list rows) pair only when exactly one sits there.
+  // Layers stacked in one spot with one name (a filled copy over an empty one) pair in layer order
+  // when both versions have the same number of them.
   const samePlacePairs: Array<[SnapshotNode, SnapshotNode]> = [];
+  const groupedBeforeIds = new Set<string>();
   for (const before of beforeNodes) {
-    if (matchedBeforeIds.has(before.sourceNodeId)) continue;
+    if (matchedBeforeIds.has(before.sourceNodeId) || groupedBeforeIds.has(before.sourceNodeId)) continue;
     const key = nodeMatchKey(before);
     const options = afterNodes.filter((after) =>
       !matchedAfterIds.has(after.sourceNodeId) && nodeMatchKey(after) === key && inSamePlace(before, after));
-    if (options.length !== 1) continue;
+    if (!options.length) continue;
     const rivals = beforeNodes.filter((other) =>
       !matchedBeforeIds.has(other.sourceNodeId) && nodeMatchKey(other) === key && inSamePlace(other, options[0]));
-    if (rivals.length === 1) samePlacePairs.push([before, options[0]]);
+    for (const rival of rivals) groupedBeforeIds.add(rival.sourceNodeId);
+    const stacked = rivals.length === options.length &&
+      rivals.every((rival) => options.every((option) => inSamePlace(rival, option)));
+    if (!stacked) continue;
+    // Same text first (so a reordered stack can't read as edited copy), then layer order.
+    const freeOptions = [...options];
+    const leftovers: SnapshotNode[] = [];
+    for (const rival of rivals) {
+      const text = nodeTextContent(rival);
+      const index = text === null ? -1 : freeOptions.findIndex((option) => nodeTextContent(option) === text);
+      if (index === -1) leftovers.push(rival);
+      else samePlacePairs.push([rival, freeOptions.splice(index, 1)[0]]);
+    }
+    leftovers.forEach((rival, index) => samePlacePairs.push([rival, freeOptions[index]]));
   }
   for (const [before, after] of samePlacePairs) pair(before, after);
   matchByMatchedParents();

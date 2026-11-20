@@ -865,22 +865,21 @@ test("matches regenerated duplicate layers by distinct geometry when traversal o
   assert.deepEqual(result.unmatchedNodeCandidates, []);
 });
 
-test("keeps duplicate regenerated layers unmatched when their geometry overlaps", () => {
+test("pairs stacked regenerated text layers by their text, even when the stack order changed", () => {
   const result = compare(
     regeneratedLayerSnapshot("frame-before", [
       { sourceNodeId: "before-a", name: "Action", type: "TEXT", x: 24, text: "Back" },
       { sourceNodeId: "before-b", name: "Action", type: "TEXT", x: 24, text: "Next" },
     ]),
     regeneratedLayerSnapshot("frame-after", [
-      { sourceNodeId: "after-a", name: "Action", type: "TEXT", x: 24, text: "Back" },
       { sourceNodeId: "after-b", name: "Action", type: "TEXT", x: 24, text: "Next" },
+      { sourceNodeId: "after-a", name: "Action", type: "TEXT", x: 24, text: "Back" },
     ]),
     [{ beforeFrameId: "frame-before", afterFrameId: "frame-after" }],
   );
 
-  assert.equal(result.changes.filter((change) => change.path === "node").length, 4);
-  assert.equal(result.unmatchedNodeCandidates.length, 2);
-  assert.ok(result.unmatchedNodeCandidates.every((candidate) => candidate.afterCandidates.length === 2));
+  assert.deepEqual(result.changes, []);
+  assert.equal(result.unmatchedNodeCandidates.length, 0);
 });
 
 test("compares resized repeated layers and reports only the unmatched item", () => {
@@ -1646,6 +1645,21 @@ test("unchanged layers whose IDs were regenerated pair by kind, name and place i
   const after = regeneratedLayerSnapshot("screen", [
     { sourceNodeId: "I9:1;2:17", name: "Text", type: "TEXT", x: 24, text: "17" },
     { sourceNodeId: "I9:1;2:18", name: "Text", type: "TEXT", x: 80, text: "18" },
+  ]);
+  const result = compare(before, after);
+  assert.deepEqual(result.changes, []);
+  assert.equal(result.frames[0].status, "unchanged");
+});
+
+test("identical layers stacked in one spot pair in layer order", () => {
+  // A filled "Container" over an empty one, both rebuilt with new IDs.
+  const before = regeneratedLayerSnapshot("screen", [
+    { sourceNodeId: "12173:729", name: "Container", type: "FRAME", x: 16 },
+    { sourceNodeId: "12173:730", name: "Container", type: "FRAME", x: 16 },
+  ]);
+  const after = regeneratedLayerSnapshot("screen", [
+    { sourceNodeId: "14356:1218", name: "Container", type: "FRAME", x: 16 },
+    { sourceNodeId: "14356:1219", name: "Container", type: "FRAME", x: 16 },
   ]);
   const result = compare(before, after);
   assert.deepEqual(result.changes, []);
