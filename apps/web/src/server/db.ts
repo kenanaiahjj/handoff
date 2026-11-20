@@ -18,6 +18,26 @@ types.setTypeParser(20, (value) => {
 
 export type RunResult = { changes: number; lastInsertRowid: number | bigint | undefined };
 
+/**
+ * A transaction runs on one connection, which can only run one query at a time. Code inside a
+ * transaction sometimes starts queries in parallel (Promise.all); pg 8 queues those with a deprecation
+ * warning and pg 9 will reject them. Queue them here instead, in the order they were started, for as
+ * long as the transaction holds the connection. Returns a function that restores the client.
+ */
+function serializeClientQueries(client: PoolClient) {
+  const original = client.query;
+  let tail: Promise<unknown> = Promise.resolve();
+  const queued = ((...args: unknown[]) => {
+    const run = tail.then(() => (original as (...queryArgs: unknown[]) => Promise<unknown>).apply(client, args));
+    tail = run.catch(() => undefined);
+    return run;
+  }) as PoolClient["query"];
+  client.query = queued;
+  return () => {
+    client.query = original;
+  };
+}
+
 export class PostgresDatabase {
   constructor(private readonly pool: Pool) {}
 
@@ -58,6 +78,7 @@ export class PostgresDatabase {
       if (currentTransaction?.pool === this.pool) return work();
 
       const client = await this.pool.connect();
+      const restore = serializeClientQueries(client);
       try {
         await client.query("BEGIN");
         const result = await activeTransaction.run({ pool: this.pool, client }, work);
@@ -67,6 +88,7 @@ export class PostgresDatabase {
         await client.query("ROLLBACK").catch(() => undefined);
         throw error;
       } finally {
+        restore();
         client.release();
       }
     };
@@ -260,6 +282,7 @@ export async function withTransaction<T>(work: (client: PoolClient) => Promise<T
   const active = activeTransaction.getStore();
   if (active?.pool === pool) return work(active.client);
   const client = await pool.connect();
+  const restore = serializeClientQueries(client);
 
   try {
     await client.query("BEGIN");
@@ -270,6 +293,7 @@ export async function withTransaction<T>(work: (client: PoolClient) => Promise<T
     await client.query("ROLLBACK").catch(() => undefined);
     throw error;
   } finally {
+    restore();
     client.release();
   }
 }
