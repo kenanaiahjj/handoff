@@ -1,3 +1,4 @@
+import { attachDatabasePool } from "@vercel/functions";
 import { Pool, types, type PoolClient, type QueryResult, type QueryResultRow } from "pg";
 import { AsyncLocalStorage } from "node:async_hooks";
 import path from "node:path";
@@ -213,6 +214,9 @@ function createPool() {
 export function getDatabasePool() {
   if (!globalForDatabase.__asbirDatabase) {
     globalForDatabase.__asbirDatabase = createPool();
+    // Fluid Compute suspends idle instances; without this their idle clients stay connected and
+    // pile up on the Supabase pooler until it refuses everyone (EMAXCONN, limit 200).
+    attachDatabasePool(globalForDatabase.__asbirDatabase);
   }
 
   return globalForDatabase.__asbirDatabase;

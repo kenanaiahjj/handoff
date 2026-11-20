@@ -695,32 +695,42 @@ export function HandoffCanvas({
     return () => document.removeEventListener("pointerdown", closeOnOutsidePointer);
   }, [commentThreadOpen, pendingPoint]);
 
-  // Live comments: poll every two seconds while visible, never overlapping, and refresh as soon
-  // as the tab becomes visible or focused again. Failed refreshes keep the last good list.
+  // Live comments: poll every ten seconds while visible, never overlapping, and refresh as soon as
+  // the tab becomes visible or focused again. Failures back off (up to a minute) so a struggling
+  // server isn't hammered by every open tab; the last good list stays on screen.
   useEffect(() => {
     let active = true;
     let inFlight = false;
+    let delay = 10_000;
+    let timer: number | undefined;
+    function schedule() {
+      if (active) timer = window.setTimeout(() => void poll(), delay);
+    }
     async function poll() {
-      if (inFlight || document.visibilityState !== "visible") return;
+      window.clearTimeout(timer);
+      if (inFlight) return;
+      if (document.visibilityState !== "visible") return schedule();
       inFlight = true;
       try {
         const response = await fetch(commentsEndpoint, { cache: "no-store" });
-        if (!response.ok) return;
+        if (!response.ok) throw new Error(String(response.status));
         const payload = await response.json() as CommentPayload;
         if (active && Array.isArray(payload.comments)) setComments(payload.comments);
+        delay = 10_000;
       } catch {
-        // Keep the last successful list; the next tick retries.
+        delay = Math.min(delay * 2, 60_000);
       } finally {
         inFlight = false;
+        schedule();
       }
     }
-    const interval = window.setInterval(() => void poll(), 2000);
+    schedule();
     const onVisible = () => { if (document.visibilityState === "visible") void poll(); };
     document.addEventListener("visibilitychange", onVisible);
     window.addEventListener("focus", onVisible);
     return () => {
       active = false;
-      window.clearInterval(interval);
+      window.clearTimeout(timer);
       document.removeEventListener("visibilitychange", onVisible);
       window.removeEventListener("focus", onVisible);
     };

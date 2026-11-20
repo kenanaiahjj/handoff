@@ -16,6 +16,7 @@
     "@asbir/snapshot-contract": "^0.1.0",
     "@modelcontextprotocol/server": "^2.4.0",
     "@supabase/supabase-js": "^2.119.0",
+    "@vercel/functions": "^3.11.3",
     "ai": "^7.0.173",
     "better-auth": "^1.7.17",
     "fflate": "^0.8.3",
