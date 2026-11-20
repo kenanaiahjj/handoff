@@ -8,10 +8,19 @@ type HandoffAccessDialogProps = {
   handoffName: string;
   variant?: "access" | "share";
   publishTarget?: SharingPublishTarget;
+  /** Opened from elsewhere (a "…" menu): no trigger button of its own. */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 };
 
-export function HandoffAccessDialog({ endpoint, handoffName, variant = "access", publishTarget }: HandoffAccessDialogProps) {
-  const [open, setOpen] = useState(false);
+export function HandoffAccessDialog({ endpoint, handoffName, variant = "access", publishTarget, open: controlledOpen, onOpenChange }: HandoffAccessDialogProps) {
+  const [localOpen, setLocalOpen] = useState(false);
+  const controlled = controlledOpen !== undefined;
+  const open = controlled ? controlledOpen : localOpen;
+  const setOpen = (value: boolean) => {
+    if (!controlled) setLocalOpen(value);
+    onOpenChange?.(value);
+  };
   const dialogRef = useRef<HTMLDialogElement>(null);
   const isShareDialog = variant === "share";
 
@@ -24,11 +33,11 @@ export function HandoffAccessDialog({ endpoint, handoffName, variant = "access",
 
   return (
     <>
-      <button
+      {controlled ? null : <button
         aria-haspopup="dialog"
         aria-label={isShareDialog ? `Share ${handoffName}` : `Manage access to ${handoffName}`}
         className={isShareDialog
-          ? "dial-button h-11 shrink-0 px-3 text-[12px] lg:h-8"
+          ? "dial-button h-11 shrink-0 px-3 text-[12px] max-sm:w-11 max-sm:px-0 lg:h-8"
           : "dial-button min-h-8 shrink-0 px-3 text-xs"}
         onClick={() => setOpen(true)}
         title={isShareDialog ? "Share handoff and manage access" : "Manage access"}
@@ -42,8 +51,8 @@ export function HandoffAccessDialog({ endpoint, handoffName, variant = "access",
             <circle cx="12.2" cy="12.4" r="1.65" stroke="currentColor" strokeWidth="1.3" />
           </svg>
         ) : null}
-        {isShareDialog ? "Share" : "Access"}
-      </button>
+        {isShareDialog ? <span className="max-sm:sr-only">Share</span> : "Access"}
+      </button>}
       <dialog
         aria-labelledby="handoff-access-dialog-title"
         className="dial-popover fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-hidden p-0 text-foreground backdrop:bg-black/60 backdrop:backdrop-blur-sm"
@@ -58,7 +67,7 @@ export function HandoffAccessDialog({ endpoint, handoffName, variant = "access",
             <header className="flex items-start justify-between gap-4">
               <div className="min-w-0">
                 {!isShareDialog ? <p className="text-[12px] font-medium text-foreground-subtle">Handoff access</p> : null}
-                <h2 className={isShareDialog ? "text-base font-semibold text-foreground" : "mt-1 text-base font-semibold text-foreground"} id="handoff-access-dialog-title">{isShareDialog ? "Share handoff" : "Manage access"}</h2>
+                <h2 className={isShareDialog ? "text-base font-semibold text-foreground" : "mt-1 text-base font-semibold text-foreground"} id="handoff-access-dialog-title">{isShareDialog ? "Share handoff" : "Edit access"}</h2>
                 <p className="mt-1 truncate text-xs text-foreground-muted">{handoffName}</p>
               </div>
               <button

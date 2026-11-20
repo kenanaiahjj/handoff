@@ -15,7 +15,7 @@ import { layoutCommentPins } from "../comments/comment-pin-layout";
 import { CanvasCommentPopover } from "../comments/CanvasCommentPopover";
 import { LayoutGridOverlay } from "./LayoutGridOverlay";
 import { comparisonFrameStatusShortLabel } from "./compare-presentation";
-import { getCanvasFrameLabelMaxWidth, shouldShowCanvasFrameLabel } from "./canvas-frame-label-visibility";
+import { shouldShowCanvasFrameLabel } from "./canvas-frame-label-visibility";
 import { getElementDistanceGuides, type ElementRect } from "./element-distance-guides";
 import { formatPrecisePixelValue } from "./format-captured-measurement";
 import { overviewClipPath } from "./overview-clip";
@@ -78,6 +78,8 @@ type CanvasViewportProps = {
   highlightedNodeIds: string[];
   /** Elements that changed in this version, outlined when "Changes" is on. */
   changedNodeIds?: string[];
+  /** Colour changed and new screens (border and label chip). Off when "Changes" is toggled off. */
+  changesVisible?: boolean;
   /** Remembers pan and zoom for this canvas (per handoff and screen). */
   viewMemoryKey?: string | null;
   showResolvedPins: boolean;
@@ -99,8 +101,8 @@ type CanvasViewportProps = {
     threadOpen: boolean;
     canWrite: boolean;
     canResolve: boolean;
-    onCreate: (body: string, point: PendingCommentPoint) => Promise<void>;
-    onReply: (parentCommentId: string, body: string) => Promise<void>;
+    onCreate: (body: string, point: PendingCommentPoint, attachmentIds: string[]) => Promise<void>;
+    onReply: (parentCommentId: string, body: string, attachmentIds: string[]) => Promise<void>;
     onResolve: (commentId: string, resolved: boolean) => Promise<void>;
     onClose: () => void;
   };
@@ -164,6 +166,7 @@ export function CanvasViewport({
   layoutGridsVisible,
   highlightedNodeIds,
   changedNodeIds = [],
+  changesVisible = true,
   viewMemoryKey = null,
   showResolvedPins,
   selectedNodeId,
@@ -386,9 +389,12 @@ export function CanvasViewport({
   if (!interacting && settledScale !== transform.scale) setSettledScale(transform.scale);
   const visualScale = interacting ? settledScale : transform.scale;
   const inverseScale = 1 / Math.max(visualScale, 0.01);
-  // Flip the comment popover to the pin's left when it would run off the viewport's right edge.
-  const popoverFlips = (x: number) =>
-    (x - frame.sourceWidth / 2) * transform.scale + transform.offsetX + viewportSize.width / 2 + 340 > viewportSize.width;
+  // Flip the comment popover to the pin's left when it would run off the viewport's right edge
+  // and the left side has more room.
+  const popoverFlips = (x: number) => {
+    const pinX = (x - frame.sourceWidth / 2) * transform.scale + transform.offsetX + viewportSize.width / 2;
+    return pinX + 340 > viewportSize.width && pinX > viewportSize.width - pinX;
+  };
   const openThreadPin = commentPopover?.threadOpen
     ? commentPins.find(({ comment }) => comment.id === selectedCommentId) ?? null
     : null;
@@ -410,7 +416,6 @@ export function CanvasViewport({
     // Only re-center when a different thread opens, not on every pan or zoom.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openThreadKey]);
-  const canvasFrameLabelMaxWidth = getCanvasFrameLabelMaxWidth(viewportSize.width, visualScale);
   const overviewResolutionScale = Math.min(
     frame.pixelWidth / Math.max(frame.sourceWidth, 1),
     frame.pixelHeight / Math.max(frame.sourceHeight, 1),
@@ -590,7 +595,7 @@ export function CanvasViewport({
 
             {frame.kind === "overview" && frame.exact ? stableInViewScreens.map((screen) => {
             const status = frameStatuses[screen.id];
-            const label = statusLabel(status);
+            const label = changesVisible ? statusLabel(status) : null;
             const selected = screen.id === selectedFrameId;
             const showLabel = shouldShowCanvasFrameLabel(visualScale, selected, screens.length);
               const isNew = label === "New";
@@ -616,17 +621,16 @@ export function CanvasViewport({
                   ) : null}
                   {showLabel ? (
                     <div
-                    className="pointer-events-auto absolute left-0 z-20 flex items-center gap-1 whitespace-nowrap"
+                    className="pointer-events-auto absolute inset-x-0 z-20 flex items-center gap-1 whitespace-nowrap"
                   style={{
                     bottom: "100%",
                     marginBottom: 4 * inverseScale,
-                    maxWidth: canvasFrameLabelMaxWidth + "px",
                   }}
                 >
                     <button
                       aria-label={"Select screen " + screen.name + (label ? ", " + label : "")}
                         aria-pressed={selected}
-                      className="flex max-w-none items-center gap-1.5 rounded-chip bg-surface/95 text-left text-foreground-muted shadow-sm hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-chip bg-surface/95 text-left text-foreground-muted shadow-sm hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
                       onClick={(event) => onSelectFrame(screen.id, { shiftKey: event.shiftKey })}
                       style={{
                         minHeight: 24 * inverseScale + "px",
@@ -635,17 +639,13 @@ export function CanvasViewport({
                         fontSize: 12 * inverseScale + "px",
                         lineHeight: 1.3,
                         border: "1px solid " + borderColor,
-                        maxWidth: canvasFrameLabelMaxWidth + "px",
                       }}
                       type="button"
                     >
-                      <span className="max-w-[28ch] truncate">{screen.name}</span>
-                        <span className="font-mono text-foreground-subtle" style={{ fontSize: 10 * inverseScale + "px" }}>
-                        {formatPrecisePixelValue(screen.sourceWidth)}×{formatPrecisePixelValue(screen.sourceHeight)}
-                      </span>
+                      <span className="min-w-0 flex-1 truncate" title={screen.name}>{screen.name}</span>
                       {label ? (
                         <span
-                          className="rounded-chip font-medium"
+                          className="shrink-0 rounded-chip font-medium"
                           style={{
                             padding: 2 * inverseScale + "px " + 4 * inverseScale + "px",
                             borderRadius: 4 * inverseScale + "px",

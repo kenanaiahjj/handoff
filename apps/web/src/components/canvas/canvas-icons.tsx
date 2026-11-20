@@ -28,7 +28,8 @@ export const GridIcon = (props: SVGProps<SVGSVGElement>) => (
   <Icon {...props}><path d="M5.7 2.5v11M10.3 2.5v11M2.5 5.7h11M2.5 10.3h11" /></Icon>
 );
 export const ChangesIcon = (props: SVGProps<SVGSVGElement>) => (
-  <Icon {...props}><path d="M8 2.5v3M8 10.5v3M2.5 8h3M10.5 8h3" /><circle cx="8" cy="8" r="1.4" /></Icon>
+  // An element with a "changed" dot on its corner.
+  <Icon {...props}><path d="M9 4H4a1.5 1.5 0 0 0-1.5 1.5v6A1.5 1.5 0 0 0 4 13h6a1.5 1.5 0 0 0 1.5-1.5V7" /><circle cx="12.2" cy="3.8" fill="currentColor" r="1.8" stroke="none" /></Icon>
 );
 export const MoreIcon = (props: SVGProps<SVGSVGElement>) => (
   <Icon {...props}><circle cx="3.5" cy="8" fill="currentColor" r=".9" stroke="none" /><circle cx="8" cy="8" fill="currentColor" r=".9" stroke="none" /><circle cx="12.5" cy="8" fill="currentColor" r=".9" stroke="none" /></Icon>
@@ -47,4 +48,10 @@ export const VersionIcon = (props: SVGProps<SVGSVGElement>) => (
 );
 export const ChevronDownIcon = (props: SVGProps<SVGSVGElement>) => (
   <Icon {...props}><path d="m4.5 6.5 3.5 3.5 3.5-3.5" /></Icon>
+);
+export const PanelLeftIcon = (props: SVGProps<SVGSVGElement>) => (
+  <Icon {...props}><rect height="10" rx="1.5" width="12" x="2" y="3" /><path d="M6 3v10" /></Icon>
+);
+export const PanelRightIcon = (props: SVGProps<SVGSVGElement>) => (
+  <Icon {...props}><rect height="10" rx="1.5" width="12" x="2" y="3" /><path d="M10 3v10" /></Icon>
 );

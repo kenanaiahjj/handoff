@@ -1,6 +1,7 @@
 import { after } from "next/server";
 import { notifyMentions } from "@/src/server/services/slack";
 import { z } from "zod";
+import { attachToComment, withAttachments } from "@/src/server/services/comment-attachments";
 import { getDatabase } from "@/src/server/db";
 import { getHandoff } from "@/src/server/repositories/handoffs";
 import { createHandoffComment, listHandoffComments } from "@/src/server/repositories/comments";
@@ -26,6 +27,7 @@ const createCommentSchema = z.object({
   x: z.number().finite().nullable().optional(),
   y: z.number().finite().nullable().optional(),
   parentCommentId: z.string().uuid().nullable().optional(),
+  attachmentIds: z.array(z.string().uuid()).max(4).optional(),
 });
 
 type CommentAnchor = {
@@ -93,7 +95,7 @@ export async function GET(request: Request, context: CommentsRoute) {
     if (!handoff || !version || version.handoffId !== handoffId) {
       return Response.json({ error: "Handoff version not found." }, { status: 404 });
     }
-    return Response.json({ comments: (await listHandoffComments({ workspaceId, versionId })) });
+    return Response.json({ comments: await withAttachments(workspaceId, versionId, (await listHandoffComments({ workspaceId, versionId })) as Array<{ id: string }>) });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });
     throw error;
@@ -140,6 +142,7 @@ export async function POST(request: Request, context: CommentsRoute) {
       body: parsed.data.body,
       createdBy: access.userId,
     }));
+    if (parsed.data.attachmentIds?.length) await attachToComment({ workspaceId: workspaceId, versionId, commentId: created.id, attachmentIds: parsed.data.attachmentIds });
     const mentioned = (await recordCommentMentions({
       workspaceId,
       handoffId,

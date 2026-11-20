@@ -9,6 +9,8 @@ import { listWorkspaceMcpTokens } from "@/src/server/repositories/mcp-tokens";
 import { canSeeWholeWorkspace, filterProjectsForViewer } from "@/src/server/services/review-visibility";
 import { isSlackEnabled } from "@/src/server/services/slack";
 import { McpTokenManager } from "@/src/components/integrations/McpTokenManager";
+import { CopyPrompt } from "@/src/components/integrations/CopyPrompt";
+import { workspaceMcpEndpoint } from "@/src/components/integrations/mcp-configuration";
 import { WorkspaceShell } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 
@@ -68,8 +70,51 @@ const slackAppManifestUrl = "https://api.slack.com/apps?new_app=1&manifest_json=
   settings: { org_deploy_enabled: false, socket_mode_enabled: false, token_rotation_enabled: false },
 }));
 
+function figmaPrompt(origin: string) {
+  return [
+    "Help me install the Asbir Handoff Figma plugin.",
+    "",
+    `I downloaded it from ${origin}/api/figma-plugin. It's a .zip, probably in ~/Downloads.`,
+    "1. Unzip it into a folder that won't move, such as ~/Figma Plugins/asbir-handoff. Moving it later breaks the plugin.",
+    "2. Tell me the full path to manifest.json in that folder.",
+    "3. Walk me through importing it in the Figma desktop app: Plugins → Development → Import plugin from manifest, then pick manifest.json.",
+    "",
+    "The plugin already points at my workspace, so don't change any of its files.",
+  ].join("\n");
+}
+
+function mcpPrompt(endpoint: string) {
+  return [
+    "Connect the Asbir Handoff MCP server to this AI client.",
+    "",
+    `- Server: streamable HTTP at ${endpoint}`,
+    "- Auth: \"Authorization: Bearer <token>\" header. Read the token from the ASBIR_MCP_TOKEN environment variable; never write the token itself into a file or print it.",
+    "- Codex: add [mcp_servers.asbir_handoff] to ~/.codex/config.toml with url and bearer_token_env_var = \"ASBIR_MCP_TOKEN\".",
+    "- Claude Code: add asbir_handoff to the project's .mcp.json with type \"http\", the url, and headers.Authorization = \"Bearer ${ASBIR_MCP_TOKEN}\".",
+    "- Other clients: use that client's own MCP config file and variable syntax.",
+    "",
+    "If ASBIR_MCP_TOKEN isn't set, stop and ask me to create a token in Asbir Handoff (Integrations → AI clients) and set it myself.",
+    "Then check that the server connects and list its tools.",
+  ].join("\n");
+}
+
+function slackPrompt() {
+  return [
+    "Help me turn on Slack notifications for Asbir Handoff.",
+    "",
+    `1. Create a Slack app from this manifest link (name and permissions are filled in): ${slackAppManifestUrl}`,
+    "2. Install it to our Slack workspace from OAuth & Permissions and copy the Bot User OAuth Token (starts with xoxb-).",
+    "3. In Vercel, add it to the Asbir Handoff project as SLACK_BOT_TOKEN for Production and Preview, then redeploy.",
+    "",
+    "Walk me through each step. Don't ask me to paste the token into this chat; if you can run the Vercel CLI, use `vercel env add SLACK_BOT_TOKEN` so I enter it myself.",
+  ].join("\n");
+}
+
 export default async function IntegrationsPage({ params, searchParams }: IntegrationsPageProps) {
-  const session = await getSessionForHeaders(await headers());
+  const requestHeaders = await headers();
+  const host = requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "localhost:3000";
+  const origin = `${requestHeaders.get("x-forwarded-proto") ?? (host.startsWith("localhost") ? "http" : "https")}://${host}`;
+  const session = await getSessionForHeaders(requestHeaders);
   if (!session) redirect("/sign-in");
   const { workspaceId } = await params;
   const workspace = (await getDatabase()
@@ -96,8 +141,10 @@ export default async function IntegrationsPage({ params, searchParams }: Integra
     { id: "slack", name: "Slack", summary: "Direct messages for new versions, mentions and the weekly digest.", logo: <SlackLogo className="size-5" />, status: slackOn ? "On" : "Off", connected: slackOn },
   ];
 
+  // Reviewers, developers and QA connect their AI tools and see Slack; capturing from Figma is for designers.
+  const available = canManage ? integrations : integrations.filter((item) => item.id !== "figma");
   const openParam = (await searchParams).open;
-  const open = integrations.find((item) => item.id === (Array.isArray(openParam) ? openParam[0] : openParam));
+  const open = available.find((item) => item.id === (Array.isArray(openParam) ? openParam[0] : openParam));
 
   return (
     <WorkspaceShell
@@ -110,9 +157,9 @@ export default async function IntegrationsPage({ params, searchParams }: Integra
         {!open ? (
           <>
             <h1 className="text-2xl font-semibold tracking-tight text-foreground">Integrations</h1>
-            <p className="mt-1.5 text-[13px] text-foreground-muted">Bring designs in from Figma, and connect your AI clients and Slack.</p>
+            <p className="mt-1.5 text-[13px] text-foreground-muted">{canManage ? "Bring designs in from Figma, and connect your AI clients and Slack." : "Connect your AI coding tools to the handoffs shared with you."}</p>
             <ul className="mt-7 grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {integrations.map((item) => (
+              {available.map((item) => (
                 <li key={item.id}>
                   <Link
                     className="group flex h-full flex-col rounded-panel border border-border bg-surface p-4 transition-colors hover:border-foreground-subtle/40 hover:bg-surface-raised/60 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
@@ -150,6 +197,10 @@ export default async function IntegrationsPage({ params, searchParams }: Integra
                 <span className={"text-[12px] " + (open.connected ? "text-success" : "text-foreground-subtle")}>{open.status}</span>
               ) : null}
             </header>
+
+            {open.id === "figma" ? <div className="mt-7"><CopyPrompt prompt={figmaPrompt(origin)} /></div> : null}
+            {open.id === "mcp" ? <div className="mt-7"><CopyPrompt prompt={mcpPrompt(workspaceMcpEndpoint(origin, workspaceId))} /></div> : null}
+            {open.id === "slack" && !slackOn && canManage ? <div className="mt-7"><CopyPrompt prompt={slackPrompt()} /></div> : null}
 
             {open.id === "figma" ? (
               <section aria-labelledby="figma-setup-title" className="mt-7">

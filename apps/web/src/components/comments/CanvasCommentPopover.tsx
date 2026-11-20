@@ -1,13 +1,10 @@
 "use client";
 
-import { Avatar } from "@/src/components/Avatar";
-import { CommentBody } from "./mentions";
-
 import { useState } from "react";
 import type { HandoffComment } from "./CommentPin";
-import { CommentComposer, type PendingCommentPoint } from "./CommentThread";
+import { CommentComposer, CommentMessage, type PendingCommentPoint } from "./CommentThread";
 
-const popoverWidth = 300;
+const popoverWidth = 320;
 const pinGap = 22;
 
 type Placement = {
@@ -23,7 +20,7 @@ type CanvasCommentPopoverProps = Placement & (
   | {
       mode: "compose";
       point: PendingCommentPoint;
-      onCreate: (body: string, point: PendingCommentPoint) => Promise<void>;
+      onCreate: (body: string, point: PendingCommentPoint, attachmentIds: string[]) => Promise<void>;
       onClose: () => void;
     }
   | {
@@ -33,26 +30,11 @@ type CanvasCommentPopoverProps = Placement & (
       index: number;
       canWrite: boolean;
       canResolve: boolean;
-      onReply: (parentCommentId: string, body: string) => Promise<void>;
+      onReply: (parentCommentId: string, body: string, attachmentIds: string[]) => Promise<void>;
       onResolve: (commentId: string, resolved: boolean) => Promise<void>;
       onClose: () => void;
     }
 );
-
-function timeLabel(value: string) {
-  return new Date(value).toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-}
-
-function Author({ comment }: { comment: HandoffComment }) {
-  return (
-    <span className="flex min-w-0 items-center gap-1.5">
-      <Avatar name={comment.authorName} size={24} src={comment.authorImage} />
-      <span className="truncate text-[12px] font-medium text-foreground">{comment.authorName}</span>
-      {comment.authorRole ? <span className="shrink-0 rounded bg-surface-strong px-1 py-0.5 text-[9px] uppercase tracking-wide text-foreground-muted">{comment.authorRole}</span> : null}
-      <span className="shrink-0 text-[10px] text-foreground-subtle">{timeLabel(comment.createdAt)}</span>
-    </span>
-  );
-}
 
 /**
  * Figma-style comment UI anchored beside a pin. It lives inside the zoomed canvas layer and
@@ -81,7 +63,7 @@ export function CanvasCommentPopover(props: CanvasCommentPopoverProps) {
   return (
     <div
       aria-labelledby={labelId}
-      className="dial-popover absolute z-40 flex max-h-[420px] flex-col overflow-hidden text-foreground"
+      className="dial-popover absolute z-40 flex max-h-[480px] flex-col overflow-hidden text-foreground"
       data-comment-pin
       data-comment-popover
       onPointerDown={(event) => event.stopPropagation()}
@@ -124,22 +106,21 @@ export function CanvasCommentPopover(props: CanvasCommentPopoverProps) {
 
       {props.mode === "compose" ? (
         <div className="p-3">
-          <CommentComposer autoFocus compact label="Add a comment" onCancel={props.onClose} onSubmit={(body) => props.onCreate(body, props.point)} submitLabel="Post" />
+          <CommentComposer autoFocus compact label="Add a comment" onCancel={props.onClose} onSubmit={(body, attachmentIds) => props.onCreate(body, props.point, attachmentIds)} submitLabel="Post" />
         </div>
       ) : (
         <>
           <ol className="min-h-0 flex-1 space-y-3 overflow-y-auto px-3 py-3">
             {[props.root, ...props.replies].map((comment) => (
               <li key={comment.id}>
-                <Author comment={comment} />
-                <p className="mt-1 whitespace-pre-wrap break-words pl-7 text-[12px] leading-5 text-foreground-muted"><CommentBody body={comment.body} /></p>
+                <CommentMessage comment={comment} size={comment.id === props.root.id ? "root" : "reply"} />
               </li>
             ))}
           </ol>
           {resolveError ? <p className="px-3 pb-2 text-[11px] text-warning" role="alert">{resolveError}</p> : null}
           {props.canWrite ? (
             <div className="border-t border-border p-3">
-              <CommentComposer autoFocus compact label="Reply" onSubmit={(body) => props.onReply(props.root.id, body)} submitLabel="Reply" />
+              <CommentComposer autoFocus compact label="Reply" onSubmit={(body, attachmentIds) => props.onReply(props.root.id, body, attachmentIds)} submitLabel="Reply" />
             </div>
           ) : null}
         </>

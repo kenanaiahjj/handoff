@@ -99,6 +99,19 @@ await pool.query(`
     author_role TEXT,
     created_at TEXT NOT NULL
   );
+  CREATE TABLE comment_attachment (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL,
+    handoff_version_id TEXT NOT NULL,
+    comment_id TEXT,
+    content_type TEXT NOT NULL,
+    bytes BYTEA NOT NULL,
+    size_bytes INTEGER NOT NULL,
+    width INTEGER,
+    height INTEGER,
+    created_by_user_id TEXT,
+    created_at TEXT NOT NULL
+  );
   CREATE TABLE "user" (
     id TEXT PRIMARY KEY,
     name TEXT NOT NULL,

@@ -108,7 +108,7 @@ export function CreateWorkspaceForm() {
   );
 }
 
-export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
+export function CreateProjectForm({ workspaceId, autoFocus = false }: { workspaceId: string; autoFocus?: boolean }) {
   const router = useRouter();
   const [name, setName] = useState("");
   const [errorMessage, setErrorMessage] = useState("");
@@ -143,7 +143,8 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
     <form className="flex flex-col gap-3 sm:flex-row" onSubmit={createProject}>
       <label className="sr-only" htmlFor="project-name">Project name</label>
       <input
-        className="h-9 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 text-[12px] text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
+        data-autofocus={autoFocus || undefined}
+        className="h-10 min-w-0 rounded-control border border-transparent bg-surface-inset px-3 text-[12px] sm:h-9 sm:flex-1 text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
         id="project-name"
         maxLength={80}
         onChange={(event) => setName(event.target.value)}
@@ -152,7 +153,7 @@ export function CreateProjectForm({ workspaceId }: { workspaceId: string }) {
         value={name}
       />
       <button
-        className="capture-primary-action h-9 px-4 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
+        className="capture-primary-action h-10 px-4 text-[12px] font-semibold sm:h-9 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
         disabled={pending}
         type="submit"
       >
@@ -247,7 +248,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
   return (
     <div className="space-y-4">
       <p className="max-w-[68ch] text-[12px] leading-5 text-foreground-muted">Anyone with the link joins with this role until it expires or you revoke it. Copy it right away; it can’t be shown again.</p>
-      <form className="grid grid-cols-[minmax(0,1.3fr)_minmax(0,1fr)] gap-3" onSubmit={createInvite}>
+      <form className="grid gap-3" onSubmit={createInvite}>
         <label className="space-y-1.5 text-[12px] text-foreground" htmlFor="invite-role">
           <span className="block font-medium">Team role</span>
           <select
@@ -279,7 +280,7 @@ export function CreateInviteForm({ workspaceId, initialInvites = [] }: { workspa
           </select>
         </label>
         <button
-          className="capture-primary-action h-9 self-end px-3 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60 col-span-2"
+          className="capture-primary-action h-9 self-end px-3 text-[12px] font-semibold focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:opacity-60"
           disabled={pending}
           type="submit"
         >

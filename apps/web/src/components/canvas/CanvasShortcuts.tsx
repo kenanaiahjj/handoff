@@ -25,9 +25,9 @@ const groups: Array<{ title: string; items: Array<[string[], string]> }> = [
     items: [
       [["O"], "Outline every element"],
       [["G"], "Layout grids"],
-      [["D"], "Outline what changed in this version"],
-      [["+", "−"], "Zoom in and out"],
-      [["0"], "Fit everything"],
+      [["D"], "Show or hide change highlights"],
+      [["+", "−"], "Zoom in and out (also ⌘+ and ⌘−)"],
+      [["0"], "Fit everything (also ⌘0)"],
       [["⇧", "2"], "Zoom to the selected screen"],
       [["Alt"], "Hold over an element to measure distances"],
     ],
@@ -35,6 +35,7 @@ const groups: Array<{ title: string; items: Array<[string[], string]> }> = [
   {
     title: "Panel",
     items: [
+      [["⌘", "\\"], "Show or hide the side panels"],
       [["U"], "Cycle units: px, pt, dp, rem"],
       [["?"], "Show these shortcuts"],
     ],

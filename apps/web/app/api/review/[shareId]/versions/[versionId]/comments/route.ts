@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { attachToComment, withAttachments } from "@/src/server/services/comment-attachments";
 import { getDatabase } from "@/src/server/db";
 import { createHandoffComment, listHandoffComments } from "@/src/server/repositories/comments";
 import { getVisiblePublishedReviewVersion, getVisiblePublishedReviewVersionRecord, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
@@ -15,6 +16,7 @@ const createCommentSchema = z.object({
   x: z.number().finite().nullable().optional(),
   y: z.number().finite().nullable().optional(),
   parentCommentId: z.string().uuid().nullable().optional(),
+  attachmentIds: z.array(z.string().uuid()).max(4).optional(),
 });
 
 type CommentAnchor = { frameId: string; sourceNodeId: string | null; x: number | null; y: number | null };
@@ -69,7 +71,7 @@ export async function GET(request: Request, context: ReviewCommentsRoute) {
   if (!access?.decision.allowed) return accessError(access);
   const version = (await getVisiblePublishedReviewVersionRecord(access.handoff, versionId));
   if (!version) return Response.json({ error: "Handoff version not found." }, { status: 404 });
-  return Response.json({ comments: (await listHandoffComments({ workspaceId: access.handoff.workspaceId, versionId })) }, { headers: { "Cache-Control": "no-store" } });
+  return Response.json({ comments: await withAttachments(access.handoff.workspaceId, versionId, (await listHandoffComments({ workspaceId: access.handoff.workspaceId, versionId })) as Array<{ id: string }>) }, { headers: { "Cache-Control": "no-store" } });
 }
 
 export async function POST(request: Request, context: ReviewCommentsRoute) {
@@ -118,5 +120,6 @@ export async function POST(request: Request, context: ReviewCommentsRoute) {
     body: parsed.data.body,
     ...author,
   }));
+  if (parsed.data.attachmentIds?.length) await attachToComment({ workspaceId: access.handoff.workspaceId, versionId, commentId: created.id, attachmentIds: parsed.data.attachmentIds });
   return Response.json(created, { status: 201 });
 }

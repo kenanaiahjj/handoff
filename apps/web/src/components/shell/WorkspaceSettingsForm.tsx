@@ -151,11 +151,12 @@ export function WorkspaceSettingsForm({ workspaceId, name: initialName, logoUrl:
             <input className="h-8 w-48 rounded-full bg-surface-inset px-3 font-mono text-[12px] text-foreground outline-none placeholder:font-sans placeholder:text-foreground-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" id="workspace-domain" onBlur={addDraft} onChange={(event) => setDraft(event.target.value)} onKeyDown={onDraftKey} placeholder="Add a domain…" value={draft} />
           </li>
         </ul>
-        <p className="mt-3 text-[12px] text-foreground-subtle">
-          {usingEnvironment
-            ? "Using this deployment's default list."
-            : <>Saved here, overriding the deployment&apos;s default{environmentDomains.length ? ` (${environmentDomains.map((domain) => "@" + domain).join(", ")})` : ""}. <button className="underline decoration-dotted underline-offset-4 hover:text-foreground" onClick={() => void saveDomains(null)} type="button">Reset to default</button></>}
-        </p>
+        {usingEnvironment ? null : (
+          <p className="mt-3 text-[12px] text-foreground-subtle">
+            <button className="underline decoration-dotted underline-offset-4 hover:text-foreground" onClick={() => void saveDomains(null)} type="button">Reset to default</button>
+            {environmentDomains.length ? ` (${environmentDomains.map((domain) => "@" + domain).join(", ")})` : null}
+          </p>
+        )}
       </section>
 
       <p aria-live="polite" className="min-h-5 text-[12px]">

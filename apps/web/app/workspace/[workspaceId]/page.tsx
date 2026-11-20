@@ -18,6 +18,9 @@ import { ProfileNudge } from "@/src/components/shell/ProfileNudge";
 import { getProfile } from "@/src/server/services/profiles";
 import { ViewAsSwitcher } from "@/src/components/shell/ViewAsSwitcher";
 import { listRecentHandoffs } from "@/src/server/services/workspace-activity";
+import { listProjectPreviewKeys } from "@/src/server/repositories/handoffs";
+import { workspaceRouteSlugs } from "@/src/server/services/route-slugs";
+import { PanelDialog } from "@/src/components/shell/PanelDialog";
 import { NewVersionBadge } from "@/src/components/shell/NewVersionBadge";
 import { LocalTime } from "@/src/components/LocalTime";
 import { isDevelopmentAuthBypassActive, viewAsModeFor } from "@/src/server/auth-session";
@@ -84,7 +87,7 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
     );
   }
   // Independent reads run together: each is a network round trip on hosted PostgreSQL.
-  const [projects, updates, invites, members, recent] = await Promise.all([
+  const [projects, updates, invites, members, recent, previews, routes] = await Promise.all([
     listProjects(workspace.id).then((all) => filterProjectsForViewer(workspace.id, viewer, all as ProjectCard[])),
     listViewerUpdates(workspace.id, viewer),
     getDatabase()
@@ -98,6 +101,8 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
       .all(workspaceId, new Date().toISOString()) as Promise<WorkspaceInvite[]>,
     listMembers(workspace.id),
     listRecentHandoffs(workspace.id, null),
+    listProjectPreviewKeys(workspace.id),
+    workspaceRouteSlugs(workspace.id),
   ]);
   const updatedHandoffs = new Set(updates.map((update) => update.handoffId));
   const navSections = await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, isOwner: workspace.role === "owner", projects, page: "overview", canManage });
@@ -110,61 +115,64 @@ export default async function WorkspacePage({ params }: WorkspacePageProps) {
       breadcrumbs={[{ label: "Projects" }]}
     >
       <main className="workspace-dashboard mx-auto px-5 py-7 text-foreground sm:px-8 sm:py-9">
-        <header className="workspace-dashboard-heading">
-          <h1 className="font-semibold text-foreground">{workspace.name}</h1>
-        </header>
-
-        {await (async () => {
-          const profile = await getProfile(session.user.id);
-          const missing = [...(profile?.image ? [] : ["photo" as const]), ...(profile?.title || profile?.department ? [] : ["title" as const])];
-          return <ProfileNudge className="mt-6" href={`/profile`} image={profile?.image ?? null} missing={missing} name={session.user.name} />;
-        })()}
-
-        <NeedsYou className="mt-6" initial={(await listOpenMentions(session.user.id, workspace.id, viewer))} />
-
-        <div className="workspace-dashboard-columns mt-6 grid gap-5 xl:grid-cols-[minmax(0,1fr)_340px]">
-<div className="space-y-5">
-          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} iconVersions={(await projectIconVersions(workspace.id))} pinnedIds={(await listPinKeys(session.user.id)).filter((key) => key.startsWith("project:")).map((key) => key.slice("project:".length))} />
-
-          {recent.length ? (
-            <section aria-labelledby="recent-title" className="workspace-pane p-3 pt-4">
-              <div className="workspace-pane-heading px-2.5">
-                <h2 className="text-[14px] font-semibold text-foreground" id="recent-title">Recently updated</h2>
-                <Link className="text-[12px] text-foreground-subtle hover:text-foreground" href="/activity">All activity</Link>
+        <div className="workspace-dashboard-columns grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
+          <div className="min-w-0">
+          <ProjectsPane workspaceId={workspace.id} projects={projects} canManage={canManage} newCounts={countUpdatesByProject(updates)} iconVersions={(await projectIconVersions(workspace.id))} pinnedIds={(await listPinKeys(session.user.id)).filter((key) => key.startsWith("project:")).map((key) => key.slice("project:".length))} previews={previews} slugs={routes.projectSlugs}
+            pageTitle
+            actions={<PanelDialog
+            icon={<svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><circle cx="6" cy="5.5" r="2.3" /><path d="M2 13c.4-2.3 2-3.7 4-3.7s3.6 1.4 4 3.7M12 5.5v4M10 7.5h4" /></svg>}
+            label="Invite"
+            labelledBy="invite-title"
+          >
+            <section aria-labelledby="invite-title" className="workspace-pane p-5">
+              <h2 className="text-[15px] font-semibold text-foreground" id="invite-title">Invite your team</h2>
+              <div className="mt-4"><CreateInviteForm key={workspace.id} workspaceId={workspace.id} initialInvites={invites} /></div>
+            </section>
+            <section aria-labelledby="members-title" className="workspace-pane p-5">
+              <div className="mb-3 flex items-center justify-between pr-10">
+                <h2 className="text-[15px] font-semibold text-foreground" id="members-title">Members</h2>
+                <span className="text-[11px] tabular-nums text-foreground-subtle">{members.length}</span>
               </div>
+              <MembersPanel canEdit={workspace.role === "owner"} currentUserId={session.user.id} initial={members} limit={5} manageHref={`/team`} workspaceId={workspace.id} />
+            </section>
+          </PanelDialog>}
+            notice={await (async () => {
+              const profile = await getProfile(session.user.id);
+              const missing = [...(profile?.image ? [] : ["photo" as const]), ...(profile?.title || profile?.department ? [] : ["title" as const])];
+              return missing.length ? <ProfileNudge href={`/profile`} image={profile?.image ?? null} missing={missing} name={session.user.name} /> : null;
+            })()}
+          />
+          </div>
+
+          <div className="min-w-0 max-xl:contents xl:sticky xl:top-20 xl:space-y-6 xl:self-start">
+          <aside aria-labelledby="recent-title" className="workspace-pane p-3 pt-4">
+            <div className="workspace-pane-heading px-2.5">
+              <h2 className="text-[14px] font-semibold text-foreground" id="recent-title">Activity</h2>
+              <Link className="text-[12px] text-foreground-subtle hover:text-foreground" href="/activity">See all</Link>
+            </div>
+            {recent.length ? (
               <ul className="workspace-list">
                 {recent.map((handoff) => (
                   <li key={handoff.handoffId}>
-                    <Link className="workspace-list-item flex items-center gap-3 px-2.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={`/projects/${handoff.projectId}/handoffs/${handoff.handoffId}`}>
+                    <Link className="workspace-list-item flex items-start gap-3 px-2.5 py-2.5 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-[-2px] focus-visible:outline-primary" href={routes.handoff(handoff.projectId, handoff.handoffId)}>
                       <span className="min-w-0 flex-1">
                         <span className="flex min-w-0 items-center gap-2">
                           <span className="truncate text-[13px] font-medium text-foreground">{handoff.handoffName}</span>
                           {updatedHandoffs.has(handoff.handoffId) ? <NewVersionBadge label="New" /> : null}
                         </span>
-                        <span className="block truncate text-[11px] text-foreground-subtle">{handoff.projectName} · Version {handoff.versionLabel} · {handoff.versionCount} {handoff.versionCount === 1 ? "version" : "versions"}</span>
+                        <span className="block truncate text-[11px] text-foreground-subtle">{handoff.projectName} · {handoff.versionLabel}</span>
                       </span>
-                      <span className="shrink-0 text-[11px] text-foreground-subtle"><LocalTime format="day" iso={handoff.updatedAt} /></span>
+                      <span className="shrink-0 pt-0.5 text-[11px] text-foreground-subtle"><LocalTime format="day" iso={handoff.updatedAt} /></span>
                     </Link>
                   </li>
                 ))}
               </ul>
-            </section>
-          ) : null}
+            ) : (
+              <p className="px-2.5 py-6 text-[12px] text-foreground-subtle">No versions yet.</p>
+            )}
+          </aside>
+          <NeedsYou className="max-xl:order-first" initial={(await listOpenMentions(session.user.id, workspace.id, viewer))} />
           </div>
-
-          <section aria-labelledby="invite-title" className="workspace-pane p-5 sm:p-6">
-            <div className="workspace-pane-heading">
-              <h2 className="text-[14px] font-semibold text-foreground" id="invite-title">Invite your team</h2>
-            </div>
-            <div className="mt-4"><CreateInviteForm key={workspace.id} workspaceId={workspace.id} initialInvites={invites} /></div>
-            <div className="mt-8">
-              <div className="mb-3 flex items-center justify-between">
-                <h3 className="text-[13px] font-semibold text-foreground" id="members-title">Members</h3>
-                <span className="text-[11px] tabular-nums text-foreground-subtle">{members.length}</span>
-              </div>
-              <MembersPanel canEdit={workspace.role === "owner"} currentUserId={session.user.id} initial={members} limit={5} manageHref={`/team`} workspaceId={workspace.id} />
-            </div>
-          </section>
         </div>
       </main>
     </WorkspaceShell>

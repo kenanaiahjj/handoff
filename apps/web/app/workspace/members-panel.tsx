@@ -17,7 +17,7 @@ const jobLabels: Record<string, string> = {
   designer: "Product designer",
   dev: "Developer",
   qa: "QA",
-  pm: "Product manager",
+  pm: "Project manager",
   marketing: "Marketing",
   exec: "Executive",
 };
@@ -115,9 +115,10 @@ export function MembersPanel({
           const isYou = member.id === currentUserId;
           const locked = !canEdit || isYou;
           return (
-            <li className="dial-row flex items-center gap-2.5 px-2.5 py-2" key={member.id}>
+            <li className="dial-row flex flex-wrap items-center gap-x-2.5 gap-y-1.5 px-2.5 py-2" key={member.id}>
               <Avatar name={member.name} size={28} src={member.image} />
-              <span className="min-w-0 flex-1">
+              {/* On phones editable rows put the role controls on their own line, so names stay readable. */}
+              <span className={"min-w-0 flex-1" + (locked ? "" : " max-sm:basis-[calc(100%-2.5rem)]")}>
                 <span className="block truncate text-[12px] font-medium text-foreground">
                   {member.name}
                   {isYou ? <span className="ml-1.5 font-normal text-foreground-subtle">(you)</span> : null}
@@ -135,7 +136,7 @@ export function MembersPanel({
                 <>
                   <label className="sr-only" htmlFor={`member-role-${member.id}`}>Role for {member.name}</label>
                   <select
-                    className="h-7 shrink-0 rounded-[7px] border border-transparent bg-surface-inset px-1.5 text-[11px] text-foreground outline-none focus-visible:border-foreground/30 disabled:opacity-50"
+                    className="h-7 shrink-0 rounded-[7px] border border-transparent bg-surface-inset px-1.5 text-[11px] max-sm:ml-[38px] max-sm:h-9 max-sm:flex-1 text-foreground outline-none focus-visible:border-foreground/30 disabled:opacity-50"
                     disabled={busy === member.id}
                     id={`member-role-${member.id}`}
                     onChange={(event) => void changeRole(member, event.target.value)}

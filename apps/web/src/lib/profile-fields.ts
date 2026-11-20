@@ -6,7 +6,6 @@ export const departmentSuggestions = [
   "Product Design",
   "Engineering",
   "Quality Assurance",
-  "Product",
   "Marketing",
   "Leadership",
   "Operations",

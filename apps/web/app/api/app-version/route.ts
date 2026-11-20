@@ -1,3 +1,5 @@
+import { releasesSince } from "@/src/changelog";
+
 type ReleaseNote = { sha: string; date: string; subject: string };
 
 /** Commit subjects read like "feat(plugin): add x"; show them as plain sentences. */
@@ -8,10 +10,13 @@ function plainSubject(subject: string) {
 
 /**
  * The build this server is running. Open windows compare it with their own to offer a reload;
- * `since` (the commit a window loaded) adds how many changes it is missing and what they are.
+ * `since` (the commit a window loaded) adds how many changes it is missing and what they are;
+ * `seen` (the newest changelog release in that window) adds the written release notes it is missing.
  */
 export function GET(request: Request) {
-  const since = new URL(request.url).searchParams.get("since");
+  const params = new URL(request.url).searchParams;
+  const since = params.get("since");
+  const seen = params.get("seen");
   let notes: ReleaseNote[] = [];
   try {
     notes = JSON.parse(process.env.ASBIR_RELEASE_NOTES || "[]") as ReleaseNote[];
@@ -26,6 +31,7 @@ export function GET(request: Request) {
       version: process.env.ASBIR_VERSION_LABEL ?? null,
       changes: index >= 0 ? index : null,
       notes: missing.slice(0, 12).map((note) => plainSubject(note.subject)),
+      releases: seen ? releasesSince(seen) : [],
     },
     { headers: { "Cache-Control": "no-store" } },
   );

@@ -84,7 +84,7 @@ export function ProjectActions({ workspaceId, projectId, projectName, handoffCou
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Could not delete this project.");
       startRefresh(() => {
-        if (window.location.pathname.includes(`/projects/${projectId}`)) router.replace(afterDeleteHref);
+        if (window.location.pathname.startsWith("/projects/")) router.replace(afterDeleteHref);
         router.refresh();
       });
     } catch (cause) {

@@ -1,5 +1,6 @@
 import { projectIconUrl, projectIconVersions } from "@/src/server/services/project-icons";
 import { getDatabase } from "@/src/server/db";
+import { projectSlugs } from "@/src/server/services/route-slugs";
 import { workspaceLogoUrl } from "@/src/server/services/workspace-settings";
 import type { WorkspaceNavSection } from "./WorkspaceShell";
 
@@ -26,9 +27,10 @@ export async function createWorkspaceNavigation({
   /** Owners also get workspace Settings. */
   isOwner?: boolean;
 }): Promise<WorkspaceNavSection[]> {
-  const [iconVersions, logo] = await Promise.all([
+  const [iconVersions, logo, slugs] = await Promise.all([
     projects.length ? projectIconVersions(workspaceId) : Promise.resolve({} as Record<string, string>),
     (getDatabase().prepare("SELECT substr(sha256, 1, 12) AS version FROM workspace_logo WHERE workspace_id = ?").get(workspaceId) as Promise<{ version: string } | undefined>).catch(() => undefined),
+    projects.length ? projectSlugs(workspaceId) : Promise.resolve(new Map<string, string>()),
   ]);
   return [
     {
@@ -48,7 +50,7 @@ export async function createWorkspaceNavigation({
           label: "Projects",
           items: projects.map((project) => ({
             label: project.name,
-            href: `/projects/${project.id}`,
+            href: `/projects/${slugs.get(project.id) ?? project.id}`,
             icon: "folder" as const,
             imageUrl: projectIconUrl(workspaceId, project.id, iconVersions[project.id]),
             active: project.id === activeProjectId,

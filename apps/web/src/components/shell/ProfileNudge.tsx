@@ -54,10 +54,10 @@ export function ProfileNudge({ name, image, missing, href, className = "" }: {
       : "Add your title and department so people know who to ask.";
 
   return (
-    <div className={"flex items-center gap-3 rounded-panel bg-surface px-4 py-3 " + className}>
+    <div className={"flex flex-wrap items-center gap-3 rounded-panel bg-surface px-4 py-3 " + className}>
       <Avatar name={name} size={32} src={image} />
-      <p className="min-w-0 flex-1 text-[13px] text-foreground-muted">{text}</p>
-      <Link className="dial-button min-h-8 shrink-0 px-3 text-[12px]" href={href}>Complete profile</Link>
+      <p className="min-w-0 flex-1 basis-40 text-[13px] text-foreground-muted">{text}</p>
+      <Link className="dial-button min-h-8 shrink-0 px-3 text-[12px] max-sm:order-last max-sm:ml-11" href={href}>Complete profile</Link>
       <button aria-label="Dismiss" className="grid size-8 shrink-0 place-items-center rounded-control text-foreground-subtle hover:bg-white/[0.06] hover:text-foreground" onClick={dismiss} title="Don't show again" type="button">
         <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8" /></svg>
       </button>

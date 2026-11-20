@@ -2,13 +2,11 @@
 
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
-import { AssetExportMenu, type AssetExportTarget } from "./AssetExportMenu";
 import { HandoffAccessDialog } from "./HandoffAccessDialog";
 import type { ZoomScaleSource } from "./zoom-scale-source";
 
 type CanvasToolbarProps = {
   scale: ZoomScaleSource | null;
-  exportTargets: AssetExportTarget[];
   shareUrl: string | null;
   shareTitle: string;
   sharingEndpoint: string | null;
@@ -29,7 +27,6 @@ type PublishResponse = { reviewUrl?: string; reviewShareId?: string; error?: str
 
 export function CanvasToolbar({
   scale,
-  exportTargets,
   shareUrl,
   shareTitle,
   sharingEndpoint,
@@ -102,8 +99,6 @@ export function CanvasToolbar({
 
   return (
     <div className="flex flex-nowrap items-center gap-1 text-[12px] text-foreground-muted" role="group" aria-label="Canvas controls">
-      <ZoomControls className="max-sm:hidden" scale={scale} onZoomOut={onZoomOut} onFit={onFit} onZoomIn={onZoomIn} />
-      <AssetExportMenu targets={exportTargets} />
       {publishEndpoint && pendingChanges > 0 && onReviewChanges ? (
         <button
           className="canvas-publish-action flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap px-3 text-[12px] font-semibold lg:h-8"
@@ -132,7 +127,7 @@ export function CanvasToolbar({
             title={!isLatestVersion ? "Select the latest version to publish." : undefined}
             type="button"
           >
-            {publishPending ? "Publishing…" : currentPublishedVersionId ? "Publish update" : "Publish"}
+            {publishPending ? "Publishing…" : "Publish"}
           </button>
         )
       ) : null}

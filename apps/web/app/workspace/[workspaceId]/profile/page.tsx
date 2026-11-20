@@ -45,30 +45,12 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
       navSections={await createWorkspaceNavigation({ workspaceId, companyName: workspace.name, isOwner: workspace.role === "owner", projects, page: "profile", canManage: canSeeWholeWorkspace(workspace.role) })}
       breadcrumbs={[{ label: "Profile" }]}
     >
-      <main className="mx-auto w-full max-w-3xl px-5 py-7 sm:px-8 sm:py-9">
+      <main className="mx-auto w-full max-w-2xl px-5 py-7 sm:px-8 sm:py-9">
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Profile</h1>
         <p className="mt-2 text-sm leading-6 text-foreground-muted">How you appear to your team on comments, mentions and the team list.</p>
-        <div className="mt-6 grid gap-5 lg:grid-cols-[minmax(0,1fr)_240px]">
-          <section aria-label="Edit profile" className="workspace-pane p-5 sm:p-6">
-            <ProfileForm initial={profile} />
-          </section>
-          <aside className="space-y-3">
-            <div className="workspace-pane p-4">
-              <p className="text-[11px] text-foreground-subtle">Email</p>
-              <p className="mt-0.5 truncate text-[13px] text-foreground">{profile.email}</p>
-              <p className="mt-3 text-[11px] text-foreground-subtle">Access in {workspace.name}</p>
-              <p className="mt-0.5 text-[13px] text-foreground">{roleDetail?.label ?? workspace.role}</p>
-              {roleDetail ? <p className="mt-1 text-[11px] leading-4 text-foreground-subtle">{roleDetail.summary}</p> : null}
-              {jobLabel ? (
-                <>
-                  <p className="mt-3 text-[11px] text-foreground-subtle">Job</p>
-                  <p className="mt-0.5 text-[13px] text-foreground">{jobLabel}</p>
-                </>
-              ) : null}
-              <p className="mt-3 text-[11px] leading-4 text-foreground-subtle">Owners change access from the Team page.</p>
-            </div>
-          </aside>
-        </div>
+        <section aria-label="Edit profile" className="workspace-pane mt-6 p-5 sm:p-7">
+          <ProfileForm identity={{ roleLabel: roleDetail?.label ?? workspace.role, roleSummary: roleDetail?.summary ?? null, jobLabel }} initial={profile} submitLabel="Save changes" />
+        </section>
       </main>
     </WorkspaceShell>
   );

@@ -11,6 +11,7 @@ import { refreshAppBadge } from "./AppBadgeSync";
 import { NotificationSettings } from "./NotificationSettings";
 import type { OpenMention } from "@/src/server/services/mentions";
 import { SignOutButton } from "@/app/workspace/workspace-actions";
+import { WhatsNewDialog } from "./WhatsNew";
 import type { ViewerProject } from "@/src/server/services/review-visibility";
 
 type Filter = "all" | "updated";
@@ -123,6 +124,7 @@ export function ViewerHome({
   const [filter, setFilter] = useState<Filter>("all");
   const [query, setQuery] = useState("");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [whatsNewOpen, setWhatsNewOpen] = useState(false);
   const [pins, setPins] = useState(pinKeys);
   const pinKind = showWorkspaceNames ? "workspace" : "project";
   const pinKeyFor = (groupKey: string) => `${pinKind}:${groupKey}`;
@@ -348,6 +350,8 @@ export function ViewerHome({
                   </div>
                   <div className="my-1 h-px bg-border" />
                   <Link className="flex h-8 items-center rounded-[7px] px-2.5 text-[12px] text-foreground hover:bg-white/[0.06]" href="/profile" role="menuitem">Edit profile</Link>
+                  <Link className="flex h-8 items-center rounded-[7px] px-2.5 text-[12px] text-foreground hover:bg-white/[0.06]" href="/integrations?open=mcp" role="menuitem">Connect AI tools</Link>
+                  <button className="flex h-8 w-full items-center rounded-[7px] px-2.5 text-left text-[12px] text-foreground hover:bg-white/[0.06]" onClick={() => { setMenuOpen(false); setWhatsNewOpen(true); }} role="menuitem" type="button">What&apos;s new</button>
                   <div className="my-1 h-px bg-border" />
                   <NotificationSettings />
                   <div className="my-1 h-px bg-border" />
@@ -362,6 +366,7 @@ export function ViewerHome({
       </header>
 
       <QuickOpen items={quickOpenItems} />
+      {whatsNewOpen ? <WhatsNewDialog onClose={() => setWhatsNewOpen(false)} /> : null}
       <main className="mx-auto max-w-5xl px-4 pb-24 pt-8 sm:px-6 sm:pt-12">
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -393,7 +398,7 @@ export function ViewerHome({
                 <input
                   className="h-8 w-full rounded-control border border-border bg-surface-inset pl-8 pr-2.5 text-[13px] outline-none placeholder:text-foreground-subtle focus-visible:border-foreground/30"
                   onChange={(event) => setQuery(event.target.value)}
-                  placeholder="Search  /"
+                  placeholder="Search"
                   ref={searchRef}
                   type="search"
                   value={query}
@@ -510,7 +515,7 @@ export function ViewerHome({
                     ))}
                   </ul>
                 ) : (
-                <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3" id={`group-items-${group.key}`}>
+                <ul className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 lg:grid-cols-3" id={`group-items-${group.key}`}>
                   {group.items.map((handoff) => (
                     <li key={handoff.handoffId}>
                       <Link
@@ -560,7 +565,7 @@ export function ViewerHome({
           </div>
         )}
         {projects.length ? (
-          <p className="mt-14 hidden text-center text-[12px] text-foreground-subtle sm:block">
+          <p className="touch-hidden mt-14 hidden text-center text-[12px] text-foreground-subtle sm:block">
             <kbd className="onboarding-kbd">/</kbd> search · <kbd className="onboarding-kbd">j</kbd> <kbd className="onboarding-kbd">k</kbd> move ·{" "}
             <kbd className="onboarding-kbd">↵</kbd> open · <kbd className="onboarding-kbd">e</kbd> mark seen · <kbd className="onboarding-kbd">⌘K</kbd> jump to
           </p>

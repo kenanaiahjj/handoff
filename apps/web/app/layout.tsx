@@ -5,6 +5,7 @@ import { AppSplash } from "@/src/components/shell/AppSplash";
 import { DeviceCacheRegistration } from "@/src/client/device-cache";
 import { UpdateNotice } from "@/src/components/shell/UpdateNotice";
 import { AppBadgeSync } from "@/src/components/shell/AppBadgeSync";
+import { Toaster } from "@/src/components/shell/Toaster";
 import { CanvasNavigationOverlay } from "@/src/components/shell/CanvasNavigationOverlay";
 
 // Asbir's own typefaces, served from the app (Latin subset of Asbir Sans; variable Asbir Mono).
@@ -60,6 +61,7 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <AppBadgeSync />
         <CanvasNavigationOverlay />
         {children}
+        <Toaster />
       </body>
     </html>
   );

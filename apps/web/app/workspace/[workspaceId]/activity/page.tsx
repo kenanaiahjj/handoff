@@ -10,6 +10,7 @@ import { WorkspaceShell } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 import { Avatar } from "@/src/components/Avatar";
 import { LocalTime } from "@/src/components/LocalTime";
+import { workspaceRouteSlugs } from "@/src/server/services/route-slugs";
 
 export const instant = false;
 
@@ -38,7 +39,7 @@ export default async function ActivityPage({ params }: ActivityPageProps) {
     listProjects(workspaceId).then((all) => filterProjectsForViewer(workspaceId, viewer, all as Array<{ id: string; name: string; handoffCount: number; versionCount: number }>)),
     visibleHandoffIds(workspaceId, viewer),
   ]);
-  const events = await listWorkspaceActivity(workspaceId, visible);
+  const [events, routes] = await Promise.all([listWorkspaceActivity(workspaceId, visible), workspaceRouteSlugs(workspaceId)]);
   // Grouped by UTC day on the server; each heading shows the day in the viewer's time zone.
   const days = new Map<string, ActivityEvent[]>();
   for (const event of events) {
@@ -66,7 +67,7 @@ export default async function ActivityPage({ params }: ActivityPageProps) {
                     <li key={event.id}>
                       <Link
                         className="flex items-start gap-3 rounded-[10px] px-2 py-2.5 transition-colors hover:bg-white/[0.04] focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
-                        href={`/projects/${event.projectId}/handoffs/${event.handoffId}`}
+                        href={routes.handoff(event.projectId, event.handoffId)}
                       >
                         <Avatar name={event.actorName ?? "Someone"} size={26} src={event.actorImage} />
                         <span className="min-w-0 flex-1">

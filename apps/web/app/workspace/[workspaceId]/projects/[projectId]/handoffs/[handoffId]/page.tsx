@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { workspaceRouteSlugs } from "@/src/server/services/route-slugs";
 import { headers } from "next/headers";
 import { connection } from "next/server";
 import { notFound, redirect } from "next/navigation";
@@ -68,7 +69,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
   if (!project) notFound();
   const versions = versionRows as ReviewVersionSummary[];
   if (!versions.length) {
-    const projectHref = `/projects/${encodeURIComponent(projectId)}`;
+    const projectHref = (await workspaceRouteSlugs(workspaceId)).project(projectId);
     return (
       <main className="grid h-dvh min-h-0 place-items-center overflow-y-auto bg-surface px-5 py-8 text-foreground">
         <section aria-labelledby="empty-handoff-title" className="w-full max-w-lg rounded-panel border border-border bg-surface p-5">
@@ -116,7 +117,8 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
   const markSeen = versions[0] && selectedVersion.id === versions[0].id
     ? () => markHandoffSeen({ userId: session.user.id, workspaceId, handoffId, latestVersionId: versions[0].id })
     : async () => undefined;
-  const routePath = `/projects/${projectId}/handoffs/${handoffId}`;
+  const routes = await workspaceRouteSlugs(workspaceId);
+  const routePath = routes.handoff(projectId, handoffId);
   const dockPanels = {
     version: canCreateVersion ? (
       <div className="space-y-3">
@@ -140,7 +142,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
             <DeleteHandoffButton
               endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`}
               handoffName={handoff.name}
-              returnHref={`/projects/${encodeURIComponent(projectId)}`}
+              returnHref={routes.project(projectId)}
             />
           </div> : null}
         </section>
@@ -220,7 +222,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
         versionHref={routePath}
       />
       <HandoffTabs
-        current={{ id: handoffId, href: `/projects/${projectId}/handoffs/${handoffId}`, title: handoff.name, project: project.name }}
+        current={{ id: handoffId, href: routePath, title: handoff.name, project: project.name }}
         homeHref="/workspace"
       />
       <div className="flex min-h-0 flex-1 flex-col">
@@ -230,7 +232,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
         projectId={projectId}
         handoffId={handoffId}
         projectName={project.name}
-        projectHref={`/projects/${projectId}`}
+        projectHref={routes.project(projectId)}
         handoffName={handoff.name}
         versions={versions}
         selectedVersion={version}

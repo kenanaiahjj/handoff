@@ -4,7 +4,7 @@ import { inviteRoleLabel, inviteRoles, jobRoles, workspaceRoleForInvite } from "
 
 test("invite links offer every onboarding role, plus Owner", () => {
   assert.deepEqual(inviteRoles, [...Object.keys(jobRoles), "owner"]);
-  assert.deepEqual(inviteRoles.map(inviteRoleLabel), ["Product designer", "Developer", "QA", "Product manager", "Marketing", "Executive", "Owner"]);
+  assert.deepEqual(inviteRoles.map(inviteRoleLabel), ["Product designer", "Developer", "QA", "Project manager", "Marketing", "Executive", "Owner"]);
 });
 
 test("each invite role grants the matching access", () => {

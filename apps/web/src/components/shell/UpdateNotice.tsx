@@ -1,6 +1,8 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { latestChangelogId, type ChangelogRelease } from "@/src/changelog";
+import { WhatsNewDialog } from "./WhatsNew";
 
 const loadedBuildId = process.env.NEXT_PUBLIC_ASBIR_BUILD_ID ?? null;
 const loadedCommit = process.env.NEXT_PUBLIC_ASBIR_COMMIT || null;
@@ -8,12 +10,15 @@ const checkEveryMs = 10 * 60 * 1000;
 const laterMs = 60 * 60 * 1000;
 const hiddenKey = "asbir-update-hidden";
 
-type Update = { buildId: string | null; version: string | null; changes: number | null; notes: string[] };
+type Update = { buildId: string | null; version: string | null; changes: number | null; notes: string[]; releases?: ChangelogRelease[] };
 
 /** A newer deployment is live when the server's build differs from the one this window loaded. */
 async function newBuild(): Promise<Update | null> {
   if (!loadedBuildId) return null;
-  const query = loadedCommit ? `?since=${encodeURIComponent(loadedCommit)}` : "";
+  const params = new URLSearchParams();
+  if (loadedCommit) params.set("since", loadedCommit);
+  if (latestChangelogId) params.set("seen", latestChangelogId);
+  const query = params.size ? `?${params}` : "";
   const response = await fetch(`/api/app-version${query}`, { cache: "no-store" });
   if (!response.ok) return null;
   const update = (await response.json()) as Update;
@@ -65,6 +70,7 @@ export function UpdateNotice() {
   const [update, setUpdate] = useState<Update | null>(null);
   const [hidden, setHidden] = useState(false);
   const [showNotes, setShowNotes] = useState(false);
+  const [releasesOpen, setReleasesOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -109,6 +115,7 @@ export function UpdateNotice() {
     setHidden(true);
   };
   const title = update.version ? `Asbir Handoff ${update.version} is ready` : "A new version of Asbir Handoff is ready";
+  const releases = update.releases ?? [];
   const changes = update.changes ? `${update.changes} ${update.changes === 1 ? "change" : "changes"} since your version. ` : "";
 
   return (
@@ -149,7 +156,15 @@ export function UpdateNotice() {
           >
             Update now
           </button>
-          {update.notes.length ? (
+          {releases.length ? (
+            <button
+              className="inline-flex h-9 items-center rounded-[10px] bg-white/[0.07] px-3.5 text-[13px] font-medium text-foreground transition-[background-color,transform] hover:bg-white/[0.11] active:scale-[0.97]"
+              onClick={() => setReleasesOpen(true)}
+              type="button"
+            >
+              What&apos;s new
+            </button>
+          ) : update.notes.length ? (
             <button
               aria-expanded={showNotes}
               className="inline-flex h-9 items-center gap-1.5 rounded-[10px] bg-white/[0.07] px-3.5 text-[13px] font-medium text-foreground transition-[background-color,transform] hover:bg-white/[0.11] active:scale-[0.97]"
@@ -171,6 +186,7 @@ export function UpdateNotice() {
           </button>
         </div>
       </section>
+      {releasesOpen ? <span className="pointer-events-auto"><WhatsNewDialog onClose={() => setReleasesOpen(false)} releases={releases} /></span> : null}
     </div>
   );
 }

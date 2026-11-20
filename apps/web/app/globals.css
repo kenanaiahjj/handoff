@@ -263,6 +263,52 @@ select option {
   background: var(--background);
 }
 
+/* iOS zooms the whole page into any field with text under 16px. Only iOS does this, so other touch
+   screens keep the designed sizes. */
+@supports (-webkit-touch-callout: none) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+  select,
+  textarea {
+    font-size: 16px;
+  }
+}
+
+/* Keyboard hints mean nothing on touch screens; .touch-only text replaces them there. */
+.touch-only {
+  display: none;
+}
+@media (hover: none) and (pointer: coarse) {
+  .touch-hidden {
+    display: none !important;
+  }
+  .touch-only {
+    display: revert;
+  }
+}
+
+/* Phones: the app fills the screen edge to edge instead of sitting in an inset window. */
+@media (max-width: 639px) {
+  .workspace-window {
+    border: 0;
+    border-radius: 0;
+  }
+}
+
+/* Tablet and desktop: the sidebar can be hidden (SidebarToggle); the Menu dropdown takes over. */
+@media (min-width: 768px) {
+  .workspace-window[data-sidebar="collapsed"] {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .workspace-window[data-sidebar="collapsed"] > .workspace-sidebar {
+    display: none;
+  }
+
+  .workspace-window[data-sidebar="collapsed"] .workspace-menu {
+    display: block;
+  }
+}
+
 .workspace-nav-active {
   background: var(--surface-inset);
   color: var(--foreground);
@@ -451,6 +497,111 @@ select option {
 .workspace-handoff-item:hover .workspace-handoff-actions,
 .workspace-handoff-item:focus-within .workspace-handoff-actions {
   opacity: 1;
+}
+
+/* Project page: each handoff is a card with a screen preview. The whole card is one link
+   (the name's link stretches over it); manage buttons sit above it. */
+.handoff-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface-raised);
+  box-shadow: 0 1px 0 rgb(255 255 255 / 0.04) inset, 0 6px 18px rgb(0 0 0 / 0.25);
+  transition: border-color 150ms ease, transform 200ms cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 200ms ease;
+}
+.handoff-card-preview {
+  background:
+    radial-gradient(120% 90% at 50% 0%, rgb(255 255 255 / 0.07), transparent 70%),
+    var(--surface-inset);
+}
+.handoff-card-link::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+}
+.handoff-card:has(.handoff-card-link:focus-visible) {
+  outline: 2px solid rgb(255 255 255 / 0.6);
+  outline-offset: 2px;
+}
+.handoff-card:active {
+  transform: scale(0.985);
+}
+@media (hover: hover) and (pointer: fine) {
+  .handoff-card:hover {
+    border-color: var(--border-strong);
+    transform: translateY(-2px);
+    box-shadow: 0 1px 0 rgb(255 255 255 / 0.06) inset, 0 14px 30px rgb(0 0 0 / 0.4);
+  }
+  .handoff-card-actions {
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+  .handoff-card:hover .handoff-card-actions,
+  .handoff-card:focus-within .handoff-card-actions,
+  .handoff-card-actions:has([aria-expanded="true"]) {
+    opacity: 1;
+  }
+}
+.handoff-card-actions {
+  border-radius: 10px;
+  background: rgb(20 20 20 / 0.72);
+  padding: 2px;
+  backdrop-filter: blur(8px);
+}
+.handoff-card-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border-radius: 9999px;
+  background: rgb(20 20 20 / 0.78);
+  padding: 3px 9px 3px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--foreground);
+  backdrop-filter: blur(8px);
+}
+.handoff-card-status-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 9999px;
+  background: var(--foreground-subtle);
+}
+.handoff-card-status[data-tone="live"] .handoff-card-status-dot {
+  background: var(--success);
+  box-shadow: 0 0 0 3px rgb(131 168 120 / 0.22);
+}
+.handoff-card-status[data-tone="draft"] {
+  color: var(--foreground-muted);
+}
+.handoff-card-open {
+  display: inline-flex;
+  min-height: 32px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 4px;
+  border-radius: var(--radius-control);
+  background: var(--primary);
+  padding: 0 10px 0 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--primary-foreground);
+  transition: background-color 120ms ease;
+}
+.handoff-card:hover .handoff-card-open {
+  background: var(--primary-hover);
+}
+.handoff-card:hover .handoff-card-open svg {
+  transform: translateX(2px);
+}
+.handoff-card-open svg {
+  transition: transform 150ms ease;
+}
+@media (prefers-reduced-motion: reduce) {
+  .handoff-card,
+  .handoff-card-open svg,
+  .handoff-card img {
+    transition: none;
+  }
 }
 
 .workspace-settings-disclosure {
@@ -917,6 +1068,87 @@ html[data-splash="seen"] .app-splash {
   -webkit-backdrop-filter: blur(16px) saturate(1.4);
 }
 
+/* "Needs you": mentions waiting on a reply. A warm tint and border so it reads as a to-do,
+   not as another panel. */
+.needs-you {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgb(255 138 61 / 0.28);
+  border-radius: var(--radius-panel);
+  background:
+    linear-gradient(180deg, rgb(255 138 61 / 0.1), rgb(255 138 61 / 0.035) 120px),
+    var(--surface);
+}
+.needs-you-count {
+  border-radius: 9999px;
+  background: #ff8a3d;
+  padding: 0 7px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 18px;
+  color: #1a1a1a;
+  font-variant-numeric: tabular-nums;
+}
+.needs-you-item + .needs-you-item {
+  border-top: 1px solid rgb(255 255 255 / 0.06);
+}
+.needs-you-item {
+  transition: background-color 120ms ease;
+}
+.needs-you-item:hover {
+  background: rgb(255 138 61 / 0.05);
+}
+.needs-you-quote {
+  border-radius: 10px;
+  background: rgb(0 0 0 / 0.24);
+  padding: 10px 12px;
+}
+.needs-you-reply,
+.needs-you-done {
+  display: inline-flex;
+  min-height: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--radius-control);
+  padding: 0 16px;
+  font-size: 13px;
+  font-weight: 600;
+  transition: background-color 120ms ease, color 120ms ease, transform 120ms ease;
+}
+.needs-you-reply {
+  background: #ff8a3d;
+  color: #1a1a1a;
+}
+.needs-you-reply:hover {
+  background: #ffa264;
+}
+.needs-you-done {
+  background: rgb(255 255 255 / 0.06);
+  color: var(--foreground-muted);
+}
+.needs-you-done:hover {
+  background: rgb(255 255 255 / 0.1);
+  color: var(--foreground);
+}
+/* Narrow (sidebar or phone): the buttons share the row under the message, each half of it. */
+@container (width < 28rem) {
+  .needs-you-actions {
+    flex-basis: calc(100% - 2.75rem);
+  }
+  .needs-you-actions > * {
+    flex: 1;
+  }
+}
+.needs-you-reply:active,
+.needs-you-done:active {
+  transform: scale(0.97);
+}
+.needs-you-reply:focus-visible,
+.needs-you-done:focus-visible {
+  outline: 2px solid rgb(255 255 255 / 0.6);
+  outline-offset: 2px;
+}
+
 .viewer-count {
   border-radius: 9999px;
   background: rgb(255 138 61 / 0.14);
@@ -1134,19 +1366,32 @@ html[data-splash="seen"] .app-splash {
   }
 }
 .canvas-tabs {
+  container-type: inline-size;
+  width: 100%;
   display: flex;
   align-items: stretch;
-  gap: 2px;
+  gap: 0;
   border-bottom: 1px solid var(--border);
-  padding: 0 8px;
+  padding: 0 6px;
+}
+/* Icons only when every tab still fits with them; the labels alone fit a narrow panel. */
+.canvas-tab-icon {
+  display: none;
+}
+@container (min-width: 430px) {
+  .canvas-tab-icon {
+    display: block;
+  }
 }
 .canvas-tab {
   position: relative;
+  min-width: 0;
+  flex-shrink: 1;
   display: inline-flex;
   min-height: 42px;
   align-items: center;
-  gap: 6px;
-  padding: 0 8px;
+  gap: 5px;
+  padding: 0 7px;
   font-size: 12px;
   font-weight: 500;
   color: var(--foreground-subtle);
@@ -1200,4 +1445,133 @@ html[data-splash="seen"] .app-splash {
   outline: 2px solid rgb(255 255 255 / 0.5);
   outline-offset: 1px;
 }
+}
+
+.app-toast {
+  animation: app-toast-in 220ms cubic-bezier(0.23, 1, 0.32, 1);
+  transition: opacity 180ms ease-out, transform 180ms ease-out;
+}
+.app-toast[data-leaving] {
+  opacity: 0;
+  transform: translateY(6px) scale(0.98);
+}
+@keyframes app-toast-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.96); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .app-toast { animation: none; transition: opacity 120ms ease-out; }
+  .app-toast[data-leaving] { transform: none; }
+}
+
+/* Project cards: the newest screens fanned out, the newest in front. */
+.project-card-stack {
+  position: absolute;
+  inset: 14px 0 0;
+  display: flex;
+  justify-content: center;
+}
+.project-card-stack img {
+  position: absolute;
+  top: 0;
+  height: 100%;
+  width: auto;
+  max-width: 46%;
+  border-radius: 8px 8px 0 0;
+  object-fit: cover;
+  object-position: top;
+  box-shadow: 0 12px 28px rgb(0 0 0 / 0.5);
+  transition: transform 300ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.project-card-stack img:nth-child(1) { z-index: 3; }
+.project-card-stack img:nth-child(2) { z-index: 2; transform: translateX(-46%) scale(0.88); transform-origin: bottom; opacity: 0.85; }
+.project-card-stack img:nth-child(3) { z-index: 1; transform: translateX(46%) scale(0.88); transform-origin: bottom; opacity: 0.85; }
+@media (hover: hover) and (pointer: fine) {
+  .handoff-card:hover .project-card-stack img:nth-child(1) { transform: translateY(-4px); }
+  .handoff-card:hover .project-card-stack img:nth-child(2) { transform: translateX(-54%) scale(0.88); }
+  .handoff-card:hover .project-card-stack img:nth-child(3) { transform: translateX(54%) scale(0.88); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .project-card-stack img { transition: none; }
+}
+
+/*
+ * Animated rainbow edge for "Review changes": a gradient strip slides behind the button, once as a
+ * sharp 2px ring and once blurred as a glow. Only transform moves, so the GPU slides pre-painted
+ * layers and the page never repaints while it runs.
+ */
+.glow-ring {
+  --glow-colors: #ff4d4d, #ff8a3d, #ffd23d, #4ade80, #22d3ee, #3b82f6, #a855f7, #ff4d8d, #ff4d4d;
+  position: relative;
+  isolation: isolate;
+  display: inline-flex;
+  padding: 2px;
+  border-radius: calc(var(--radius-control) + 2px);
+}
+.glow-ring-spin,
+.glow-ring-halo {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  border-radius: inherit;
+  pointer-events: none;
+}
+.glow-ring-spin { z-index: -1; }
+.glow-ring-halo {
+  z-index: -2;
+  filter: blur(8px);
+  opacity: 0.75;
+}
+.glow-ring-spin::before,
+.glow-ring-halo::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 200%;
+  background: linear-gradient(90deg, var(--glow-colors)) 0 0 / 50% 100% repeat-x;
+  animation: glow-ring-slide 3s linear infinite;
+  will-change: transform;
+}
+.glow-ring > button { position: relative; }
+@keyframes glow-ring-slide {
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .glow-ring-spin::before,
+  .glow-ring-halo::before { animation: none; }
+}
+
+/* Floating canvas bar (bottom-centre, Figma-style): tools, overlays and zoom in one solid strip. */
+.canvas-floatbar {
+  position: absolute;
+  left: 50%;
+  bottom: calc(12px + env(safe-area-inset-bottom));
+  z-index: 30;
+  display: flex;
+  max-width: calc(100% - 24px);
+  align-items: center;
+  gap: 2px;
+  transform: translateX(-50%);
+  border: 1px solid rgb(255 255 255 / 0.1);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 4px;
+  box-shadow: 0 6px 24px rgb(0 0 0 / 0.4);
+}
+.canvas-floatbar .canvas-toolgroup {
+  border: 0;
+  background: transparent;
+  padding: 0;
+}
+.canvas-floatbar .canvas-tool { height: 32px; min-width: 32px; }
+.canvas-floatbar-divider {
+  margin: 0 4px;
+  height: 20px;
+  width: 1px;
+  flex-shrink: 0;
+  background: rgb(255 255 255 / 0.1);
+}
+/* Phones pinch to zoom, so the bar keeps only the zoom level (tap to fit). */
+@media (max-width: 639px) {
+  .canvas-floatbar [aria-label="Zoom out"],
+  .canvas-floatbar [aria-label="Zoom in"] { display: none; }
 }

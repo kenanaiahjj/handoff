@@ -1,6 +1,7 @@
 "use client";
 
-import { type FormEvent, useId, useRef, useState } from "react";
+import { type FormEvent, useId, useMemo, useRef, useState } from "react";
+import { showToast } from "@/src/components/shell/Toaster";
 import { Avatar } from "@/src/components/Avatar";
 import { squareImage } from "@/src/components/shell/ProjectIcon";
 import { departmentSuggestions, profileLimits, type ProfileAbout } from "@/src/lib/profile-fields";
@@ -15,6 +16,8 @@ type ProfileFormProps = {
   onSaved?: (profile: EditableProfile) => void;
   /** Extra buttons beside Save, such as Skip. */
   secondaryAction?: React.ReactNode;
+  /** Shown beside the photo on the profile page: the person's access in the workspace. */
+  identity?: { roleLabel: string; roleSummary?: string | null; jobLabel?: string | null };
 };
 
 const inputClass =
@@ -29,7 +32,7 @@ function detectTimezone() {
 }
 
 /** Photo, name and what people show their team. Saves to /api/profile and /api/profile/avatar. */
-export function ProfileForm({ initial, compact = false, submitLabel = "Save profile", onSaved, secondaryAction }: ProfileFormProps) {
+export function ProfileForm({ initial, compact = false, submitLabel = "Save profile", onSaved, secondaryAction, identity }: ProfileFormProps) {
   const id = useId();
   const [image, setImage] = useState(initial.image);
   // The Google picture an upload replaced; removing the upload goes back to it.
@@ -43,6 +46,20 @@ export function ProfileForm({ initial, compact = false, submitLabel = "Save prof
     timezone: initial.timezone ?? "",
     bio: initial.bio ?? "",
   });
+  // What was last saved; Save stays off until something differs (not in onboarding, where it means Continue).
+  const [savedFields, setSavedFields] = useState(fields);
+  const dirty = compact || (Object.keys(fields) as Array<keyof typeof fields>).some((key) => fields[key] !== savedFields[key]);
+  const deviceZone = useMemo(() => detectTimezone(), []);
+  const zones = useMemo(() => {
+    let list: string[] = [];
+    try {
+      list = (Intl as unknown as { supportedValuesOf?: (key: string) => string[] }).supportedValuesOf?.("timeZone") ?? [];
+    } catch {
+      list = [];
+    }
+    return [...new Set([...(fields.timezone ? [fields.timezone] : []), ...(deviceZone ? [deviceZone] : []), ...list])].sort();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- the list only needs the zone the form opened with.
+  }, [deviceZone]);
   const [photoBusy, setPhotoBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
@@ -99,7 +116,9 @@ export function ProfileForm({ initial, compact = false, submitLabel = "Save prof
       const response = await fetch("/api/profile", { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const payload = (await response.json().catch(() => ({}))) as { error?: string };
       if (!response.ok) throw new Error(payload.error ?? "Could not save your profile.");
-      setNotice("Saved.");
+      if (compact) setNotice("Saved.");
+      else showToast("Profile saved");
+      setSavedFields(fields);
       onSaved?.({ ...initial, ...fields, image, title: fields.title || null, department: fields.department || null, pronouns: fields.pronouns || null, timezone: fields.timezone || null, bio: fields.bio || null });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save your profile.");
@@ -118,7 +137,7 @@ export function ProfileForm({ initial, compact = false, submitLabel = "Save prof
           </p>
         </div>
       ) : (
-      <div className="flex items-center gap-4">
+      <div className="flex items-center gap-5 border-b border-border pb-6">
         <button
           aria-label={image ? "Change photo" : "Upload a photo"}
           className="group relative shrink-0 rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
@@ -126,23 +145,27 @@ export function ProfileForm({ initial, compact = false, submitLabel = "Save prof
           onClick={() => fileRef.current?.click()}
           type="button"
         >
-          <Avatar name={fields.name || initial.email} size={64} src={image} />
+          <Avatar name={fields.name || initial.email} size={80} src={image} />
           <span aria-hidden="true" className="absolute inset-0 grid place-items-center rounded-full bg-black/55 text-[11px] font-medium text-white opacity-0 transition-opacity group-hover:opacity-100 group-focus-visible:opacity-100">
             {photoBusy ? "…" : image ? "Change" : "Upload"}
           </span>
         </button>
-        <div className="min-w-0">
-          <p className="text-[13px] font-medium text-foreground">Profile photo</p>
-          <p className="mt-0.5 text-[12px] text-foreground-subtle">
-            {isUploaded ? "Your uploaded photo. Shows next to your comments and in the team list." : image ? "From your Google account. Upload a different one any time." : "Shows next to your comments and in the team list."}
-          </p>
-          <div className="mt-2 flex gap-1.5">
-            <button className="dial-button min-h-7 px-2.5 text-[12px]" disabled={photoBusy} onClick={() => fileRef.current?.click()} type="button">
-              {photoBusy ? "Uploading…" : image ? "Change" : "Upload photo"}
+        <div className="min-w-0 flex-1">
+          <p className="truncate text-[16px] font-semibold tracking-[-0.01em] text-foreground">{fields.name || initial.email}</p>
+          <p className="truncate text-[13px] text-foreground-subtle">{initial.email}</p>
+          {identity ? (
+            <p className="mt-1.5 flex flex-wrap items-center gap-1.5 text-[12px] text-foreground-muted">
+              <span className="rounded-full bg-white/[0.07] px-2 py-0.5 font-medium text-foreground" title={identity.roleSummary ?? undefined}>{identity.roleLabel}</span>
+              {identity.jobLabel ? <span className="rounded-full bg-white/[0.04] px-2 py-0.5">{identity.jobLabel}</span> : null}
+            </p>
+          ) : null}
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            <button className="dial-button min-h-8 px-3 text-[12px]" disabled={photoBusy} onClick={() => fileRef.current?.click()} type="button">
+              {photoBusy ? "Uploading…" : image ? "Change photo" : "Upload photo"}
             </button>
             {isUploaded ? (
-              <button className="min-h-7 rounded-control px-2.5 text-[12px] text-foreground-subtle hover:bg-white/[0.06] hover:text-foreground" disabled={photoBusy} onClick={() => void removePhoto()} type="button">
-                {providerImage ? "Use Google photo" : "Remove"}
+              <button className="min-h-8 rounded-control px-3 text-[12px] text-foreground-subtle hover:bg-white/[0.06] hover:text-foreground" disabled={photoBusy} onClick={() => void removePhoto()} type="button">
+                {providerImage ? "Use Google photo" : "Remove photo"}
               </button>
             ) : null}
           </div>
@@ -185,11 +208,16 @@ export function ProfileForm({ initial, compact = false, submitLabel = "Save prof
               <input className={inputClass} id={`${id}-pronouns`} maxLength={profileLimits.pronouns} onChange={set("pronouns")} placeholder="they/them" value={fields.pronouns} />
             </label>
             <label className="block text-[12px] text-foreground-muted" htmlFor={`${id}-timezone`}>
-              <span className="flex items-center justify-between">
+              <span className="flex items-center justify-between gap-2">
                 Time zone
-                <button className="text-[11px] text-foreground-subtle hover:text-foreground" onClick={() => setFields((current) => ({ ...current, timezone: detectTimezone() }))} type="button">Use this device&apos;s</button>
+                {deviceZone && fields.timezone !== deviceZone ? (
+                  <button className="truncate text-[11px] text-foreground-subtle underline decoration-dotted underline-offset-4 hover:text-foreground" onClick={() => setFields((current) => ({ ...current, timezone: deviceZone }))} type="button">Use {deviceZone.replace(/_/g, " ")}</button>
+                ) : null}
               </span>
-              <input className={inputClass} id={`${id}-timezone`} maxLength={profileLimits.timezone} onChange={set("timezone")} placeholder="Asia/Manila" value={fields.timezone} />
+              <select className={inputClass + " pr-2"} id={`${id}-timezone`} onChange={set("timezone")} value={fields.timezone}>
+                <option value="">Not set</option>
+                {zones.map((zone) => <option key={zone} value={zone}>{zone.replace(/_/g, " ")}</option>)}
+              </select>
             </label>
             <label className="block text-[12px] text-foreground-muted sm:col-span-2" htmlFor={`${id}-bio`}>
               <span className="flex items-center justify-between">
@@ -214,7 +242,7 @@ export function ProfileForm({ initial, compact = false, submitLabel = "Save prof
       <div className="flex items-center justify-end gap-2">
         <p aria-live="polite" className="mr-auto text-[12px] text-foreground-subtle">{notice}</p>
         {secondaryAction}
-        <button className="min-h-9 rounded-control bg-primary px-4 text-[13px] font-medium text-primary-foreground hover:bg-primary-hover disabled:opacity-50" disabled={saving || photoBusy || !fields.name.trim()} type="submit">
+        <button className="min-h-9 rounded-control bg-primary px-4 text-[13px] font-semibold text-primary-foreground hover:bg-primary-hover disabled:opacity-40" disabled={saving || photoBusy || !fields.name.trim() || !dirty} type="submit">
           {saving ? "Saving…" : submitLabel}
         </button>
       </div>

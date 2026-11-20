@@ -9,7 +9,9 @@ import { InstallAppButton } from "./InstallAppButton";
 import { BrandMark } from "./BrandMark";
 import { ProjectIcon } from "./ProjectIcon";
 import { HandoffTabs } from "./HandoffTabs";
+import { SidebarToggle } from "./SidebarToggle";
 import { NotificationSettingsButton } from "./NotificationSettingsButton";
+import { WhatsNewButton } from "./WhatsNew";
 import { Avatar } from "@/src/components/Avatar";
 import { getDatabase } from "@/src/server/db";
 import { workspaceRoleLabel } from "@/src/lib/team-roles";
@@ -165,6 +167,7 @@ async function SidebarContents({ user, workspace, navSections }: Omit<WorkspaceS
               <span className="flex min-w-0 flex-1 items-center gap-2.5 px-1.5 py-1">{identity}</span>
             );
           })()}
+          <WhatsNewButton />
           <NotificationSettingsButton />
           <SignOutButton devBypass={devBypass} icon />
         </div>
@@ -189,7 +192,7 @@ export function WorkspaceShell({
   };
 
   return (
-    <div className="workspace-shell min-h-screen p-2.5 text-foreground sm:p-3 lg:p-4">
+    <div className="workspace-shell min-h-screen text-foreground sm:p-3 lg:p-4">
       <a
         className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-2 focus:z-50 focus:rounded-control focus:bg-primary focus:px-3 focus:py-2 focus:text-sm focus:font-semibold focus:text-primary-foreground focus:outline focus:outline-2 focus:outline-offset-2 focus:outline-primary-hover"
         href="#main-content"
@@ -197,17 +200,18 @@ export function WorkspaceShell({
         Skip to main content
       </a>
       {workspace?.id ? <QuickOpen endpoint={`/api/workspaces/${encodeURIComponent(workspace.id)}/search`} /> : null}
-      <div className="workspace-window min-h-[calc(100vh-20px)] lg:grid lg:min-h-[calc(100vh-32px)] lg:grid-cols-[232px_minmax(0,1fr)]">
-        <aside aria-label="Asbir Handoff" className="workspace-sidebar sticky top-2.5 hidden h-screen min-h-0 flex-col border-r border-border sm:top-3 lg:top-4 lg:flex lg:h-[calc(100vh-32px)]">
+      <div className="workspace-window min-h-screen sm:min-h-[calc(100vh-24px)] md:grid md:grid-cols-[232px_minmax(0,1fr)] lg:min-h-[calc(100vh-32px)]">
+        <aside aria-label="Asbir Handoff" className="workspace-sidebar sticky top-0 hidden h-screen min-h-0 flex-col border-r border-border sm:top-3 sm:h-[calc(100vh-24px)] md:flex lg:top-4 lg:h-[calc(100vh-32px)]">
           <SidebarContents {...shellContent} />
         </aside>
         <div className="min-w-0">
           {/* The open-handoff tabs and the breadcrumb bar stick together, so the tabs never slide under the bar. */}
-          <div className="workspace-topbar workspace-sticky-top sticky top-2.5 z-20 sm:top-3 lg:top-4">
+          <div className="workspace-topbar workspace-sticky-top sticky top-0 z-20 sm:top-3 lg:top-4">
           <HandoffTabs current={null} homeHref="/workspace" />
           <header className="flex h-12 items-center justify-between gap-3 border-b border-border px-4 sm:px-6">
             <div className="flex min-w-0 items-center gap-3">
-              <details className="group relative lg:hidden">
+              <SidebarToggle />
+              <details className="workspace-menu group relative md:hidden">
                 <summary aria-label="Open navigation" className="flex min-h-9 cursor-pointer list-none items-center gap-2 rounded-control bg-surface-inset px-2.5 text-xs font-medium text-foreground-muted hover:bg-surface-raised hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
                   <span aria-hidden="true" className="grid size-4 grid-cols-2 gap-[2px]"><i className="rounded-[1px] bg-current" /><i className="rounded-[1px] bg-current" /><i className="rounded-[1px] bg-current" /><i className="rounded-[1px] bg-current" /></span>
                   Menu

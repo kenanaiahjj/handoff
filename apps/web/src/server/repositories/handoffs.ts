@@ -270,3 +270,65 @@ export async function listHandoffVersionsPage(input: { workspaceId: string; hand
 
   return { items, total };
 }
+
+/**
+ * Card thumbnails for a project's handoffs: the first ordinary screen of each handoff's published
+ * (else latest) version, as an asset object key. Handoffs without screens are left out.
+ */
+export async function listHandoffPreviewKeys(input: { workspaceId: string; projectId: string }) {
+  const rows = (await getDatabase()
+    .prepare(
+      `SELECT handoff.id AS handoffId,
+              (SELECT object_key FROM handoff_asset
+                 WHERE handoff_asset.handoff_version_id = COALESCE(handoff.published_version_id, (
+                     SELECT latest.id FROM handoff_version latest
+                     WHERE latest.handoff_id = handoff.id
+                     ORDER BY latest.created_at DESC LIMIT 1))
+                   AND handoff_asset.content_type LIKE 'image/%'
+                 ORDER BY
+                   -- Screen renders first, then the canvas overview; skip very long scrolling screens.
+                   strpos(handoff_asset.asset_key, 'frame-') = 0,
+                   COALESCE(handoff_asset.height, 0) > COALESCE(handoff_asset.width, 1) * 2.4,
+                   COALESCE(substring(handoff_asset.asset_key FROM 'frame-([0-9]{1,9})')::INTEGER, 2147483647),
+                   COALESCE(handoff_asset.width, 0) * COALESCE(handoff_asset.height, 0) DESC
+                 LIMIT 1) AS previewKey
+       FROM handoff
+       WHERE handoff.workspace_id = ? AND handoff.project_id = ?`,
+    )
+    .all(input.workspaceId, input.projectId)) as Array<{ handoffId: string; previewKey: string | null }>;
+  return new Map(rows.filter((row) => row.previewKey).map((row) => [row.handoffId, row.previewKey as string]));
+}
+
+/**
+ * Up to `perProject` preview images per project, from its most recently updated handoffs, for the
+ * project cards on the workspace dashboard. Same image choice as listHandoffPreviewKeys.
+ */
+export async function listProjectPreviewKeys(workspaceId: string, perProject = 3) {
+  const rows = (await getDatabase()
+    .prepare(
+      `SELECT handoff.project_id AS projectId,
+              (SELECT MAX(version.created_at) FROM handoff_version version WHERE version.handoff_id = handoff.id) AS updatedAt,
+              (SELECT object_key FROM handoff_asset
+                 WHERE handoff_asset.handoff_version_id = COALESCE(handoff.published_version_id, (
+                     SELECT latest.id FROM handoff_version latest
+                     WHERE latest.handoff_id = handoff.id
+                     ORDER BY latest.created_at DESC LIMIT 1))
+                   AND handoff_asset.content_type LIKE 'image/%'
+                 ORDER BY
+                   strpos(handoff_asset.asset_key, 'frame-') = 0,
+                   COALESCE(handoff_asset.height, 0) > COALESCE(handoff_asset.width, 1) * 2.4,
+                   COALESCE(substring(handoff_asset.asset_key FROM 'frame-([0-9]{1,9})')::INTEGER, 2147483647),
+                   COALESCE(handoff_asset.width, 0) * COALESCE(handoff_asset.height, 0) DESC
+                 LIMIT 1) AS previewKey
+       FROM handoff
+       WHERE handoff.workspace_id = ?`,
+    )
+    .all(workspaceId)) as Array<{ projectId: string; updatedAt: string | null; previewKey: string | null }>;
+  const byProject = new Map<string, string[]>();
+  for (const row of rows.filter((row) => row.previewKey).sort((a, b) => String(b.updatedAt ?? "").localeCompare(String(a.updatedAt ?? "")))) {
+    const keys = byProject.get(row.projectId) ?? [];
+    if (keys.length < perProject) keys.push(row.previewKey as string);
+    byProject.set(row.projectId, keys);
+  }
+  return byProject;
+}

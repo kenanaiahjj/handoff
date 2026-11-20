@@ -11,6 +11,7 @@ import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navi
 import { CreateInviteForm } from "../../workspace-actions";
 import { SuperadminsPanel } from "../../superadmins-panel";
 import { RoleGuide, TeamDirectory } from "../../team-directory";
+import { PanelDialog } from "@/src/components/shell/PanelDialog";
 
 export const instant = false;
 
@@ -67,40 +68,51 @@ export default async function TeamPage({ params }: TeamPageProps) {
       })}
       breadcrumbs={[{ label: "Team" }]}
     >
-      <main className="mx-auto w-full max-w-6xl px-5 py-7 sm:px-8 sm:py-9">
-        <section className="pb-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-foreground">Team</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-foreground-muted">
-            {isOwner
-              ? "Everyone in the workspace, what they can do, and how people join. Changes apply right away."
-              : "Everyone in the workspace and what they can do. Ask an owner to change roles or invite people."}
-          </p>
+      <main className="mx-auto w-full max-w-4xl px-5 py-7 sm:px-8 sm:py-9">
+        <header className="flex flex-wrap items-end justify-between gap-4 pb-2">
+          <div className="min-w-0">
+            <h1 className="text-2xl font-semibold tracking-tight text-foreground">Team</h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-foreground-muted">
+              {isOwner
+                ? "Everyone in the workspace and their role."
+                : "Everyone in the workspace and what they can do. Ask an owner to change roles or invite people."}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <PanelDialog label="Roles" labelledBy="team-roles-title">
+              <section aria-labelledby="team-roles-title" className="workspace-pane p-5">
+                <h2 className="text-[15px] font-semibold text-foreground" id="team-roles-title">Roles</h2>
+                <div className="mt-3"><RoleGuide counts={roleCounts} /></div>
+              </section>
+            </PanelDialog>
+            {isOwner ? (
+              <>
+                <PanelDialog label="Owner emails" labelledBy="team-owners-title">
+                  <section aria-labelledby="team-owners-title" className="workspace-pane p-5">
+                    <h2 className="text-[15px] font-semibold text-foreground" id="team-owners-title">Owner emails</h2>
+                    <p className="mt-1 text-[13px] leading-5 text-foreground-muted">People with these emails become owners when they sign in, even if their email isn’t on a company domain.</p>
+                    <div className="mt-4"><SuperadminsPanel currentEmail={session.user.email} initial={superadmins} /></div>
+                  </section>
+                </PanelDialog>
+                <PanelDialog
+                  icon={<svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" /></svg>}
+                  label="Invite people"
+                  labelledBy="team-invite-title"
+                  primary
+                >
+                  <section aria-labelledby="team-invite-title" className="workspace-pane p-5">
+                    <h2 className="text-[15px] font-semibold text-foreground" id="team-invite-title">Invite people</h2>
+                    <div className="mt-4"><CreateInviteForm initialInvites={invites} workspaceId={workspaceId} /></div>
+                  </section>
+                </PanelDialog>
+              </>
+            ) : null}
+          </div>
+        </header>
+        <section aria-labelledby="team-members-title" className="mt-6">
+          <h2 className="sr-only" id="team-members-title">Members</h2>
+          <TeamDirectory canEdit={isOwner} currentUserId={session.user.id} initial={members} invites={isOwner ? invites : []} workspaceId={workspaceId} />
         </section>
-        <div className="mt-6 grid gap-6 xl:grid-cols-[minmax(0,1fr)_340px]">
-          <section aria-labelledby="team-members-title">
-            <h2 className="sr-only" id="team-members-title">Members</h2>
-            <TeamDirectory canEdit={isOwner} currentUserId={session.user.id} initial={members} workspaceId={workspaceId} />
-          </section>
-          <aside className="space-y-6">
-            {isOwner ? (
-              <section aria-labelledby="team-invite-title" className="workspace-pane p-5">
-                <h2 className="text-[14px] font-semibold text-foreground" id="team-invite-title">Invite people</h2>
-                <div className="mt-4"><CreateInviteForm initialInvites={invites} workspaceId={workspaceId} /></div>
-              </section>
-            ) : null}
-            <section aria-labelledby="team-roles-title" className="workspace-pane p-5">
-              <h2 className="text-[14px] font-semibold text-foreground" id="team-roles-title">Roles</h2>
-              <div className="mt-3"><RoleGuide counts={roleCounts} /></div>
-            </section>
-            {isOwner ? (
-              <section aria-labelledby="team-owners-title" className="workspace-pane p-5">
-                <h2 className="text-[14px] font-semibold text-foreground" id="team-owners-title">Add an owner by email</h2>
-                <p className="mt-1 text-[12px] leading-5 text-foreground-muted">They become an owner of every workspace when they sign in, even with an email outside the company domains.</p>
-                <div className="mt-3"><SuperadminsPanel currentEmail={session.user.email} initial={superadmins} /></div>
-              </section>
-            ) : null}
-          </aside>
-        </div>
       </main>
     </WorkspaceShell>
   );

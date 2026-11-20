@@ -20,7 +20,11 @@ export type HandoffComment = {
   authorImage?: string | null;
   authorRole: HandoffInviteRole | null;
   createdAt: string;
+  /** Images posted with the comment, served from the comments endpoint. */
+  attachments?: CommentAttachment[];
 };
+
+export type CommentAttachment = { id: string; contentType: string; width: number | null; height: number | null };
 
 type CommentPinProps = {
   comment: HandoffComment;

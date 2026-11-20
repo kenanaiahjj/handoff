@@ -2,6 +2,7 @@
 
 import { type FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
+import { showToast } from "@/src/components/shell/Toaster";
 
 const uploadHint = "Upload a structured ZIP package for exact layout data, or a PNG, JPEG, WebP, or SVG render for visual-only review.";
 type HandoffTarget = { id: string; name: string };
@@ -185,6 +186,7 @@ export function HandoffSetupForm({ input, mode }: {
       throw new Error("We couldn't confirm the finalization response. Retry finalization.");
     }
     setPendingFinalizeUploadId(null);
+    showToast(handoffId ? "Version added" : "Handoff created");
     router.push(`/projects/${encodeURIComponent(input.projectId)}/handoffs/${encodeURIComponent(result.handoffId)}?versionId=${encodeURIComponent(result.versionId)}`);
     router.refresh();
   }
@@ -221,6 +223,7 @@ export function HandoffSetupForm({ input, mode }: {
         setToken(result.token);
         setExpiresAt(result.expiresAt);
         const copied = await writeTokenToClipboard(result.token);
+        showToast(copied ? "Capture token copied" : "Capture token created");
         setNotice(copied
           ? "Capture token copied. Paste it into the Figma plugin. It expires in one hour and works once."
           : "Token created, but automatic copying was blocked. Use Copy token or select it and copy it manually. It expires in one hour and works once.");

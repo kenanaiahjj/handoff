@@ -52,7 +52,7 @@ test("the frozen canvas render does not add a decorative drop shadow", () => {
 test("comment placement has a keyboard action for the selected screen", () => {
   assert.match(
     commentSource,
-    /<button[^>]*onClick=\{onPlaceAtSelectedScreen\}[^>]*>[\s\S]*?Place at center of selected screen[\s\S]*?<\/button>/,
+    /<button[^>]*onClick=\{onPlaceAtSelectedScreen\}[^>]*>[\s\S]*?comment on the whole selected screen[\s\S]*?<\/button>/,
   );
   assert.match(source, /onPlaceAtSelectedScreen=\{commentOnSelectedScreen\}/);
 });

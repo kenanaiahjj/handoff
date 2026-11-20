@@ -32,38 +32,45 @@ export function NeedsYou({ initial, className = "" }: { initial: OpenMention[]; 
   if (!mentions.length) return null;
 
   return (
-    <section aria-labelledby="needs-you-title" className={className}>
-      <div className="mb-3 flex items-center gap-2">
-        <h2 className="text-[14px] font-semibold tracking-[-0.01em]" id="needs-you-title">Needs you</h2>
-        <span className="viewer-count">{mentions.length}</span>
+    <section aria-labelledby="needs-you-title" className={"needs-you @container " + className}>
+      <div className="flex items-center gap-2.5 px-4 pb-1 pt-4 @md:px-5">
+        <h2 className="text-[14px] font-semibold tracking-[-0.01em] text-foreground" id="needs-you-title">Needs you</h2>
+        <span className="needs-you-count">{mentions.length}</span>
       </div>
-      <ul className="needs-you-list overflow-hidden rounded-panel bg-surface">
-        {mentions.map((mention) => (
-          <li className="group flex items-start gap-3 px-4 py-3 transition-colors hover:bg-white/[0.03]" key={mention.commentId}>
-            <Avatar className="mt-0.5" name={mention.authorName} size={28} src={mention.authorImage} />
-            <Link
-              className="min-w-0 flex-1 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40"
-              href={`/projects/${mention.projectId}/handoffs/${mention.handoffId}?versionId=${mention.versionId}&comment=${mention.commentId}`}
-            >
-              <span className="block truncate text-[13px] text-foreground">
-                <span className="font-medium">{mention.authorName}</span>
-                <span className="text-foreground-subtle"> mentioned you in </span>
-                <span className="font-medium">{mention.handoffName}</span>
-                <span className="text-foreground-subtle"> · {mention.projectName}</span>
+      <ul className="needs-you-list">
+        {mentions.map((mention) => {
+          const href = `/projects/${mention.projectId}/handoffs/${mention.handoffId}?versionId=${mention.versionId}&comment=${mention.commentId}`;
+          return (
+            <li className="needs-you-item flex flex-wrap items-start gap-x-3 gap-y-4 px-4 py-4 @md:flex-nowrap @md:gap-x-4 @md:px-5" key={mention.commentId}>
+              <Avatar className="mt-0.5 shrink-0" name={mention.authorName} size={32} src={mention.authorImage} />
+              <Link
+                className="min-w-0 flex-1 basis-[calc(100%-3rem)] focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40 @md:basis-auto"
+                href={href}
+              >
+                <span className="block text-[13px] leading-5 text-foreground @md:truncate">
+                  <span className="font-semibold">{mention.authorName}</span>
+                  <span className="text-foreground-muted"> mentioned you in </span>
+                  <span className="font-semibold">{mention.handoffName}</span>
+                </span>
+                <span className="mt-0.5 block truncate text-[11px] text-foreground-subtle" suppressHydrationWarning>
+                  {mention.projectName} · {timeAgo(mention.createdAt)}
+                </span>
+                <span className="needs-you-quote mt-3 line-clamp-3 block w-fit max-w-full @md:max-w-[64ch] text-[13px] leading-5 text-foreground">{mention.excerpt}</span>
+              </Link>
+              <span className="needs-you-actions ml-11 flex shrink-0 items-center gap-2 @md:ml-0">
+                <Link className="needs-you-reply" href={href}>Reply</Link>
+                <button
+                  className="needs-you-done"
+                  onClick={() => void done(mention.commentId)}
+                  title="Clear without replying"
+                  type="button"
+                >
+                  Done
+                </button>
               </span>
-              <span className="mt-0.5 line-clamp-2 block text-[12px] leading-5 text-foreground-muted">{mention.excerpt}</span>
-              <span className="mt-1 block text-[11px] text-foreground-subtle" suppressHydrationWarning>{timeAgo(mention.createdAt)}</span>
-            </Link>
-            <button
-              className="dial-button min-h-7 shrink-0 px-2.5 text-[12px]"
-              onClick={() => void done(mention.commentId)}
-              title="Clear without replying"
-              type="button"
-            >
-              Done
-            </button>
-          </li>
-        ))}
+            </li>
+          );
+        })}
       </ul>
     </section>
   );

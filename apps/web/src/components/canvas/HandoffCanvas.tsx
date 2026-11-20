@@ -15,12 +15,13 @@ import { InstallAppButton } from "@/src/components/shell/InstallAppButton";
 import { BrandMark } from "@/src/components/shell/BrandMark";
 import { AgentHandoffPanel } from "./AgentHandoffPanel";
 import { ElementInspector } from "./ElementInspector";
-import { LocalPreviewPanel } from "./LocalPreviewPanel";
+import { LocalPreviewOverlay } from "./LocalPreviewPanel";
+import { CommentMediaProvider } from "../comments/comment-media";
 import { CanvasAnnotationsPanel, type CanvasAnnotationRecord } from "./CanvasAnnotationsPanel";
 import { McpConnectionPanel } from "./McpConnectionPanel";
 import { CanvasShortcuts } from "./CanvasShortcuts";
 import { PublishChangesDialog } from "./PublishChangesDialog";
-import { ChangesIcon, ChevronDownIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MoreIcon, NoteIcon, OutlineIcon, VersionIcon } from "./canvas-icons";
+import { ChangesIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MoreIcon, NoteIcon, OutlineIcon, PanelLeftIcon, PanelRightIcon, VersionIcon } from "./canvas-icons";
 import { getMeasureUnit, measureUnits, setMeasureUnit } from "./measure-unit";
 import { hasVisibleLayoutGrids } from "./LayoutGridOverlay";
 import { formatComparisonChangeCount } from "./compare-presentation";
@@ -141,6 +142,24 @@ function getServerLocationHash() {
 
 const MOBILE_PANEL_FOCUSABLE_SELECTOR = "a[href], button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), summary, [tabindex]:not([tabindex='-1'])";
 
+/** Per-browser canvas preferences (side panels, change highlights). Storage can be unavailable. */
+function readCanvasPreference(name: string, fallback: boolean) {
+  try {
+    const value = localStorage.getItem("asbir.canvas." + name);
+    return value === null ? fallback : value === "1";
+  } catch {
+    return fallback;
+  }
+}
+
+function writeCanvasPreference(name: string, value: boolean) {
+  try {
+    localStorage.setItem("asbir.canvas." + name, value ? "1" : "0");
+  } catch {
+    // Private mode or blocked storage: the preference lasts for this page only.
+  }
+}
+
 function getFocusableElements(container: HTMLElement) {
   return Array.from(container.querySelectorAll<HTMLElement>(MOBILE_PANEL_FOCUSABLE_SELECTOR))
     .filter((element) => element.getClientRects().length > 0 && !element.closest("[hidden], [aria-hidden='true']"));
@@ -202,15 +221,6 @@ export function HandoffCanvas({
   const router = useRouter();
   const { confirm: confirmRemoval, dialog: removalDialog } = useConfirm();
   const screens = useMemo(() => frames.filter((frame) => frame.kind === "frame"), [frames]);
-  const exportTargets = useMemo(() => frames.map((frame) => ({
-    id: frame.id,
-    name: frame.name,
-    kind: frame.kind,
-    imageUrl: frame.imageSrc,
-    fileName: frame.fileName,
-    pixelWidth: frame.pixelWidth,
-    pixelHeight: frame.pixelHeight,
-  })), [frames]);
   const locationHash = useSyncExternalStore(subscribeToLocationHash, getLocationHash, getServerLocationHash);
   const linkValues = useMemo(() => new URLSearchParams(locationHash.slice(1)), [locationHash]);
   const linkedFrameId = linkValues.get("screen");
@@ -237,11 +247,16 @@ export function HandoffCanvas({
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [localSelectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [showResolvedPins, setShowResolvedPins] = useState(false);
-  const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "agent" | "local" | "mcp">("inspect");
+  const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "agent" | "mcp">("inspect");
+  const [localPreviewOpen, setLocalPreviewOpen] = useState(false);
+  const closeLocalPreview = useCallback(() => setLocalPreviewOpen(false), []);
   const [canvasModeOverride, setCanvasModeOverride] = useState<"view" | "inspect" | null>(null);
   // Open by default so the server render already has the desktop layout (screen list included);
   // until the real viewport is known, the list stays hidden below the desktop breakpoint.
   const [statesOpen, setStatesOpen] = useState(true);
+  // The details panel on the right. Only used at desktop widths; below them it is a sheet
+  // opened with mobilePanelOpenOverride.
+  const [detailsOpen, setDetailsOpen] = useState(true);
   const [layoutReady, setLayoutReady] = useState(false);
   const [mobilePanelOpenOverride, setMobilePanelOpenOverride] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
@@ -321,7 +336,10 @@ export function HandoffCanvas({
     const media = window.matchMedia("(max-width: 1023px)");
     const updateLayout = () => {
       setIsMobile(media.matches);
-      setStatesOpen(!media.matches);
+      // Desktop remembers which side panels were hidden; on small screens both start closed.
+      setStatesOpen(!media.matches && readCanvasPreference("screensPanel", true));
+      setDetailsOpen(readCanvasPreference("detailsPanel", true));
+      setShowChanges(readCanvasPreference("showChanges", true));
       setMobilePanelOpenOverride(null);
       setLayoutReady(true);
     };
@@ -329,6 +347,41 @@ export function HandoffCanvas({
     media.addEventListener("change", updateLayout);
     return () => media.removeEventListener("change", updateLayout);
   }, []);
+
+  useEffect(() => {
+    if (!layoutReady || isMobile) return;
+    writeCanvasPreference("screensPanel", statesOpen);
+    writeCanvasPreference("detailsPanel", detailsOpen);
+  }, [detailsOpen, isMobile, layoutReady, statesOpen]);
+
+  useEffect(() => {
+    if (layoutReady) writeCanvasPreference("showChanges", showChanges);
+  }, [layoutReady, showChanges]);
+
+  // Switching panels from the toolbar or a menu (comments, AI tools) brings a hidden details panel back.
+  const previousPanelModeRef = useRef(panelMode);
+  useEffect(() => {
+    if (previousPanelModeRef.current === panelMode) return;
+    previousPanelModeRef.current = panelMode;
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reacts to panel switches made in many handlers.
+    if (!isMobile) setDetailsOpen(true);
+  }, [isMobile, panelMode]);
+
+  const toggleScreensPanel = useCallback(() => {
+    setSearchOpen(false);
+    setStatesOpen((current) => !current);
+    if (isMobile) setMobilePanelOpenOverride(false);
+  }, [isMobile]);
+
+  const toggleDetailsPanel = useCallback(() => {
+    if (isMobile) {
+      setStatesOpen(false);
+      setSearchOpen(false);
+      setMobilePanelOpenOverride((current) => !(current ?? Boolean(linkedNode)));
+      return;
+    }
+    setDetailsOpen((current) => !current);
+  }, [isMobile, linkedNode]);
 
   useEffect(() => {
     if (!isMobile) return;
@@ -591,6 +644,20 @@ export function HandoffCanvas({
         searchInputRef.current?.focus();
         return;
       }
+      // ⌘+ / ⌘− / ⌘0 (Ctrl on Windows) zoom the canvas instead of the browser page. Matched by key
+      // position too, so it works on layouts where "=" or "-" sit elsewhere.
+      if ((event.metaKey || event.ctrlKey) && !event.altKey) {
+        const zoomIn = event.key === "=" || event.key === "+" || event.code === "Equal" || event.code === "NumpadAdd";
+        const zoomOut = event.key === "-" || event.key === "_" || event.code === "Minus" || event.code === "NumpadSubtract";
+        const fit = event.key === "0" || event.code === "Digit0" || event.code === "Numpad0";
+        if (zoomIn || zoomOut || fit) {
+          event.preventDefault();
+          if (zoomIn) viewportControls?.zoomIn();
+          else if (zoomOut) viewportControls?.zoomOut();
+          else viewportControls?.fitToFrame();
+          return;
+        }
+      }
       if (searchOpen) {
         if (event.key === "Escape") {
           event.preventDefault();
@@ -640,6 +707,12 @@ export function HandoffCanvas({
         setShortcutsOpen(true);
         return;
       }
+      // ⌘\ / Ctrl+\ shows or hides both side panels, as in Figma.
+      if ((event.metaKey || event.ctrlKey) && event.key === "\\") {
+        event.preventDefault();
+        togglePanelsRef.current();
+        return;
+      }
       if (modified) return;
       const key = event.key.toLowerCase();
       if (key === "o") {
@@ -681,6 +754,25 @@ export function HandoffCanvas({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [activeSearchIndex, closeSearchPanel, copySearchHighlights, focusScreen, metadata.canComment, previewSearchResult, searchOpen, searchResults, selectSearchResult, viewportControls]);
+
+  // Pinch and Ctrl+scroll over the toolbar or side panels would zoom the whole page. The canvas
+  // handles its own pinch (and marks the event), so everywhere else just swallow it.
+  useEffect(() => {
+    const blockPageZoom = (event: WheelEvent) => {
+      if (event.ctrlKey && !event.defaultPrevented) event.preventDefault();
+    };
+    const blockGesture = (event: Event) => {
+      if (!event.defaultPrevented) event.preventDefault();
+    };
+    window.addEventListener("wheel", blockPageZoom, { passive: false });
+    window.addEventListener("gesturestart", blockGesture, { passive: false });
+    window.addEventListener("gesturechange", blockGesture, { passive: false });
+    return () => {
+      window.removeEventListener("wheel", blockPageZoom);
+      window.removeEventListener("gesturestart", blockGesture);
+      window.removeEventListener("gesturechange", blockGesture);
+    };
+  }, []);
 
   // Clicking anywhere outside the anchored comment (or another pin) closes it, like Figma.
   useEffect(() => {
@@ -739,6 +831,7 @@ export function HandoffCanvas({
   // "[" and "]" step through the screens in list order (only the changed ones when filtered).
   const stepScreenRef = useRef<(direction: 1 | -1) => void>(() => {});
   const selectedFrameIdRef = useRef<string | null>(null);
+  const togglePanelsRef = useRef<() => void>(() => {});
   useEffect(() => {
     stepScreenRef.current = (direction) => {
       const list = canvasScreens.length ? canvasScreens : screens;
@@ -749,6 +842,15 @@ export function HandoffCanvas({
       focusScreen(list[next].id);
     };
     selectedFrameIdRef.current = selectedFrameId;
+    togglePanelsRef.current = () => {
+      if (isMobile) {
+        toggleScreensPanel();
+        return;
+      }
+      const show = !statesOpen && !detailsOpen;
+      setStatesOpen(show);
+      setDetailsOpen(show);
+    };
   });
 
   // "?comment=<id>" (from "Needs you" or a notification) opens that thread once comments load.
@@ -934,8 +1036,8 @@ export function HandoffCanvas({
     return payload;
   }
 
-  async function createComment(body: string, point: PendingCommentPoint) {
-    const created = await sendComment({ body, ...point });
+  async function createComment(body: string, point: PendingCommentPoint, attachmentIds: string[] = []) {
+    const created = await sendComment({ body, ...point, attachmentIds });
     setPendingPoint(null);
     setCommentError(null);
     // Keep the new thread open at its pin so replies can follow immediately.
@@ -945,8 +1047,8 @@ export function HandoffCanvas({
     }
   }
 
-  async function replyToComment(parentCommentId: string, body: string) {
-    await sendComment({ body, parentCommentId });
+  async function replyToComment(parentCommentId: string, body: string, attachmentIds: string[] = []) {
+    await sendComment({ body, parentCommentId, attachmentIds });
     setCommentError(null);
   }
 
@@ -982,7 +1084,7 @@ export function HandoffCanvas({
   function compareFrame(frameId: string) {
     onCompareScreen(frameId);
     setCommentMode(false);
-    setStatesOpen(false);
+    if (isMobile) setStatesOpen(false);
     onOpenComparison(frameId);
   }
 
@@ -1044,6 +1146,9 @@ export function HandoffCanvas({
     });
   }
 
+  const hasChangeHighlights = changedNodeIds.length > 0 || Object.values(frameStatuses).some((status) => status === "changed" || status === "added");
+  const detailsPanelVisible = isMobile ? mobilePanelOpen : detailsOpen;
+
   const metaParts = [
     metadata.projectName + " · " + metadata.handoffName,
     formatCapturedAt(metadata.capturedAt),
@@ -1054,34 +1159,46 @@ export function HandoffCanvas({
   ].filter(Boolean);
 
   return (
+    <CommentMediaProvider endpoint={commentsEndpoint}>
     <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden bg-surface text-foreground">
       <header className="canvas-topbar relative z-20 flex min-h-12 min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5 border-b border-border bg-surface px-2.5 py-1.5 text-foreground-muted lg:flex-nowrap lg:py-0">
         <div className="flex min-w-0 flex-1 items-center gap-2 lg:flex-initial lg:shrink">
-          <Link aria-label="Asbir Handoff home" className="flex min-h-9 shrink-0 items-center rounded-lg px-1 transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" href={metadata.projectHref.startsWith("/projects") ? "/workspace" : metadata.projectHref}>
+          <Link aria-label="Asbir Handoff home" className="flex min-h-9 shrink-0 items-center max-sm:hidden rounded-lg px-1 transition-opacity hover:opacity-80 focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" href={metadata.projectHref.startsWith("/projects") ? "/workspace" : metadata.projectHref}>
             <BrandMark compact />
           </Link>
-          <span aria-hidden="true" className="h-5 w-px shrink-0 bg-white/[0.08]" />
+          <span aria-hidden="true" className="h-5 w-px shrink-0 bg-white/[0.08] max-sm:hidden" />
+          <button
+            aria-label={(statesOpen ? "Hide" : "Show") + " screens panel"}
+            aria-pressed={statesOpen}
+            className="canvas-tool hidden shrink-0 lg:inline-flex"
+            onClick={toggleScreensPanel}
+            title={(statesOpen ? "Hide" : "Show") + " the screens panel (⌘\\ hides both panels)"}
+            type="button"
+          >
+            <PanelLeftIcon />
+          </button>
           <div className="flex min-w-0 items-center gap-1.5" title={metaParts.join(" · ")}>
-            <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em] text-foreground max-sm:max-w-[4.5rem] lg:max-w-[150px] xl:max-w-[220px]">{metadata.handoffName}</span>
+            <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em] text-foreground max-sm:sr-only lg:max-w-[150px] xl:max-w-[220px]">{metadata.handoffName}</span>
             <label className="sr-only" htmlFor="review-version-select">Version</label>
             <span className="relative inline-flex min-w-[5.5rem] shrink items-center">
               <select
-                className="h-7 w-full min-w-0 max-w-[150px] appearance-none truncate xl:max-w-[240px] rounded-[7px] border border-white/[0.08] bg-white/[0.03] bg-[length:12px] bg-[position:right_7px_center] py-0 pl-2 !pr-7 font-mono text-[11px] text-foreground-muted transition-colors hover:border-white/[0.16] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
+                className="h-7 w-full min-w-0 max-w-[260px] appearance-none truncate xl:max-w-[340px] 2xl:max-w-[420px] rounded-[7px] border border-white/[0.08] bg-white/[0.03] bg-[length:12px] bg-[position:right_7px_center] py-0 pl-2 !pr-7 font-mono text-[11px] text-foreground-muted transition-colors hover:border-white/[0.16] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                 id="review-version-select"
+                title={metadata.versions.find((version) => version.id === metadata.selectedVersionId)?.versionLabel}
                 onChange={(event) => window.location.assign(metadata.versionHrefPrefix + "?versionId=" + encodeURIComponent(event.target.value))}
                 value={metadata.selectedVersionId}
               >
                 {metadata.versions.map((version, index) => (
-                  <option key={version.id} value={version.id}>{/^\d/.test(version.versionLabel) ? "v" : ""}{version.versionLabel}{index === 0 ? " · latest" : ""}</option>
+                  <option key={version.id} value={version.id}>{`${/^\d/.test(version.versionLabel) ? "v" : ""}${version.versionLabel}${index === 0 ? " · latest" : ""}`}</option>
                 ))}
               </select>
             </span>
             {canCompare ? (
               <button
-                className="canvas-tool hidden h-7 shrink-0 sm:inline-flex"
+                className="canvas-tool hidden h-7 shrink-0 border border-white/[0.08] sm:inline-flex"
                 onClick={() => {
                   setCommentMode(false);
-                  setStatesOpen(false);
+                  if (isMobile) setStatesOpen(false);
                   setSearchOpen(false);
                   onOpenComparison();
                 }}
@@ -1089,104 +1206,33 @@ export function HandoffCanvas({
                 type="button"
               >
                 <CompareIcon className="size-3.5" />
-                <span className="max-xl:sr-only">Compare</span>
+                <span>Compare</span>
+              </button>
+            ) : null}
+            {metadata.canUseLocalPreview ? (
+              <button
+                className="canvas-tool hidden h-7 shrink-0 border border-white/[0.08] sm:inline-flex"
+                onClick={() => {
+                  setCommentMode(false);
+                  setSearchOpen(false);
+                  setLocalPreviewOpen(true);
+                }}
+                title="Compare a screen with your local or test build"
+                type="button"
+              >
+                <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><rect height="9" rx="1.5" width="12" x="2" y="2.5" /><path d="M6 14h4M8 11.5V14" /></svg>
+                <span>Local preview</span>
               </button>
             ) : null}
           </div>
         </div>
 
-        <nav aria-label="Handoff review tools" className="order-last flex w-full min-w-0 items-center gap-1.5 overflow-x-auto [scrollbar-width:none] lg:order-none lg:w-auto lg:flex-1 lg:justify-center [&::-webkit-scrollbar]:hidden">
-          <button
-            aria-pressed={statesOpen}
-            className="canvas-tool shrink-0 border border-white/[0.07] lg:hidden"
-            id="canvas-mobile-screens-toggle"
-            onClick={() => {
-              setSearchOpen(false);
-              setStatesOpen((current) => !current);
-              setMobilePanelOpenOverride(false);
-            }}
-            type="button"
-          >
-            Screens <span className="font-mono text-[10px] text-foreground-subtle">{screens.length}</span>
-          </button>
-          <div aria-label="Canvas mode" className="canvas-toolgroup shrink-0" role="group">
-            <button aria-pressed={canvasMode === "view" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setCanvasModeOverride("view"); }} title="View: pan without selecting (V)" type="button">
-              <HandIcon /><span className="sr-only">View</span>
-            </button>
-            <button aria-pressed={canvasMode === "inspect" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setCanvasModeOverride("inspect"); setPanelMode("inspect"); }} title="Inspect: select elements (I)" type="button">
-              <CursorIcon /><span className="sr-only">Inspect</span>
-            </button>
-            {metadata.canComment ? (
-              <button
-                aria-pressed={commentMode}
-                className="canvas-tool"
-                onClick={() => {
-                  setAnnotationMode(false);
-                  setPendingPoint(null);
-                  setCommentThreadOpen(false);
-                  setPanelMode("comments");
-                  setCommentMode((current) => !current);
-                }}
-                title="Comment: click the canvas to place one (C)"
-                type="button"
-              >
-                <CommentIcon /><span className="sr-only">Comment</span>
-              </button>
-            ) : null}
-          </div>
-          <span aria-hidden="true" className="mx-0.5 h-5 w-px shrink-0 bg-white/[0.08]" />
-          <div aria-label="Overlays" className="canvas-toolgroup shrink-0" role="group">
-            <button
-              aria-pressed={outlinesVisible}
-              className="canvas-tool"
-              onClick={() => {
-                setCanvasModeOverride("inspect");
-                setPanelMode("inspect");
-                setOutlinesVisible((current) => !current);
-              }}
-              title="Outline every element (O)"
-              type="button"
-            >
-              <OutlineIcon /><span className="max-xl:sr-only">Outlines</span>
-            </button>
-            <button
-              aria-label="Toggle Figma layout grids"
-              aria-pressed={layoutGridsVisible && hasLayoutGrids}
-              className="canvas-tool"
-              disabled={!hasLayoutGrids}
-              onClick={() => setLayoutGridsVisible((current) => !current)}
-              title={hasLayoutGrids ? "Layout grids (G)" : "No layout grids in this capture"}
-              type="button"
-            >
-              <GridIcon /><span className="max-xl:sr-only">Grids</span>
-            </button>
-            {changedNodeIds.length ? (
-              <button
-                aria-pressed={showChanges}
-                className="canvas-tool"
-                onClick={() => setShowChanges((current) => !current)}
-                title={`Outline what changed since ${comparisonSummary?.earlierVersionLabel ?? "the previous version"} (D)`}
-                type="button"
-              >
-                <ChangesIcon /><span className="max-xl:sr-only">Changes</span>
-                <span className="canvas-tool-count">{changedNodeIds.length}</span>
-              </button>
-            ) : null}
-          </div>
-          <ZoomControls
-            className="sm:hidden"
-            scale={viewportControls?.scale ?? null}
-            onZoomOut={() => viewportControls?.zoomOut()}
-            onFit={() => viewportControls?.fitToFrame()}
-            onZoomIn={() => viewportControls?.zoomIn()}
-          />
-        </nav>
+        <div aria-hidden="true" className="hidden flex-1 lg:block" />
 
         <div className="flex shrink-0 items-center gap-1">
           {/* Rendered before the viewport is ready too, so the toolbar doesn't jump when it mounts. */}
           <CanvasToolbar
             scale={viewportControls?.scale ?? null}
-            exportTargets={exportTargets}
             shareUrl={metadata.reviewHref}
             shareTitle={metadata.projectName + " · " + metadata.handoffName}
             sharingEndpoint={sharingEndpoint}
@@ -1200,6 +1246,16 @@ export function HandoffCanvas({
             onFit={() => viewportControls?.fitToFrame()}
             onZoomIn={() => viewportControls?.zoomIn()}
           />
+          <button
+            aria-label={(detailsPanelVisible ? "Hide" : "Show") + " the details panel"}
+            aria-pressed={detailsPanelVisible}
+            className="canvas-tool"
+            onClick={toggleDetailsPanel}
+            title={(detailsPanelVisible ? "Hide" : "Show") + " the details panel (⌘\\ hides both panels)"}
+            type="button"
+          >
+            <PanelRightIcon />
+          </button>
           <div className="relative">
             <button aria-expanded={moreOpen} aria-label="More" className="canvas-tool" onClick={() => setMoreOpen((current) => !current)} title="More" type="button">
               <MoreIcon />
@@ -1227,6 +1283,17 @@ export function HandoffCanvas({
         </div>
       </header>
       {shortcutsOpen ? <CanvasShortcuts onClose={() => setShortcutsOpen(false)} /> : null}
+      {localPreviewOpen && metadata.canUseLocalPreview ? (
+        <LocalPreviewOverlay
+          workspaceId={workspaceId}
+          handoffId={handoffId}
+          frames={frames}
+          selectedFrameId={selectedFrameId}
+          onSelectFrame={selectFrame}
+          onCommentOnScreen={commentOnScreen}
+          onClose={closeLocalPreview}
+        />
+      ) : null}
       {publishDialogOpen && pendingRemovals.length ? (
         <PublishChangesDialog
           defaultVersionLabel={`${metadata.versions[0]?.versionLabel ?? metadata.versionLabel} · ${pendingRemovals.length === 1 ? "1 screen" : `${pendingRemovals.length} screens`} removed`}
@@ -1272,11 +1339,14 @@ export function HandoffCanvas({
               List view
             </button>
           ) : null}
+          <span className="glow-ring shrink-0">
+          <span aria-hidden="true" className="glow-ring-halo" />
+          <span aria-hidden="true" className="glow-ring-spin" />
           <button
             className="capture-primary-action shrink-0 px-3 py-1.5 text-[12px]"
             onClick={() => {
               setCommentMode(false);
-              setStatesOpen(false);
+              if (isMobile) setStatesOpen(false);
               setSearchOpen(false);
               onOpenComparison();
             }}
@@ -1284,6 +1354,7 @@ export function HandoffCanvas({
           >
             Review changes
           </button>
+          </span>
           <button
             aria-label="Hide this summary for this version"
             className="grid size-7 shrink-0 place-items-center rounded-[7px] text-foreground-subtle hover:bg-white/[0.06] hover:text-foreground"
@@ -1297,7 +1368,7 @@ export function HandoffCanvas({
         </div>
       ) : null}
 
-      <div className={"relative grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] overflow-hidden " + (statesOpen ? "lg:grid-cols-[240px_minmax(0,1fr)_320px]" : "lg:grid-cols-[minmax(0,1fr)_320px]")}>
+      <div className={"relative grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] overflow-hidden " + (statesOpen && detailsOpen ? "lg:grid-cols-[240px_minmax(0,1fr)_320px]" : statesOpen ? "lg:grid-cols-[240px_minmax(0,1fr)]" : detailsOpen ? "lg:grid-cols-[minmax(0,1fr)_320px]" : "lg:grid-cols-[minmax(0,1fr)]")}>
         {isMobile && (statesOpen || mobilePanelOpen) ? (
           <button
             aria-label="Close canvas side panel"
@@ -1463,7 +1534,93 @@ export function HandoffCanvas({
             )}
           </div>
         ) : null}
-        <div className="col-start-1 row-start-1 flex h-full min-h-0 min-w-0 lg:col-auto lg:row-auto">
+        <div className="relative col-start-1 row-start-1 flex h-full min-h-0 min-w-0 lg:col-auto lg:row-auto">
+        {/* Figma-style floating bar: canvas tools, overlays and zoom, kept off the top nav. */}
+        <div aria-label="Canvas tools" className="canvas-floatbar" role="toolbar">
+          <button
+            aria-pressed={statesOpen}
+            className="canvas-tool shrink-0 lg:hidden"
+            id="canvas-mobile-screens-toggle"
+            onClick={toggleScreensPanel}
+            title={(statesOpen ? "Hide" : "Show") + " the screens panel (⌘\\ hides both panels)"}
+            type="button"
+          >
+            <PanelLeftIcon />
+            <span className="sr-only">Screens</span><span className="font-mono text-[10px] text-foreground-subtle">{screens.length}</span>
+          </button>
+          <span aria-hidden="true" className="canvas-floatbar-divider lg:hidden" />
+          <div aria-label="Canvas mode" className="canvas-toolgroup shrink-0" role="group">
+            <button aria-pressed={canvasMode === "view" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setCanvasModeOverride("view"); }} title="View: pan without selecting (V)" type="button">
+              <HandIcon /><span className="sr-only">View</span>
+            </button>
+            <button aria-pressed={canvasMode === "inspect" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setCanvasModeOverride("inspect"); setPanelMode("inspect"); }} title="Inspect: select elements (I)" type="button">
+              <CursorIcon /><span className="sr-only">Inspect</span>
+            </button>
+            {metadata.canComment ? (
+              <button
+                aria-pressed={commentMode}
+                className="canvas-tool"
+                onClick={() => {
+                  setAnnotationMode(false);
+                  setPendingPoint(null);
+                  setCommentThreadOpen(false);
+                  setPanelMode("comments");
+                  setCommentMode((current) => !current);
+                }}
+                title="Comment: click the canvas to place one (C)"
+                type="button"
+              >
+                <CommentIcon /><span className="sr-only">Comment</span>
+              </button>
+            ) : null}
+          </div>
+          <span aria-hidden="true" className="canvas-floatbar-divider" />
+          <div aria-label="Overlays" className="canvas-toolgroup shrink-0" role="group">
+            <button
+              aria-pressed={outlinesVisible}
+              className="canvas-tool"
+              onClick={() => {
+                setCanvasModeOverride("inspect");
+                setPanelMode("inspect");
+                setOutlinesVisible((current) => !current);
+              }}
+              title="Outline every element (O)"
+              type="button"
+            >
+              <OutlineIcon /><span className="max-xl:sr-only">Outlines</span>
+            </button>
+            <button
+              aria-label="Toggle Figma layout grids"
+              aria-pressed={layoutGridsVisible && hasLayoutGrids}
+              className="canvas-tool"
+              disabled={!hasLayoutGrids}
+              onClick={() => setLayoutGridsVisible((current) => !current)}
+              title={hasLayoutGrids ? "Layout grids (G)" : "No layout grids in this capture"}
+              type="button"
+            >
+              <GridIcon /><span className="max-xl:sr-only">Grids</span>
+            </button>
+            {hasChangeHighlights ? (
+              <button
+                aria-pressed={showChanges}
+                className="canvas-tool"
+                onClick={() => setShowChanges((current) => !current)}
+                title={`${showChanges ? "Hide" : "Show"} the highlights on what changed since ${comparisonSummary?.earlierVersionLabel ?? "the previous version"} (D)`}
+                type="button"
+              >
+                <ChangesIcon /><span className="max-xl:sr-only">Changes</span>
+                {changedNodeIds.length ? <span className="canvas-tool-count">{changedNodeIds.length}</span> : null}
+              </button>
+            ) : null}
+          </div>
+          <span aria-hidden="true" className="canvas-floatbar-divider" />
+          <ZoomControls
+            scale={viewportControls?.scale ?? null}
+            onZoomOut={() => viewportControls?.zoomOut()}
+            onFit={() => viewportControls?.fitToFrame()}
+            onZoomIn={() => viewportControls?.zoomIn()}
+          />
+        </div>
         <CanvasViewport
           frame={visualFrame}
           overviewOrigin={{ sourceX: overviewFrame.sourceX, sourceY: overviewFrame.sourceY }}
@@ -1478,6 +1635,7 @@ export function HandoffCanvas({
           layoutGridsVisible={layoutGridsVisible && hasLayoutGrids}
           highlightedNodeIds={highlightedNodeIds}
           changedNodeIds={showChanges ? changedNodeIds : []}
+          changesVisible={showChanges}
           viewMemoryKey={`${handoffId}:${metadata.selectedVersionId}:${visualFrame.id}`}
           focusRequest={focusRequest}
           showResolvedPins={showResolvedPins}
@@ -1522,7 +1680,7 @@ export function HandoffCanvas({
         <aside
           aria-label="Handoff details"
           aria-modal={isMobile && mobilePanelOpen ? true : undefined}
-          className={"min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-surface " + (mobilePanelOpen ? "absolute inset-0 z-30 flex w-full border-l-0 shadow-2xl lg:static lg:z-auto lg:w-auto lg:border-l lg:shadow-none" : "hidden lg:static lg:flex")}
+          className={"min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-surface " + (mobilePanelOpen ? "absolute inset-0 z-30 flex w-full border-l-0 shadow-2xl lg:static lg:z-auto lg:w-auto lg:border-l lg:shadow-none" : "hidden lg:static") + (detailsOpen ? " lg:flex" : " lg:hidden")}
           ref={detailsPanelRef}
           role={isMobile && mobilePanelOpen ? "dialog" : undefined}
           tabIndex={isMobile && mobilePanelOpen ? -1 : undefined}
@@ -1561,24 +1719,23 @@ export function HandoffCanvas({
                 role="tab"
                 type="button"
               >
-                <TabIcon className="size-3.5 max-xl:hidden" />
-                {label}
+                <TabIcon className="canvas-tab-icon size-3.5" />
+                <span className="min-w-0 truncate">{label}</span>
                 {count ? <span className="canvas-tab-count">{count}</span> : null}
               </button>
             ))}
             {(() => {
               const extras = ([
                 ["agent", "Agent handoff", Boolean(metadata.canManageIntegrations && metadata.reviewHref && metadata.versionIsPublished)],
-                ["local", "Local preview", metadata.canUseLocalPreview],
+                ["local", "Local preview", metadata.canUseLocalPreview && isMobile],
                 ["mcp", "AI coding tool (MCP)", metadata.canManageIntegrations],
               ] as const).filter(([, , visible]) => visible);
               if (!extras.length) return null;
-              const activeExtra = extras.find(([mode]) => mode === panelMode);
+              const activeExtra = extras.find(([mode]) => mode !== "local" && mode === panelMode);
               return (
                 <div className="relative ml-auto flex">
-                  <button aria-expanded={panelMoreOpen} aria-selected={Boolean(activeExtra)} className="canvas-tab" onClick={() => setPanelMoreOpen((current) => !current)} role="tab" type="button">
-                    {activeExtra ? activeExtra[1].replace(/ \(MCP\)$/, "") : "More"}
-                    <ChevronDownIcon className="size-3" />
+                  <button aria-expanded={panelMoreOpen} aria-label={activeExtra ? `${activeExtra[1]} (more panels)` : "More panels"} aria-selected={Boolean(activeExtra)} className="canvas-tab" onClick={() => setPanelMoreOpen((current) => !current)} role="tab" title={activeExtra ? activeExtra[1] : "More panels"} type="button">
+                    <svg aria-hidden="true" className="size-4" fill="currentColor" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="12.5" cy="8" r="1.25" /></svg>
                   </button>
                   {panelMoreOpen ? (
                     <>
@@ -1589,8 +1746,12 @@ export function HandoffCanvas({
                             className="flex w-full items-center rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06]"
                             key={mode}
                             onClick={() => {
-                              setPanelMode(mode);
                               setPanelMoreOpen(false);
+                              if (mode === "local") {
+                                setLocalPreviewOpen(true);
+                                return;
+                              }
+                              setPanelMode(mode);
                               setCommentMode(false);
                               setAnnotationMode(false);
                               if (isMobile) setMobilePanelOpenOverride(true);
@@ -1668,15 +1829,6 @@ export function HandoffCanvas({
             frameNodes: frameDetails.nodesFor,
             ensureFrameNodes,
           }} />
-        ) : panelMode === "local" && metadata.canUseLocalPreview ? (
-          <LocalPreviewPanel
-            workspaceId={workspaceId}
-            handoffId={handoffId}
-            frames={frames}
-            selectedFrameId={selectedFrameId}
-            onSelectFrame={selectFrame}
-            onCommentOnScreen={commentOnScreen}
-          />
         ) : panelMode === "inspect" ? (
           <ElementInspector
             frame={selectedFrame ?? overviewFrame}
@@ -1703,5 +1855,6 @@ export function HandoffCanvas({
       {removalDialog}
 
     </div>
+    </CommentMediaProvider>
   );
 }
