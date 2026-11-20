@@ -6,7 +6,7 @@ import { getDatabase } from "../db";
 const maxEntries = 300;
 
 /** Bump when diff semantics change so saved comparisons are recomputed with the new algorithm. */
-const comparisonAlgorithmVersion = 3;
+const comparisonAlgorithmVersion = 4;
 
 /**
  * Fingerprint of the diff algorithm and every confirmed screen and layer match in a handoff. A new

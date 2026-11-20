@@ -990,7 +990,8 @@ test("keeps ambiguous legacy layer pairs out of confirmed changes", () => {
   assert.equal(result.sourceIdentity, "inferred");
   assert.equal(result.frames[0].status, "unchanged");
   assert.deepEqual(result.changes, []);
-  assert.equal(result.unmatchedNodeCandidates.length, 2);
+  // Each "Action" sits in the same spot as before, so it pairs without needing confirmation.
+  assert.equal(result.unmatchedNodeCandidates.length, 0);
 });
 
 test("keeps type-only legacy layer candidates as confirmed additions and removals", () => {
@@ -1039,9 +1040,8 @@ test("filters exact-name legacy candidates left unmatched after hierarchy matchi
   const result = compare(makeSnapshot("before"), makeSnapshot("after"));
 
   assert.equal(result.changes.some((change) => change.path === "node" && change.sourceNodeName === "Action"), false);
-  assert.ok(result.unmatchedNodeCandidates.some((candidate) =>
-    candidate.beforeNodeId === "before-loose-action" &&
-    candidate.afterCandidates.some((afterCandidate) => afterCandidate.sourceNodeId === "after-loose-action" && afterCandidate.score === 1)));
+  // The loose "Action" is the only one left in its spot, so it pairs instead of waiting for review.
+  assert.equal(result.unmatchedNodeCandidates.some((candidate) => candidate.beforeNodeId === "before-loose-action"), false);
 });
 
 test("leaves renamed regenerated layers as candidates instead of matching by type alone", () => {
@@ -1636,4 +1636,18 @@ test("sub-pixel drift in measured sizes and margins is not reported as a change"
   // A real edit still shows: half a pixel, and any change to an auto-layout padding.
   const edited = compare(withGeometry(8.99, 2.99, 8), withGeometry(9.5, 2.99, 8.5));
   assert.deepEqual(edited.changes.map((change) => change.path).sort(), ["layoutBounds.height.value", "padding.top.value"]);
+});
+
+test("unchanged layers whose IDs were regenerated pair by kind, name and place instead of showing removed and added", () => {
+  const before = regeneratedLayerSnapshot("screen", [
+    { sourceNodeId: "old-day-17", name: "Text", type: "TEXT", x: 24, text: "17" },
+    { sourceNodeId: "old-day-18", name: "Text", type: "TEXT", x: 80, text: "18" },
+  ]);
+  const after = regeneratedLayerSnapshot("screen", [
+    { sourceNodeId: "I9:1;2:17", name: "Text", type: "TEXT", x: 24, text: "17" },
+    { sourceNodeId: "I9:1;2:18", name: "Text", type: "TEXT", x: 80, text: "18" },
+  ]);
+  const result = compare(before, after);
+  assert.deepEqual(result.changes, []);
+  assert.equal(result.frames[0].status, "unchanged");
 });

@@ -21,6 +21,7 @@ import {
   sourceIdentityNotice,
 } from "./compare-presentation";
 import { PixelDiffView } from "./PixelDiffView";
+import { fitView, ZoomControls, ZoomPane, type ZoomView } from "./SyncedZoom";
 import {
   compareResultForPair,
   defaultCompareViewMode,
@@ -131,6 +132,10 @@ export function VersionCompare({
   const [fromVersionId, setFromVersionId] = useState(validInitialRouteState?.fromVersionId ?? defaultFromVersionId);
   // Screens list: search by name and optionally show only screens that changed.
   const [screenQuery, setScreenQuery] = useState("");
+  // One zoom for both panes, so the same spot of a long screen stays lined up while reviewing.
+  // Kept per screen and version pair: opening another screen starts at Fit.
+  const [zoomState, setZoomState] = useState<{ key: string; view: ZoomView }>({ key: "", view: fitView });
+  const zoomPaneRef = useRef<HTMLDivElement>(null);
   const [changedOnly, setChangedOnly] = useState(Boolean(validInitialRouteState));
   const [pairResultState, setPairResultState] = useState<PairResultState | null>(null);
   const [pairFrameSelection, setPairFrameSelection] = useState<PairFrameSelection | null>(null);
@@ -241,6 +246,10 @@ export function VersionCompare({
     ? pairViewPreference.mode
     : defaultCompareViewMode(currentResult);
   const activeFrame = currentResult?.frames.find((frame) => frame.frameId === focusedFrameId) ?? null;
+  const zoomKey = `${fromVersionId}\u0000${toVersionId}\u0000${activeFrame?.frameId ?? ""}`;
+  const zoomView = zoomState.key === zoomKey ? zoomState.view : fitView;
+  const setZoomView = (update: (view: ZoomView) => ZoomView) =>
+    setZoomState((current) => ({ key: zoomKey, view: update(current.key === zoomKey ? current.view : fitView) }));
   const loading = Boolean(
     versions.length >= 2 && fromVersionId && toVersionId && fromVersionId !== toVersionId &&
     !error && !currentResult,
@@ -510,16 +519,34 @@ export function VersionCompare({
                     <VersionSelect side="After" value={toVersionId} versions={versions} onChange={updateToVersion} />
                   </div>
 
+                  {viewMode !== "pixel-diff" ? (
+                    <div className="mb-2 flex items-center justify-end gap-2">
+                      <span className="hidden text-[11px] text-foreground-subtle sm:inline">⌘ + scroll or pinch to zoom · drag to pan · double-click to zoom in or reset</span>
+                      <ZoomControls
+                        onViewChange={setZoomView}
+                        paneSize={() => {
+                          const rect = zoomPaneRef.current?.querySelector("[data-zoom-pane]")?.getBoundingClientRect();
+                          return rect ? { width: rect.width, height: rect.height } : null;
+                        }}
+                        view={zoomView}
+                      />
+                    </div>
+                  ) : null}
+
                   {viewMode === "side-by-side" ? (
-                    <div className="grid items-start gap-3 md:grid-cols-2">
-                      <PreviewPanel label="Before" preview={activeFrame.before} />
-                      <PreviewPanel label="After" preview={activeFrame.after} />
+                    <div className="grid items-start gap-3 md:grid-cols-2" ref={zoomPaneRef}>
+                      <PreviewPanel label="Before" onViewChange={setZoomView} preview={activeFrame.before} view={zoomView} />
+                      <PreviewPanel label="After" onViewChange={setZoomView} preview={activeFrame.after} view={zoomView} />
                     </div>
                   ) : viewMode === "overlay" ? (
-                    <div>
-                      <div className="relative grid min-h-[360px] place-items-center overflow-hidden rounded-control border border-transparent bg-surface-inset p-4 sm:min-h-[min(68vh,760px)]">
-                        {activeFrame.before ? <PreviewImage alt={"Before: " + activeFrame.name} preview={activeFrame.before} className="pointer-events-none max-h-[min(68vh,760px)] w-full object-contain" /> : <p className="text-[12px] text-foreground-subtle">No earlier screen</p>}
-                        {activeFrame.after ? <PreviewImage alt={"After: " + activeFrame.name} preview={activeFrame.after} className="pointer-events-none absolute inset-4 m-auto max-h-[min(68vh,760px)] w-[calc(100%-32px)] object-contain" style={{ opacity: overlayAmount / 100 }} /> : null}
+                    <div ref={zoomPaneRef}>
+                      <div data-zoom-pane="">
+                        <ZoomPane className="h-[360px] rounded-control border border-transparent bg-surface-inset sm:h-[min(68vh,760px)]" onViewChange={setZoomView} view={zoomView}>
+                          <div className="relative grid h-full w-full place-items-center p-4">
+                            {activeFrame.before ? <PreviewImage alt={"Before: " + activeFrame.name} preview={activeFrame.before} className="pointer-events-none max-h-full w-full select-none object-contain" /> : <p className="text-[12px] text-foreground-subtle">No earlier screen</p>}
+                            {activeFrame.after ? <PreviewImage alt={"After: " + activeFrame.name} preview={activeFrame.after} className="pointer-events-none absolute inset-4 m-auto max-h-[calc(100%-32px)] w-[calc(100%-32px)] select-none object-contain" style={{ opacity: overlayAmount / 100 }} /> : null}
+                          </div>
+                        </ZoomPane>
                       </div>
                       <label className="mt-3 flex items-center gap-3 text-[12px] text-foreground-muted">
                         <span>Before</span>
@@ -670,7 +697,17 @@ function VersionSelect({
   );
 }
 
-function PreviewPanel({ label, preview }: { label: string; preview: Preview }) {
+function PreviewPanel({
+  label,
+  preview,
+  view,
+  onViewChange,
+}: {
+  label: string;
+  preview: Preview;
+  view: ZoomView;
+  onViewChange: (update: (view: ZoomView) => ZoomView) => void;
+}) {
   const rasterSizeDiffers = preview !== null
     && preview.width !== null
     && preview.height !== null
@@ -689,8 +726,12 @@ function PreviewPanel({ label, preview }: { label: string; preview: Preview }) {
           </span>
         ) : null}
       </div>
-      <div className="grid min-h-[340px] place-items-center overflow-hidden rounded-control border border-transparent bg-surface-inset p-3 sm:min-h-[min(68vh,760px)]">
-        {preview ? <PreviewImage alt={label + ": " + preview.name} preview={preview} className="max-h-[min(68vh,760px)] w-full object-contain" /> : <p className="text-[12px] text-foreground-subtle">No screen in this version</p>}
+      <div data-zoom-pane="">
+        <ZoomPane className="h-[340px] rounded-control border border-transparent bg-surface-inset sm:h-[min(68vh,760px)]" onViewChange={onViewChange} view={view}>
+          <div className="grid h-full w-full place-items-center p-3">
+            {preview ? <PreviewImage alt={label + ": " + preview.name} preview={preview} className="pointer-events-none max-h-full w-full select-none object-contain" /> : <p className="text-[12px] text-foreground-subtle">No screen in this version</p>}
+          </div>
+        </ZoomPane>
       </div>
     </section>
   );

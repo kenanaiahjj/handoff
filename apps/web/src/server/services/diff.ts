@@ -441,8 +441,31 @@ function nodeIndex(nodes: SnapshotNode[]) {
 
 type MatchedNodePair = { before: SnapshotNode; after: SnapshotNode };
 
+/**
+ * Frames, groups, components and instances are interchangeable wrappers to a builder: turning a frame
+ * into a component (or detaching an instance) regenerates every layer ID without changing the UI.
+ */
+const containerNodeTypes = new Set(["FRAME", "GROUP", "INSTANCE", "COMPONENT", "COMPONENT_SET", "SECTION"]);
+
+function nodeTypeClass(type: string) {
+  return containerNodeTypes.has(type) ? "CONTAINER" : type;
+}
+
 function nodeMatchKey(node: SnapshotNode) {
-  return `${node.type}\u0000${node.name}`;
+  return `${nodeTypeClass(node.type)}\u0000${node.name}`;
+}
+
+/** How far (px) a layer's frame-relative box may move and still count as the same unmoved layer. */
+const samePlaceTolerance = 1;
+
+function inSamePlace(before: SnapshotNode, after: SnapshotNode) {
+  const left = nodeGeometry(before, "bounds");
+  const right = nodeGeometry(after, "bounds");
+  return Boolean(left && right &&
+    Math.abs(left.x - right.x) <= samePlaceTolerance &&
+    Math.abs(left.y - right.y) <= samePlaceTolerance &&
+    Math.abs(left.width - right.width) <= samePlaceTolerance &&
+    Math.abs(left.height - right.height) <= samePlaceTolerance);
 }
 
 type NodeGeometry = { x: number; y: number; width: number; height: number };
@@ -570,7 +593,8 @@ function matchFrameNodes(
   if (compareSourceNodeIds) {
     for (const before of beforeNodes) {
       const after = afterById.get(before.sourceNodeId);
-      if (after) pair(before, after);
+      // Unrelated files can reuse an ID ("1:23"); a shared ID only counts for the same kind of layer.
+      if (after && nodeTypeClass(after.type) === nodeTypeClass(before.type)) pair(before, after);
     }
   }
   const beforeRoot = beforeById.get(beforeFrameId);
@@ -672,6 +696,23 @@ function matchFrameNodes(
       pair(oldCandidates[0], newCandidates[0]);
     }
   }
+  matchByMatchedParents();
+
+  // Last resort for layers whose IDs were regenerated (a frame turned into a component, a detached
+  // instance, a rebuilt list): the same kind of layer with the same name in the same spot of the screen
+  // is the same layer. Repeated names (calendar days, list rows) pair only when exactly one sits there.
+  const samePlacePairs: Array<[SnapshotNode, SnapshotNode]> = [];
+  for (const before of beforeNodes) {
+    if (matchedBeforeIds.has(before.sourceNodeId)) continue;
+    const key = nodeMatchKey(before);
+    const options = afterNodes.filter((after) =>
+      !matchedAfterIds.has(after.sourceNodeId) && nodeMatchKey(after) === key && inSamePlace(before, after));
+    if (options.length !== 1) continue;
+    const rivals = beforeNodes.filter((other) =>
+      !matchedBeforeIds.has(other.sourceNodeId) && nodeMatchKey(other) === key && inSamePlace(other, options[0]));
+    if (rivals.length === 1) samePlacePairs.push([before, options[0]]);
+  }
+  for (const [before, after] of samePlacePairs) pair(before, after);
   matchByMatchedParents();
 
   return {
@@ -925,6 +966,8 @@ function compareNode(
   const { tokens: beforeTokens, sourcePayload: beforeSourcePayload, ...beforeRest } = before;
   const { tokens: afterTokens, sourcePayload: afterSourcePayload, ...afterRest } = after;
   const identityFields = new Set(["sourceNodeId", "parentSourceNodeId", "sourceFrameId"]);
+  // A frame becoming a component or instance (or the reverse) is not something a builder acts on.
+  if (nodeTypeClass(before.type) === "CONTAINER" && nodeTypeClass(after.type) === "CONTAINER") identityFields.add("type");
   const hasCapturedTextContent = nodeTextContent(before) !== null && nodeTextContent(after) !== null;
   const autoNamedTextChanged = before.type === "TEXT" && after.type === "TEXT" &&
     nodeTextContent(before) === before.name && nodeTextContent(after) === after.name;
@@ -988,6 +1031,8 @@ function compareFrame(
   nodeMatches: NodeMatch[],
 ) {
   const compareTokenSourceIds = beforeSnapshot.sourceFileId === afterSnapshot.sourceFileId && beforeSnapshot.sourceFileId !== "0:0";
+  // A duplicated Figma file keeps its layer IDs, so layers still pair by ID across file keys.
+  const matchNodeIds = beforeSnapshot.sourceFileId !== "0:0" && afterSnapshot.sourceFileId !== "0:0";
   const beforeNodes = frameNodes(before);
   const afterNodes = frameNodes(after);
   const frameNodeMatches = matchFrameNodes(
@@ -995,7 +1040,7 @@ function compareFrame(
     afterNodes,
     before.sourceFrameId,
     after.sourceFrameId,
-    compareTokenSourceIds,
+    matchNodeIds,
     nodeMatches.filter((match) =>
       match.beforeFrameId === before.sourceFrameId && match.afterFrameId === after.sourceFrameId,
     ),
@@ -1072,7 +1117,7 @@ function compareFrame(
   const addedNodes = frameNodeMatches.added;
     const removedKeys = new Set(removedNodes.map(nodeMatchKey));
     const ambiguousUnmatchedKeys = new Set(
-      !compareTokenSourceIds
+      !matchNodeIds
         ? addedNodes.map(nodeMatchKey).filter((key) => removedKeys.has(key))
         : [],
     );
