@@ -1632,8 +1632,9 @@ test("sub-pixel drift in measured sizes and margins is not reported as a change"
   assert.equal(noise.changes.length, 0);
   assert.equal(noise.frames[0].status, "unchanged");
 
-  // A real edit still shows: half a pixel, and any change to an auto-layout padding.
-  const edited = compare(withGeometry(8.99, 2.99, 8), withGeometry(9.5, 2.99, 8.5));
+  // A real edit still shows: half a pixel, and any change to an auto-layout padding. Margins never
+  // show on their own: they repeat the position and size changes already listed.
+  const edited = compare(withGeometry(8.99, 2.99, 8), withGeometry(9.5, 7, 8.5));
   assert.deepEqual(edited.changes.map((change) => change.path).sort(), ["layoutBounds.height.value", "padding.top.value"]);
 });
 
@@ -1664,4 +1665,14 @@ test("identical layers stacked in one spot pair in layer order", () => {
   const result = compare(before, after);
   assert.deepEqual(result.changes, []);
   assert.equal(result.frames[0].status, "unchanged");
+});
+
+test("float32 rounding in source values such as rotation is not a change", () => {
+  const withRotation = (rotation) => {
+    const value = snapshot("same-file", "review", styleIds("same"));
+    value.frames[0].nodes[0].sourcePayload.rotation = rotation;
+    return value;
+  };
+  assert.deepEqual(compare(withRotation(-179.999997), withRotation(-179.9999971)).changes, []);
+  assert.equal(compare(withRotation(0), withRotation(90)).changes.length, 1);
 });

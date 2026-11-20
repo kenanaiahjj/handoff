@@ -209,6 +209,7 @@ const measurementDiffTolerance = 0.001;
  * pixel are that noise, not a design change, so they are not reported.
  */
 const measuredGeometryDiffTolerance = 0.1;
+const sourcePayloadFloatTolerance = 0.001;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -334,6 +335,8 @@ function compareSourcePayloadValue(
   captureCoverage: CaptureCoverageCollector,
 ) {
   if (equalValue(before, after)) return;
+  // Figma stores rotations, colors and sizes as float32: -179.999997 vs -179.9999971 is the same value.
+  if (typeof before === "number" && typeof after === "number" && Math.abs(before - after) < sourcePayloadFloatTolerance) return;
 
   if (isRecord(before) && isRecord(after)) {
     const keys = [...new Set([...Object.keys(before), ...Object.keys(after)])].sort();
@@ -990,6 +993,9 @@ function compareNode(
   const hasNativeLayoutBounds = before.layoutBounds !== undefined && after.layoutBounds !== undefined;
   const shouldCompareNodeField = (key: string) =>
     !identityFields.has(key) &&
+    // Margins are measured distances to the parent's edges: every change in them is already reported
+    // as the layer's or its parent's position or size, so listing them only repeats the same edit.
+    key !== "margins" &&
     !(autoNamedTextChanged && key === "name") &&
     !(isFrameRoot && (key === "bounds" || key === "layoutBounds" || key === "margins")) &&
     (hasNativeLayoutBounds ? key !== "bounds" : key !== "layoutBounds");
