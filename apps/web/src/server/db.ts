@@ -215,8 +215,9 @@ export function getDatabasePool() {
   if (!globalForDatabase.__asbirDatabase) {
     globalForDatabase.__asbirDatabase = createPool();
     // Fluid Compute suspends idle instances; without this their idle clients stay connected and
-    // pile up on the Supabase pooler until it refuses everyone (EMAXCONN, limit 200).
-    attachDatabasePool(globalForDatabase.__asbirDatabase);
+    // pile up on the Supabase pooler until it refuses everyone (EMAXCONN, limit 200). Only at
+    // runtime: VERCEL_REGION is unset during builds, where the helper's Date.now() breaks prerendering.
+    if (process.env.VERCEL_REGION) attachDatabasePool(globalForDatabase.__asbirDatabase);
   }
 
   return globalForDatabase.__asbirDatabase;
