@@ -202,6 +202,13 @@ type DiffInput = {
 };
 
 const measurementDiffTolerance = 0.001;
+/**
+ * Bounds and margins are measured from Figma's absolute canvas coordinates, which Figma keeps at
+ * float32 precision. The farther a screen sits from the canvas origin, the more an untouched layer's
+ * size or margin drifts between captures (2.99 vs 3, 8.9876 vs 8.9921). Differences under a tenth of a
+ * pixel are that noise, not a design change, so they are not reported.
+ */
+const measuredGeometryDiffTolerance = 0.1;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -257,13 +264,19 @@ function compareValue(
   sourceNodeId: string | null,
   output: SnapshotDiffChange[],
 ) {
-  if (
-    typeof before === "number" &&
-    typeof after === "number" &&
-    Math.abs(before - after) < measurementDiffTolerance &&
-    /^(?:bounds|layoutBounds|padding|margins|spacing|typography)(?:\.|\[).+\.value$/.test(path)
-  ) {
-    return;
+  if (typeof before === "number" && typeof after === "number") {
+    if (
+      Math.abs(before - after) < measuredGeometryDiffTolerance &&
+      /^(?:bounds|layoutBounds|margins)(?:\.|\[).+\.value$/.test(path)
+    ) {
+      return;
+    }
+    if (
+      Math.abs(before - after) < measurementDiffTolerance &&
+      /^(?:padding|spacing|typography)(?:\.|\[).+\.value$/.test(path)
+    ) {
+      return;
+    }
   }
   if (equalValue(before, after)) return;
 

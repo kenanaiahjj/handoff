@@ -1615,3 +1615,25 @@ test("ignores sub-thousandth floating-point jitter in captured margins", () => {
 
   assert.deepEqual(result.changes, []);
 });
+
+test("sub-pixel drift in measured sizes and margins is not reported as a change", () => {
+  const measured = (value) => ({ value, unit: "px", provenance: "measured", sourceProperty: "absoluteBoundingBox" });
+  const withGeometry = (height, marginBottom, padding) => {
+    const value = snapshot("same-file", "review", styleIds("same"));
+    Object.assign(value.frames[0].nodes[0], {
+      layoutBounds: { height: measured(height) },
+      margins: { bottom: measured(marginBottom) },
+      padding: { top: measured(padding) },
+    });
+    return value;
+  };
+
+  // Figma float32 noise on an untouched icon: 8.99 vs 8.9921, 2.99 vs 3.
+  const noise = compare(withGeometry(8.99, 2.99, 8), withGeometry(8.9921, 3, 8));
+  assert.equal(noise.changes.length, 0);
+  assert.equal(noise.frames[0].status, "unchanged");
+
+  // A real edit still shows: half a pixel, and any change to an auto-layout padding.
+  const edited = compare(withGeometry(8.99, 2.99, 8), withGeometry(9.5, 2.99, 8.5));
+  assert.deepEqual(edited.changes.map((change) => change.path).sort(), ["layoutBounds.height.value", "padding.top.value"]);
+});
