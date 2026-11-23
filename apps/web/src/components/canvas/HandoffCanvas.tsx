@@ -735,6 +735,13 @@ export function HandoffCanvas({
         navigator.clipboard?.writeText(url.toString()).then(() => showToast(label), () => showToast("Couldn’t copy the link"));
         return;
       }
+      // Layer moves only when focus isn't on a control, so Tab and Enter still work in the panels.
+      const onPage = !target || target === document.body || Boolean(target.closest("[data-canvas-viewport]"));
+      if (onPage && !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === "Enter" || event.key === "Tab")) {
+        const move = event.key === "Enter" ? (event.shiftKey ? "parent" : "child") : (event.shiftKey ? "previous" : "next");
+        if (layerNavRef.current(move)) event.preventDefault();
+        return;
+      }
       if (modified) return;
       const key = event.key.toLowerCase();
       if (key === "o") {
@@ -854,7 +861,38 @@ export function HandoffCanvas({
   const stepScreenRef = useRef<(direction: 1 | -1) => void>(() => {});
   const selectedFrameIdRef = useRef<string | null>(null);
   const togglePanelsRef = useRef<() => void>(() => {});
+  // Figma-style layer moves: Enter goes into the selection, Shift+Enter out to its parent, and
+  // Tab / Shift+Tab to the next or previous layer beside it. Returns false when there is nowhere to go.
+  const layerNavRef = useRef<(move: "child" | "parent" | "next" | "previous") => boolean>(() => false);
   useEffect(() => {
+    layerNavRef.current = (move) => {
+      const screen = screens.find((frame) => frame.id === (selectedNode?.sourceFrameId ?? selectedFrameId));
+      if (!screen) return false;
+      const layers = screen.nodes.filter((node) => node.visible !== false && node.sourceNodeId !== screen.id);
+      const ids = new Set(layers.map((node) => node.sourceNodeId));
+      // A layer's parent within this screen; null for the screen's top-level layers.
+      const parentOf = (node: CanvasNodeSummary) => node.parentSourceNodeId && ids.has(node.parentSourceNodeId) ? node.parentSourceNodeId : null;
+      const childrenOf = (parentId: string | null) => layers.filter((node) => parentOf(node) === parentId);
+      const current = selectedNode && ids.has(selectedNode.sourceNodeId) ? selectedNode : null;
+      if (move === "child") {
+        const first = childrenOf(current?.sourceNodeId ?? null)[0];
+        if (!first) return false;
+        selectNode(first.sourceNodeId);
+        return true;
+      }
+      if (!current) return false;
+      if (move === "parent") {
+        const parentId = parentOf(current);
+        if (parentId) selectNode(parentId);
+        else selectFrame(screen.id);
+        return true;
+      }
+      const siblings = childrenOf(parentOf(current));
+      if (siblings.length < 2) return false;
+      const index = siblings.findIndex((node) => node.sourceNodeId === current.sourceNodeId);
+      selectNode(siblings[(index + (move === "next" ? 1 : -1) + siblings.length) % siblings.length].sourceNodeId);
+      return true;
+    };
     stepScreenRef.current = (direction) => {
       const list = canvasScreens.length ? canvasScreens : screens;
       if (!list.length) return;

@@ -1638,3 +1638,8 @@ html[data-splash="seen"] .app-splash {
   .canvas-floatbar [aria-label="Zoom out"],
   .canvas-floatbar [aria-label="Zoom in"] { display: none; }
 }
+
+/* While Space is held the whole canvas pans, so pins and element boxes show the hand, not their own cursor. */
+[data-space-pan] * {
+  cursor: inherit !important;
+}

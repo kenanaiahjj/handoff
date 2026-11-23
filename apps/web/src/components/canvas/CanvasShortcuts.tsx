@@ -7,6 +7,7 @@ const groups: Array<{ title: string; items: Array<[string[], string]> }> = [
     title: "Tools",
     items: [
       [["V"], "View: pan around without selecting"],
+      [["Space"], "Hold and drag to pan from any tool"],
       [["I"], "Inspect: select elements"],
       [["C"], "Place a comment"],
       [["Esc"], "Cancel or close"],
@@ -19,6 +20,9 @@ const groups: Array<{ title: string; items: Array<[string[], string]> }> = [
       [["]"], "Next screen (zooms to it)"],
       [["⌘", "F"], "Search text, colors and elements"],
       [["⌘", "L"], "Copy a link to the selected screen or element"],
+      [["Enter"], "Select the first layer inside"],
+      [["⇧", "Enter"], "Select the parent layer"],
+      [["Tab"], "Next layer beside it (⇧Tab: previous)"],
     ],
   },
   {

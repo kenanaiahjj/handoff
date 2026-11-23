@@ -192,6 +192,9 @@ export function CanvasViewport({
   const suppressClickRef = useRef(false);
   const [isDragging, setIsDragging] = useState(false);
   const [altHeld, setAltHeld] = useState(false);
+  // Holding Space pans with a drag from any tool, as in Figma; clicks don't select or place anything.
+  const [spaceHeld, setSpaceHeld] = useState(false);
+  const spaceHeldRef = useRef(false);
   const [hoveredNode, setHoveredNode] = useState<{ nodeId: string; frameId: string } | null>(null);
   const hoveredNodeId = hoveredNode?.frameId === frame.id ? hoveredNode.nodeId : null;
   const { containerRef, viewportSize, transform, interacting, fitted, fitToFrame, zoomToRect, zoomBy, zoomAt, panBy } = useCanvasViewport(
@@ -245,13 +248,29 @@ export function CanvasViewport({
   }, [containerRef, panBy, zoomAt]);
 
   useEffect(() => {
+    const setSpace = (held: boolean) => {
+      spaceHeldRef.current = held;
+      setSpaceHeld(held);
+    };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Alt") setAltHeld(true);
+      if (event.code !== "Space" || event.metaKey || event.ctrlKey || event.altKey) return;
+      // Only take Space when focus is on the page or the canvas, so it still presses focused buttons
+      // and types in fields.
+      const target = event.target as HTMLElement | null;
+      const onCanvas = !target || target === document.body || Boolean(containerRef.current?.contains(target));
+      if (!onCanvas || target?.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target?.tagName ?? "")) return;
+      event.preventDefault();
+      if (!spaceHeldRef.current) setSpace(true);
     };
     const onKeyUp = (event: KeyboardEvent) => {
       if (event.key === "Alt") setAltHeld(false);
+      if (event.code === "Space" && spaceHeldRef.current) setSpace(false);
     };
-    const clearAlt = () => setAltHeld(false);
+    const clearAlt = () => {
+      setAltHeld(false);
+      setSpace(false);
+    };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     window.addEventListener("blur", clearAlt);
@@ -260,7 +279,7 @@ export function CanvasViewport({
       window.removeEventListener("keyup", onKeyUp);
       window.removeEventListener("blur", clearAlt);
     };
-  }, []);
+  }, [containerRef]);
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
     // Shift-click marks screens; stop the browser from also selecting text across the page.
@@ -269,8 +288,11 @@ export function CanvasViewport({
       window.getSelection()?.removeAllRanges();
     }
     const target = event.target as HTMLElement;
-    if (commentMode || annotationMode || event.button !== 0 || target.closest("[data-comment-pin], [data-canvas-annotation]")) return;
-    if (target.closest("button") && !target.closest("[data-source-node-id]")) return;
+    const spacePan = spaceHeldRef.current && event.button === 0;
+    if (!spacePan) {
+      if (commentMode || annotationMode || event.button !== 0 || target.closest("[data-comment-pin], [data-canvas-annotation]")) return;
+      if (target.closest("button") && !target.closest("[data-source-node-id]")) return;
+    }
     dragRef.current = {
       pointerId: event.pointerId,
       x: event.clientX,
@@ -298,6 +320,8 @@ export function CanvasViewport({
   function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
     const drag = dragRef.current;
     if (drag?.pointerId === event.pointerId) {
+      // A Space-held click that didn't drag still shouldn't select or place anything.
+      if (!drag.moved && spaceHeldRef.current) suppressClickRef.current = true;
       if (drag.moved) {
         suppressClickRef.current = true;
         if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
@@ -536,7 +560,9 @@ export function CanvasViewport({
         aria-label={interactionMode === "inspect"
           ? "Inspect mode. Select a highlighted element to inspect it, scroll or drag to pan, and use Ctrl or Command + scroll or a trackpad pinch to zoom."
           : "View mode. Scroll or drag to pan and use Ctrl or Command + scroll or a trackpad pinch to zoom. Switch to Inspect to select design elements."}
-        className={"review-dot-grid group relative grid min-h-0 min-w-0 flex-1 touch-none place-items-center overflow-hidden outline-none focus-visible:outline-none " + (commentMode || annotationMode ? "cursor-crosshair" : isDragging ? "cursor-grabbing" : "cursor-grab")}
+        className={"review-dot-grid group relative grid min-h-0 min-w-0 flex-1 touch-none place-items-center overflow-hidden outline-none focus-visible:outline-none " + (isDragging ? "cursor-grabbing" : spaceHeld ? "cursor-grab" : commentMode || annotationMode ? "cursor-crosshair" : "cursor-grab")}
+        data-canvas-viewport=""
+        data-space-pan={spaceHeld ? "" : undefined}
         onClick={handleCanvasClick}
         onPointerCancel={handlePointerCancel}
         onMouseDown={(event) => {
