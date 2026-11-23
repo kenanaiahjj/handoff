@@ -10,6 +10,8 @@ export type CanvasSection = {
   height: number;
   /** CSS colour of the section's fill, or null to draw it as a plain outline. */
   fill: string | null;
+  /** The version's screens in this section. */
+  frameIds: string[];
 };
 
 /**
@@ -34,6 +36,7 @@ export function canvasSectionsFromMetadata(input: {
       width: section.width,
       height: section.height,
       fill: section.fill,
+      frameIds: section.frameIds.filter((id) => input.frameIds.has(id)),
     }];
   });
 }

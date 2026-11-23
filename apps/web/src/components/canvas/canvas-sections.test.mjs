@@ -14,7 +14,7 @@ test("sections are placed with their page offset in the overview's coordinates",
     pageOffsets: new Map([["page-2", { offsetX: 1000, offsetY: 0 }]]),
     origin: { x: 500, y: -50 },
   });
-  assert.deepEqual(sections, [{ id: "s1", name: "Onboarding", x: 510, y: 70, width: 300, height: 200, fill: "#FFFFFF" }]);
+  assert.deepEqual(sections, [{ id: "s1", name: "Onboarding", x: 510, y: 70, width: 300, height: 200, fill: "#FFFFFF", frameIds: ["a"] }]);
 });
 
 test("versions without sections draw none", () => {

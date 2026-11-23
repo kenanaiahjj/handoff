@@ -19,6 +19,8 @@ type Props = {
   bleed: number;
   /** From resolutionNeed(): captured pixels needed per canvas pixel at this zoom. */
   need: number;
+  /** Backdrop colour per screen when it isn't the canvas (a screen inside an opaque section). */
+  backdropColors?: ReadonlyMap<string, string>;
 };
 
 /**
@@ -29,7 +31,7 @@ type Props = {
  * screen is transparent (text with no fill, its edges) the soft copy would show through as a glow,
  * so each screen gets a backdrop in the canvas colour once its sharp image has loaded.
  */
-export const CanvasScreenImages = memo(function CanvasScreenImages({ screens, originX, originY, backdrops, bleed, need }: Props) {
+export const CanvasScreenImages = memo(function CanvasScreenImages({ screens, originX, originY, backdrops, bleed, need, backdropColors }: Props) {
   const [loaded, setLoaded] = useState<ReadonlySet<string>>(() => new Set());
   // The largest size each screen has been drawn at. Zooming back out keeps it (it's cached) rather
   // than fetching a smaller copy.
@@ -76,8 +78,8 @@ export const CanvasScreenImages = memo(function CanvasScreenImages({ screens, or
             top: screen.sourceY - originY,
             width: screen.sourceWidth,
             height: screen.sourceHeight,
-            backgroundColor: canvasBackground,
-            boxShadow: `0 0 0 ${bleed}px ${canvasBackground}`,
+            backgroundColor: backdropColors?.get(screen.id) ?? canvasBackground,
+            boxShadow: bleed > 0 ? `0 0 0 ${bleed}px ${backdropColors?.get(screen.id) ?? canvasBackground}` : undefined,
           }}
         />
       ) : null) : null}

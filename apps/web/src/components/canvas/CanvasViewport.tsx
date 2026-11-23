@@ -449,7 +449,19 @@ export function CanvasViewport({
   const devicePixelRatio = useSyncExternalStore(subscribeToPixelRatio, () => window.devicePixelRatio || 1, () => 1);
   const imageNeed = resolutionNeed(visualScale, devicePixelRatio);
   // The backdrop reaches about one overview pixel past the edge to cover the soft image's bleed.
-  const backdropBleed = Math.ceil(1.5 / Math.max(overviewResolutionScale, 0.05));
+  // Not needed when the overview is clipped to the screens' edges: nothing soft shows past them,
+  // and a canvas-coloured rim would show as a dark border on a light section.
+  const backdropBleed = frame.keepRects ? 0 : Math.ceil(1.5 / Math.max(overviewResolutionScale, 0.05));
+  // Behind a screen in a section, the backdrop takes the section's colour, so a transparent screen
+  // shows the section through it as it does in Figma.
+  const backdropColors = useMemo(() => {
+    const colors = new Map<string, string>();
+    for (const section of frame.kind === "overview" ? frame.sections ?? [] : []) {
+      if (!section.fill || section.fill.length !== 7) continue;
+      for (const frameId of section.frameIds) colors.set(frameId, section.fill);
+    }
+    return colors;
+  }, [frame.kind, frame.sections]);
   const sourceOverlayNodes = frame.overlayNodes ?? frame.nodes;
   const overlayNodes = useMemo(
     () => frame.kind === "overview" && changedOnly
@@ -573,12 +585,14 @@ export function CanvasViewport({
               }}
             >
               {section.width * visualScale >= 72 ? (
+                // Above the section's top-left corner, like Figma, so it never covers the screens inside.
                 <span
                   className="absolute max-w-full truncate rounded-chip bg-surface/95 font-medium text-foreground-muted shadow-sm"
                   style={{
-                    left: 8 * inverseScale,
-                    top: 8 * inverseScale,
-                    maxWidth: section.width - 16 * inverseScale,
+                    left: 0,
+                    bottom: "100%",
+                    marginBottom: 4 * inverseScale,
+                    maxWidth: section.width,
                     padding: 3 * inverseScale + "px " + 7 * inverseScale + "px",
                     borderRadius: 7 * inverseScale,
                     fontSize: 12 * inverseScale,
@@ -610,6 +624,7 @@ export function CanvasViewport({
             <CanvasScreenImages
               backdrops={imageRenderPlan.showBaseImage}
               bleed={backdropBleed}
+              backdropColors={backdropColors}
               need={imageNeed}
               originX={frame.sourceX}
               originY={frame.sourceY}
