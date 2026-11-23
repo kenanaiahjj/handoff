@@ -77,7 +77,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
         <section aria-labelledby="empty-handoff-title" className="w-full max-w-lg rounded-panel border border-border bg-surface p-5">
           <h1 className="text-lg font-semibold text-foreground" id="empty-handoff-title">{handoff.name}</h1>
           <p className="mt-2 text-sm leading-6 text-foreground-muted">No versions remain in this handoff. Capture a new Figma snapshot to continue.</p>
-          <div className="mt-5"><HandoffSetupForm mode="handoff" input={{ workspaceId, projectId, handoffs: [{ id: handoffId, name: handoff.name }], initialHandoffId: handoffId }} /></div>
+          <div className="mt-5"><HandoffSetupForm mode="handoff" input={{ workspaceId, projectId, handoffs: [{ id: handoffId, name: handoff.name }], initialHandoffId: handoffId, latestVersionLabel: null }} /></div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
             <Link className="dial-button min-h-9 px-3 py-2 text-xs" href={projectHref}>Back to project</Link>
             {canManageHandoffs ? <DeleteHandoffButton
@@ -183,7 +183,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
           versionHrefPrefix={routePath}
           mcp={{ projectId, handoffId, handoffName: handoff.name, integrationsHref: `/integrations` }}
         />
-        {canManageHandoffs ? <HandoffSetupForm mode="handoff" input={{ workspaceId, projectId, handoffs: [{ id: handoffId, name: handoff.name }], initialHandoffId: handoffId }} /> : null}
+        {canManageHandoffs ? <HandoffSetupForm mode="handoff" input={{ workspaceId, projectId, handoffs: [{ id: handoffId, name: handoff.name }], initialHandoffId: handoffId, latestVersionLabel: versions[0]?.versionLabel ?? null }} /> : null}
       </div>
     ) : null,
   };

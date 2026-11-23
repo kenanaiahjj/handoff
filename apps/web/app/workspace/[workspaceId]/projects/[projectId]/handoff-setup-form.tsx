@@ -1,8 +1,17 @@
 "use client";
 
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { showToast } from "@/src/components/shell/Toaster";
+import {
+  finalizeVersionLabel,
+  releaseNotePreview,
+  startsFromLatest,
+  versionLabelBase,
+  versionLabelMaxLength,
+  versionLabelStart,
+} from "@/src/lib/version-label";
+import { ReleaseNoteDialog } from "./release-note-dialog";
 
 const uploadHint = "Upload a structured ZIP package for exact layout data, or a PNG, JPEG, WebP, or SVG render for visual-only review.";
 type HandoffTarget = { id: string; name: string };
@@ -127,7 +136,14 @@ async function uploadPackageFile(file: File, intent: PackageUploadIntent, onProg
 }
 
 export function HandoffSetupForm({ input, mode }: {
-  input: { workspaceId: string; projectId: string; handoffs: HandoffTarget[]; initialHandoffId?: string };
+  input: {
+    workspaceId: string;
+    projectId: string;
+    handoffs: HandoffTarget[];
+    initialHandoffId?: string;
+    /** Label of the initial handoff's newest version; other handoffs' labels are fetched when picked. */
+    latestVersionLabel?: string | null;
+  };
   mode: "project" | "handoff";
 }) {
   const router = useRouter();
@@ -135,6 +151,9 @@ export function HandoffSetupForm({ input, mode }: {
   const [handoffName, setHandoffName] = useState("");
   const [versionLabel, setVersionLabel] = useState("");
   const [releaseNote, setReleaseNote] = useState("");
+  const [releaseNoteOpen, setReleaseNoteOpen] = useState(false);
+  const [fetchedLatest, setFetchedLatest] = useState<{ handoffId: string; label: string | null } | null>(null);
+  const versionLabelRef = useRef<HTMLInputElement>(null);
   const [source, setSource] = useState<"figma" | "upload">("figma");
   const [token, setToken] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
@@ -144,6 +163,41 @@ export function HandoffSetupForm({ input, mode }: {
   const [errorMessage, setErrorMessage] = useState("");
   const [notice, setNotice] = useState("");
   const isNewHandoff = !handoffId;
+  const latestVersionLabel = !handoffId
+    ? null
+    : fetchedLatest?.handoffId === handoffId
+      ? fetchedLatest.label
+      : handoffId === input.initialHandoffId ? input.latestVersionLabel ?? null : null;
+  const latestBase = versionLabelBase(latestVersionLabel);
+  const showLatestSuggestion = Boolean(latestBase) && !startsFromLatest(versionLabel, latestVersionLabel);
+
+  // Picking another handoff in the project form: look up its newest label for the suggestion.
+  useEffect(() => {
+    if (!handoffId || (handoffId === input.initialHandoffId && input.latestVersionLabel !== undefined)) return;
+    const controller = new AbortController();
+    const url = `/api/workspaces/${encodeURIComponent(input.workspaceId)}/projects/${encodeURIComponent(input.projectId)}/handoffs/${encodeURIComponent(handoffId)}/versions/latest`;
+    fetch(url, { signal: controller.signal })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((result: { latest?: { versionLabel?: string } | null } | null) => {
+        setFetchedLatest({ handoffId, label: result?.latest?.versionLabel ?? null });
+      })
+      .catch(() => {
+        // No suggestion when the lookup fails; the field still works.
+      });
+    return () => controller.abort();
+  }, [handoffId, input.initialHandoffId, input.latestVersionLabel, input.projectId, input.workspaceId]);
+
+  function startFromLatest() {
+    const start = versionLabelStart(latestVersionLabel);
+    setPendingFinalizeUploadId(null);
+    setVersionLabel(start);
+    requestAnimationFrame(() => {
+      const field = versionLabelRef.current;
+      if (!field) return;
+      field.focus();
+      field.setSelectionRange(start.length, start.length);
+    });
+  }
 
   async function writeTokenToClipboard(value: string) {
     try {
@@ -198,8 +252,10 @@ export function HandoffSetupForm({ input, mode }: {
     setErrorMessage("");
     setNotice("");
     setUploadProgress(null);
+    const finalVersionLabel = finalizeVersionLabel(versionLabel);
 
     try {
+      if (!finalVersionLabel) throw new Error("Add a version label.");
       if (pendingFinalizeUploadId) {
         await finalizePackageImport(pendingFinalizeUploadId);
         return;
@@ -214,7 +270,7 @@ export function HandoffSetupForm({ input, mode }: {
             projectId: input.projectId,
             handoffId: handoffId || null,
             handoffName: handoffId ? null : handoffName,
-            versionLabel,
+            versionLabel: finalVersionLabel,
             releaseNote: releaseNote || null,
           }),
         });
@@ -244,7 +300,7 @@ export function HandoffSetupForm({ input, mode }: {
           projectId: input.projectId,
           handoffId: handoffId || null,
           handoffName: handoffId ? null : handoffName,
-          versionLabel,
+          versionLabel: finalVersionLabel,
           releaseNote: releaseNote || null,
           fileName: file.name,
           sizeBytes: file.size,
@@ -312,14 +368,74 @@ export function HandoffSetupForm({ input, mode }: {
             </label>
           ) : null}
 
-          <label className="block text-xs font-medium text-foreground-muted" htmlFor="setup-version-label">
-            Version label
-            <input id="setup-version-label" name="versionLabel" value={versionLabel} onChange={(event) => { setPendingFinalizeUploadId(null); setVersionLabel(event.target.value); }} required maxLength={80} placeholder="1.0.0" className="mt-2 min-h-11 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
-          </label>
-          <label className="block text-xs font-medium text-foreground-muted" htmlFor="setup-release-note">
-            Release note <span className="font-normal text-foreground-subtle">(optional)</span>
-            <input id="setup-release-note" name="releaseNote" value={releaseNote} onChange={(event) => { setPendingFinalizeUploadId(null); setReleaseNote(event.target.value); }} maxLength={4000} placeholder="What should reviewers focus on?" className="mt-2 min-h-11 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
-          </label>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-foreground-muted" htmlFor="setup-version-label">Version label</label>
+            <input
+              aria-describedby={latestBase ? "setup-version-latest" : undefined}
+              className="mt-2 min-h-11 w-full rounded-control border border-transparent bg-surface-inset px-3 text-sm text-foreground transition-colors focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+              id="setup-version-label"
+              maxLength={versionLabelMaxLength}
+              name="versionLabel"
+              onChange={(event) => { setPendingFinalizeUploadId(null); setVersionLabel(event.target.value); }}
+              placeholder={latestBase ? `${latestBase} · What changed` : "1.0.0"}
+              ref={versionLabelRef}
+              required
+              value={versionLabel}
+            />
+            {latestBase ? (
+              <div className="mt-2 flex min-h-7 flex-wrap items-center gap-x-2 gap-y-1">
+                <span className="min-w-0 truncate text-[11px] text-foreground-subtle" id="setup-version-latest">
+                  Latest: <span className="text-foreground-muted">{latestVersionLabel}</span>
+                </span>
+                {showLatestSuggestion ? (
+                  <button
+                    className="dial-button ml-auto min-h-7 shrink-0 rounded-full px-2.5 text-[11px]"
+                    onClick={startFromLatest}
+                    type="button"
+                  >
+                    Start from {latestBase}
+                  </button>
+                ) : null}
+              </div>
+            ) : null}
+          </div>
+
+          <div className="sm:col-span-2">
+            {releaseNote ? (
+              <div className="flex items-start gap-3 rounded-control bg-surface-inset px-3 py-2.5">
+                <div className="min-w-0 flex-1">
+                  <span className="block text-xs font-medium text-foreground-muted">Release note</span>
+                  <p className="mt-0.5 truncate text-[13px] text-foreground" title={releaseNote}>{releaseNotePreview(releaseNote)}</p>
+                </div>
+                <button
+                  aria-haspopup="dialog"
+                  className="dial-button min-h-8 shrink-0 px-3 text-xs"
+                  onClick={() => setReleaseNoteOpen(true)}
+                  type="button"
+                >
+                  Edit<span className="sr-only"> release note</span>
+                </button>
+                <button
+                  className="dial-button min-h-8 shrink-0 px-3 text-xs"
+                  onClick={() => { setPendingFinalizeUploadId(null); setReleaseNote(""); }}
+                  type="button"
+                >
+                  Remove<span className="sr-only"> release note</span>
+                </button>
+              </div>
+            ) : (
+              <button
+                aria-haspopup="dialog"
+                className="dial-button min-h-10 w-full justify-start px-3 text-xs"
+                onClick={() => setReleaseNoteOpen(true)}
+                type="button"
+              >
+                <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" /></svg>
+                Add release note
+                <span className="font-normal text-foreground-subtle">(optional)</span>
+              </button>
+            )}
+          </div>
 
           <fieldset className="sm:col-span-2">
             <legend className="mb-2 text-xs font-medium text-foreground-muted">Version source</legend>
@@ -366,6 +482,17 @@ export function HandoffSetupForm({ input, mode }: {
           </div>
         </form>
       )}
+      {releaseNoteOpen ? (
+        <ReleaseNoteDialog
+          initialValue={releaseNote}
+          onClose={() => setReleaseNoteOpen(false)}
+          onSave={(note) => {
+            setPendingFinalizeUploadId(null);
+            setReleaseNote(note);
+            setReleaseNoteOpen(false);
+          }}
+        />
+      ) : null}
       {errorMessage && token ? <p className="mt-3 text-xs text-warning" role="alert">{errorMessage}</p> : null}
       {notice ? <p className="mt-3 text-xs leading-5 text-success" role="status">{notice}</p> : null}
     </section>
