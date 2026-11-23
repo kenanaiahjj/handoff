@@ -462,6 +462,10 @@ export function CanvasViewport({
     }
     return colors;
   }, [frame.kind, frame.sections]);
+  const sectionFrameIds = useMemo(
+    () => new Set(frame.kind === "overview" ? (frame.sections ?? []).flatMap((section) => section.frameIds) : []),
+    [frame.kind, frame.sections],
+  );
   const sourceOverlayNodes = frame.overlayNodes ?? frame.nodes;
   const overlayNodes = useMemo(
     () => frame.kind === "overview" && changedOnly
@@ -661,7 +665,11 @@ export function CanvasViewport({
                   top: screen.sourceY - frame.sourceY,
                   width: screen.sourceWidth,
                   height: screen.sourceHeight,
-                  border: (selected ? 3 : 1.5) * inverseScale + "px solid " + borderColor,
+                  // On a section's fill (usually white) the grey outline reads as a heavy frame, so screens
+                  // in a section only get one when it says something: changed, new, or a thin selection line.
+                  border: sectionFrameIds.has(screen.id) && !label
+                    ? selected ? inverseScale + "px solid " + borderColor : undefined
+                    : (selected ? 3 : 1.5) * inverseScale + "px solid " + borderColor,
                 }}
               >
                   {pickedFrameIds?.has(screen.id) ? (
