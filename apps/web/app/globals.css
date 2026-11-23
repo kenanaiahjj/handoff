@@ -1425,6 +1425,7 @@ html[data-splash="seen"] .app-splash {
   container-type: inline-size;
   width: 100%;
   display: flex;
+  flex-wrap: wrap;
   align-items: stretch;
   gap: 0;
   border-bottom: 1px solid var(--border);
@@ -1439,10 +1440,16 @@ html[data-splash="seen"] .app-splash {
     display: block;
   }
 }
+/* A narrow panel wraps the tabs; shorter rows keep two of them compact. */
+@container (max-width: 429px) {
+  .canvas-tab {
+    min-height: 36px;
+  }
+}
 .canvas-tab {
   position: relative;
-  min-width: 0;
-  flex-shrink: 1;
+  /* Full labels, never truncated: tabs that don't fit wrap onto a second row. */
+  flex-shrink: 0;
   display: inline-flex;
   min-height: 42px;
   align-items: center;

@@ -1723,7 +1723,7 @@ export function HandoffCanvas({
                 type="button"
               >
                 <TabIcon className="canvas-tab-icon size-3.5" />
-                <span className="min-w-0 truncate">{label}</span>
+                <span>{label}</span>
                 {count ? <span className="canvas-tab-count">{count}</span> : null}
               </button>
             ))}
