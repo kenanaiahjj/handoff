@@ -1,6 +1,8 @@
 const scopeLabels = new Map<string, string>([
   ["selected", "Selected frames and components"],
   ["selected frames and components", "Selected frames and components"],
+  ["selected sections", "Selected sections"],
+  ["selected sections and frames", "Selected sections and frames"],
   ["page", "All top-level frames and components on the current page"],
   ["all top-level frames and components on current page", "All top-level frames and components on the current page"],
   ["file", "All top-level frames and components across all pages"],

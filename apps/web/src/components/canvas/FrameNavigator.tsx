@@ -5,6 +5,7 @@ import type { SnapshotNode } from "@asbir/snapshot-contract";
 import { filterChangedFrames } from "./changed-frame-filter";
 import { comparisonFrameStatusLabel, comparisonFrameStatusShortLabel } from "./compare-presentation";
 import type { CanvasNodeSummary } from "./canvas-node-summary";
+import type { CanvasSection } from "./canvas-sections";
 
 type CanvasFrameOption = {
   id: string;
@@ -25,6 +26,8 @@ type CanvasFrameOption = {
   maskRects?: Array<{ x: number; y: number; width: number; height: number }>;
   /** Areas of this frame's image to keep (the overview's current screens); everything else is stale. */
   keepRects?: Array<{ x: number; y: number; width: number; height: number }>;
+  /** Captured Figma sections drawn under the overview's screens, in this frame's coordinates. */
+  sections?: CanvasSection[];
   layerExports?: Record<string, { downloadUrl: string; fileName: string; contentType: "image/png" | "image/svg+xml" }>;
   exact: boolean;
   kind: "overview" | "frame";

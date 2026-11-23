@@ -1,4 +1,5 @@
 import type { Bounds, SnapshotAsset, SnapshotEnvelope, SnapshotFrame, SnapshotPayload } from "./schema.ts";
+import { captureSectionRecords, mergeCaptureSections, sectionReplacedFrameIds, type CaptureSectionRecord } from "./capture-sections.ts";
 
 export type FigmaCaptureScope = "selected" | "page" | "file";
 export type FrameReplacementMatch = { beforeFrameId: string; afterFrameId: string };
@@ -40,12 +41,16 @@ export type FigmaCaptureMergePlan<TFrame extends CaptureFrameRef = SnapshotFrame
   pageOffsets: Map<string, { offsetX: number; offsetY: number }>;
   incomingOffsetDeltas: Map<string, { x: number; y: number }>;
   canvasBounds?: Bounds;
+  /** Sections in the merged version (see CaptureSectionRecord). */
+  sections: CaptureSectionRecord[];
+  /** Baseline screens dropped because a re-captured section no longer contains them. */
+  removedFrameIds: string[];
 };
 
 export function normalizeFigmaCaptureScope(value: unknown): FigmaCaptureScope | null {
   if (typeof value !== "string") return null;
   const scope = value.trim().toLowerCase();
-  if (scope === "selected" || scope === "selected frames and components") return "selected";
+  if (scope === "selected" || scope === "selected frames and components" || scope === "selected sections" || scope === "selected sections and frames") return "selected";
   if (scope === "page" || scope === "all top-level frames and components on current page" || scope === "all top-level frames and components on the current page") return "page";
   if (scope === "file" || scope === "all top-level frames and components across all pages") return "file";
   return null;
@@ -218,6 +223,18 @@ export function createFigmaCaptureMergePlan<TBaseline extends CaptureFrameRef, T
     replacedFrameIds.add(before.sourceFrameId);
   }
 
+  // A re-captured section replaces that section: its earlier screens that aren't in it any more go.
+  const baselineSections = captureSectionRecords(input.baseline.sourceMetadata);
+  const incomingSections = captureSectionRecords(input.incoming.sourceMetadata);
+  const removedFrameIds = sectionReplacedFrameIds({
+    baselineSections,
+    incomingSections,
+    baselineFrameIds: baselineIds,
+    incomingFrameIds: incomingIds,
+    replacedFrameIds,
+  });
+  for (const frameId of removedFrameIds) replacedFrameIds.add(frameId);
+
   const capturedPageIds = new Set(input.incoming.frames.flatMap((frame) => frame.sourcePageId ? [frame.sourcePageId] : []));
   if (scope === "page") {
     for (const frame of input.baseline.frames) {
@@ -237,6 +254,7 @@ export function createFigmaCaptureMergePlan<TBaseline extends CaptureFrameRef, T
       }
       continue;
     }
+    if (removedFrameIds.has(frame.sourceFrameId)) continue;
     if (scope === "page" && frame.sourcePageId && capturedPageIds.has(frame.sourcePageId)) {
       if (!insertedPages.has(frame.sourcePageId)) {
         for (const incomingFrame of input.incoming.frames) {
@@ -285,6 +303,14 @@ export function createFigmaCaptureMergePlan<TBaseline extends CaptureFrameRef, T
     }
   }
   const canvasRect = unionRects(canvasRects);
+  const replacementIds = new Map([...replacementByOldId].map(([oldId, replacement]) => [oldId, replacement.sourceFrameId] as const));
+  const sections = mergeCaptureSections({
+    baselineSections,
+    incomingSections,
+    frameIds: new Set(frames.map((frame) => frame.sourceFrameId)),
+    replacementIds,
+    replacedPageIds: scope === "page" ? capturedPageIds : undefined,
+  });
 
   return {
     scope,
@@ -294,6 +320,8 @@ export function createFigmaCaptureMergePlan<TBaseline extends CaptureFrameRef, T
     pageOffsets: mergedOffsets,
     incomingOffsetDeltas,
     canvasBounds: canvasRect ? measuredBounds(canvasRect) : undefined,
+    sections,
+    removedFrameIds: [...removedFrameIds],
   };
 }
 
@@ -405,7 +433,11 @@ export function mergeFigmaCaptureSnapshots(input: {
     mergedFromVersionId: input.baselineVersionId,
     mergeScope: plan.scope,
     mergedFrameIds: input.incoming.frames.map((frame) => frame.sourceFrameId),
+    sections: plan.sections as SnapshotPayload["sourceMetadata"][string],
   };
+  if (plan.removedFrameIds.length) sourceMetadata.sectionRemovedFrameIds = plan.removedFrameIds;
+  else delete sourceMetadata.sectionRemovedFrameIds;
+  if (!plan.sections.length) delete sourceMetadata.sections;
   // The merged version takes the incoming overview image, so cut-outs for screens removed
   // from the old overview no longer apply.
   delete sourceMetadata.removedFrames;
@@ -494,15 +526,24 @@ export function removeFramesFromSnapshot(baseline: SnapshotEnvelope, frameIds: r
     };
   });
   const { contentHash: _contentHash, ...payload } = baseline;
+  const sourceMetadata: SnapshotPayload["sourceMetadata"] = {
+    ...baseline.sourceMetadata,
+    removedFrames: [...removedFrameRecords(baseline.sourceMetadata), ...removed],
+  };
+  const sections = captureSectionRecords(baseline.sourceMetadata);
+  if (sections.length) {
+    const remaining = sections
+      .map((section) => ({ ...section, frameIds: section.frameIds.filter((id) => !removing.has(id)) }))
+      .filter((section) => section.frameIds.length > 0);
+    if (remaining.length) sourceMetadata.sections = remaining as SnapshotPayload["sourceMetadata"][string];
+    else delete sourceMetadata.sections;
+  }
   return {
     snapshot: {
       ...payload,
       frames,
       assets: baseline.assets.filter((asset) => references.has(asset.key)),
-      sourceMetadata: {
-        ...baseline.sourceMetadata,
-        removedFrames: [...removedFrameRecords(baseline.sourceMetadata), ...removed],
-      },
+      sourceMetadata,
     },
     removed,
   };

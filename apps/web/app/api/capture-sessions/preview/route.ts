@@ -1,4 +1,4 @@
-import { normalizeFigmaCaptureScope, pageCaptureChoice, type SnapshotEnvelope } from "@asbir/snapshot-contract";
+import { captureSectionRecords, normalizeFigmaCaptureScope, pageCaptureChoice, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { getCaptureSession } from "@/src/server/repositories/capture-sessions";
 import { getVersion, getVersionSnapshotSize } from "@/src/server/repositories/versions";
 import { getDatabase } from "@/src/server/db";
@@ -102,6 +102,7 @@ export async function POST(request: Request) {
     canvasBounds: SnapshotEnvelope["canvasBounds"] | null;
     frames: Array<Pick<SnapshotEnvelope["frames"][number], "sourceFrameId" | "sourcePageId" | "bounds" | "renderBounds" | "name">>;
     pageLayout: unknown;
+    sections: unknown;
   } | undefined;
   if (scope === "selected" || scope === "page") {
     // A duplicated Figma file counts as the same design: screens pair by frame ID, then by unique name.
@@ -120,6 +121,7 @@ export async function POST(request: Request) {
         ? baseline.snapshot.frames.map(({ sourceFrameId, sourcePageId, bounds, renderBounds, name }) => ({ sourceFrameId, sourcePageId, bounds, renderBounds, name }))
         : [],
       pageLayout: baseline.snapshot.source === "figma" ? baseline.snapshot.sourceMetadata.pageLayout ?? [] : [],
+      sections: baseline.snapshot.source === "figma" ? captureSectionRecords(baseline.snapshot.sourceMetadata) : [],
     };
   }
   const capturedPageIds = new Set(snapshot.frames.flatMap((frame) => frame.sourcePageId ? [frame.sourcePageId] : []));

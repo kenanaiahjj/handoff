@@ -215,6 +215,38 @@ function selectedArtboards(selection: readonly SceneNode[]): SceneNode[] {
   });
 }
 
+/** Selected sections, without those inside another selected section (the outer one captures them). */
+export function outermostSelectedSections(selection: readonly SceneNode[]): SceneNode[] {
+  const sections = selection.filter((node) => node.type === "SECTION");
+  const ids = new Set(sections.map((node) => node.id));
+  return [...new Map(sections.map((node) => [node.id, node] as const)).values()].filter((node) => {
+    let parent = node.parent;
+    const visited = new Set<string>();
+    while (parent && parent.type !== "PAGE" && parent.type !== "DOCUMENT") {
+      if (visited.has(parent.id)) break;
+      visited.add(parent.id);
+      if (ids.has(parent.id)) return false;
+      parent = parent.parent;
+    }
+    return true;
+  });
+}
+
+/** A section's first visible solid fill as #RRGGBB, or #RRGGBBAA when it is translucent. */
+export function sectionFillHex(node: SceneNode): string | null {
+  const paints = recordOf(node).fills;
+  if (!Array.isArray(paints)) return null;
+  for (const paint of paints) {
+    const item = paint as Record<string, unknown>;
+    if (item.type !== "SOLID" || item.visible === false) continue;
+    const hex = colorHex(item.color);
+    if (!hex) continue;
+    const opacity = typeof item.opacity === "number" && Number.isFinite(item.opacity) ? Math.max(0, Math.min(1, item.opacity)) : 1;
+    return opacity >= 1 ? hex : `${hex}${Math.round(opacity * 255).toString(16).padStart(2, "0").toUpperCase()}`;
+  }
+  return null;
+}
+
 function flattenNodes(root: SceneNode, nodeBudget: number): Array<{ node: SceneNode; parentId: string | null }> {
   const output: Array<{ node: SceneNode; parentId: string | null }> = [];
   const stack = [{ node: root, parentId: null as string | null, children: null as SceneNode[] | null, index: 0, entered: false }];
@@ -943,6 +975,8 @@ export async function captureFigmaCanvas(
   const pageCaptures: PageCapture[] = [];
   const excludedSectionFrameCounts = new Map<string, number>();
   const seenRootIds = new Set<string>();
+  const capturedSections: Array<{ section: SceneNode; pageId: string; artboards: SceneNode[]; keepEmpty: boolean }> = [];
+  let looseSelectionCount = 0;
   let rootIndex = 0;
   for (const [pageIndex, page] of pages.entries()) {
     const pageName = page.name || "Untitled page";
@@ -959,7 +993,19 @@ export async function captureFigmaCanvas(
 
     let artboards: SceneNode[];
     if (scope === "selected" && !captureAllTopLevel) {
-      artboards = selectedArtboards(page.selection);
+      // A selected section captures every top-level frame inside it (frames in nested sections too),
+      // and re-capturing it later replaces that section on the handoff canvas.
+      artboards = [];
+      for (const section of outermostSelectedSections(page.selection)) {
+        const sectionArtboards: SceneNode[] = [];
+        findTopLevelArtboards(section, sectionArtboards);
+        capturedSections.push({ section, pageId: page.id, artboards: sectionArtboards, keepEmpty: true });
+        artboards.push(...sectionArtboards);
+      }
+      const sectionArtboardIds = new Set(artboards.map((node) => node.id));
+      const looseArtboards = selectedArtboards(page.selection.filter((node) => node.type !== "SECTION"));
+      looseSelectionCount += looseArtboards.filter((node) => !sectionArtboardIds.has(node.id)).length;
+      artboards.push(...looseArtboards);
     } else {
       artboards = [];
       const excluded = new Set(scope === "page" || captureAllTopLevel ? excludedTopLevelSections : []);
@@ -968,6 +1014,13 @@ export async function captureFigmaCanvas(
           const excludedArtboards: SceneNode[] = [];
           findTopLevelArtboards(child, excludedArtboards);
           excludedSectionFrameCounts.set(child.name, (excludedSectionFrameCounts.get(child.name) ?? 0) + excludedArtboards.length);
+          continue;
+        }
+        if (child.type === "SECTION") {
+          const sectionArtboards: SceneNode[] = [];
+          findTopLevelArtboards(child, sectionArtboards);
+          capturedSections.push({ section: child, pageId: page.id, artboards: sectionArtboards, keepEmpty: false });
+          artboards.push(...sectionArtboards);
           continue;
         }
         findTopLevelArtboards(child, artboards);
@@ -999,12 +1052,34 @@ export async function captureFigmaCanvas(
   const roots = pageCaptures.flatMap((page) => page.roots);
   if (roots.length === 0) {
     throw new Error(scope === "selected"
-      ? "Select one or more frames, components, or instances, then capture again."
+      ? capturedSections.length
+        ? "The selected section has no frames, components, or instances to capture."
+        : "Select one or more frames, components, instances, or sections, then capture again."
       : scope === "file"
         ? "This Figma file has no top-level frames, components, or instances to capture."
         : "This page has no top-level frames, components, or instances to capture.");
   }
   const pageLayout = layoutPageCaptures(pageCaptures, scope === "file");
+  const capturedRootIds = new Set(roots.map((entry) => entry.root.id));
+  const sectionRecords = capturedSections.flatMap(({ section, pageId, artboards, keepEmpty }) => {
+    const rect = rectOf(section);
+    if (!rect) return [];
+    const frameIds = [...new Set(artboards.map((node) => node.id))].filter((id) => capturedRootIds.has(id));
+    // An emptied section is still recorded when selected, so re-capturing it removes its old screens.
+    if (!frameIds.length && !keepEmpty) return [];
+    return [{
+      sourceSectionId: section.id,
+      sourcePageId: pageId,
+      name: section.name || "Untitled section",
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+      fill: sectionFillHex(section),
+      frameIds,
+    }];
+  });
+  const selectedSectionCount = scope === "selected" && !captureAllTopLevel ? sectionRecords.length : 0;
 
   let totalNodes = 0;
   const warnings: string[] = [];
@@ -1120,8 +1195,11 @@ export async function captureFigmaCanvas(
       ? "all top-level frames and components across all pages"
       : scope === "page"
         ? "all top-level frames and components on current page"
-        : "selected frames and components",
+        : selectedSectionCount
+          ? looseSelectionCount ? "selected sections and frames" : "selected sections"
+          : "selected frames and components",
     pageLayout,
+    ...(sectionRecords.length ? { sections: sectionRecords } : {}),
     adapter: "asbir-figma-plugin",
     adapterVersion: "0.2.0",
     renderFormat: "image/png",

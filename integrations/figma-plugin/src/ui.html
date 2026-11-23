@@ -139,12 +139,12 @@
       <div class="field">
         <label for="capture-scope">Capture scope</label>
         <select id="capture-scope">
-          <option value="selected">Selected frames or components</option>
+          <option value="selected">Selected frames, components, or sections</option>
           <option value="page-merge">All top-level frames on this page (merge)</option>
           <option value="page">All top-level frames and components on this page (replace)</option>
           <option value="file">Entire Figma file (all pages)</option>
         </select>
-        <p id="scope-help" class="hint">Selected captures use their containing frames. Merge captures keep uncaptured frames from the previous Handoff version.</p>
+        <p id="scope-help" class="hint">Selected captures use their containing frames. A selected section captures every frame in it and replaces that section in Handoff, so screens removed from the section disappear. Merge captures keep uncaptured frames from the previous Handoff version.</p>
       </div>
       <div id="page-exclusions" class="field" hidden>
         <label for="excluded-sections">Exclude top-level sections</label>

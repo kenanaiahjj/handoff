@@ -10,6 +10,7 @@ import { formatFigmaCaptureScope, removedFrameRecords } from "@asbir/snapshot-co
 import { HandoffReview, type PackedCanvasFrameOption } from "./HandoffReview";
 import { getVersion, type StoredVersionAsset } from "@/src/server/repositories/versions";
 import { packCanvasNodes, summarizeCanvasNode } from "./canvas-node-summary";
+import { canvasSectionsFromMetadata } from "./canvas-sections";
 
 export type ReviewVersionSummary = VersionOption & {
   id: string;
@@ -35,6 +36,7 @@ type AssetFrameInput = {
   overlayNodes?: CanvasFrameOption["overlayNodes"];
   maskRects?: CanvasFrameOption["maskRects"];
   keepRects?: CanvasFrameOption["keepRects"];
+  sections?: CanvasFrameOption["sections"];
   exact: boolean;
   kind: "overview" | "frame";
 };
@@ -142,6 +144,15 @@ function buildCanvasFrames(version: StoredVersion, publicReviewShareId?: string)
             width,
             height,
           }];
+        })
+      : undefined,
+    // Captured Figma sections, drawn under their screens with their fill and name.
+    sections: overviewExact && structuredSnapshot
+      ? canvasSectionsFromMetadata({
+          sourceMetadata: structuredSnapshot.sourceMetadata,
+          frameIds: new Set(structuredSnapshot.frames.map((frame) => frame.sourceFrameId)),
+          pageOffsets,
+          origin: { x: overviewBounds?.x.value ?? 0, y: overviewBounds?.y.value ?? 0 },
         })
       : undefined,
     exact: overviewExact,

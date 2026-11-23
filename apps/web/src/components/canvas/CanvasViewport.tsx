@@ -555,6 +555,43 @@ export function CanvasViewport({
             willChange: interacting ? "transform" : undefined,
           }}
         >
+          {frame.kind === "overview" && frame.exact ? frame.sections?.map((section) => (
+            // Under the screens (z-index -1 stays inside this transformed layer), like a section in Figma.
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute"
+              key={"section:" + section.id}
+              style={{
+                left: section.x,
+                top: section.y,
+                width: section.width,
+                height: section.height,
+                zIndex: -1,
+                backgroundColor: section.fill ?? undefined,
+                border: inverseScale + "px solid rgba(255, 255, 255, 0.16)",
+                borderRadius: 4 * inverseScale,
+              }}
+            >
+              {section.width * visualScale >= 72 ? (
+                <span
+                  className="absolute max-w-full truncate rounded-chip bg-surface/95 font-medium text-foreground-muted shadow-sm"
+                  style={{
+                    left: 8 * inverseScale,
+                    top: 8 * inverseScale,
+                    maxWidth: section.width - 16 * inverseScale,
+                    padding: 3 * inverseScale + "px " + 7 * inverseScale + "px",
+                    borderRadius: 7 * inverseScale,
+                    fontSize: 12 * inverseScale,
+                    lineHeight: 1.3,
+                  }}
+                  title={section.name}
+                >
+                  {section.name}
+                </span>
+              ) : null}
+            </div>
+          )) : null}
+
           {imageRenderPlan.showBaseImage ? (
             <RetryingCanvasImage
               alt={(frame.fileName.toLowerCase().endsWith(".svg") ? "Figma vector render: " : "Frozen design render: ") + frame.name}

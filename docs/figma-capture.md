@@ -25,9 +25,23 @@ The manifest declares dynamic page access, which Figma requires for new plugins.
 2. Start a Figma capture session. Choose an existing handoff or enter a name for a new handoff, then set the version label and release note.
 3. Copy the one-time token. It expires after one hour, giving large Figma captures time to finish before upload.
 4. In Figma, open **Asbir Handoff Capture**. Confirm the Handoff server and paste the one-time token. The URL is set when the plugin is built so it matches Figma's allowed network endpoint.
-5. Choose **Selected frames or components**, **All top-level frames and components on this page**, or **Entire Figma file (all pages)**. The file option loads pages sequentially and arranges their captured frames into separate regions in the overview.
+5. Choose **Selected frames, components, or sections**, **All top-level frames and components on this page**, or **Entire Figma file (all pages)**. The file option loads pages sequentially and arranges their captured frames into separate regions in the overview.
 6. Select **Capture canvas**. Review the overview, page count, frame count, and layer count. The plugin flags repeated screen names in the captured scope because duplicates can make version matching ambiguous. Rename them in Figma when possible; the warning does not block upload.
 7. Select **Upload frozen snapshot**. The plugin requests signed paths and uploads the snapshot JSON and render assets directly to private Storage. Files up to 6 MiB use signed `PUT` requests. Larger files use TUS resumable uploads with 6 MiB chunks. Handoff receives only the upload declarations and final object paths, not the file bytes. Handoff verifies the snapshot and asset hashes before creating the first version or appending a new immutable version, then returns a link to the review page. In an existing handoff, a selected-frame capture updates those frames and preserves everything else. A page capture replaces only that page’s frames and retains frames from other pages. An entire-file capture replaces the full canvas. Confirm a suggested frame-name match when Figma assigns a replacement frame a new ID so the partial capture can replace the intended frame. In version comparison, Handoff automatically pairs exact screen names that are unique in both captures when the verified Figma file ID matches; this does not add a confirmation prompt to the canvas.
+
+### Section captures
+
+Select a Figma **section** (with the selected scope) to capture every top-level frame, component, and instance inside it, including those in nested sections. The snapshot records the section in `sourceMetadata.sections` (`sourceSectionId`, page, bounds, first visible solid fill, name, and the captured `frameIds`), and the canvas draws it under its screens with its fill and name.
+
+A section capture replaces that section in the handoff rather than adding to it. Screens the previous version had in the section that are no longer in it are removed from the new version (listed in `sourceMetadata.sectionRemovedFrameIds`), new screens are added, and changed screens update. Screens captured outside the section, loose frames and other sections, are left alone. Rules for edge cases:
+
+- A screen whose Figma ID changed still replaces its earlier copy when its name is unique, or when you confirm the suggested match, instead of being removed.
+- Screens you untick in the plugin's frame list are kept as they were (recorded as `skippedFrameIds`), not removed.
+- A screen moved from one section into a re-captured section leaves the old section's outline.
+- Nested sections fold into the selected outer section. If you select a section and its parent, the parent wins.
+- Selecting frames inside a section (not the section itself) stays an additive frame capture and never removes screens.
+- A section can be selected together with loose frames: the section is replaced and the loose frames are added.
+- Page and file captures also record the page's top-level sections so the canvas can draw them; a page capture replaces that page's sections along with its screens.
 
 The replacement check sends Handoff a compact summary of the captured frames. The final request contains `snapshotPath`, an `assets` map from asset keys to staged object paths, `baselineVersionId`, and `frameMatches`. The plugin keeps the captured snapshot in memory while uploads run. Retry reuses that same capture and resumes an interrupted TUS upload. A completed signed path is not overwritten. If Handoff reports an integrity failure, the plugin asks for fresh scoped paths and resends the same bytes. If an upload began before the one-hour capture token expires, the plugin renews the active capture session before retrying. Handoff consumes the capture token only after successful finalization.
 

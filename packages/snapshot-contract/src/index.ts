@@ -27,6 +27,12 @@ export {
   type RemovedFrameRecord,
 } from "./capture-merge";
 export { formatFigmaCaptureScope } from "./figma-capture-scope";
+export {
+  captureSectionRecords,
+  mergeCaptureSections,
+  sectionReplacedFrameIds,
+  type CaptureSectionRecord,
+} from "./capture-sections";
 export { countBlankFrameNames, findDuplicateFrameNames } from "./frame-names";
 export type { DuplicateFrameName } from "./frame-names";
 export { typographyFromTextSegments } from "./text-typography";

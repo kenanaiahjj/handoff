@@ -30,7 +30,7 @@ import { isRejectedSvgAssetResponse, makeRasterOnlyFallback } from "./raster-fal
 import { frameRenderCrop } from "./render-crop";
 import { availableOverviewBudget } from "./transfer-budget";
 import { countBlankFrameNames, findDuplicateFrameNames } from "./frame-names";
-import { formatFigmaCaptureScope } from "@asbir/snapshot-contract";
+import { captureSectionRecords, formatFigmaCaptureScope } from "@asbir/snapshot-contract";
 import { requireExactOrigin } from "./network-access.mjs";
 import {
   buildFinalizeManifest,
@@ -116,7 +116,7 @@ function updatePageExclusionsVisibility() {
       ? "Replace the current page’s frames in the latest Handoff version."
       : scopeInput.value === "file"
         ? "Capture every page in the Figma file. This can take longer."
-        : "Selected captures use their containing frames.";
+        : "Selected captures use their containing frames. Selecting a section captures every frame in it and replaces that section in Handoff: screens removed from the section disappear.";
 }
 
 scopeInput.addEventListener("change", updatePageExclusionsVisibility);
@@ -137,6 +137,8 @@ type CaptureMergeContext = {
   canvasBounds: SnapshotEnvelope["canvasBounds"] | null;
   frames: Array<Pick<SnapshotFrame, "sourceFrameId" | "sourcePageId" | "bounds" | "renderBounds"> & { name?: string }>;
   pageLayout: unknown;
+  /** Sections in the previous version, so a re-captured section can replace its screens. */
+  sections?: unknown;
 };
 type PendingUpload = {
   snapshot: SnapshotEnvelope;
@@ -378,13 +380,19 @@ function updateCaptureSummary(capture: CaptureReadyMessage, width: number, heigh
   const pageSummary = capture.scope === "file" ? ` · ${pageCount} pages` : "";
   const captureScopeSummary = capture.captureAllTopLevel
     ? "All top-level frames and components on the current page (merge)"
-    : formatFigmaCaptureScope(capture.scope);
+    : formatFigmaCaptureScope(capture.scope === "selected" ? capture.payload.sourceMetadata.captureScope : capture.scope);
+  const selectedSections = capture.scope === "selected" && !capture.captureAllTopLevel
+    ? captureSectionRecords(capture.payload.sourceMetadata)
+    : [];
+  const sectionSummary = selectedSections.length
+    ? ` · replaces section${selectedSections.length === 1 ? "" : "s"} ${selectedSections.map((section) => `${section.name} (${section.frameIds.length})`).join(", ")} in Handoff`
+    : "";
   const scopeSummary = captureScopeSummary ? `Capture scope: ${captureScopeSummary} · ` : "";
   const excludedSections = capture.excludedSectionCounts.filter((section) => section.frameCount > 0);
   const exclusionSummary = excludedSections.length
     ? ` · excluded sections: ${excludedSections.map(({ name, frameCount }) => `${name} (${frameCount})`).join(", ")}`
     : "";
-  summary.textContent = `${scopeSummary}${frameCount} frame${frameCount === 1 ? "" : "s"}${pageSummary}${exclusionSummary} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary}${vectorSummary} · ${layerExportCount} individual layer asset${layerExportCount === 1 ? "" : "s"}${warningSummary}${duplicateNameSummary}`;
+  summary.textContent = `${scopeSummary}${frameCount} frame${frameCount === 1 ? "" : "s"}${pageSummary}${sectionSummary}${exclusionSummary} · ${nodeCount.toLocaleString()} layers · ${width} × ${height} px overview · ${scaleSummary}${vectorSummary} · ${layerExportCount} individual layer asset${layerExportCount === 1 ? "" : "s"}${warningSummary}${duplicateNameSummary}`;
   const duplicateNameMessage = duplicateFrameNames.length
     ? `This capture contains duplicate screen names: ${duplicateFrameNames.slice(0, 4).map(({ name, count }) => `${name} (${count})`).join(", ")}${duplicateFrameNames.length > 4 ? `, and ${duplicateFrameNames.length - 4} more` : ""}. Matching these screens by name may be ambiguous.`
     : "";
@@ -673,7 +681,7 @@ async function createMergedOverviewPng(
     baseline: {
       frames: merge.frames,
       canvasBounds: merge.canvasBounds ?? undefined,
-      sourceMetadata: { pageLayout: merge.pageLayout },
+      sourceMetadata: { pageLayout: merge.pageLayout, sections: merge.sections ?? [] },
     },
     incoming: pending.snapshot,
     frameMatches,

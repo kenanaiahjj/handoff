@@ -59,7 +59,7 @@ export function filterCaptureToFrameIds(capture: CaptureReadyMessage, includedFr
     capture.layerAssetReport.limit,
   );
   const warnings = withLayerAssetWarnings(capture.warnings, layerAssetReport);
-  const sourceMetadata = {
+  const sourceMetadata: CaptureReadyMessage["payload"]["sourceMetadata"] = {
     ...capture.payload.sourceMetadata,
     vectorSourcePreserved: frames.length > 0 && vectorRenders.length === frames.length,
     vectorSourceFrameCount: vectorRenders.length,
@@ -71,6 +71,20 @@ export function filterCaptureToFrameIds(capture: CaptureReadyMessage, includedFr
       : [],
     captureWarnings: warnings,
   };
+  // Screens unticked in a section stay as they were in Handoff: a section capture only removes
+  // screens that are no longer in the section in Figma.
+  if (Array.isArray(capture.payload.sourceMetadata.sections)) {
+    sourceMetadata.sections = capture.payload.sourceMetadata.sections.map((entry) => {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) return entry;
+      const frameIdList = Array.isArray(entry.frameIds) ? entry.frameIds.filter((id): id is string => typeof id === "string") : [];
+      const skippedFrameIds = frameIdList.filter((id) => !frameIds.has(id));
+      return {
+        ...entry,
+        frameIds: frameIdList.filter((id) => frameIds.has(id)),
+        ...(skippedFrameIds.length ? { skippedFrameIds } : {}),
+      };
+    });
+  }
 
   return {
     ...capture,
