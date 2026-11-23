@@ -127,12 +127,10 @@ function buildCanvasFrames(version: StoredVersion, publicReviewShareId?: string)
         })
       : undefined,
     // Only the version's current screens are shown from the overview image: pixels outside them
-    // are stale (removed screens, or an older picture that a page merge painted over). Each screen
-    // is kept to its frame edge, not its render bounds: the sharp per-screen image is cropped to the
-    // frame, so content hanging outside an unclipped frame would only show as the soft overview.
+    // are stale (removed screens, or an older picture that a page merge painted over).
     keepRects: overviewExact && structuredSnapshot
       ? structuredSnapshot.frames.flatMap((frame) => {
-          const bounds = frame.bounds;
+          const bounds = frame.renderBounds ?? frame.bounds;
           const [x, y, width, height] = [bounds.x.value, bounds.y.value, bounds.width.value, bounds.height.value];
           if (x === null || y === null || width === null || height === null) return [];
           const offset = pageOffsets.get(frame.sourcePageId ?? "");
