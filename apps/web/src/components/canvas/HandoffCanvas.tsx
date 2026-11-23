@@ -23,6 +23,7 @@ import { CanvasShortcuts } from "./CanvasShortcuts";
 import { PublishChangesDialog } from "./PublishChangesDialog";
 import { ChangesIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MoreIcon, InfoIcon, NoteIcon, OutlineIcon, PanelLeftIcon, PanelRightIcon, VersionIcon } from "./canvas-icons";
 import { ProjectInfoPanel } from "./ProjectInfoPanel";
+import { showToast } from "@/src/components/shell/Toaster";
 import type { ProjectTeamMember } from "@/src/server/services/project-access";
 import { getMeasureUnit, measureUnits, setMeasureUnit } from "./measure-unit";
 import { hasVisibleLayoutGrids } from "./LayoutGridOverlay";
@@ -717,6 +718,23 @@ export function HandoffCanvas({
         togglePanelsRef.current();
         return;
       }
+      // ⌘L / Ctrl+L copies a link to the selected screen or element, as in Figma. Opening it selects
+      // and zooms to that screen.
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "l") {
+        event.preventDefault();
+        const current = new URLSearchParams(window.location.hash.slice(1));
+        const url = new URL(window.location.href);
+        const hash = new URLSearchParams();
+        const screenId = current.get("screen");
+        const elementId = current.get("element");
+        if (screenId) hash.set("screen", screenId);
+        if (elementId) hash.set("element", elementId);
+        url.hash = hash.toString();
+        const screenName = screenId ? screens.find((screen) => screen.id === screenId)?.name : undefined;
+        const label = elementId ? "Link to element copied" : screenName ? `Link to “${screenName}” copied` : "Link to handoff copied";
+        navigator.clipboard?.writeText(url.toString()).then(() => showToast(label), () => showToast("Couldn’t copy the link"));
+        return;
+      }
       if (modified) return;
       const key = event.key.toLowerCase();
       if (key === "o") {
@@ -757,7 +775,7 @@ export function HandoffCanvas({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeSearchIndex, closeSearchPanel, copySearchHighlights, focusScreen, metadata.canComment, previewSearchResult, searchOpen, searchResults, selectSearchResult, viewportControls]);
+  }, [activeSearchIndex, closeSearchPanel, copySearchHighlights, focusScreen, metadata.canComment, previewSearchResult, screens, searchOpen, searchResults, selectSearchResult, viewportControls]);
 
   // Pinch and Ctrl+scroll over the toolbar or side panels would zoom the whole page. The canvas
   // handles its own pinch (and marks the event), so everywhere else just swallow it.

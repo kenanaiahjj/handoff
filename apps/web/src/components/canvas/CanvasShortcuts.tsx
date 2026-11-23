@@ -18,6 +18,7 @@ const groups: Array<{ title: string; items: Array<[string[], string]> }> = [
       [["["], "Previous screen (zooms to it)"],
       [["]"], "Next screen (zooms to it)"],
       [["⌘", "F"], "Search text, colors and elements"],
+      [["⌘", "L"], "Copy a link to the selected screen or element"],
     ],
   },
   {
