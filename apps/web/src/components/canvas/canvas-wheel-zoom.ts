@@ -1,6 +1,7 @@
 export function attachCanvasWheelZoom(
   target: HTMLElement,
   zoomAt: (factor: number, point: { x: number; y: number }) => void,
+  panBy?: (deltaX: number, deltaY: number) => void,
 ) {
   type NativeGestureEvent = Event & {
     scale?: number;
@@ -47,6 +48,12 @@ export function attachCanvasWheelZoom(
       eventTarget && typeof eventTarget === "object" && "nodeType" in eventTarget &&
       target.contains?.(eventTarget as Node)
     ) return true;
+    // The event landed on an element outside the canvas, such as a dialog laid over it. Leave it
+    // to that element even though its coordinates fall inside the canvas's rectangle.
+    if (
+      eventTarget && typeof eventTarget === "object" && "nodeType" in eventTarget &&
+      (eventTarget as Node).nodeType === 1
+    ) return false;
 
     const gesture = event as NativeGestureEvent;
     if (
@@ -68,13 +75,34 @@ export function attachCanvasWheelZoom(
     }
   };
 
+  // A comment popover over the canvas scrolls its own thread instead of panning.
+  const scrollsOnItsOwn = (event: Event) => {
+    const element = event.target as Element | null;
+    return typeof element?.closest === "function" && element.closest("[data-comment-popover]") !== null;
+  };
+
   const handleWheel: EventListener = (rawEvent) => {
     const event = rawEvent as WheelEvent;
     if (handledEvents.has(event) || !isCanvasGesture(event)) return;
     handledEvents.add(event);
+    // A trackpad pinch arrives as a wheel event with ctrlKey set. Ctrl/⌘ + scroll zooms; a plain
+    // scroll (mouse wheel or two-finger trackpad swipe) pans, with Shift turning it sideways.
+    const zooming = event.ctrlKey || event.metaKey || !panBy;
+    if (!zooming && scrollsOnItsOwn(event)) return;
     event.preventDefault();
     if (nativeGestureActive) return;
-    zoomAt(Math.exp(-event.deltaY * 0.0015), pointForCanvasGesture(event));
+    if (zooming) {
+      zoomAt(Math.exp(-event.deltaY * 0.0015), pointForCanvasGesture(event));
+      return;
+    }
+    const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? target.getBoundingClientRect().height : 1;
+    let deltaX = event.deltaX * unit;
+    let deltaY = event.deltaY * unit;
+    if (event.shiftKey && deltaX === 0) {
+      deltaX = deltaY;
+      deltaY = 0;
+    }
+    panBy(-deltaX, -deltaY);
   };
 
   const handleGestureStart = (event: Event) => {

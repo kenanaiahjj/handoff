@@ -241,8 +241,8 @@ export function CanvasViewport({
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    return attachCanvasWheelZoom(container, zoomAt);
-  }, [containerRef, zoomAt]);
+    return attachCanvasWheelZoom(container, zoomAt, panBy);
+  }, [containerRef, panBy, zoomAt]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -518,8 +518,8 @@ export function CanvasViewport({
       <div
         aria-describedby="canvas-keyboard-help"
         aria-label={interactionMode === "inspect"
-          ? "Inspect mode. Select a highlighted element to inspect it, drag to pan, and use the scroll wheel or trackpad pinch to zoom."
-          : "View mode. Drag to pan and use the scroll wheel or trackpad pinch to zoom. Switch to Inspect to select design elements."}
+          ? "Inspect mode. Select a highlighted element to inspect it, scroll or drag to pan, and use Ctrl or Command + scroll or a trackpad pinch to zoom."
+          : "View mode. Scroll or drag to pan and use Ctrl or Command + scroll or a trackpad pinch to zoom. Switch to Inspect to select design elements."}
         className={"review-dot-grid group relative grid min-h-0 min-w-0 flex-1 touch-none place-items-center overflow-hidden outline-none focus-visible:outline-none " + (commentMode || annotationMode ? "cursor-crosshair" : isDragging ? "cursor-grabbing" : "cursor-grab")}
         onClick={handleCanvasClick}
         onPointerCancel={handlePointerCancel}

@@ -1040,11 +1040,9 @@ export function HandoffCanvas({
     const created = await sendComment({ body, ...point, attachmentIds });
     setPendingPoint(null);
     setCommentError(null);
-    // Keep the new thread open at its pin so replies can follow immediately.
-    if (created.id) {
-      setSelectedCommentId(created.id);
-      setCommentThreadOpen(true);
-    }
+    // Posting closes the popover; the new pin stays selected so a click reopens the thread.
+    setCommentThreadOpen(false);
+    if (created.id) setSelectedCommentId(created.id);
   }
 
   async function replyToComment(parentCommentId: string, body: string, attachmentIds: string[] = []) {

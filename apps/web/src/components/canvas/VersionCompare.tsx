@@ -521,7 +521,7 @@ export function VersionCompare({
 
                   {viewMode !== "pixel-diff" ? (
                     <div className="mb-2 flex items-center justify-end gap-2">
-                      <span className="hidden text-[11px] text-foreground-subtle sm:inline">⌘ + scroll or pinch to zoom · drag to pan · double-click to zoom in or reset</span>
+                      <span className="hidden text-[11px] text-foreground-subtle sm:inline">Ctrl/⌘ + scroll or pinch to zoom · drag to pan · double-click to zoom in or reset</span>
                       <ZoomControls
                         onViewChange={setZoomView}
                         paneSize={() => {
@@ -542,9 +542,9 @@ export function VersionCompare({
                     <div ref={zoomPaneRef}>
                       <div data-zoom-pane="">
                         <ZoomPane className="h-[360px] rounded-control border border-transparent bg-surface-inset sm:h-[min(68vh,760px)]" onViewChange={setZoomView} view={zoomView}>
-                          <div className="relative grid h-full w-full place-items-center p-4">
-                            {activeFrame.before ? <PreviewImage alt={"Before: " + activeFrame.name} preview={activeFrame.before} className="pointer-events-none max-h-full w-full select-none object-contain" /> : <p className="text-[12px] text-foreground-subtle">No earlier screen</p>}
-                            {activeFrame.after ? <PreviewImage alt={"After: " + activeFrame.name} preview={activeFrame.after} className="pointer-events-none absolute inset-4 m-auto max-h-[calc(100%-32px)] w-[calc(100%-32px)] select-none object-contain" style={{ opacity: overlayAmount / 100 }} /> : null}
+                          <div className="relative flex h-full w-full items-center justify-center p-4">
+                            {activeFrame.before ? <PreviewImage alt={"Before: " + activeFrame.name} preview={activeFrame.before} className={fittedImageClass} /> : <p className="text-[12px] text-foreground-subtle">No earlier screen</p>}
+                            {activeFrame.after ? <PreviewImage alt={"After: " + activeFrame.name} preview={activeFrame.after} className="pointer-events-none absolute inset-4 h-[calc(100%-32px)] w-[calc(100%-32px)] select-none object-contain" style={{ opacity: overlayAmount / 100 }} /> : null}
                           </div>
                         </ZoomPane>
                       </div>
@@ -728,14 +728,20 @@ function PreviewPanel({
       </div>
       <div data-zoom-pane="">
         <ZoomPane className="h-[340px] rounded-control border border-transparent bg-surface-inset sm:h-[min(68vh,760px)]" onViewChange={onViewChange} view={view}>
-          <div className="grid h-full w-full place-items-center p-3">
-            {preview ? <PreviewImage alt={label + ": " + preview.name} preview={preview} className="pointer-events-none max-h-full w-full select-none object-contain" /> : <p className="text-[12px] text-foreground-subtle">No screen in this version</p>}
+          <div className="flex h-full w-full items-center justify-center p-3">
+            {preview ? <PreviewImage alt={label + ": " + preview.name} preview={preview} className={fittedImageClass} /> : <p className="text-[12px] text-foreground-subtle">No screen in this version</p>}
           </div>
         </ZoomPane>
       </div>
     </section>
   );
 }
+
+/**
+ * Fills the pane's box and letterboxes the screen inside it with object-contain, so a tall portrait
+ * screen shrinks to the pane's height instead of overflowing and being clipped.
+ */
+const fittedImageClass = "pointer-events-none h-full min-h-0 w-full min-w-0 select-none object-contain";
 
 function PreviewImage({
   alt,

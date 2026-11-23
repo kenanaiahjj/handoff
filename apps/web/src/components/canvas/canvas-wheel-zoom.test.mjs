@@ -201,3 +201,73 @@ test("captures a pinch directly on the canvas and does not zoom twice when it bu
   assert.equal(pinch.defaultPrevented, true);
   assert.deepEqual(zoomCalls, [[Math.exp(0.12), { x: 400, y: 500 }]]);
 });
+
+function canvasHarness() {
+  const listeners = new Map();
+  const eventRoot = {
+    addEventListener(type, listener) {
+      listeners.set(type, listener);
+    },
+    removeEventListener() {},
+  };
+  const child = { nodeType: 1, closest: () => null };
+  const target = {
+    ownerDocument: { defaultView: eventRoot },
+    addEventListener() {},
+    removeEventListener() {},
+    contains: (node) => node === child,
+    matches: () => false,
+    getBoundingClientRect() {
+      return { left: 100, top: 200, width: 800, height: 600 };
+    },
+  };
+  const zoomCalls = [];
+  const panCalls = [];
+  attachCanvasWheelZoom(target, (...args) => zoomCalls.push(args), (...args) => panCalls.push(args));
+  return { listeners, eventRoot, child, target, zoomCalls, panCalls };
+}
+
+function wheelOn(node, properties, path) {
+  const event = eventWith("wheel", { deltaX: 0, deltaMode: 0, ctrlKey: false, metaKey: false, shiftKey: false, ...properties }, path);
+  Object.defineProperty(event, "target", { value: node });
+  return event;
+}
+
+test("a plain scroll pans the canvas and Ctrl or Command + scroll zooms it", () => {
+  const { listeners, eventRoot, child, target, zoomCalls, panCalls } = canvasHarness();
+
+  const scroll = wheelOn(child, { deltaX: 4, deltaY: 30, clientX: 400, clientY: 500 }, [child, target, eventRoot]);
+  listeners.get("wheel")(scroll);
+  assert.equal(scroll.defaultPrevented, true);
+  assert.deepEqual(panCalls, [[-4, -30]]);
+  assert.equal(zoomCalls.length, 0);
+
+  const lineScroll = wheelOn(child, { deltaY: 3, deltaMode: 1, shiftKey: true, clientX: 400, clientY: 500 }, [child, target, eventRoot]);
+  listeners.get("wheel")(lineScroll);
+  assert.deepEqual(panCalls[1], [-48, -0]);
+
+  const commandScroll = wheelOn(child, { deltaY: -120, metaKey: true, clientX: 400, clientY: 500 }, [child, target, eventRoot]);
+  listeners.get("wheel")(commandScroll);
+  assert.deepEqual(zoomCalls, [[Math.exp(0.18), { x: 400, y: 500 }]]);
+  assert.equal(panCalls.length, 2);
+});
+
+test("leaves scrolls over a dialog laid on top of the canvas, and inside a comment popover, alone", () => {
+  const { listeners, eventRoot, child, target, zoomCalls, panCalls } = canvasHarness();
+
+  const overlay = { nodeType: 1, closest: () => null };
+  const overDialog = wheelOn(overlay, { deltaY: 40, clientX: 400, clientY: 500 }, [overlay, eventRoot]);
+  listeners.get("wheel")(overDialog);
+  const pinchOverDialog = wheelOn(overlay, { deltaY: -40, ctrlKey: true, clientX: 400, clientY: 500 }, [overlay, eventRoot]);
+  listeners.get("wheel")(pinchOverDialog);
+  assert.equal(overDialog.defaultPrevented, false);
+  assert.equal(pinchOverDialog.defaultPrevented, false);
+
+  const popoverText = { nodeType: 1, closest: (selector) => (selector === "[data-comment-popover]" ? {} : null) };
+  const inPopover = wheelOn(popoverText, { deltaY: 40, clientX: 400, clientY: 500 }, [popoverText, child, target, eventRoot]);
+  listeners.get("wheel")(inPopover);
+  assert.equal(inPopover.defaultPrevented, false);
+
+  assert.equal(zoomCalls.length, 0);
+  assert.equal(panCalls.length, 0);
+});

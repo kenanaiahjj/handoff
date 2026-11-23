@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { comparisonFrameStatusLabel } from "./compare-presentation";
+import { fitView, ZoomControls, ZoomPane, type ZoomView } from "./SyncedZoom";
 import type { CompareFrame, CompareResult } from "./VersionCompare";
 
 type ChangeFilter = "all" | "changed" | "added" | "removed";
@@ -15,26 +16,62 @@ const statusTone: Record<string, string> = {
   removed: "bg-danger/15 text-danger",
 };
 
-function ScreenImage({ preview, label, missing }: { preview: CompareFrame["before"]; label: string; missing: string }) {
+function ScreenImage({ preview, label, missing, view, onViewChange }: {
+  preview: CompareFrame["before"];
+  label: string;
+  missing: string;
+  view: ZoomView;
+  onViewChange: (update: (view: ZoomView) => ZoomView) => void;
+}) {
   return (
     <figure className="min-w-0">
       <figcaption className="mb-2 text-[12px] font-medium text-foreground-subtle">{label}</figcaption>
-      <div className="review-dot-grid grid min-h-48 place-items-center overflow-hidden rounded-control p-3">
-        {preview ? (
-          <Image
-            alt={`${label}: ${preview.name}`}
-            className="h-auto max-h-[520px] w-auto max-w-full rounded-chip object-contain shadow-lg shadow-black/40"
-            height={preview.height ?? preview.sourceHeight}
-            loading="lazy"
-            src={preview.imageUrl}
-            unoptimized
-            width={preview.width ?? preview.sourceWidth}
-          />
-        ) : (
-          <p className="text-[12px] text-foreground-subtle">{missing}</p>
-        )}
+      <div data-zoom-pane="">
+        <ZoomPane className="review-dot-grid h-[min(60vh,520px)] min-h-48 rounded-control" onViewChange={onViewChange} view={view}>
+          <div className="flex h-full w-full items-center justify-center p-3">
+            {preview ? (
+              <Image
+                alt={`${label}: ${preview.name}`}
+                className="pointer-events-none h-full min-h-0 w-full min-w-0 select-none object-contain drop-shadow-lg"
+                draggable={false}
+                height={preview.height ?? preview.sourceHeight}
+                loading="lazy"
+                src={preview.imageUrl}
+                unoptimized
+                width={preview.width ?? preview.sourceWidth}
+              />
+            ) : (
+              <p className="text-[12px] text-foreground-subtle">{missing}</p>
+            )}
+          </div>
+        </ZoomPane>
       </div>
     </figure>
+  );
+}
+
+/** Before and after for one screen. Both panes share one zoom, so the same spot stays lined up. */
+function ScreenPair({ frame }: { frame: CompareFrame }) {
+  const [view, setView] = useState<ZoomView>(fitView);
+  const pairRef = useRef<HTMLDivElement>(null);
+  return (
+    <>
+      <div className="mt-3 flex items-center justify-end gap-2">
+        <span className="hidden text-[11px] text-foreground-subtle sm:inline">Ctrl/⌘ + scroll or pinch to zoom · drag to pan · double-click to zoom in or reset</span>
+        <ZoomControls
+          onViewChange={setView}
+          paneSize={() => {
+            const rect = pairRef.current?.querySelector("[data-zoom-pane]")?.getBoundingClientRect();
+            return rect ? { width: rect.width, height: rect.height } : null;
+          }}
+          view={view}
+        />
+      </div>
+      <div className="mt-2 grid gap-4 md:grid-cols-2" ref={pairRef}>
+        <ScreenImage label="Before" missing="Not in the earlier version" onViewChange={setView} preview={frame.before} view={view} />
+        <ScreenImage label="After" missing="Removed in this version" onViewChange={setView} preview={frame.after} view={view} />
+      </div>
+    </>
   );
 }
 
@@ -137,10 +174,7 @@ export function ChangesListView({
                     </button>
                   ) : null}
                 </div>
-                <div className="mt-4 grid gap-4 md:grid-cols-2">
-                  <ScreenImage label="Before" missing="Not in the earlier version" preview={frame.before} />
-                  <ScreenImage label="After" missing="Removed in this version" preview={frame.after} />
-                </div>
+                <ScreenPair frame={frame} />
               </article>
             );
           })}
