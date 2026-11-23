@@ -144,6 +144,7 @@ async function SidebarContents({ user, workspace, navSections }: Omit<WorkspaceS
         />
       ) : null}
       <div className="p-2">
+        <WhatsNewButton />
         <div className="flex min-w-0 items-center gap-0.5 rounded-[10px] bg-white/[0.03] p-1">
           {(() => {
             const identity = (
@@ -167,7 +168,6 @@ async function SidebarContents({ user, workspace, navSections }: Omit<WorkspaceS
               <span className="flex min-w-0 flex-1 items-center gap-2.5 px-1.5 py-1">{identity}</span>
             );
           })()}
-          <WhatsNewButton />
           <NotificationSettingsButton />
           <SignOutButton devBypass={devBypass} icon />
         </div>

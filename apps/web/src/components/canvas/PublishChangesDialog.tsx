@@ -51,7 +51,7 @@ export function PublishChangesDialog({
   }
 
   return (
-    <div className="fixed inset-0 z-[70] grid place-items-center bg-black/55 p-4 backdrop-blur-[2px]" onClick={() => (pending ? null : onClose())}>
+    <div className="overlay-scrim fixed inset-0 z-[70] grid place-items-center p-4" onClick={() => (pending ? null : onClose())}>
       <div
         aria-labelledby="publish-changes-title"
         aria-modal="true"

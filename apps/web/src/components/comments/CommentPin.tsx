@@ -42,8 +42,10 @@ export function CommentPin({ comment, index, inverseScale, selected, onSelect }:
     <button
       aria-label={`Comment ${index + 1} by ${author}: ${comment.body}${comment.resolvedAt ? ". Resolved" : ". Open"}`}
       aria-pressed={selected}
-      className={`absolute z-30 grid size-7 place-items-center rounded-full border-2 text-[10px] font-semibold shadow-lg outline-none hover:scale-110 focus-visible:ring-2 focus-visible:ring-white ${comment.resolvedAt ? "border-foreground-subtle bg-surface-raised text-foreground-muted" : "border-primary-foreground bg-accent text-primary-foreground"} ${selected ? "scale-125 ring-2 ring-accent" : ""}`}
+      className={`comment-pin absolute z-30 grid size-7 place-items-center rounded-full border font-mono text-[10px] font-medium tabular-nums transition-[scale,box-shadow] duration-150 hover:scale-110 ${selected ? "scale-125" : ""}`}
       onClick={() => onSelect(comment.id)}
+      data-resolved={comment.resolvedAt ? "true" : undefined}
+      data-selected={selected ? "true" : undefined}
       style={{
         left: comment.x - 14 * inverseScale,
         top: comment.y - 14 * inverseScale,

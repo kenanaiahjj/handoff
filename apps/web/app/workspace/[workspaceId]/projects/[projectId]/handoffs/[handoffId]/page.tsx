@@ -9,6 +9,7 @@ import type { SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { formatFigmaCaptureScope } from "@asbir/snapshot-contract";
 import { getHandoff, listHandoffVersions } from "@/src/server/repositories/handoffs";
 import { getProject } from "@/src/server/repositories/projects";
+import { listProjectTeam } from "@/src/server/services/project-access";
 import { getCanvasVersion } from "@/src/server/services/version-canvas";
 import { HandoffTabs } from "@/src/components/shell/HandoffTabs";
 import { MentionProvider } from "@/src/components/comments/mentions";
@@ -54,13 +55,14 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
 
   const [{ workspaceId, projectId, handoffId }, query] = await Promise.all([params, searchParams]);
   // Independent reads run together: each is a network round trip on hosted PostgreSQL.
-  const [membership, handoff, project, versionRows] = await Promise.all([
+  const [membership, handoff, project, versionRows, team] = await Promise.all([
     getDatabase()
       .prepare("SELECT role FROM workspace_membership WHERE workspace_id = ? AND user_id = ?")
       .get(workspaceId, session.user.id) as Promise<{ role: string } | undefined>,
     getHandoff({ workspaceId, projectId, handoffId }),
     getProject({ workspaceId, projectId }),
     listHandoffVersions({ workspaceId, handoffId }),
+    listProjectTeam(workspaceId, projectId).catch(() => null),
   ]);
   if (!membership || !handoff) notFound();
   const canManageHandoffs = membership.role === "owner" || membership.role === "designer";
@@ -246,6 +248,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
         canAnnotate={canManageHandoffs}
         canComment
         canUseLocalPreview={true}
+        team={team}
         dockPanels={dockPanels}
       />
       </MentionProvider>

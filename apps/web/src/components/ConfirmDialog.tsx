@@ -56,7 +56,7 @@ function ConfirmDialog({ options, onSettle }: { options: ConfirmOptions; onSettl
     <dialog
       aria-describedby={descriptionId}
       aria-labelledby={titleId}
-      className="dial-popover fixed inset-0 m-auto w-[calc(100vw-2rem)] max-w-sm overflow-hidden p-0 text-foreground backdrop:bg-black/60 backdrop:backdrop-blur-sm"
+      className="dial-popover fixed inset-0 m-auto w-[calc(100vw-2rem)] max-w-sm overflow-hidden p-0 text-foreground backdrop:bg-black/70"
       onCancel={(event) => {
         event.preventDefault();
         onSettle(false);

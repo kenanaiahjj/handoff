@@ -289,7 +289,7 @@ export function HandoffActions({ endpoint, handoffName, returnHref }: { endpoint
       {deletion.error ? <p className="absolute right-0 top-10 z-20 w-56 rounded-control bg-surface-raised px-2.5 py-1.5 text-[11px] text-danger" role="alert">{deletion.error}</p> : null}
       <dialog
         aria-labelledby={`rename-handoff-title-${endpoint}`}
-        className="dial-popover m-auto w-[min(92vw,380px)] p-0 text-foreground backdrop:bg-black/60 backdrop:backdrop-blur-sm"
+        className="dial-popover m-auto w-[min(92vw,380px)] p-0 text-foreground backdrop:bg-black/70"
         onClose={() => setRenaming(false)}
         ref={renameRef}
       >

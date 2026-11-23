@@ -153,7 +153,7 @@ export function CommentComposer({
 
   return (
     <form
-      className={"comment-composer relative rounded-[10px] border bg-surface-inset transition-colors " + (dragging ? "border-primary" : "border-white/[0.08] focus-within:border-white/[0.2]")}
+      className={"comment-composer relative rounded-[10px] border bg-surface-inset transition-colors " + (dragging ? "border-primary" : "border-white/[0.08]")}
       onDragLeave={(event) => {
         if (!event.currentTarget.contains(event.relatedTarget as Node | null)) setDragging(false);
       }}

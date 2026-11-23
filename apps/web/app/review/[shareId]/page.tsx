@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionForHeaders } from "@/src/server/auth-session";
 import { hasPendingHandoffReviewInvite, listVisiblePublishedReviewVersions, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
 import { getProject } from "@/src/server/repositories/projects";
+import { listProjectTeam } from "@/src/server/services/project-access";
 import { getCanvasVersion } from "@/src/server/services/version-canvas";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
 import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
@@ -91,7 +92,11 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
     versions[0];
   if (!selectedVersion) notFound();
 
-  const version = (await getCanvasVersion({ workspaceId: handoff.workspaceId, versionId: selectedVersion.id }));
+  // Signed-in or invited reviewers see the project team; anonymous link viewers don't get anyone's email.
+  const [version, team] = await Promise.all([
+    getCanvasVersion({ workspaceId: handoff.workspaceId, versionId: selectedVersion.id }),
+    session || access.invite ? listProjectTeam(handoff.workspaceId, handoff.projectId).catch(() => null) : null,
+  ]);
   if (!version || version.handoffId !== handoff.id) notFound();
 
   return (
@@ -117,6 +122,7 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
         canComment={access.decision.canComment}
         commentIdentity={access.invite ? { label: access.invite.email, role: access.invite.role } : null}
         canUseLocalPreview={false}
+        team={team}
       />
     </main>
   );

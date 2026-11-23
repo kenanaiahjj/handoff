@@ -30,7 +30,7 @@ export function CanvasLoadingSkeleton() {
         <div className="review-dot-grid relative grid min-h-0 place-items-center">
           <div className="flex flex-col items-center gap-3">
             {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img alt="" className="loading-breathe size-9 rounded-[10px] shadow-[0_12px_32px_rgb(0_0_0/0.5)]" height={36} src="/icons/asbir-handoff-v3-192.png" width={36} />
+            <img alt="" className="loading-breathe size-9 rounded-[10px] shadow-[0_12px_32px_rgb(0_0_0/0.5)]" height={36} src="/icons/asbir-handoff-v4-192.png" width={36} />
             <span className="loading-sheen-text text-[12px] font-medium">Loading canvas…</span>
           </div>
         </div>

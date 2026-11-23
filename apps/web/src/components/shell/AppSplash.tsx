@@ -11,7 +11,7 @@ export function AppSplash() {
     <>
       <div aria-hidden="true" className="app-splash">
         <div className="app-splash-mark">
-          <Image alt="" className="app-splash-logo" height={56} priority src="/icons/asbir-handoff-v3-192.png" width={56} />
+          <Image alt="" className="app-splash-logo" height={56} priority src="/icons/asbir-handoff-v4-192.png" width={56} />
         </div>
       </div>
       {/* Rendered from the root layout, which is where the App Router allows beforeInteractive. */}

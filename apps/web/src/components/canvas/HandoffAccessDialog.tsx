@@ -55,7 +55,7 @@ export function HandoffAccessDialog({ endpoint, handoffName, variant = "access",
       </button>}
       <dialog
         aria-labelledby="handoff-access-dialog-title"
-        className="dial-popover fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-hidden p-0 text-foreground backdrop:bg-black/60 backdrop:backdrop-blur-sm"
+        className="dial-popover fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-hidden p-0 text-foreground backdrop:bg-black/70"
         onClose={(event) => {
           // Nested dialogs (confirmations) also emit close; only react to this dialog closing.
           if (event.target === event.currentTarget) setOpen(false);

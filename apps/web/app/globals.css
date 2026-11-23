@@ -15,6 +15,8 @@
   --foreground-subtle: #a6a6a6;
   --border: rgb(255 255 255 / 0.1);
   --border-strong: rgb(255 255 255 / 0.15);
+  --overlay-scrim: rgb(0 0 0 / 0.68);
+  --overlay-backdrop-blur: 10px;
   --primary: #f4f4f4;
   --primary-hover: #ffffff;
   --primary-foreground: #161616;
@@ -141,6 +143,16 @@ select:focus-visible {
   border-color: transparent;
 }
 
+/* Give editable fields one neutral focus ring, regardless of component-level focus utilities. */
+input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"], [type="color"], [type="button"], [type="submit"], [type="reset"], [type="image"]):focus,
+textarea:focus:not(.comment-composer textarea),
+select:focus {
+  border-color: transparent;
+  outline: 2px solid rgb(255 255 255 / 0.56);
+  outline-offset: 0;
+  box-shadow: none;
+}
+
 select:disabled {
   cursor: not-allowed;
 }
@@ -178,6 +190,50 @@ select option {
 :focus-visible {
   outline: 2px solid rgb(255 255 255 / 0.6);
   outline-offset: 2px;
+}
+
+dialog::backdrop {
+  backdrop-filter: blur(var(--overlay-backdrop-blur));
+  -webkit-backdrop-filter: blur(var(--overlay-backdrop-blur));
+}
+
+.overlay-scrim {
+  background: var(--overlay-scrim);
+  backdrop-filter: blur(var(--overlay-backdrop-blur));
+  -webkit-backdrop-filter: blur(var(--overlay-backdrop-blur));
+}
+
+.comment-composer:focus-within {
+  border-color: rgb(255 255 255 / 0.34);
+  outline: 2px solid rgb(255 255 255 / 0.6);
+  outline-offset: 2px;
+}
+
+.comment-composer textarea:focus-visible {
+  outline: none;
+}
+
+.comment-pin {
+  border-color: rgb(255 255 255 / 0.72);
+  background: color-mix(in srgb, var(--surface) 88%, white 12%);
+  color: var(--foreground);
+  box-shadow: 0 2px 8px rgb(0 0 0 / 0.56), inset 0 1px 0 rgb(255 255 255 / 0.2);
+}
+
+.comment-pin[data-resolved="true"] {
+  border-color: var(--border-strong);
+  background: var(--surface-raised);
+  color: var(--foreground-muted);
+}
+
+.comment-pin[data-selected="true"] {
+  outline: 2px solid rgb(255 255 255 / 0.72);
+  outline-offset: 2px;
+}
+
+.comment-pin:focus-visible {
+  outline: 2px solid var(--foreground);
+  outline-offset: 4px;
 }
 
 
@@ -717,10 +773,10 @@ select option {
   .dial-popover {
     border: 1px solid var(--border);
     border-radius: var(--radius-panel);
-    background: color-mix(in srgb, var(--surface) 94%, transparent);
+    background: color-mix(in srgb, var(--surface) 98%, transparent);
     box-shadow: var(--shadow-panel);
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
+    backdrop-filter: blur(28px);
+    -webkit-backdrop-filter: blur(28px);
   }
 
   .dial-section-title {
@@ -1033,7 +1089,7 @@ html[data-splash="seen"] .app-splash {
   opacity: 0;
   transform: scale(0.6);
   color: transparent;
-  transition: opacity 160ms ease, background-color 160ms ease, color 160ms ease, transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: opacity 160ms ease, background-color 160ms ease, color 160ms ease, transform 260ms cubic-bezier(0.16, 1, 0.3, 1);
 }
 .onboarding-tile[data-selected] .onboarding-check {
   opacity: 1;

@@ -139,7 +139,7 @@ export function InstallAppButton({ compact = false }: InstallAppButtonProps) {
       </button>
       <dialog
         aria-labelledby="install-app-title"
-        className="dial-popover m-auto w-[min(92vw,420px)] p-0 text-foreground backdrop:bg-black/60 backdrop:backdrop-blur-sm"
+        className="dial-popover m-auto w-[min(92vw,420px)] p-0 text-foreground backdrop:bg-black/70"
         onClose={() => setInstructionsOpen(false)}
         ref={dialogRef}
       >

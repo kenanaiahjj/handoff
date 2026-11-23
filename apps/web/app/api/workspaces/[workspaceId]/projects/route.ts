@@ -2,6 +2,7 @@ import { z } from "zod";
 import { filterProjectsForViewer } from "@/src/server/services/review-visibility";
 import { createProject, listProjects } from "@/src/server/repositories/projects";
 import { isUniqueConstraintViolation } from "@/src/server/db";
+import { projectSlugs } from "@/src/server/services/route-slugs";
 import {
   managerRoles,
   requireWorkspaceRole,
@@ -53,7 +54,8 @@ export async function POST(
       createdBy: access.userId,
       name: parsed.data.name,
     }));
-    return Response.json({ project }, { status: 201 });
+    const slug = (await projectSlugs(workspaceId)).get(project.id) ?? project.id;
+    return Response.json({ project, projectHref: `/projects/${encodeURIComponent(slug)}` }, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) {
       return Response.json({ error: error.message }, { status: error.status });

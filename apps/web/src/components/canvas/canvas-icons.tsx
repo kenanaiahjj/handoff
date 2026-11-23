@@ -46,6 +46,9 @@ export const InspectIcon = (props: SVGProps<SVGSVGElement>) => (
 export const VersionIcon = (props: SVGProps<SVGSVGElement>) => (
   <Icon {...props}><circle cx="8" cy="8" r="5.5" /><path d="M8 5v3l2 1.3" /></Icon>
 );
+export const InfoIcon = (props: SVGProps<SVGSVGElement>) => (
+  <Icon {...props}><circle cx="8" cy="8" r="5.5" /><path d="M8 7.3v3.5M8 5.2v.1" /></Icon>
+);
 export const ChevronDownIcon = (props: SVGProps<SVGSVGElement>) => (
   <Icon {...props}><path d="m4.5 6.5 3.5 3.5 3.5-3.5" /></Icon>
 );

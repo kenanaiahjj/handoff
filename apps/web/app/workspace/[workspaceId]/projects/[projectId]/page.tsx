@@ -80,6 +80,10 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
       breadcrumbs={[{ label: "Projects", href: `/workspace` }, { label: project.name }]}
     >
       <main className="workspace-dashboard mx-auto px-5 py-7 sm:px-8 sm:py-9">
+        <Link className="mb-5 inline-flex min-h-8 items-center gap-1.5 rounded-control px-2.5 text-[12px] font-medium text-foreground-muted transition-colors hover:bg-surface-inset hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" href="/workspace">
+          <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16"><path d="m9.5 3.5-4.5 4.5 4.5 4.5M5.5 8h7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" /></svg>
+          Back to projects
+        </Link>
         <header className="workspace-dashboard-heading">
           <div className="flex items-start gap-4">
             {canManageHandoffs ? (

@@ -70,8 +70,8 @@ self.addEventListener("push", (event) => {
     self.registration.showNotification(message.title, {
       body: message.body,
       tag: message.tag,
-      icon: "/icons/asbir-handoff-v3-192.png",
-      badge: "/icons/asbir-handoff-v3-192.png",
+      icon: "/icons/asbir-handoff-v4-192.png",
+      badge: "/icons/asbir-handoff-v4-192.png",
       data: { url: message.url },
     }),
   );

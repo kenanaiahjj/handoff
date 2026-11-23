@@ -71,7 +71,7 @@ export function WhatsNewDialog({ releases = changelog, onClose }: { releases?: C
   return (
     <dialog
       aria-labelledby="whats-new-title"
-      className="m-auto flex max-h-[min(720px,calc(100dvh-32px))] w-[min(560px,calc(100vw-32px))] flex-col overflow-hidden rounded-[16px] border border-white/[0.09] bg-[#121212] p-0 text-foreground shadow-[0_24px_64px_-12px_rgb(0_0_0/0.85)] backdrop:bg-black/60"
+      className="m-auto flex max-h-[min(720px,calc(100dvh-32px))] w-[min(560px,calc(100vw-32px))] flex-col overflow-hidden rounded-[16px] border border-white/[0.09] bg-[#121212] p-0 text-foreground shadow-[0_24px_64px_-12px_rgb(0_0_0/0.85)] backdrop:bg-black/70"
       onClick={(event) => {
         if (event.target === event.currentTarget) onClose();
       }}
@@ -120,18 +120,16 @@ export function WhatsNewButton() {
     <>
       <button
         aria-label={unread ? "What's new (unread updates)" : "What's new"}
-        className="relative grid size-8 place-items-center rounded-control text-foreground-subtle transition-colors hover:bg-white/[0.07] hover:text-foreground"
+        aria-haspopup="dialog"
+        className="mb-1 flex h-9 w-full items-center rounded-control px-2.5 text-left text-[13px] font-medium text-foreground-muted transition-colors hover:bg-white/[0.06] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-1 focus-visible:outline-primary"
         onClick={() => {
           setOpen(true);
           setUnread(false);
         }}
-        title="What's new"
         type="button"
       >
-        <svg aria-hidden="true" className="size-4" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 16 16">
-          <path d="M7 2.5 8.2 5.8 11.5 7 8.2 8.2 7 11.5 5.8 8.2 2.5 7l3.3-1.2L7 2.5ZM12 10.5l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6.6-1.4Z" />
-        </svg>
-        {unread ? <span aria-hidden="true" className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" /> : null}
+        <span>What&apos;s new</span>
+        {unread ? <span aria-hidden="true" className="ml-auto size-1.5 rounded-full bg-primary" /> : null}
       </button>
       {open ? <WhatsNewDialog onClose={() => setOpen(false)} /> : null}
     </>

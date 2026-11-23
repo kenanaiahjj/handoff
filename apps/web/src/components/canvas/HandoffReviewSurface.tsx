@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import type { SnapshotEnvelope, SnapshotNode, VisualOnlySnapshot } from "@asbir/snapshot-contract";
 import type { ReviewDockPanels, ReviewMetadata } from "./HandoffCanvas";
+import type { ProjectTeamMember } from "@/src/server/services/project-access";
 import type { CommentIdentity } from "../comments/CommentPin";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import type { VersionOption } from "./VersionCompare";
@@ -211,6 +212,7 @@ export function HandoffReviewSurface({
   canComment,
   commentIdentity,
   canUseLocalPreview,
+  team,
   dockPanels,
 }: {
   workspaceId: string;
@@ -233,6 +235,7 @@ export function HandoffReviewSurface({
   canComment?: boolean;
   commentIdentity?: CommentIdentity | null;
   canUseLocalPreview: boolean;
+  team?: ProjectTeamMember[] | null;
   dockPanels?: ReviewDockPanels;
 }) {
   const { frames, visualOnly, captureScope } = buildCanvasFrames(selectedVersion, publicReviewShareId);
@@ -267,6 +270,7 @@ export function HandoffReviewSurface({
     canComment: canComment ?? canAnnotate,
     commentIdentity: commentIdentity ?? null,
     canUseLocalPreview,
+    team: team ?? null,
   };
 
   return (

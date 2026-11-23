@@ -371,7 +371,7 @@ export function VersionCompare({
   );
 
   return (
-    <div className="fixed inset-0 z-[70] bg-surface-inset/90 backdrop-blur-[2px]">
+    <div className="fixed inset-0 z-[70] bg-surface-inset/95 backdrop-blur-[10px]">
       <section
         aria-labelledby="compare-title"
         aria-modal="true"

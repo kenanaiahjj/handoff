@@ -21,7 +21,9 @@ import { CanvasAnnotationsPanel, type CanvasAnnotationRecord } from "./CanvasAnn
 import { McpConnectionPanel } from "./McpConnectionPanel";
 import { CanvasShortcuts } from "./CanvasShortcuts";
 import { PublishChangesDialog } from "./PublishChangesDialog";
-import { ChangesIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MoreIcon, NoteIcon, OutlineIcon, PanelLeftIcon, PanelRightIcon, VersionIcon } from "./canvas-icons";
+import { ChangesIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MoreIcon, InfoIcon, NoteIcon, OutlineIcon, PanelLeftIcon, PanelRightIcon, VersionIcon } from "./canvas-icons";
+import { ProjectInfoPanel } from "./ProjectInfoPanel";
+import type { ProjectTeamMember } from "@/src/server/services/project-access";
 import { getMeasureUnit, measureUnits, setMeasureUnit } from "./measure-unit";
 import { hasVisibleLayoutGrids } from "./LayoutGridOverlay";
 import { formatComparisonChangeCount } from "./compare-presentation";
@@ -61,6 +63,8 @@ export type ReviewMetadata = {
   canComment: boolean;
   commentIdentity: CommentIdentity | null;
   canUseLocalPreview: boolean;
+  /** Project team for the Info tab; null hides the tab (e.g. anonymous public review links). */
+  team: ProjectTeamMember[] | null;
 };
 
 export type ReviewDockPanels = Partial<Record<"version", ReactNode>>;
@@ -247,7 +251,7 @@ export function HandoffCanvas({
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [localSelectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [showResolvedPins, setShowResolvedPins] = useState(false);
-  const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "agent" | "mcp">("inspect");
+  const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "info" | "agent" | "mcp">("inspect");
   const [localPreviewOpen, setLocalPreviewOpen] = useState(false);
   const closeLocalPreview = useCallback(() => setLocalPreviewOpen(false), []);
   const [canvasModeOverride, setCanvasModeOverride] = useState<"view" | "inspect" | null>(null);
@@ -1701,6 +1705,7 @@ export function HandoffCanvas({
               ["comments", "Comments", CommentIcon, openCommentCount || null],
               ["annotations", "Notes", NoteIcon, annotations.length || null],
               ...(dockPanels.version ? [["version", "Versions", VersionIcon, null] as const] : []),
+              ...(metadata.team ? [["info", "Info", InfoIcon, null] as const] : []),
             ] as const).map(([mode, label, TabIcon, count]) => (
               <button
                 aria-selected={panelMode === mode}
@@ -1804,6 +1809,8 @@ export function HandoffCanvas({
           </div>
           ) : panelMode === "version" && dockPanels.version ? (
             <div className="min-h-0 flex-1 overflow-y-auto p-3">{dockPanels.version}</div>
+        ) : panelMode === "info" && metadata.team ? (
+          <ProjectInfoPanel projectName={metadata.projectName} handoffName={metadata.handoffName} team={metadata.team} />
         ) : panelMode === "mcp" ? (
           <McpConnectionPanel workspaceId={workspaceId} canManageIntegrations={metadata.canManageIntegrations} />
         ) : panelMode === "agent" && metadata.reviewHref && metadata.versionIsPublished ? (

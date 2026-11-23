@@ -39,10 +39,10 @@ export const metadata: Metadata = {
   },
   icons: {
     icon: [
-      { url: "/icons/asbir-handoff-v3-192.png", sizes: "192x192", type: "image/png" },
-      { url: "/icons/asbir-handoff-v3-512.png", sizes: "512x512", type: "image/png" },
+      { url: "/icons/asbir-handoff-v4-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/asbir-handoff-v4-512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: [{ url: "/icons/asbir-handoff-v3-180.png", sizes: "180x180", type: "image/png" }],
+    apple: [{ url: "/icons/asbir-handoff-v4-180.png", sizes: "180x180", type: "image/png" }],
   },
 };
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import { usePathname } from "next/navigation";
 
 /**
  * A header button that opens one or more existing panels in a modal. The panels keep their own
@@ -15,16 +16,31 @@ export function PanelDialog({ label, labelledBy, primary = false, icon, children
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDialogElement>(null);
+  const pathname = usePathname();
+  const previousPathname = useRef(pathname);
+  const close = useCallback(() => {
+    const dialog = ref.current;
+    if (dialog?.open) dialog.close();
+    setOpen(false);
+  }, []);
 
   useEffect(() => {
     const dialog = ref.current;
     if (!dialog) return;
-    if (open && !dialog.open) {
+
+    const routeChanged = previousPathname.current !== pathname;
+    previousPathname.current = pathname;
+    if (routeChanged) {
+      close();
+    } else if (open && !dialog.open) {
       dialog.showModal();
       dialog.querySelector<HTMLElement>("[data-autofocus]")?.focus();
-    }
-    if (!open && dialog.open) dialog.close();
-  }, [open]);
+    } else if (!open && dialog.open) dialog.close();
+
+    return () => {
+      if (dialog.open) dialog.close();
+    };
+  }, [open, pathname, close]);
 
   return (
     <>
@@ -41,13 +57,13 @@ export function PanelDialog({ label, labelledBy, primary = false, icon, children
       </button>
       <dialog
         aria-labelledby={labelledBy}
-        className="dial-popover fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-hidden p-0 text-foreground backdrop:bg-black/60 backdrop:backdrop-blur-sm"
+        className="dial-popover fixed inset-0 m-auto max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] max-w-xl overflow-hidden p-0 text-foreground backdrop:bg-black/70"
         onClick={(event) => {
           // A click on the backdrop lands on the dialog element itself.
-          if (event.target === event.currentTarget) setOpen(false);
+          if (event.target === event.currentTarget) close();
         }}
         onClose={(event) => {
-          if (event.target === event.currentTarget) setOpen(false);
+          if (event.target === event.currentTarget) close();
         }}
         ref={ref}
       >
@@ -56,7 +72,7 @@ export function PanelDialog({ label, labelledBy, primary = false, icon, children
             <button
               aria-label="Close"
               className="absolute right-3 top-3 z-10 grid size-9 place-items-center rounded-control text-foreground-subtle hover:bg-surface-raised hover:text-foreground focus-visible:outline-2 focus-visible:outline-primary"
-              onClick={() => setOpen(false)}
+              onClick={close}
               type="button"
             >
               <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 16 16"><path d="m4 4 8 8m0-8-8 8" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" /></svg>

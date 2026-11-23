@@ -115,6 +115,7 @@ export function CreateProjectForm({ workspaceId, autoFocus = false }: { workspac
   const [pending, setPending] = useState(false);
 
   async function createProject(event: FormEvent<HTMLFormElement>) {
+    const form = event.currentTarget;
     event.preventDefault();
     setPending(true);
     setErrorMessage("");
@@ -130,8 +131,9 @@ export function CreateProjectForm({ workspaceId, autoFocus = false }: { workspac
         setErrorMessage(result.error ?? "Project creation failed.");
         return;
       }
-      router.push(`/projects/${result.project.id}`);
-      router.refresh();
+      const dialog = form.closest("dialog");
+      if (dialog instanceof HTMLDialogElement && dialog.open) dialog.close();
+      router.push(result.projectHref ?? `/projects/${result.project.id}`);
     } catch {
       setErrorMessage("We couldn't reach the project service. Try again.");
     } finally {
@@ -144,7 +146,7 @@ export function CreateProjectForm({ workspaceId, autoFocus = false }: { workspac
       <label className="sr-only" htmlFor="project-name">Project name</label>
       <input
         data-autofocus={autoFocus || undefined}
-        className="h-10 min-w-0 rounded-control border border-transparent bg-surface-inset px-3 text-[12px] sm:h-9 sm:flex-1 text-foreground outline-none placeholder:text-foreground-subtle focus-visible:border-primary-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary-hover"
+        className="h-10 min-w-0 rounded-control border border-transparent bg-surface-inset px-3 text-[12px] sm:h-9 sm:flex-1 text-foreground outline-none placeholder:text-foreground-subtle focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover"
         id="project-name"
         maxLength={80}
         onChange={(event) => setName(event.target.value)}

@@ -82,7 +82,7 @@ export function QuickOpen({ items: givenItems, endpoint }: { items?: QuickOpenIt
   if (!open) return null;
 
   return (
-    <div className="fixed inset-0 z-[65] flex items-start justify-center bg-black/50 px-4 pt-[14vh] backdrop-blur-[2px]" onMouseDown={() => setOpen(false)}>
+    <div className="overlay-scrim fixed inset-0 z-[65] flex items-start justify-center px-4 pt-[14vh]" onMouseDown={() => setOpen(false)}>
       <div
         aria-label="Quick open"
         aria-modal="true"
