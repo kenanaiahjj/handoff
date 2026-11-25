@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
+import { showErrorToast } from "./Toaster";
 
 /** Pins a project to the top of this person's project list. */
 export function ProjectPinButton({ projectId, projectName, pinned: initial }: { projectId: string; projectName: string; pinned: boolean }) {
@@ -19,6 +20,7 @@ export function ProjectPinButton({ projectId, projectName, pinned: initial }: { 
     }).catch(() => null);
     if (!response?.ok) {
       setPinned(!next);
+      showErrorToast(next ? "Couldn't pin this project. Try again." : "Couldn't unpin this project. Try again.");
       return;
     }
     startRefresh(() => router.refresh());

@@ -13,6 +13,7 @@ import type { OpenMention } from "@/src/server/services/mentions";
 import { SignOutButton } from "@/app/workspace/workspace-actions";
 import { WhatsNewDialog } from "./WhatsNew";
 import type { ViewerProject } from "@/src/server/services/review-visibility";
+import { showErrorToast } from "./Toaster";
 
 type Filter = "all" | "updated";
 type HomeView = "tiles" | "list";
@@ -145,6 +146,7 @@ export function ViewerHome({
       setPins(((await response.json()) as { pins: string[] }).pins);
     } catch {
       setPins(previous);
+      showErrorToast(pinned ? "Couldn't pin that. Try again." : "Couldn't unpin that. Try again.");
     }
   }
   // Handoffs marked as seen on this page, applied right away while the server records them.

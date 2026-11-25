@@ -86,9 +86,14 @@ export function ProjectIconEditor({ workspaceId, projectId, name, initialSrc, si
     setMenuOpen(false);
     setBusy(true);
     setError("");
+    // Optimistic: the icon goes right away and comes back if the server couldn't remove it.
+    const previous = src;
+    setSrc(null);
     const response = await fetch(endpoint, { method: "DELETE" }).catch(() => null);
-    if (response?.ok) setSrc(null);
-    else setError("Could not remove the icon.");
+    if (!response?.ok) {
+      setSrc(previous);
+      setError("Could not remove the icon.");
+    }
     setBusy(false);
   }
 

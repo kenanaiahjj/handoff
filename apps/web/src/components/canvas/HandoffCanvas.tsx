@@ -1274,15 +1274,25 @@ export function HandoffCanvas({
     setCommentError(null);
   }
 
+  // Optimistic: the thread flips right away and flips back if the server says no.
   async function resolveComment(commentId: string, resolved: boolean) {
-    const response = await fetch("" + commentsEndpoint + "/" + encodeURIComponent(commentId), {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ resolved }),
-    });
-    const payload = await response.json() as { error?: string };
-    if (!response.ok) throw new Error(payload.error ?? "Could not update comment.");
-    await refreshComments();
+    const previous = comments.find((comment) => comment.id === commentId)?.resolvedAt ?? null;
+    const setResolvedAt = (resolvedAt: string | null) =>
+      setComments((current) => current.map((comment) => comment.id === commentId ? { ...comment, resolvedAt } : comment));
+    setResolvedAt(resolved ? new Date().toISOString() : null);
+    try {
+      const response = await fetch("" + commentsEndpoint + "/" + encodeURIComponent(commentId), {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ resolved }),
+      });
+      const payload = await response.json().catch(() => ({})) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? (resolved ? "Couldn't resolve this thread." : "Couldn't reopen this thread."));
+    } catch (cause) {
+      setResolvedAt(previous);
+      throw cause instanceof Error && cause.message !== "Failed to fetch" ? cause : new Error("Couldn't reach the server. Check your connection.");
+    }
+    void refreshComments().catch(() => undefined);
   }
 
   function selectComment(commentId: string) {

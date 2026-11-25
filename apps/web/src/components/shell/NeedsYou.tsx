@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useState } from "react";
 import type { OpenMention } from "@/src/server/services/mentions";
 import { refreshAppBadge } from "./AppBadgeSync";
+import { showErrorToast } from "./Toaster";
 
 const relativeTime = new Intl.RelativeTimeFormat("en", { numeric: "auto" });
 
@@ -25,7 +26,10 @@ export function NeedsYou({ initial, className = "" }: { initial: OpenMention[]; 
     const previous = mentions;
     setMentions((current) => current.filter((mention) => mention.commentId !== commentId));
     const response = await fetch(`/api/me/mentions/${encodeURIComponent(commentId)}`, { method: "DELETE" }).catch(() => null);
-    if (!response?.ok) setMentions(previous);
+    if (!response?.ok) {
+      setMentions(previous);
+      showErrorToast("Couldn't clear that mention. Try again.");
+    }
     else refreshAppBadge();
   }
 

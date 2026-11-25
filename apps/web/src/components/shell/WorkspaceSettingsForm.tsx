@@ -3,6 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type FormEvent, type KeyboardEvent, useRef, useState, useTransition } from "react";
 import { ProjectIcon, squareImage } from "@/src/components/shell/ProjectIcon";
+import { showErrorToast } from "./Toaster";
 
 type Props = {
   workspaceId: string;
@@ -95,11 +96,18 @@ export function WorkspaceSettingsForm({ workspaceId, name: initialName, logoUrl:
     }
   }
 
+  // Optimistic: the logo goes right away and comes back if the server couldn't remove it.
   async function removeLogo() {
+    const previous = logoUrl;
     setBusy("logo");
-    await fetch(`${base}/logo`, { method: "DELETE" }).catch(() => null);
     setLogoUrl(null);
+    const response = await fetch(`${base}/logo`, { method: "DELETE" }).catch(() => null);
     setBusy(null);
+    if (!response?.ok) {
+      setLogoUrl(previous);
+      showErrorToast("Couldn't remove the logo. Try again.");
+      return;
+    }
     startRefresh(() => router.refresh());
   }
 

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { PushToggle } from "./PushToggle";
+import { showErrorToast } from "./Toaster";
 
 type SlackPreference = "all" | "mentions" | "off";
 
@@ -44,6 +45,7 @@ export function NotificationSettings() {
       if (!response.ok) throw new Error();
     } catch {
       setValue(previous);
+      showErrorToast("Couldn't save your notification setting. Try again.");
     } finally {
       setSaving(false);
     }
