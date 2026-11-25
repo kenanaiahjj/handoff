@@ -437,7 +437,7 @@ export function ViewerHome({
         {!projects.length ? (
           <div className="mt-16 rounded-panel border border-dashed border-border px-6 py-14 text-center">
             <p className="text-[14px] font-medium">No handoffs yet</p>
-            <p className="mx-auto mt-1.5 max-w-sm text-[13px] text-foreground-subtle">When a designer shares a handoff with you, it shows up here with a dot whenever there’s a new version.</p>
+            <p className="mx-auto mt-1.5 max-w-sm text-[13px] text-foreground-subtle">When a designer shares a handoff with you, it shows up here with a dot whenever there’s a new version. Until then, look around the Playground below.</p>
           </div>
         ) : !visibleProjects.length ? (
           <p className="mt-16 text-center text-[13px] text-foreground-subtle">
@@ -566,6 +566,7 @@ export function ViewerHome({
             ))}
           </div>
         )}
+        {!query && filter === "all" ? <PlaygroundTile /> : null}
         {projects.length ? (
           <p className="touch-hidden mt-14 hidden text-center text-[12px] text-foreground-subtle sm:block">
             <kbd className="onboarding-kbd">/</kbd> search · <kbd className="onboarding-kbd">j</kbd> <kbd className="onboarding-kbd">k</kbd> move ·{" "}
@@ -575,5 +576,40 @@ export function ViewerHome({
         {devTools ? <div className="mt-16 max-w-xs">{devTools}</div> : null}
       </main>
     </div>
+  );
+}
+
+/** The shared sample project (app/playground), so this page always has something to open. */
+function PlaygroundTile() {
+  return (
+    <section aria-labelledby="group-playground" className="viewer-group mt-10">
+      <div className="mb-3 flex min-w-0 items-center gap-2.5">
+        <h2 className="truncate text-[14px] font-semibold" id="group-playground">Playground</h2>
+        <span className="text-[12px] text-foreground-subtle">A sample app to try every feature on</span>
+      </div>
+      <ul className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        <li>
+          <Link
+            className="viewer-tile group block overflow-hidden rounded-panel border border-border bg-surface focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-white/40"
+            href="/playground"
+          >
+            <div className="viewer-tile-preview relative aspect-[16/10] overflow-hidden bg-surface-inset">
+              {/* eslint-disable-next-line @next/next/no-img-element -- a small static image written by scripts/playground/build.mjs. */}
+              <img alt="" className="absolute inset-0 size-full object-cover transition-transform duration-300 group-hover:scale-[1.02]" decoding="async" loading="lazy" src="/playground-preview.png" />
+              <span className="absolute left-2.5 top-2.5 rounded-full bg-[#ff8a3d] px-2 py-0.5 text-[11px] font-semibold text-[#1b1006]">Sample</span>
+            </div>
+            <div className="flex items-center gap-2 border-t border-border px-3.5 py-3">
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-[13px] font-medium">Penny app</span>
+                <span className="mt-1 block truncate text-[12px] text-foreground-subtle">Review changes, Compare, Inspect and comments</span>
+              </span>
+              <svg aria-hidden="true" className="size-4 shrink-0 text-foreground-subtle transition-transform group-hover:translate-x-0.5 group-hover:text-foreground" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 16 16">
+                <path d="m6 3 5 5-5 5" />
+              </svg>
+            </div>
+          </Link>
+        </li>
+      </ul>
+    </section>
   );
 }
