@@ -200,3 +200,127 @@ export class PlaygroundBuildingError extends Error {
     super("The Playground is still being set up.");
   }
 }
+
+/** Each person's own copy of the Playground: same screens, their own comments. */
+export function playgroundCopyId(userId: string) {
+  return `asbir-playground-${createHash("sha256").update(userId).digest("hex").slice(0, 20)}`;
+}
+
+/** Whether this handoff is someone's Playground copy, and whose. */
+export async function playgroundCopyOwner(handoff: { id: string; workspaceId: string }) {
+  if (handoff.workspaceId !== workspaceId || handoff.id === handoffId) return null;
+  const row = (await getDatabase().prepare("SELECT created_by_user_id AS ownerId FROM handoff WHERE id = ? AND workspace_id = ?")
+    .get(handoff.id, workspaceId)) as { ownerId: string } | undefined;
+  return row?.ownerId ?? null;
+}
+
+/**
+ * Makes sure this person has their own copy of the Playground and returns its review share id. The
+ * copy is private (only its owner can open it) and works like a real handoff they review: they can
+ * comment, reply, resolve and leave notes without anyone else seeing it. It reuses the shared copy's
+ * stored screens and images, so making one is a handful of row copies. When the shared Playground is
+ * rebuilt from new files, each copy is remade on its owner's next visit.
+ */
+export async function ensurePlaygroundCopy(userId: string): Promise<string> {
+  await ensurePlayground();
+  const database = getDatabase();
+  const copyId = playgroundCopyId(userId);
+  const template = (await database.prepare(
+    `SELECT published.source_revision_id AS revision FROM handoff
+     JOIN handoff_version AS published ON published.id = handoff.published_version_id
+     WHERE handoff.id = ?`,
+  ).get(handoffId)) as { revision: string | null } | undefined;
+  if (!template) throw new PlaygroundBuildingError();
+
+  const current = (await database.prepare(
+    `SELECT handoff.review_share_id AS shareId, published.source_revision_id AS revision
+     FROM handoff LEFT JOIN handoff_version AS published ON published.id = handoff.published_version_id
+     WHERE handoff.id = ? AND handoff.workspace_id = ?`,
+  ).get(copyId, workspaceId)) as { shareId: string | null; revision: string | null } | undefined;
+  if (current?.shareId && current.revision === template.revision) return current.shareId;
+
+  const copy = database.transaction(async () => {
+    // Out of date (the shared Playground changed) or never finished: start this person's copy over.
+    // The images stay: the shared copy and other people's copies still use them.
+    if (current) await database.prepare("DELETE FROM handoff WHERE id = ? AND workspace_id = ?").run(copyId, workspaceId);
+    const now = new Date().toISOString();
+    // Handoff names are unique per project, so each copy sits in a project of its own.
+    await database.prepare(
+      "INSERT INTO project (id, workspace_id, name, created_by_user_id, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT (id) DO NOTHING",
+    ).run(copyId, workspaceId, `Playground ${copyId}`, userId, now);
+    await database.prepare(
+      `INSERT INTO handoff (id, workspace_id, project_id, name, created_by_user_id, created_at, sharing_mode)
+       SELECT ?, workspace_id, ?, name, ?, ?, 'workspace' FROM handoff WHERE id = ?`,
+    ).run(copyId, copyId, userId, now, handoffId);
+
+    const versions = (await database.prepare(
+      "SELECT id FROM handoff_version WHERE handoff_id = ? AND workspace_id = ? ORDER BY created_at ASC, id ASC",
+    ).all(handoffId, workspaceId)) as Array<{ id: string }>;
+    const newIds = new Map<string, string>();
+    for (const version of versions) {
+      const id = randomUUID();
+      newIds.set(version.id, id);
+      await database.prepare(
+        `INSERT INTO handoff_version
+          (id, workspace_id, handoff_id, version_label, release_note, source, source_file_id, source_revision_id,
+           captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at)
+         SELECT ?, workspace_id, ?, version_label, release_note, source, source_file_id, source_revision_id,
+           captured_at, content_hash, visual_only, snapshot_json, created_by_user_id, created_at
+         FROM handoff_version WHERE id = ?`,
+      ).run(id, copyId, version.id);
+      await database.prepare(
+        `INSERT INTO handoff_version_snapshot (version_id, encoding, compressed, raw_bytes, frame_index)
+         SELECT ?, encoding, compressed, raw_bytes, frame_index FROM handoff_version_snapshot WHERE version_id = ?`,
+      ).run(id, version.id);
+      const assets = (await database.prepare(
+        `SELECT asset_key AS assetKey, object_key AS objectKey, file_name AS fileName, content_type AS contentType,
+                size_bytes AS sizeBytes, sha256, width, height
+         FROM handoff_asset WHERE handoff_version_id = ?`,
+      ).all(version.id)) as Array<{ assetKey: string; objectKey: string; fileName: string; contentType: string; sizeBytes: number; sha256: string; width: number | null; height: number | null }>;
+      for (const asset of assets) {
+        await database.prepare(
+          `INSERT INTO handoff_asset (id, workspace_id, handoff_version_id, asset_key, object_key, file_name, content_type, size_bytes, sha256, width, height, created_at)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ).run(randomUUID(), workspaceId, id, asset.assetKey, asset.objectKey, asset.fileName, asset.contentType, asset.sizeBytes, asset.sha256, asset.width, asset.height, now);
+      }
+    }
+
+    // The sample threads, so there is something to reply to and resolve.
+    const latestTemplate = versions.at(-1)!.id;
+    const latestCopy = newIds.get(latestTemplate)!;
+    const comments = (await database.prepare(
+      `SELECT id, frame_id AS frameId, source_node_id AS sourceNodeId, x, y, parent_comment_id AS parentId, body,
+              resolved_at AS resolvedAt, author_label AS authorLabel, author_role AS authorRole, created_at AS createdAt
+       FROM handoff_comment WHERE handoff_version_id = ? ORDER BY parent_comment_id NULLS FIRST, created_at ASC`,
+    ).all(latestTemplate)) as Array<{ id: string; frameId: string; sourceNodeId: string | null; x: number | null; y: number | null; parentId: string | null; body: string; resolvedAt: string | null; authorLabel: string | null; authorRole: string | null; createdAt: string }>;
+    const commentIds = new Map<string, string>();
+    for (const comment of comments) {
+      const id = randomUUID();
+      commentIds.set(comment.id, id);
+      await database.prepare(
+        `INSERT INTO handoff_comment
+          (id, workspace_id, handoff_version_id, frame_id, source_node_id, x, y, parent_comment_id, body,
+           resolved_at, created_by_user_id, author_label, author_role, created_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?, ?)`,
+      ).run(id, workspaceId, latestCopy, comment.frameId, comment.sourceNodeId, comment.x, comment.y,
+        comment.parentId ? commentIds.get(comment.parentId) ?? null : null, comment.body, comment.resolvedAt,
+        comment.authorLabel, comment.authorRole, comment.createdAt);
+    }
+
+    const shareId = randomUUID();
+    await database.prepare(
+      `UPDATE handoff SET review_share_id = ?, published_version_id = ?, published_at = ?, published_by_user_id = ?
+       WHERE id = ? AND workspace_id = ?`,
+    ).run(shareId, latestCopy, now, systemUserId, copyId, workspaceId);
+    return shareId;
+  });
+  try {
+    return await copy();
+  } catch (error) {
+    // Two tabs making the same copy at once: the other one won, use it.
+    const made = (await database.prepare("SELECT review_share_id AS shareId FROM handoff WHERE id = ? AND published_version_id IS NOT NULL")
+      .get(copyId)) as { shareId: string } | undefined;
+    if (made) return made.shareId;
+    throw error;
+  }
+}

@@ -827,7 +827,41 @@ export function deleteHandoffVersion(input: {
   return deleteHandoffVersionInDatabase(getDatabase(), input);
 }
 
-export async function getAssetByObjectKey(objectKey: string) {
+/**
+ * One stored image can belong to several versions (reused between versions, and shared by Playground
+ * copies), so pass `handoffId` to get this handoff's row for it.
+ */
+type StoredAssetRow = {
+  id: string;
+  workspaceId: string;
+  versionId: string;
+  objectKey: string;
+  fileName: string;
+  contentType: string;
+  sizeBytes: number;
+  sha256: string;
+};
+
+export async function getAssetByObjectKey(objectKey: string, options: { handoffId?: string } = {}): Promise<StoredAssetRow | undefined> {
+  if (options.handoffId) {
+    return (await getDatabase()
+      .prepare(
+        `SELECT handoff_asset.id, handoff_asset.workspace_id AS workspaceId,
+                handoff_asset.handoff_version_id AS versionId,
+                handoff_asset.object_key AS objectKey,
+                handoff_asset.file_name AS fileName,
+                handoff_asset.content_type AS contentType,
+                handoff_asset.size_bytes AS sizeBytes,
+                handoff_asset.sha256
+         FROM handoff_asset
+         JOIN handoff_version ON handoff_version.id = handoff_asset.handoff_version_id
+           AND handoff_version.workspace_id = handoff_asset.workspace_id
+         WHERE handoff_asset.object_key = ? AND handoff_version.handoff_id = ?
+         ORDER BY handoff_version.created_at DESC
+         LIMIT 1`,
+      )
+      .get(objectKey, options.handoffId)) as StoredAssetRow | undefined;
+  }
   return (await getDatabase()
     .prepare(
       `SELECT handoff_asset.id, handoff_asset.workspace_id AS workspaceId,

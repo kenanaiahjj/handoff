@@ -12,7 +12,7 @@ export async function GET(request: Request, context: ReviewAssetRoute) {
     return Response.json({ error: "This handoff is not available to you." }, { status: access.session ? 404 : 401 });
   }
 
-  const asset = await getAssetByObjectKey(assetKey);
+  const asset = await getAssetByObjectKey(assetKey, { handoffId: access.handoff.id });
   if (!asset || asset.workspaceId !== access.handoff.workspaceId) {
     return Response.json({ error: "Asset not found." }, { status: 404 });
   }

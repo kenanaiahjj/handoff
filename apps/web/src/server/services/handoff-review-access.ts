@@ -4,6 +4,7 @@ import { getDatabase } from "../db";
 import { getHandoffInviteByToken, getPublishedHandoffByShareId, listHandoffVersions } from "../repositories/handoffs";
 import { getVersion, getVersionRecord } from "../repositories/versions";
 import { versionsVisibleToReview } from "./published-review";
+import { playgroundCopyOwner } from "./playground";
 import { resolveHandoffReviewAccess, type HandoffInviteAccess, type HandoffReviewAccessDecision } from "./handoff-sharing";
 
 export type PublishedReviewHandoff = NonNullable<Awaited<ReturnType<typeof getPublishedHandoffByShareId>>>;
@@ -86,6 +87,18 @@ export async function resolvePublishedReviewAccess(
   const inviteToken = explicitInviteToken || getHandoffReviewInviteToken(headers, shareId);
   const invite = inviteToken ? (await getHandoffInviteByToken(shareId, inviteToken)) : null;
   const role = membership?.role ?? null;
+
+  // Someone's own Playground copy: they review it like a real handoff (comment, reply, resolve).
+  if (session && (await playgroundCopyOwner(handoff)) === session.user.id) {
+    return {
+      handoff,
+      session,
+      membershipRole: null,
+      inviteToken: null,
+      invite: null,
+      decision: { allowed: true, canWrite: true, canComment: true, reason: "playground-owner" },
+    };
+  }
 
   return {
     handoff,

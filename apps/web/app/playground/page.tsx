@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { getSessionForHeaders } from "@/src/server/auth-session";
 import { listVisiblePublishedReviewVersions, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
-import { ensurePlayground, PlaygroundBuildingError, playgroundShareId } from "@/src/server/services/playground";
+import { ensurePlaygroundCopy, PlaygroundBuildingError } from "@/src/server/services/playground";
 import { getProject } from "@/src/server/repositories/projects";
 import { getCanvasVersion } from "@/src/server/services/version-canvas";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
@@ -21,15 +21,16 @@ function first(value: string | string[] | undefined) {
   return Array.isArray(value) ? value[0] : value;
 }
 
-/** The Playground: a sample project anyone signed in can explore, view-only. */
+/** The Playground: a sample project anyone signed in can explore. Each person gets their own copy to comment on. */
 export default async function PlaygroundPage({ searchParams }: PlaygroundPageProps) {
   const query = await searchParams;
   const requestHeaders = await headers();
   const session = await getSessionForHeaders(requestHeaders);
   if (!session) redirect(`/sign-in?redirectTo=${encodeURIComponent("/playground")}`);
 
+  let shareId: string;
   try {
-    await ensurePlayground();
+    shareId = await ensurePlaygroundCopy(session.user.id);
   } catch (error) {
     if (!(error instanceof PlaygroundBuildingError)) throw error;
     return (
@@ -43,7 +44,7 @@ export default async function PlaygroundPage({ searchParams }: PlaygroundPagePro
     );
   }
 
-  const access = await resolvePublishedReviewAccess(playgroundShareId, requestHeaders);
+  const access = await resolvePublishedReviewAccess(shareId, requestHeaders);
   if (!access?.decision.allowed) notFound();
   const handoff = access.handoff;
   const [project, versions] = await Promise.all([
@@ -76,7 +77,7 @@ export default async function PlaygroundPage({ searchParams }: PlaygroundPagePro
         workspaceId={handoff.workspaceId}
         projectId={handoff.projectId}
         handoffId={handoff.id}
-        projectName={project.name}
+        projectName="Playground"
         projectHref="/projects"
         handoffName={handoff.name}
         versions={versions}
@@ -84,13 +85,13 @@ export default async function PlaygroundPage({ searchParams }: PlaygroundPagePro
         initialCompareRouteState={compareState}
         versionHrefPrefix="/playground"
         reviewHref="/playground"
-        reviewShareId={playgroundShareId}
-        publicReviewShareId={playgroundShareId}
+        reviewShareId={shareId}
+        publicReviewShareId={shareId}
         publishedVersionId={handoff.publishedVersionId}
         canManageIntegrations={false}
         canManageSharing={false}
-        canAnnotate={false}
-        canComment={false}
+        canAnnotate={access.decision.canWrite}
+        canComment={access.decision.canComment}
         commentIdentity={null}
         canUseLocalPreview={false}
         team={null}

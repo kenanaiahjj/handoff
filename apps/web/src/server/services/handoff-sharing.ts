@@ -21,6 +21,7 @@ export type HandoffReviewAccessDecision = {
     | "workspace-member"
     | "handoff-manager"
     | "invite-link"
+    | "playground-owner"
     | "workspace-membership-required"
     | "invite-required"
     | "invite-invalid";
