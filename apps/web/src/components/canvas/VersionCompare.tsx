@@ -518,13 +518,13 @@ export function VersionCompare({
                       {activeFrame.after && changeHighlights.length ? (
                         <button
                           aria-pressed={highlightsEnabled}
-                          className={"inline-flex min-h-8 shrink-0 items-center gap-2 rounded-control border px-2.5 text-[12px] transition-colors " + (highlightsEnabled ? "border-[#e3a13a]/40 bg-[#e3a13a]/10 text-foreground" : "border-border text-foreground-muted hover:bg-surface-raised hover:text-foreground")}
+                          className={"inline-flex min-h-8 shrink-0 items-center gap-2 rounded-control px-3 text-[12px] font-semibold transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 " + (highlightsEnabled ? "bg-[#e3a13a] text-[#1a1203] shadow-sm hover:bg-[#efad4c] focus-visible:outline-[#e3a13a]" : "border border-border-strong bg-surface-raised text-foreground-muted hover:bg-surface-strong hover:text-white focus-visible:outline-white")}
                           onClick={() => setHighlightsEnabled((enabled) => !enabled)}
                           title={highlightsEnabled ? "Hide changed layer highlights" : "Show changed layer highlights"}
                           type="button"
                         >
-                          <span aria-hidden="true" className="size-2 rounded-full bg-[#e3a13a]" />
                           Highlights
+                          <span className={"rounded-full px-1.5 py-0.5 text-[10px] font-medium " + (highlightsEnabled ? "bg-black/10 text-[#1a1203]" : "bg-white/[0.08] text-foreground-subtle")}>{highlightsEnabled ? "On" : "Off"}</span>
                         </button>
                       ) : null}
                       <ZoomControls

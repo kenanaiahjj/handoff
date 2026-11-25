@@ -707,10 +707,6 @@ export function CanvasViewport({
     }
     return colors;
   }, [frame.kind, frame.sections]);
-  const sectionFrameIds = useMemo(
-    () => new Set(frame.kind === "overview" ? (frame.sections ?? []).flatMap((section) => section.frameIds) : []),
-    [frame.kind, frame.sections],
-  );
   const sourceOverlayNodes = frame.overlayNodes ?? frame.nodes;
   const overlayNodes = useMemo(
     () => frame.kind === "overview" && changedOnly
@@ -948,6 +944,7 @@ export function CanvasViewport({
             const selected = screen.id === selectedFrameId;
             const showLabel = shouldShowCanvasFrameLabel(visualScale, selected, screens.length);
               const isNew = label === "New";
+              const statusBorderColor = label === "Changed" ? "#e3a13a" : isNew ? "#55c987" : null;
               const borderColor = label === "Changed" ? "#e3a13a" : isNew ? "#55c987" : selected ? "#888888" : "#4c4c4c";
             return (
               <div
@@ -958,11 +955,7 @@ export function CanvasViewport({
                   top: screen.sourceY - frame.sourceY,
                   width: screen.sourceWidth,
                   height: screen.sourceHeight,
-                  // On a section's fill (usually white) the grey outline reads as a heavy frame, so screens
-                  // in a section only get one when it says something: changed, new, or a thin selection line.
-                  border: sectionFrameIds.has(screen.id) && !label
-                    ? selected ? inverseScale + "px solid " + borderColor : undefined
-                    : (selected ? 3 : 1.5) * inverseScale + "px solid " + borderColor,
+                  border: statusBorderColor ? (selected ? 3 : 1.5) * inverseScale + "px solid " + statusBorderColor : undefined,
                 }}
               >
                   {pickedFrameIds?.has(screen.id) ? (
