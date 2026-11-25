@@ -728,13 +728,13 @@ function PreviewPanel({
 
   return (
     <section aria-label={label + " screen"} className="min-w-0">
-      <div className="mb-2 flex items-center justify-between gap-2 text-[12px] text-foreground-muted">
-        <span>{label}</span>
+      <div className="mb-2 flex min-w-0 flex-wrap items-start justify-between gap-x-3 gap-y-1">
+        <span className="shrink-0 pt-0.5 text-[12px] font-medium leading-4 text-foreground-muted">{label}</span>
         {preview ? (
-          <span className="flex flex-col items-end font-mono text-[10px] leading-4 text-foreground-subtle">
-            <span>{formatPrecisePixelValue(preview.sourceWidth)} × {formatPrecisePixelValue(preview.sourceHeight)} {preview.dimensionsSource === "design" ? "design px" : "image px"}</span>
+          <span className="ml-auto flex min-w-0 flex-col items-end font-mono tabular-nums">
+            <span className="text-[12px] leading-4 text-foreground-muted">{formatPrecisePixelValue(preview.sourceWidth)} × {formatPrecisePixelValue(preview.sourceHeight)} {preview.dimensionsSource === "design" ? "design px" : "image px"}</span>
             {preview.dimensionsSource === "design" && rasterSizeDiffers ? (
-              <span>Raster export {preview.width} × {preview.height} px</span>
+              <span className="text-[10px] leading-4 text-foreground-subtle">Raster {preview.width} × {preview.height} px</span>
             ) : null}
           </span>
         ) : null}
