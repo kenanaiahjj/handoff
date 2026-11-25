@@ -7,7 +7,10 @@ export type CompareRouteState = {
   mode: CompareViewMode | null;
 };
 
-const compareViewModes = new Set<CompareViewMode>(["side-by-side", "overlay", "pixel-diff"]);
+/** Pixel diff is switched off for now: it isn't offered, and old links asking for it open side by side. */
+export const pixelDiffEnabled = false;
+
+const compareViewModes = new Set<CompareViewMode>(pixelDiffEnabled ? ["side-by-side", "overlay", "pixel-diff"] : ["side-by-side", "overlay"]);
 
 export function parseCompareRouteState(search: URLSearchParams): CompareRouteState | null {
   if (search.get("compare") !== "1") return null;
@@ -84,7 +87,7 @@ export function compareResultForPair<Result extends CompareResultLike>(
 
 export function defaultCompareViewMode(result: Pick<CompareResultLike, "diff"> | null): CompareViewMode {
   const changes = result?.diff.changes ?? [];
-  return changes.length > 0 && changes.every((change) => change.category === "visual")
+  return pixelDiffEnabled && changes.length > 0 && changes.every((change) => change.category === "visual")
     ? "pixel-diff"
     : "side-by-side";
 }

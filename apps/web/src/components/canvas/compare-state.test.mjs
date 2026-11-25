@@ -19,12 +19,12 @@ test("uses a comparison result only for its before and after version pair", () =
   );
 });
 
-test("prefers a matching initial result and visualizes visual-only changes as a pixel diff", () => {
+test("prefers a matching initial result and opens visual-only changes as a pixel diff when that is on", () => {
   assert.deepEqual(
     compareResultForPair(visualResult, { fromVersionId: "v1", toVersionId: "v2", result: null, error: "stale" }, "v1", "v2"),
     { result: visualResult, error: null },
   );
-  assert.equal(defaultCompareViewMode(visualResult), "pixel-diff");
+  assert.equal(defaultCompareViewMode(visualResult), compareState.pixelDiffEnabled ? "pixel-diff" : "side-by-side");
   assert.equal(defaultCompareViewMode({ diff: { changes: [{ category: "visual" }, { category: "layout" }] } }), "side-by-side");
   assert.equal(defaultCompareViewMode(null), "side-by-side");
 });
@@ -91,7 +91,7 @@ test("writes and clears comparison link state without changing other URL state",
     fromVersionId: "v3",
     toVersionId: "v4",
     frameId: "frame:7",
-    mode: "pixel-diff",
+    mode: compareState.pixelDiffEnabled ? "pixel-diff" : null,
   });
   assert.equal(opened.hash, "#screen=frame-7");
 

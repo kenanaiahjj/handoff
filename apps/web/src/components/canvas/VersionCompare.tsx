@@ -25,6 +25,7 @@ import { fitView, ZoomControls, ZoomPane, type ZoomView } from "./SyncedZoom";
 import {
   compareResultForPair,
   defaultCompareViewMode,
+  pixelDiffEnabled,
   preferredCompareFrameId,
   type CompareRouteState,
   type CompareViewMode,
@@ -394,7 +395,7 @@ export function VersionCompare({
               ["side-by-side", "Side by side"],
               ["overlay", "Overlay"],
               ["pixel-diff", "Pixel diff"],
-            ] as const).map(([mode, label]) => (
+            ] as const).filter(([mode]) => pixelDiffEnabled || mode !== "pixel-diff").map(([mode, label]) => (
               <button
                 aria-pressed={viewMode === mode}
                 className={"min-h-8 rounded-control px-2.5 text-[12px] transition-colors sm:px-3 " + (viewMode === mode ? "bg-surface-strong text-white" : "text-foreground-muted hover:text-white")}
