@@ -1565,7 +1565,7 @@ export function HandoffCanvas({
       ) : null}
       {publishDialogOpen && pendingRemovals.length ? (
         <PublishChangesDialog
-          defaultVersionLabel={`${metadata.versions[0]?.versionLabel ?? metadata.versionLabel} · ${pendingRemovals.length === 1 ? "1 screen" : `${pendingRemovals.length} screens`} removed`}
+          defaultVersionLabel={metadata.versions[0]?.versionLabel ?? metadata.versionLabel}
           onClose={() => setPublishDialogOpen(false)}
           onKeep={toggleRemoval}
           onPublish={publishChanges}

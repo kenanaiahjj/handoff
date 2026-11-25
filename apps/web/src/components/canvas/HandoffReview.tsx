@@ -141,6 +141,47 @@ export function HandoffReview({
     return [...new Set(visibleComparison.diff.changes.flatMap((change) => change.sourceNodeId ? [change.sourceNodeId] : []))];
   }, [selectedVersionId, visibleComparison]);
 
+  const changeHighlightBoundsByFrame = useMemo<Record<string, Array<{ x: number; y: number; width: number; height: number }>>>(() => {
+    if (!visibleComparison || visibleComparison.toVersionId !== selectedVersionId) return {};
+
+    const changedNodeIdsByFrame = new Map<string, Set<string>>();
+    for (const change of visibleComparison.diff.changes) {
+      if (!change.sourceNodeId) continue;
+      const nodeIds = changedNodeIdsByFrame.get(change.frameId) ?? new Set<string>();
+      nodeIds.add(change.sourceNodeId);
+      changedNodeIdsByFrame.set(change.frameId, nodeIds);
+    }
+
+    const boundsByFrame: Record<string, Array<{ x: number; y: number; width: number; height: number }>> = {};
+    for (const [frameId, nodeIds] of changedNodeIdsByFrame) {
+      const frame = frames.find((candidate) => candidate.id === frameId);
+      if (!frame) continue;
+
+      const rects = frame.nodes.flatMap((node) => {
+        if (!nodeIds.has(node.sourceNodeId)) return [];
+        const { x, y, width, height } = node.bounds;
+        const left = x.value;
+        const top = y.value;
+        const rectWidth = width.value;
+        const rectHeight = height.value;
+        if (
+          typeof left !== "number" || !Number.isFinite(left) ||
+          typeof top !== "number" || !Number.isFinite(top) ||
+          typeof rectWidth !== "number" || !Number.isFinite(rectWidth) || rectWidth <= 0 ||
+          typeof rectHeight !== "number" || !Number.isFinite(rectHeight) || rectHeight <= 0
+        ) return [];
+        return [{
+          x: left - (frame.kind === "overview" ? frame.sourceX : 0),
+          y: top - (frame.kind === "overview" ? frame.sourceY : 0),
+          width: rectWidth,
+          height: rectHeight,
+        }];
+      });
+      if (rects.length) boundsByFrame[frameId] = rects;
+    }
+    return boundsByFrame;
+  }, [frames, selectedVersionId, visibleComparison]);
+
   const versionChanges = useMemo(
     () => visibleComparison && visibleComparison.toVersionId === selectedVersionId ? visibleComparison.diff.changes : [],
     [selectedVersionId, visibleComparison],
@@ -226,6 +267,7 @@ export function HandoffReview({
           initialRouteState={compareRouteState}
           initialResult={visibleInitialCompareResult}
           compareScreenRequest={compareScreenRequest}
+          changeHighlightBoundsByFrame={changeHighlightBoundsByFrame}
           onComparisonChange={handleComparisonChange}
           onComparisonFrameSelect={handleComparisonFrameSelect}
           onRouteStateChange={handleCompareRouteStateChange}

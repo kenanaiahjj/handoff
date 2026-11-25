@@ -1,6 +1,11 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import {
+  versionLabelBase,
+  versionLabelMaxLength,
+  versionLabelSeparator,
+} from "@/src/lib/version-label";
 
 type PendingScreen = { id: string; name: string };
 
@@ -21,11 +26,24 @@ export function PublishChangesDialog({
   onClose: () => void;
   onPublish: (input: { versionLabel: string; releaseNote: string }) => Promise<string | null>;
 }) {
-  const [versionLabel, setVersionLabel] = useState(defaultVersionLabel);
+  const [versionNumber, setVersionNumber] = useState(() => versionLabelBase(defaultVersionLabel));
+  const [versionName, setVersionName] = useState("");
   const [releaseNote, setReleaseNote] = useState("");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
   const dialogRef = useRef<HTMLDivElement>(null);
+  const normalizedVersionNumber = versionNumber.trim();
+  const normalizedVersionName = versionName.trim();
+  const versionLabel = normalizedVersionName && normalizedVersionNumber
+    ? `${normalizedVersionNumber}${versionLabelSeparator}${normalizedVersionName}`
+    : normalizedVersionNumber;
+  const versionNameMaxLength = Math.max(0, versionLabelMaxLength - normalizedVersionNumber.length - versionLabelSeparator.length);
+
+  function updateVersionNumber(value: string) {
+    setVersionNumber(value);
+    const nextNameMaxLength = Math.max(0, versionLabelMaxLength - value.trim().length - versionLabelSeparator.length);
+    setVersionName((current) => current.slice(0, nextNameMaxLength));
+  }
 
   useEffect(() => {
     dialogRef.current?.querySelector<HTMLInputElement>("input")?.focus();
@@ -63,14 +81,32 @@ export function PublishChangesDialog({
         <h2 className="text-[15px] font-semibold text-foreground" id="publish-changes-title">Publish a new version</h2>
         <p className="mt-1 text-[12px] leading-5 text-foreground-muted">Reviewers get one update with everything below. Earlier versions stay as they are.</p>
 
-        <label className="mt-4 block text-[12px] font-medium text-foreground" htmlFor="publish-version-label">Version name</label>
-        <input
-          className="mt-1.5 h-9 w-full rounded-[8px] border border-white/[0.08] bg-white/[0.03] px-2.5 text-[13px] text-foreground outline-none focus:border-white/25"
-          id="publish-version-label"
-          maxLength={80}
-          onChange={(event) => setVersionLabel(event.target.value)}
-          value={versionLabel}
-        />
+        <div className="mt-4 grid grid-cols-2 gap-3">
+          <label className="block min-w-0 text-[12px] font-medium text-foreground" htmlFor="publish-version-number">
+            Version number
+            <input
+              className="mt-1.5 h-9 w-full rounded-[8px] border border-white/[0.08] bg-white/[0.03] px-2.5 text-[13px] text-foreground outline-none focus:border-white/25"
+              id="publish-version-number"
+              maxLength={versionLabelMaxLength}
+              onChange={(event) => updateVersionNumber(event.target.value)}
+              placeholder="2.0.5"
+              value={versionNumber}
+            />
+          </label>
+          <label className="block min-w-0 text-[12px] font-medium text-foreground" htmlFor="publish-version-name">
+            Additional name <span className="font-normal text-foreground-subtle">(optional)</span>
+            <input
+              className="mt-1.5 h-9 w-full rounded-[8px] border border-white/[0.08] bg-white/[0.03] px-2.5 text-[13px] text-foreground outline-none focus:border-white/25 disabled:opacity-50"
+              disabled={!versionNameMaxLength}
+              id="publish-version-name"
+              maxLength={versionNameMaxLength}
+              onChange={(event) => setVersionName(event.target.value)}
+              placeholder="Edits"
+              value={versionName}
+            />
+          </label>
+        </div>
+        <p className="mt-1.5 text-[11px] text-foreground-subtle">Version label: <span className="font-medium text-foreground-muted">{versionLabel || "Add a version number"}</span></p>
 
         <label className="mt-3 block text-[12px] font-medium text-foreground" htmlFor="publish-release-note">Note for reviewers <span className="font-normal text-foreground-subtle">(optional)</span></label>
         <textarea
@@ -100,7 +136,7 @@ export function PublishChangesDialog({
           <button className="h-9 rounded-[9px] px-3.5 text-[13px] font-medium text-foreground-muted hover:text-foreground" disabled={pending} onClick={onClose} type="button">Cancel</button>
           <button
             className="h-9 rounded-[9px] bg-[#ececec] px-4 text-[13px] font-semibold text-[#141414] transition-colors hover:bg-white disabled:opacity-50"
-            disabled={pending || !removedScreens.length || !versionLabel.trim()}
+            disabled={pending || !removedScreens.length || !normalizedVersionNumber || versionLabel.length > versionLabelMaxLength}
             onClick={() => void publish()}
             type="button"
           >

@@ -6,10 +6,8 @@ import type { CSSProperties } from "react";
 import type { SnapshotDiff } from "@/src/server/services/diff";
 import { formatComparisonValue, formatPrecisePixelValue } from "./format-captured-measurement";
 import {
-  comparisonCategories,
   comparisonCategoryLabel,
   comparisonChangeLabel,
-  countComparisonChangesByCategory,
   formatComparisonChangeCount,
   comparisonValueLabel,
   captureScopeNotice,
@@ -48,6 +46,8 @@ type Preview = {
   dimensionsSource: "design" | "image";
 } | null;
 
+type ChangeHighlightRect = { x: number; y: number; width: number; height: number };
+
 export type CompareFrame = SnapshotDiff["frames"][number] & {
   before: Preview;
   after: Preview;
@@ -84,6 +84,7 @@ type VersionCompareProps = {
   initialRouteState: CompareRouteState | null;
   initialResult?: CompareResult | null;
   compareScreenRequest: { frameId: string; requestId: number } | null;
+  changeHighlightBoundsByFrame: Record<string, ChangeHighlightRect[]>;
   onComparisonChange: (diff: SnapshotDiff | null, fromVersionId: string, toVersionId: string) => void;
   onComparisonFrameSelect: () => void;
   onRouteStateChange: (state: CompareRouteState) => void;
@@ -114,6 +115,7 @@ export function VersionCompare({
   initialRouteState,
   initialResult = null,
   compareScreenRequest,
+  changeHighlightBoundsByFrame,
   onComparisonChange,
   onComparisonFrameSelect,
   onRouteStateChange,
@@ -146,6 +148,7 @@ export function VersionCompare({
       : null,
   );
   const [overlayAmount, setOverlayAmount] = useState(50);
+  const [highlightsEnabled, setHighlightsEnabled] = useState(true);
   const dialogRef = useRef<HTMLElement>(null);
   const onCloseRef = useRef(onClose);
 
@@ -247,6 +250,9 @@ export function VersionCompare({
     ? pairViewPreference.mode
     : defaultCompareViewMode(currentResult);
   const activeFrame = currentResult?.frames.find((frame) => frame.frameId === focusedFrameId) ?? null;
+  const changeHighlights = toVersionId === selectedVersionId
+    ? changeHighlightBoundsByFrame[focusedFrameId] ?? []
+    : [];
   const zoomKey = `${fromVersionId}\u0000${toVersionId}\u0000${activeFrame?.frameId ?? ""}`;
   const zoomView = zoomState.key === zoomKey ? zoomState.view : fitView;
   const setZoomView = (update: (view: ZoomView) => ZoomView) =>
@@ -262,13 +268,6 @@ export function VersionCompare({
   const captureCoverageForFrame = captureCoverage.filter((difference) => difference.frameId === focusedFrameId);
   const captureCoverageFieldCount = new Set(captureCoverage.map((difference) => difference.path)).size;
   const captureCoverageFieldCountForFrame = new Set(captureCoverageForFrame.map((difference) => difference.path)).size;
-  const selectedFrameCategoryCounts = currentResult
-    ? countComparisonChangesByCategory(currentResult.diff.changes, focusedFrameId)
-    : null;
-  const categoryCounts = comparisonCategories.map((category) => ({
-    category,
-    count: selectedFrameCategoryCounts?.[category] ?? 0,
-  }));
   const frameCounts = currentResult ? {
     changed: currentResult.diff.frames.filter((frame) => frame.status === "changed").length,
     added: currentResult.diff.frames.filter((frame) => frame.status === "added").length,
@@ -384,7 +383,7 @@ export function VersionCompare({
         <header className="flex min-h-[68px] shrink-0 flex-wrap items-center gap-x-5 gap-y-2 border-b border-border bg-surface px-4 py-2.5 sm:px-6">
           <div className="min-w-[12rem] flex-1 basis-[16rem]">
             <p className="truncate text-[12px] font-medium text-foreground-muted" id="compare-title" title={`${fromLabel} → ${toLabel}`}>{fromLabel} <span aria-hidden="true" className="px-1 text-foreground-subtle">→</span> {toLabel}</p>
-            <p aria-live="polite" className="mt-1 truncate text-[12px] text-foreground-subtle">
+            <p aria-live="polite" className="mt-1 break-words text-[13px] leading-5 text-foreground-muted">
               {loading ? "Calculating the version diff…" : comparisonSummary}
             </p>
             {!loading && sourceIdentityMessage ? <p className="mt-1 text-[11px] text-warning" role="status">{sourceIdentityMessage}</p> : null}
@@ -460,18 +459,11 @@ export function VersionCompare({
 
             <main className="flex min-h-0 min-w-0 flex-col overflow-hidden">
               <div className="shrink-0 border-b border-border px-4 py-3 sm:px-6">
-                <div className="flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
                   <div className="min-w-0">
                     <h2 className="truncate text-[14px] font-medium text-foreground">{activeFrame?.name ?? "Select a screen"}</h2>
                     {activeFrame ? <p className="mt-0.5 text-[12px] text-foreground-subtle">{comparisonFrameStatusLabel(activeFrame.status)} · {changesForFrame.length} recorded {changesForFrame.length === 1 ? "change" : "changes"}</p> : null}
                   </div>
-                  {categoryCounts.some((item) => item.count > 0) ? (
-                    <div className="hidden flex-wrap justify-end gap-1.5 xl:flex">
-                      {categoryCounts.filter((item) => item.count > 0).map((item) => (
-                        <span className="rounded-chip bg-surface-raised px-2 py-1 font-mono text-[11px] text-foreground-muted" key={item.category}>{item.category} {item.count}</span>
-                      ))}
-                    </div>
-                  ) : null}
                 </div>
                 {captureCoverageForFrame.length ? (
                   <details className="mt-2 rounded-control border border-border bg-surface text-[12px]">
@@ -523,6 +515,18 @@ export function VersionCompare({
                   {viewMode !== "pixel-diff" ? (
                     <div className="mb-2 flex items-center justify-end gap-2">
                       <span className="hidden text-[11px] text-foreground-subtle sm:inline">Ctrl/⌘ + scroll or pinch to zoom · drag to pan · double-click to zoom in or reset</span>
+                      {activeFrame.after && changeHighlights.length ? (
+                        <button
+                          aria-pressed={highlightsEnabled}
+                          className={"inline-flex min-h-8 shrink-0 items-center gap-2 rounded-control border px-2.5 text-[12px] transition-colors " + (highlightsEnabled ? "border-[#e3a13a]/40 bg-[#e3a13a]/10 text-foreground" : "border-border text-foreground-muted hover:bg-surface-raised hover:text-foreground")}
+                          onClick={() => setHighlightsEnabled((enabled) => !enabled)}
+                          title={highlightsEnabled ? "Hide changed layer highlights" : "Show changed layer highlights"}
+                          type="button"
+                        >
+                          <span aria-hidden="true" className="size-2 rounded-full bg-[#e3a13a]" />
+                          Highlights
+                        </button>
+                      ) : null}
                       <ZoomControls
                         onViewChange={setZoomView}
                         paneSize={() => {
@@ -537,7 +541,13 @@ export function VersionCompare({
                   {viewMode === "side-by-side" ? (
                     <div className="grid items-start gap-3 md:grid-cols-2" ref={zoomPaneRef}>
                       <PreviewPanel label="Before" onViewChange={setZoomView} preview={activeFrame.before} view={zoomView} />
-                      <PreviewPanel label="After" onViewChange={setZoomView} preview={activeFrame.after} view={zoomView} />
+                      <PreviewPanel
+                        highlights={highlightsEnabled ? changeHighlights : []}
+                        label="After"
+                        onViewChange={setZoomView}
+                        preview={activeFrame.after}
+                        view={zoomView}
+                      />
                     </div>
                   ) : viewMode === "overlay" ? (
                     <div ref={zoomPaneRef}>
@@ -545,7 +555,7 @@ export function VersionCompare({
                         <ZoomPane className="h-[360px] rounded-control border border-transparent bg-surface-inset sm:h-[min(68vh,760px)]" onViewChange={setZoomView} view={zoomView}>
                           <div className="relative flex h-full w-full items-center justify-center p-4">
                             {activeFrame.before ? <PreviewImage alt={"Before: " + activeFrame.name} preview={activeFrame.before} className={fittedImageClass} /> : <p className="text-[12px] text-foreground-subtle">No earlier screen</p>}
-                            {activeFrame.after ? <PreviewImage alt={"After: " + activeFrame.name} preview={activeFrame.after} className="pointer-events-none absolute inset-4 h-[calc(100%-32px)] w-[calc(100%-32px)] select-none object-contain" style={{ opacity: overlayAmount / 100 }} /> : null}
+                            {activeFrame.after ? <PreviewImage alt={"After: " + activeFrame.name} preview={activeFrame.after} className="pointer-events-none absolute inset-4 h-[calc(100%-32px)] w-[calc(100%-32px)] select-none" highlights={highlightsEnabled ? changeHighlights : undefined} style={{ opacity: overlayAmount / 100 }} /> : null}
                           </div>
                         </ZoomPane>
                       </div>
@@ -701,11 +711,13 @@ function VersionSelect({
 function PreviewPanel({
   label,
   preview,
+  highlights = [],
   view,
   onViewChange,
 }: {
   label: string;
   preview: Preview;
+  highlights?: ChangeHighlightRect[];
   view: ZoomView;
   onViewChange: (update: (view: ZoomView) => ZoomView) => void;
 }) {
@@ -730,7 +742,7 @@ function PreviewPanel({
       <div data-zoom-pane="">
         <ZoomPane className="h-[340px] rounded-control border border-transparent bg-surface-inset sm:h-[min(68vh,760px)]" onViewChange={onViewChange} view={view}>
           <div className="flex h-full w-full items-center justify-center p-3">
-            {preview ? <PreviewImage alt={label + ": " + preview.name} preview={preview} className={fittedImageClass} /> : <p className="text-[12px] text-foreground-subtle">No screen in this version</p>}
+            {preview ? <PreviewImage alt={label + ": " + preview.name} preview={preview} className={fittedImageClass} highlights={highlights.length ? highlights : undefined} /> : <p className="text-[12px] text-foreground-subtle">No screen in this version</p>}
           </div>
         </ZoomPane>
       </div>
@@ -742,28 +754,62 @@ function PreviewPanel({
  * Fills the pane's box and letterboxes the screen inside it with object-contain, so a tall portrait
  * screen shrinks to the pane's height instead of overflowing and being clipped.
  */
-const fittedImageClass = "pointer-events-none h-full min-h-0 w-full min-w-0 select-none object-contain";
+const fittedImageClass = "pointer-events-none h-full min-h-0 w-full min-w-0 select-none";
 
 function PreviewImage({
   alt,
   preview,
   className,
+  highlights,
   style,
 }: {
   alt: string;
   preview: NonNullable<Preview>;
   className: string;
+  highlights?: ChangeHighlightRect[];
   style?: CSSProperties;
 }) {
+  const wrapperPosition = className.split(" ").includes("absolute") ? "" : "relative ";
+  const rasterWidth = preview.width ?? 1280;
+  const rasterHeight = preview.height ?? 900;
+  const canShowHighlights = Boolean(highlights?.length && preview.sourceWidth > 0 && preview.sourceHeight > 0);
+
   return (
-    <Image
-      alt={alt}
-      className={className}
-      height={preview.height ?? 900}
-      src={preview.imageUrl}
-      style={style}
-      unoptimized
-      width={preview.width ?? 1280}
-    />
+    <div className={wrapperPosition + className}>
+      <Image
+        alt={alt}
+        className="pointer-events-none block h-full w-full select-none object-contain"
+        height={preview.height ?? 900}
+        src={preview.imageUrl}
+        style={style}
+        unoptimized
+        width={preview.width ?? 1280}
+      />
+      {canShowHighlights ? (
+        <svg
+          aria-hidden="true"
+          className="pointer-events-none absolute inset-0 h-full w-full"
+          preserveAspectRatio="xMidYMid meet"
+          viewBox={`0 0 ${rasterWidth} ${rasterHeight}`}
+        >
+          {highlights?.map((rect, index) => {
+            return (
+              <rect
+                fill="#e3a13a"
+                fillOpacity="0.12"
+                height={rect.height * rasterHeight / preview.sourceHeight}
+                key={`${rect.x}:${rect.y}:${index}`}
+                stroke="#e3a13a"
+                strokeWidth="2"
+                vectorEffect="non-scaling-stroke"
+                width={rect.width * rasterWidth / preview.sourceWidth}
+                x={rect.x * rasterWidth / preview.sourceWidth}
+                y={rect.y * rasterHeight / preview.sourceHeight}
+              />
+            );
+          })}
+        </svg>
+      ) : null}
+    </div>
   );
 }
