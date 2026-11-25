@@ -1,12 +1,15 @@
 "use client";
 
 import { Avatar } from "@/src/components/Avatar";
-import { useId, useRef, useState, type FormEvent } from "react";
+import { useEffect, useId, useRef, useState, type FormEvent } from "react";
+import { DistortionWave, type DistortionWaveHandle } from "distortion-waves";
+import { devAllClearEvent, useWaveSettings } from "../motion/wave";
 import { activeMentionQuery, CommentBody, encodeMentions, type MentionPerson, useMentionMatches } from "./mentions";
 import type { CanvasFrameOption } from "../canvas/FrameNavigator";
 import { overviewCanvasFrameId } from "../canvas/canvas-anchor";
 import type { CommentAttachment, CommentIdentity, HandoffComment } from "./CommentPin";
 import { acceptedImageTypes, attachmentUrl, CommentAttachments, CommentTime, ImageLightbox, uploadCommentImage, useCommentEndpoint } from "./comment-media";
+import { showErrorToast } from "../shell/Toaster";
 
 export type PendingCommentPoint = {
   frameId: string;
@@ -370,7 +373,13 @@ function ResolveButton({ resolved, onToggle }: { resolved: boolean; onToggle: ()
       onClick={async (event) => {
         event.stopPropagation();
         setBusy(true);
-        try { await onToggle(); } finally { setBusy(false); }
+        try {
+          await onToggle();
+        } catch (cause) {
+          showErrorToast(cause instanceof Error ? cause.message : "Couldn't update this thread.");
+        } finally {
+          setBusy(false);
+        }
       }}
       title={resolved ? "Reopen" : "Resolve"}
       type="button"
@@ -485,10 +494,42 @@ export function CommentThread({
   onToggleResolvedPins,
 }: CommentThreadProps) {
   const [activeTab, setActiveTab] = useState<"open" | "resolved">("open");
+  // Resolving the last open thread waves the list into an "All clear" view.
+  const [allClear, setAllClear] = useState<false | "resolved" | "demo">(false);
+  const wave = useWaveSettings();
+  const waveRef = useRef<DistortionWaveHandle>(null);
   const roots = comments.filter((comment) => comment.parentCommentId === null);
   const pinNumber = new Map(roots.map((comment, index) => [comment.id, index]));
   const visibleRoots = roots.filter((comment) => activeTab === "resolved" ? Boolean(comment.resolvedAt) : !comment.resolvedAt);
   const resolvedCount = roots.length - openCount;
+  const showAllClear = allClear && activeTab === "open" && !pendingPoint && (openCount === 0 || allClear === "demo");
+
+  async function resolveThread(comment: HandoffComment) {
+    const last = !comment.resolvedAt && openCount === 1 && activeTab === "open";
+    if (last) {
+      // Picture the list with the thread still in it, then let the wave carry it away.
+      await Promise.race([waveRef.current?.prepare(), new Promise((resolve) => window.setTimeout(resolve, 400))]);
+      setAllClear("resolved");
+    }
+    try {
+      await onResolve(comment.id, !comment.resolvedAt);
+    } catch (error) {
+      if (last) setAllClear(false);
+      throw error;
+    }
+  }
+
+  // Local testing: the Waves bar plays this view without resolving anything.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const play = () => {
+      setActiveTab("open");
+      setAllClear((current) => (current ? false : "demo"));
+    };
+    window.addEventListener(devAllClearEvent, play);
+    return () => window.removeEventListener(devAllClearEvent, play);
+  }, []);
+
   const frameName = (frameId: string) => frameId === overviewCanvasFrameId ? "Canvas" : frames.find((frame) => frame.id === frameId)?.name ?? "Screen";
 
   return (
@@ -511,7 +552,7 @@ export function CommentThread({
       <div className="mt-3 flex items-center justify-between gap-2">
         <div aria-label="Comment status" className="dial-segmented h-8" role="group">
           {(["open", "resolved"] as const).map((tab) => (
-            <button aria-pressed={activeTab === tab} className="min-h-7 px-3 text-[12px] capitalize" key={tab} onClick={() => setActiveTab(tab)} type="button">
+            <button aria-pressed={activeTab === tab} className="min-h-7 px-3 text-[12px] capitalize" key={tab} onClick={() => { setActiveTab(tab); setAllClear(false); }} type="button">
               {tab} <span className="ml-0.5 font-mono text-[10px] text-foreground-subtle">{tab === "open" ? openCount : resolvedCount}</span>
             </button>
           ))}
@@ -538,8 +579,30 @@ export function CommentThread({
       ) : null}
       {error ? <p aria-live="assertive" className="mt-3 rounded-control border border-[#76522a] bg-[#332718] p-2.5 text-[11px] text-[#efb45f]">{error}</p> : null}
 
+      <DistortionWave
+        className="wave-capture mt-3 rounded-[12px]"
+        live={false}
+        palette={wave.palette}
+        reducedMotion={wave.reducedMotion}
+        ref={waveRef}
+        revealed={showAllClear}
+        revealedContent={
+          <div className="flex h-full flex-col items-center bg-surface px-4 pb-6 pt-8 text-center">
+            <span aria-hidden="true" className="grid size-11 place-items-center rounded-full bg-[#ff8a3d]/15 text-[#ff8a3d]">
+              <svg className="size-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="m3.5 8.2 2.8 2.8 6.2-6.2" /></svg>
+            </span>
+            <p className="mt-3 text-[15px] font-semibold text-foreground" role="status">All clear</p>
+            <p className="mt-1 text-[12px] leading-5 text-foreground-subtle">Every thread on this version is resolved.</p>
+            <button className="dial-button mt-4 min-h-8 px-3 text-[12px]" onClick={() => { setActiveTab("resolved"); setAllClear(false); }} type="button">
+              See resolved ({resolvedCount})
+            </button>
+          </div>
+        }
+        type="center"
+      >
+      <div className="h-full bg-surface">
       {visibleRoots.length ? (
-        <ol className="mt-3 space-y-2">
+        <ol className="space-y-2">
           {visibleRoots.map((comment) => (
             <ThreadCard
               canResolve={canResolve}
@@ -549,7 +612,7 @@ export function CommentThread({
               index={pinNumber.get(comment.id) ?? 0}
               key={comment.id}
               onReply={(body, attachmentIds) => onReply(comment.id, body, attachmentIds)}
-              onResolve={() => onResolve(comment.id, !comment.resolvedAt)}
+              onResolve={() => resolveThread(comment)}
               onSelect={() => onSelect(comment.id)}
               replies={comments.filter((reply) => reply.parentCommentId === comment.id)}
               selected={selectedCommentId === comment.id}
@@ -557,7 +620,7 @@ export function CommentThread({
           ))}
         </ol>
       ) : !pendingPoint ? (
-        <div className="mt-6 flex flex-col items-center px-4 text-center">
+        <div className="flex flex-col items-center px-4 pt-3 text-center">
           <span aria-hidden="true" className="grid size-10 place-items-center rounded-full bg-white/[0.05] text-foreground-subtle">
             <svg className="size-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><path d="M3 12.5V4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v5A1.5 1.5 0 0 1 11.5 11H5.5L3 12.5Z" /></svg>
           </span>
@@ -565,6 +628,8 @@ export function CommentThread({
           {activeTab === "open" && canWrite ? <p className="mt-1 text-[12px] leading-5 text-foreground-subtle"><span className="touch-hidden">Press C, then click a screen to leave feedback.</span><span className="touch-only">Tap the comment tool, then tap a screen to leave feedback.</span> You can attach screenshots.</p> : null}
         </div>
       ) : null}
+      </div>
+      </DistortionWave>
     </section>
   );
 }

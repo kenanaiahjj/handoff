@@ -86,14 +86,15 @@ export function PublishCard({
     }
   }
 
+  // Both views fill the card: it takes the taller view's height, so the shorter one must not leave a gap.
   const confirmView = (
-    <div className="bg-surface p-4">
+    <div className="flex h-full flex-col bg-surface p-4">
       <h2 className="text-[14px] font-semibold text-foreground" id="publish-card-title">Publish {label}</h2>
       <p className="mt-1.5 text-[12px] leading-5 text-foreground-muted">
         Everyone with the review link sees this version from now on. You can publish a newer one later.
       </p>
       {error ? <p className="mt-2 text-[11px] leading-4 text-danger" role="alert">{error}</p> : null}
-      <div className="mt-4 flex justify-end gap-2">
+      <div className="mt-auto flex justify-end gap-2 pt-4">
         <button className="dial-button min-h-9 px-3 text-[12px]" disabled={phase === "pending"} onClick={onClose} type="button">
           Cancel
         </button>
@@ -112,7 +113,7 @@ export function PublishCard({
   );
 
   const liveView = (
-    <div className="bg-surface p-4">
+    <div className="h-full bg-surface p-4">
       <div className="flex items-center gap-2">
         <span aria-hidden="true" className="grid size-6 place-items-center rounded-full bg-success/15 text-success">
           <svg className="size-3.5" fill="none" viewBox="0 0 16 16"><path d="m3.5 8.2 2.8 2.8 6.2-6.2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" /></svg>
@@ -150,7 +151,7 @@ export function PublishCard({
       <button aria-label="Close publish" className="fixed inset-0 z-40 cursor-default" onClick={() => (phase === "pending" ? null : onClose())} tabIndex={-1} type="button" />
       <div
         aria-labelledby={phase === "live" ? "publish-card-live-title" : "publish-card-title"}
-        className={"z-50 overflow-hidden rounded-[14px] border border-border shadow-[0_24px_64px_-12px_rgb(0_0_0/0.85)] " + (narrowTop === null ? "absolute right-0 top-full mt-2 w-[340px]" : "fixed inset-x-2")}
+        className={"z-50 overflow-hidden rounded-[14px] border border-border bg-surface shadow-[0_24px_64px_-12px_rgb(0_0_0/0.85)] " + (narrowTop === null ? "absolute right-0 top-full mt-2 w-[340px]" : "fixed inset-x-2")}
         ref={cardRef}
         role="dialog"
         style={narrowTop === null ? undefined : { top: narrowTop }}

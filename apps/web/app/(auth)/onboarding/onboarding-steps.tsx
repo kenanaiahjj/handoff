@@ -64,7 +64,7 @@ export function InstallStep({ onDone }: { onDone: () => void }) {
   }
 
   return (
-    <div className="onboarding-panel dial-popover p-5">
+    <div className="onboarding-panel dial-popover h-full p-5">
       <div className="mb-4 flex items-center justify-between">
         <span className="dial-section-title">Install Asbir Handoff</span>
         <StepDots step={3} total={3} />

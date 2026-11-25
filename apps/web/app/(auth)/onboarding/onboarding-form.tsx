@@ -5,6 +5,8 @@ import { type KeyboardEvent, useEffect, useRef, useState } from "react";
 import { authClient } from "@/src/client/auth-client";
 import { clearDeviceCache } from "@/src/client/device-cache";
 import { AuthShell } from "../auth-shell";
+import { DistortionWave } from "distortion-waves";
+import { devJoinedEvent, useWaveSettings } from "@/src/components/motion/wave";
 import type { EditableProfile } from "@/src/components/profile/ProfileForm";
 import { InstallStep, ProfileStep } from "./onboarding-steps";
 
@@ -38,6 +40,10 @@ export function OnboardingForm({ roles, user, workspaceNames, profile }: { roles
   const [redirectTo, setRedirectTo] = useState("/workspace");
   const [pending, setPending] = useState(false);
   const [error, setError] = useState("");
+  /** The last step is done: the wave shows "You're all set" before the workspace opens. */
+  const [finished, setFinished] = useState(false);
+  const wave = useWaveSettings();
+  const openRef = useRef<HTMLButtonElement>(null);
   const router = useRouter();
   const rowRefs = useRef<Array<HTMLButtonElement | null>>([]);
   const firstName = user.name.split(" ")[0] ?? "";
@@ -79,6 +85,17 @@ export function OnboardingForm({ roles, user, workspaceNames, profile }: { roles
     router.replace("/sign-in");
     router.refresh();
   }
+
+  // Local testing: the Waves bar jumps to the last step and plays the finish (nothing is saved).
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const play = () => {
+      setStep("install");
+      setFinished((current) => !current);
+    };
+    window.addEventListener(devJoinedEvent, play);
+    return () => window.removeEventListener(devJoinedEvent, play);
+  }, []);
 
   // Number keys pick a role from anywhere on the page; Enter continues.
   useEffect(() => {
@@ -128,8 +145,37 @@ export function OnboardingForm({ roles, user, workspaceNames, profile }: { roles
 
   if (step === "install") {
     return (
-      <AuthShell subtitle="Install it once and Handoff works like a desktop app." title="Get the app" wide>
-        <InstallStep onDone={() => window.location.assign(redirectTo)} />
+      <AuthShell
+        subtitle={finished ? "That's everything. You can change your role and profile any time in Settings." : "Install it once and Handoff works like a desktop app."}
+        title={finished ? "You're all set" : "Get the app"}
+        wide
+      >
+        <DistortionWave
+          className="wave-capture rounded-[14px]"
+          live={false}
+          onFinish={(revealed) => { if (revealed) openRef.current?.focus({ preventScroll: true }); }}
+          palette={wave.palette}
+          reducedMotion={wave.reducedMotion}
+          revealed={finished}
+          revealedContent={
+            <div className="onboarding-panel dial-popover flex h-full flex-col items-center justify-center p-6 text-center">
+              <span aria-hidden="true" className="grid size-11 place-items-center rounded-full bg-[#ff8a3d]/15 text-[#ff8a3d]">
+                <svg className="size-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="m3.5 8.2 2.8 2.8 6.2-6.2" /></svg>
+              </span>
+              <p className="mt-4 text-[16px] font-semibold text-foreground" role="status">
+                {workspaceNames.length ? `Welcome to ${workspaceNames[0]}` : "Welcome to Asbir Handoff"}
+              </p>
+              <p className="mt-1.5 max-w-[360px] text-[13px] leading-5 text-foreground-muted">
+                {workspaceNames.length ? "Your team's projects and handoffs are ready for you." : "Ask a designer for an invite link to see your team's handoffs."}
+              </p>
+              <button className="onboarding-continue mt-6 h-9 rounded-[9px] px-5 text-[13px] font-medium" onClick={() => window.location.assign(redirectTo)} ref={openRef} type="button">
+                Open Handoff
+              </button>
+            </div>
+          }
+        >
+          <InstallStep onDone={() => setFinished(true)} />
+        </DistortionWave>
       </AuthShell>
     );
   }

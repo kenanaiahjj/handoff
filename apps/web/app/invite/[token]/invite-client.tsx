@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { DistortionWave } from "distortion-waves";
+import { devJoinedEvent, useWaveSettings } from "@/src/components/motion/wave";
 import { useRouter } from "next/navigation";
 import { BrandMark } from "@/src/components/shell/BrandMark";
 
@@ -18,6 +20,18 @@ export function InviteClient({ token }: { token: string }) {
   const [invite, setInvite] = useState<InviteInfo | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [pending, setPending] = useState(false);
+  /** Accepted: the wave carries the invitation away and shows the team you joined. */
+  const [joined, setJoined] = useState(false);
+  const wave = useWaveSettings();
+  const openRef = useRef<HTMLAnchorElement>(null);
+
+  // Local testing: the Waves bar plays the joined view without accepting anything.
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const play = () => setJoined((current) => !current);
+    window.addEventListener(devJoinedEvent, play);
+    return () => window.removeEventListener(devJoinedEvent, play);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -52,8 +66,9 @@ export function InviteClient({ token }: { token: string }) {
         setErrorMessage(result.error ?? "We couldn't accept this invitation.");
         return;
       }
-      router.push(`/workspace`);
-      router.refresh();
+      setJoined(true);
+      // Warm the workspace so "Open workspace" is instant.
+      router.prefetch("/workspace");
     } catch {
       setErrorMessage("We couldn't reach the invitation service. Try again.");
     } finally {
@@ -63,7 +78,36 @@ export function InviteClient({ token }: { token: string }) {
 
   return (
     <main className="flex min-h-screen items-center justify-center px-5 py-12">
-      <section className="w-full max-w-[440px] rounded-panel border border-border bg-surface p-6 sm:p-8">
+      <section className="w-full max-w-[440px] overflow-hidden rounded-panel border border-border bg-surface">
+        <DistortionWave
+          className="wave-capture"
+          live={false}
+          onFinish={(revealed) => { if (revealed) openRef.current?.focus({ preventScroll: true }); }}
+          palette={wave.palette}
+          reducedMotion={wave.reducedMotion}
+          revealed={joined}
+          revealedContent={
+            <div className="flex h-full flex-col bg-surface p-6 sm:p-8">
+              <Link aria-label="Asbir Handoff home" href="/" className="inline-flex"><BrandMark /></Link>
+              <span aria-hidden="true" className="mt-8 grid size-10 place-items-center rounded-full bg-[#ff8a3d]/15 text-[#ff8a3d]">
+                <svg className="size-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="m3.5 8.2 2.8 2.8 6.2-6.2" /></svg>
+              </span>
+              <h2 className="mt-4 text-title font-semibold leading-title text-foreground" role="status">You&apos;re in</h2>
+              <p className="mt-3 text-sm leading-6 text-foreground-muted">
+                Welcome to <span className="font-medium text-foreground">{invite?.workspaceName ?? "the team"}</span>.
+                {invite ? <> You joined as {invite.roleLabel ?? invite.role}.</> : null} Your team&apos;s projects and handoffs are waiting.
+              </p>
+              <Link
+                className="mt-auto flex h-11 w-full items-center justify-center rounded-control bg-primary px-4 text-sm font-semibold text-primary-foreground transition-colors hover:bg-primary-hover max-sm:mt-6 sm:mt-8"
+                href="/workspace"
+                ref={openRef}
+              >
+                Open workspace
+              </Link>
+            </div>
+          }
+        >
+        <div className="h-full bg-surface p-6 sm:p-8">
         <Link aria-label="Asbir Handoff home" href="/" className="inline-flex"><BrandMark /></Link>
         <p className="mt-8 text-[12px] font-medium text-foreground-subtle">Team invitation</p>
         <h1 className="mt-2 text-title font-semibold leading-title text-foreground">
@@ -90,6 +134,8 @@ export function InviteClient({ token }: { token: string }) {
         <p className="mt-6 text-sm text-foreground-muted">
           Need an account? <Link className="font-medium text-foreground underline decoration-border-strong underline-offset-4" href={`/sign-in?redirectTo=${encodeURIComponent(`/invite/${token}`)}`}>Create one or sign in</Link>.
         </p>
+        </div>
+        </DistortionWave>
       </section>
     </main>
   );

@@ -1,7 +1,10 @@
 "use client";
 
 import { type FormEvent, useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { DistortionWave } from "distortion-waves";
+import { devVersionReadyEvent, useWaveSettings } from "@/src/components/motion/wave";
 import { showToast } from "@/src/components/shell/Toaster";
 import {
   finalizeVersionLabel,
@@ -13,6 +16,8 @@ import {
   versionLabelStart,
 } from "@/src/lib/version-label";
 import { ReleaseNoteDialog } from "./release-note-dialog";
+
+type ReadyVersion = { handoffId: string; versionId: string; label: string; via: "figma" | "upload"; newHandoff: boolean };
 
 const uploadHint = "Upload a structured ZIP package for exact layout data, or a PNG, JPEG, WebP, or SVG render for visual-only review.";
 type HandoffTarget = { id: string; name: string };
@@ -148,6 +153,8 @@ export function HandoffSetupForm({ input, mode }: {
   mode: "project" | "handoff";
 }) {
   const router = useRouter();
+  // The wave pictures both views, so each needs the pane's own opaque background.
+  const paneBackground = mode === "project" ? "bg-[var(--workspace-pane)]" : "bg-surface";
   const [handoffId, setHandoffId] = useState(input.initialHandoffId ?? "");
   const [handoffName, setHandoffName] = useState("");
   const [versionLabel, setVersionLabel] = useState("");
@@ -163,6 +170,13 @@ export function HandoffSetupForm({ input, mode }: {
   const [pendingFinalizeUploadId, setPendingFinalizeUploadId] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState("");
   const [notice, setNotice] = useState("");
+  /** Set once the new version exists (upload finalized, or the Figma plugin finished): the wave reveals it. */
+  const [ready, setReady] = useState<ReadyVersion | null>(null);
+  const [tokenLabel, setTokenLabel] = useState("");
+  const wave = useWaveSettings();
+  const submitRef = useRef<HTMLButtonElement>(null);
+  const copyTokenRef = useRef<HTMLButtonElement>(null);
+  const openCanvasRef = useRef<HTMLAnchorElement>(null);
   const isNewHandoff = !handoffId;
   const latestVersionLabel = !handoffId
     ? null
@@ -173,6 +187,59 @@ export function HandoffSetupForm({ input, mode }: {
   const showLatestSuggestion = Boolean(latestBase) && !startsFromLatest(versionLabel, latestVersionLabel);
   const nextLabel = nextVersionLabel(latestVersionLabel);
   const showNextSuggestion = Boolean(nextLabel) && !startsFromLatest(versionLabel, nextLabel);
+
+  // While a capture token is showing, watch for the Figma plugin to finish so the form can say so.
+  useEffect(() => {
+    if (!token || ready) return;
+    let cancelled = false;
+    const check = async () => {
+      try {
+        const response = await fetch("/api/capture-sessions/status", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ workspaceId: input.workspaceId, token }),
+          cache: "no-store",
+        });
+        if (!response.ok || cancelled) return;
+        const result = await response.json() as { status: string; handoffId?: string; versionId?: string };
+        if (result.status === "ready" && result.handoffId && result.versionId && !cancelled) {
+          setReady({ handoffId: result.handoffId, versionId: result.versionId, label: tokenLabel, via: "figma", newHandoff: !handoffId });
+          router.refresh();
+        }
+      } catch {
+        // Offline for a moment; the next check tries again.
+      }
+    };
+    const interval = window.setInterval(() => void check(), 3000);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+    };
+  }, [handoffId, input.workspaceId, ready, router, token, tokenLabel]);
+
+  // Local testing: the Waves bar shows the ready view with pretend data (nothing is created).
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const play = () => setReady((current) => current ? null : {
+      handoffId: input.handoffs[0]?.id ?? "demo",
+      versionId: "demo",
+      label: finalizeVersionLabel(versionLabel) || "2.0",
+      via: "upload",
+      newHandoff: !input.handoffs.length,
+    });
+    window.addEventListener(devVersionReadyEvent, play);
+    return () => window.removeEventListener(devVersionReadyEvent, play);
+  }, [input.handoffs, versionLabel]);
+
+  function addAnother() {
+    setReady(null);
+    setToken(null);
+    setExpiresAt(null);
+    setVersionLabel("");
+    setReleaseNote("");
+    setNotice("");
+    setErrorMessage("");
+  }
 
   // Picking another handoff in the project form: look up its newest label for the suggestion.
   useEffect(() => {
@@ -243,8 +310,8 @@ export function HandoffSetupForm({ input, mode }: {
       throw new Error("We couldn't confirm the finalization response. Retry finalization.");
     }
     setPendingFinalizeUploadId(null);
-    showToast(handoffId ? "Version added" : "Handoff created");
-    router.push(`/projects/${encodeURIComponent(input.projectId)}/handoffs/${encodeURIComponent(result.handoffId)}?versionId=${encodeURIComponent(result.versionId)}`);
+    setReady({ handoffId: result.handoffId, versionId: result.versionId, label: finalizeVersionLabel(versionLabel), via: "upload", newHandoff: !handoffId });
+    // The page's version lists catch up underneath; the canvas opens from the ready view.
     router.refresh();
   }
 
@@ -280,6 +347,7 @@ export function HandoffSetupForm({ input, mode }: {
         const result = await response.json();
         if (!response.ok) throw new Error(result.error ?? "We couldn't create a capture token.");
         setToken(result.token);
+        setTokenLabel(finalVersionLabel);
         setExpiresAt(result.expiresAt);
         const copied = await writeTokenToClipboard(result.token);
         showToast(copied ? "Capture token copied" : "Capture token created");
@@ -341,12 +409,46 @@ export function HandoffSetupForm({ input, mode }: {
         Adding a version needs Figma on a computer. Open this page there to capture screens or upload a snapshot.
       </p>
       <div className="phone-hidden">
+      <DistortionWave
+        className="wave-capture"
+        live={false}
+        onFinish={(revealed) => { if (revealed) openCanvasRef.current?.focus({ preventScroll: true }); }}
+        palette={wave.palette}
+        reducedMotion={wave.reducedMotion}
+        revealed={Boolean(ready)}
+        revealedContent={ready ? (
+          <div className={"flex h-full flex-col pb-6 pt-2 " + paneBackground}>
+            <span aria-hidden="true" className="grid size-9 place-items-center rounded-full bg-[#ff8a3d]/15 text-[#ff8a3d]">
+              <svg className="size-4" fill="none" viewBox="0 0 16 16"><path d="m3.5 8.2 2.8 2.8 6.2-6.2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.7" /></svg>
+            </span>
+            <p className="mt-4 text-[18px] font-semibold tracking-[-0.01em] text-foreground" role="status">
+              {ready.label ? `v${ready.label.split(" · ")[0].replace(/^v/i, "")} is ready` : "Your version is ready"}
+            </p>
+            <p className="mt-1.5 text-[13px] leading-5 text-foreground-muted">
+              {ready.newHandoff ? "Your new handoff" : input.handoffs.find((handoff) => handoff.id === ready.handoffId)?.name ?? "The handoff"}
+              {ready.via === "figma" ? " has the screens you captured in Figma." : " has the snapshot you uploaded."} Publish it from the canvas when you want reviewers to see it.
+            </p>
+            <div className="mt-6 flex flex-wrap gap-2">
+              <Link
+                className="capture-primary-action inline-flex min-h-11 items-center rounded-control px-5 text-sm font-semibold"
+                href={`/projects/${encodeURIComponent(input.projectId)}/handoffs/${encodeURIComponent(ready.handoffId)}?versionId=${encodeURIComponent(ready.versionId)}`}
+                ref={openCanvasRef}
+              >
+                Open canvas
+              </Link>
+              <button className="dial-button min-h-11 px-4 text-sm" onClick={addAnother} type="button">Add another version</button>
+            </div>
+          </div>
+        ) : null}
+        source={ready?.via === "figma" ? copyTokenRef : submitRef}
+      >
+      <div className={"h-full " + paneBackground}>
       {token ? (
         <div className="mt-5">
           <label className="block text-xs font-medium text-foreground-muted" htmlFor="figma-capture-token">One-time capture token</label>
           <div className="mt-2 flex gap-2">
             <input id="figma-capture-token" readOnly value={token} className="min-h-11 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset px-3 font-mono text-xs text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary" />
-            <button type="button" onClick={() => void copyToken()} className="capture-primary-action min-h-11 rounded-control px-4 text-xs font-semibold">Copy token</button>
+            <button type="button" onClick={() => void copyToken()} ref={copyTokenRef} className="capture-primary-action min-h-11 rounded-control px-4 text-xs font-semibold">Copy token</button>
           </div>
           {expiresAt ? <p className="mt-2 text-xs text-foreground-subtle">Expires {new Date(expiresAt).toLocaleTimeString()} · use once</p> : null}
           <p className="mt-2 text-xs leading-5 text-foreground-muted">In Figma, load <code className="font-mono text-foreground">integrations/figma-plugin/manifest.json</code> as a development plugin, enter the app URL and token, then select the frames to capture.</p>
@@ -495,7 +597,7 @@ export function HandoffSetupForm({ input, mode }: {
           {errorMessage ? <p className="text-xs text-danger sm:col-span-2" role="alert">{errorMessage}</p> : null}
           {pending && uploadProgress !== null ? <p className="text-xs text-foreground-muted sm:col-span-2" role="status">Uploading directly to Storage: {Math.round(uploadProgress * 100)}%</p> : null}
           <div className="sm:col-span-2">
-            <button className="capture-primary-action min-h-12 w-full rounded-control px-4 text-sm font-semibold disabled:opacity-60" disabled={pending} type="submit">
+            <button className="capture-primary-action min-h-12 w-full rounded-control px-4 text-sm font-semibold disabled:opacity-60" disabled={pending} ref={submitRef} type="submit">
               {pending ? source === "figma" ? "Creating token…" : "Uploading…" : pendingFinalizeUploadId ? "Retry finalization" : source === "figma" ? "Create Figma capture token" : handoffId ? "Add version" : "Create handoff"}
             </button>
           </div>
@@ -514,6 +616,9 @@ export function HandoffSetupForm({ input, mode }: {
       ) : null}
       {errorMessage && token ? <p className="mt-3 text-xs text-warning" role="alert">{errorMessage}</p> : null}
       {notice ? <p className="mt-3 text-xs leading-5 text-success" role="status">{notice}</p> : null}
+      {token && !ready ? <p className="mt-3 flex items-center gap-2 text-xs text-foreground-subtle"><span aria-hidden="true" className="size-1.5 animate-pulse rounded-full bg-[#ff8a3d]" />Waiting for the capture from Figma…</p> : null}
+      </div>
+      </DistortionWave>
       </div>
     </section>
   );

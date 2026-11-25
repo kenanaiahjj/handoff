@@ -39,6 +39,8 @@ function readDefaultHandbook() {
 }
 
 const nextConfig: NextConfig = {
+  // The Next.js dev badge goes bottom-right so the local Waves test bar can have the bottom-left corner.
+  devIndicators: { position: "bottom-right" },
   env: {
     NEXT_PUBLIC_ASBIR_BUILD_ID: buildId,
     NEXT_PUBLIC_ASBIR_COMMIT: commit,

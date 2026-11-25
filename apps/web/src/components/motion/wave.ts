@@ -2,10 +2,16 @@ import { useSyncExternalStore } from "react";
 import type { PaletteLike } from "distortion-waves";
 
 /**
- * Colours for the distortion waves (Publish and a reviewer's first look). The app's accent green keeps
- * them on brand; swap in "colorful", "ocean", "mono" or another hex to change every wave at once.
+ * Colours for the distortion waves: the app's dark surface (#212121) with Asbir orange (#ff8a3d)
+ * running through it, and a white leading edge. The neutral colours are the surface itself, so the
+ * band the wave lays over a panel stays dark instead of washing it grey. Swap in "mono", "sunset" or
+ * another palette here to change every wave at once.
  */
-export const wavePalette: PaletteLike = "#83a878";
+export const wavePalette: PaletteLike = {
+  colors: [[33, 33, 33], [255, 138, 61], [38, 38, 40], [33, 33, 33], [255, 162, 100], [44, 40, 38], [255, 138, 61]],
+  ahead: [255, 255, 255],
+  behind: [255, 138, 61],
+};
 
 export type WaveSettings = { palette: PaletteLike; reducedMotion: "system" | "always" };
 
@@ -14,6 +20,12 @@ export const waveSettingsKey = "asbir:dev-wave-settings";
 export const waveSettingsEvent = "asbir:dev-wave-settings";
 /** Local testing only: plays the Publish wave with a pretend publish. */
 export const devPublishDemoEvent = "asbir:dev-publish-demo";
+/** Local testing only: plays the comments "All clear" wave without resolving anything. */
+export const devAllClearEvent = "asbir:dev-all-clear";
+/** Local testing only: shows the "version ready" view in the Add-a-version form with pretend data. */
+export const devVersionReadyEvent = "asbir:dev-version-ready";
+/** Local testing only: plays the "you're in" wave on the invite and onboarding pages. */
+export const devJoinedEvent = "asbir:dev-joined";
 
 const defaults: WaveSettings = { palette: wavePalette, reducedMotion: "system" };
 let cachedRaw: string | null = null;
@@ -30,7 +42,10 @@ function readSettings(): WaveSettings {
   if (raw === cachedRaw) return cached;
   cachedRaw = raw;
   try {
-    cached = raw ? { ...defaults, ...(JSON.parse(raw) as Partial<WaveSettings>) } : defaults;
+    const saved = raw ? (JSON.parse(raw) as Partial<WaveSettings>) : {};
+    // The bar saves a palette by name; "brand" (or an older saved copy of the colours) means ours.
+    const palette = typeof saved.palette === "string" && saved.palette !== "brand" ? saved.palette : wavePalette;
+    cached = { ...defaults, ...saved, palette };
   } catch {
     cached = defaults;
   }
