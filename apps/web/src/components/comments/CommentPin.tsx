@@ -38,19 +38,20 @@ export function CommentPin({ comment, index, inverseScale, selected, onSelect }:
   if (comment.x === null || comment.y === null) return null;
   const author = comment.authorRole ? `${comment.authorName} · ${comment.authorRole.toUpperCase()}` : comment.authorName;
 
+  // A speech bubble whose pointed bottom-left corner sits on the commented spot, as in Figma.
   return (
     <button
       aria-label={`Comment ${index + 1} by ${author}: ${comment.body}${comment.resolvedAt ? ". Resolved" : ". Open"}`}
       aria-pressed={selected}
-      className={`comment-pin absolute z-30 grid size-7 place-items-center rounded-full border font-mono text-[10px] font-medium tabular-nums transition-[scale,box-shadow] duration-150 hover:scale-110 ${selected ? "scale-125" : ""}`}
+      className="comment-pin absolute z-30 grid h-7 min-w-7 place-items-center px-1.5 font-mono text-[11px] font-semibold tabular-nums"
       onClick={() => onSelect(comment.id)}
       data-resolved={comment.resolvedAt ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
       style={{
-        left: comment.x - 14 * inverseScale,
-        top: comment.y - 14 * inverseScale,
+        left: comment.x,
+        top: comment.y - 28,
         transform: `scale(${inverseScale})`,
-        transformOrigin: "top left",
+        transformOrigin: "bottom left",
       }}
       type="button"
     >

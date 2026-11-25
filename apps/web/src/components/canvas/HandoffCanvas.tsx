@@ -31,6 +31,7 @@ import { formatComparisonChangeCount } from "./compare-presentation";
 import { formatCapturedAt } from "./captured-at";
 import { filterChangedFrames } from "./changed-frame-filter";
 import { overviewCanvasFrameId } from "./canvas-anchor";
+import { focusCanvasScreenEvent, showScreenViewEvent } from "./MobileReview";
 import {
   FrameNavigator,
   type CanvasFrameChangeStatus,
@@ -38,6 +39,9 @@ import {
   type FrameComparisonSummary,
 } from "./FrameNavigator";
 import type { VersionOption } from "./VersionCompare";
+import { cssTextForNode } from "./css-from-node";
+import { screensInFlowOrder } from "./screen-flow-order";
+import type { SnapshotDiffChange } from "../../server/services/diff";
 
 export type ReviewMetadata = {
   projectName: string;
@@ -80,6 +84,8 @@ type HandoffCanvasProps = {
   comparisonSummary: FrameComparisonSummary | null;
   /** Elements changed in this version (outlined when Changes is on). */
   changedNodeIds?: string[];
+  /** Every change in this version, for the inspector's "Changed since" list. */
+  versionChanges?: SnapshotDiffChange[];
   /** Arrived from a "N new" link: start with only the changed screens. */
   startChangedOnly?: boolean;
   canCompare: boolean;
@@ -121,6 +127,14 @@ function subscribeToLocationHash(onChange: () => void) {
     window.removeEventListener("hashchange", onChange);
     window.removeEventListener("handofflocationchange", onChange);
   };
+}
+
+const phoneQuery = "(max-width: 767px), (pointer: coarse) and (max-height: 500px)";
+
+function subscribeToPhoneQuery(onChange: () => void) {
+  const media = window.matchMedia(phoneQuery);
+  media.addEventListener("change", onChange);
+  return () => media.removeEventListener("change", onChange);
 }
 
 function getLocationHash() {
@@ -179,6 +193,7 @@ export function HandoffCanvas({
   frameStatuses,
   comparisonSummary,
   changedNodeIds = [],
+  versionChanges = [],
   startChangedOnly = false,
   canCompare,
   onCompareScreen,
@@ -246,6 +261,19 @@ export function HandoffCanvas({
     setFocusRequest((current) => ({ frameId, seq: (current?.seq ?? 0) + 1 }));
   }, []);
   const [moreOpen, setMoreOpen] = useState(false);
+  // The phone screen view opens the canvas on the screen it was showing.
+  useEffect(() => {
+    const onFocusScreen = (event: Event) => {
+      const frameId = (event as CustomEvent<string>).detail;
+      if (typeof frameId !== "string") return;
+      setSelectedFrameId(frameId);
+      focusScreen(frameId);
+    };
+    window.addEventListener(focusCanvasScreenEvent, onFocusScreen);
+    return () => window.removeEventListener(focusCanvasScreenEvent, onFocusScreen);
+  }, [focusScreen]);
+  // Phones (upright or sideways) hide desktop-only tools: local preview and AI tool setup.
+  const isPhone = useSyncExternalStore(subscribeToPhoneQuery, () => window.matchMedia(phoneQuery).matches, () => false);
   const [panelMoreOpen, setPanelMoreOpen] = useState(false);
   const [comments, setComments] = useState<HandoffComment[]>([]);
   const [annotations, setAnnotations] = useState<CanvasAnnotationRecord[]>([]);
@@ -288,6 +316,8 @@ export function HandoffCanvas({
   const activeMobilePanelRef = useRef<HTMLElement | null>(null);
   const mobilePanelWasOpenRef = useRef(false);
   const [highlightedNodeIds, setHighlightedNodeIds] = useState<string[]>([]);
+  // Shift+click a second layer to compare it with the selected one.
+  const [compareNodeId, setCompareNodeId] = useState<string | null>(null);
   const [latestPublished, setLatestPublished] = useState<{ versionId: string; versionLabel: string } | null>(null);
   // Only point at the published version when it is newer than the one open (versions are newest
   // first; one missing from the list was published after this page loaded, so it is newer too).
@@ -466,7 +496,8 @@ export function HandoffCanvas({
         setMobilePanelOpenOverride(false);
         return;
       }
-      if (event.key !== "Tab") return;
+      // The screens drawer is modal; the details panel isn't, so the canvas beside it stays usable.
+      if (event.key !== "Tab" || !statesOpen) return;
 
       const focusable = getFocusableElements(activePanel);
       if (!focusable.length) {
@@ -539,6 +570,17 @@ export function HandoffCanvas({
   const detailedSelectedNode = selectedNode
     ? selectedFrameNodes?.find((node) => node.sourceNodeId === selectedNode.sourceNodeId) ?? null
     : null;
+  const compareNodeSummary = compareNodeId ? screens.flatMap((frame) => frame.nodes).find((node) => node.sourceNodeId === compareNodeId) ?? null : null;
+  const detailedCompareNode = compareNodeSummary && compareNodeSummary.sourceNodeId !== selectedNode?.sourceNodeId
+    ? frameDetails.nodesFor(compareNodeSummary.sourceFrameId)?.find((node) => node.sourceNodeId === compareNodeSummary.sourceNodeId) ?? null
+    : null;
+  useEffect(() => {
+    if (compareNodeSummary) ensureFrameNodes(compareNodeSummary.sourceFrameId);
+  }, [compareNodeSummary, ensureFrameNodes]);
+  const selectedNodeChanges = useMemo(
+    () => selectedNode ? versionChanges.filter((change) => change.sourceNodeId === selectedNode.sourceNodeId) : [],
+    [selectedNode, versionChanges],
+  );
 
   const commentCount = comments.filter((comment) => comment.parentCommentId === null).length;
   const openCommentCount = comments.filter((comment) => comment.parentCommentId === null && !comment.resolvedAt).length;
@@ -649,6 +691,22 @@ export function HandoffCanvas({
     }
   }, [isMobile, previewSearchResult]);
 
+  // Opens search on a colour and lights up every layer that uses it.
+  const findColor = useCallback((color: string) => {
+    const needle = color.toLowerCase();
+    setSearchQuery(color);
+    setSearchCategory("Colors");
+    setActiveSearchIndex(-1);
+    setSearchOpen(true);
+    setStatesOpen(true);
+    setMobilePanelOpenOverride(false);
+    const matches = screens.flatMap((frame) => frame.nodes)
+      .filter((node) => [...node.fills, ...node.strokes].some((paint) => paint.color?.toLowerCase() === needle))
+      .map((node) => node.sourceNodeId);
+    setHighlightedNodeIds(matches);
+    showToast(`${matches.length} ${matches.length === 1 ? "layer uses" : "layers use"} ${color}`);
+  }, [screens]);
+
   const copySearchHighlights = useCallback(() => {
     setHighlightedNodeIds(searchResults.map((result) => result.node.sourceNodeId));
     if (searchResults[0]) {
@@ -743,6 +801,17 @@ export function HandoffCanvas({
         togglePanelsRef.current();
         return;
       }
+      // ⌘⇧C copies the selected layer's CSS.
+      if ((event.metaKey || event.ctrlKey) && event.shiftKey && !event.altKey && event.key.toLowerCase() === "c" && !editing) {
+        if (copyCssRef.current()) event.preventDefault();
+        return;
+      }
+      // ⌘[ / ⌘] go back and forward through what you selected, like a browser's history.
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && (event.code === "BracketLeft" || event.code === "BracketRight") && !editing) {
+        event.preventDefault();
+        historyNavRef.current(event.code === "BracketRight" ? 1 : -1);
+        return;
+      }
       // ⌘L / Ctrl+L copies a link to the selected screen or element, as in Figma. Opening it selects
       // and zooms to that screen.
       if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "l") {
@@ -761,7 +830,7 @@ export function HandoffCanvas({
         return;
       }
       // Layer moves only when focus isn't on a control, so Tab and Enter still work in the panels.
-      const onPage = !target || target === document.body || Boolean(target.closest("[data-canvas-viewport]"));
+      const onPage = !target || target === document.body || !(target instanceof Element) || Boolean(target.closest("[data-canvas-viewport]"));
       if (onPage && !event.metaKey && !event.ctrlKey && !event.altKey && (event.key === "Enter" || event.key === "Tab")) {
         const move = event.key === "Enter" ? (event.shiftKey ? "parent" : "child") : (event.shiftKey ? "previous" : "next");
         if (layerNavRef.current(move)) event.preventDefault();
@@ -800,6 +869,7 @@ export function HandoffCanvas({
       if (event.key === "0" || (event.shiftKey && event.code === "Digit1")) viewportControls?.fitToFrame();
       if (event.shiftKey && event.code === "Digit2" && selectedFrameIdRef.current) focusScreen(selectedFrameIdRef.current);
       if (event.key === "Escape") {
+        setCompareNodeId(null);
         setRemovalSelecting(false);
         setSearchOpen(false);
         setCommentMode(false);
@@ -891,6 +961,10 @@ export function HandoffCanvas({
   // Shift+[ and Shift+] (and the arrows by Changes) step through the changed elements in screen
   // order, top to bottom, zooming to each.
   const stepChangeRef = useRef<(direction: 1 | -1) => void>(() => {});
+  const copyCssRef = useRef<() => boolean>(() => false);
+  // Back/forward through selections (⌘[ / ⌘]). Moving through history doesn't add to it.
+  const historyRef = useRef<{ entries: Array<{ frameId: string | null; nodeId: string | null }>; index: number; navigating: boolean }>({ entries: [], index: -1, navigating: false });
+  const historyNavRef = useRef<(direction: 1 | -1) => void>(() => {});
   const selectedFrameIdRef = useRef<string | null>(null);
   const togglePanelsRef = useRef<() => void>(() => {});
   // Figma-style layer moves: Enter goes into the selection, Shift+Enter out to its parent, and
@@ -926,7 +1000,7 @@ export function HandoffCanvas({
       return true;
     };
     stepScreenRef.current = (direction) => {
-      const list = canvasScreens.length ? canvasScreens : screens;
+      const list = screensInFlowOrder(canvasScreens.length ? canvasScreens : screens);
       if (!list.length) return;
       const index = list.findIndex((frame) => frame.id === selectedFrameId);
       const next = index === -1 ? (direction === 1 ? 0 : list.length - 1) : (index + direction + list.length) % list.length;
@@ -937,7 +1011,7 @@ export function HandoffCanvas({
       if (!changedNodeIds.length) return;
       if (!showChanges) setShowChanges(true);
       const changed = new Set(changedNodeIds);
-      const list = canvasScreens.length ? canvasScreens : screens;
+      const list = screensInFlowOrder(canvasScreens.length ? canvasScreens : screens);
       const ordered = list.flatMap((screen) => screen.nodes
         .filter((node) => changed.has(node.sourceNodeId))
         .sort((a, b) => ((a.bounds.y.value ?? 0) - (b.bounds.y.value ?? 0)) || ((a.bounds.x.value ?? 0) - (b.bounds.x.value ?? 0))));
@@ -947,6 +1021,30 @@ export function HandoffCanvas({
       const target = ordered[next];
       selectNode(target.sourceNodeId);
       setFocusRequest((current) => ({ frameId: target.sourceFrameId, nodeId: target.sourceNodeId, seq: (current?.seq ?? 0) + 1 }));
+    };
+    copyCssRef.current = () => {
+      if (!detailedSelectedNode) return false;
+      const name = detailedSelectedNode.name || "this layer";
+      navigator.clipboard?.writeText(cssTextForNode(detailedSelectedNode)).then(() => showToast("Copied CSS for " + name), () => showToast("The browser blocked copying"));
+      return true;
+    };
+    historyNavRef.current = (direction) => {
+      const history = historyRef.current;
+      const nextIndex = history.index + direction;
+      const entry = history.entries[nextIndex];
+      if (!entry) {
+        showToast(direction === -1 ? "Nothing to go back to" : "Nothing to go forward to");
+        return;
+      }
+      history.index = nextIndex;
+      history.navigating = true;
+      if (entry.nodeId) {
+        selectNode(entry.nodeId);
+        setFocusRequest((current) => ({ frameId: entry.frameId ?? "", nodeId: entry.nodeId ?? undefined, seq: (current?.seq ?? 0) + 1 }));
+      } else if (entry.frameId) {
+        selectFrame(entry.frameId);
+        focusScreen(entry.frameId);
+      }
     };
     selectedFrameIdRef.current = selectedFrameId;
     togglePanelsRef.current = () => {
@@ -959,6 +1057,19 @@ export function HandoffCanvas({
       setDetailsOpen(show);
     };
   });
+
+  useEffect(() => {
+    const history = historyRef.current;
+    if (!selectedFrameId && !selectedNodeId) return;
+    if (history.navigating) {
+      history.navigating = false;
+      return;
+    }
+    const current = history.entries[history.index];
+    if (current && current.frameId === selectedFrameId && current.nodeId === selectedNodeId) return;
+    history.entries = [...history.entries.slice(0, history.index + 1), { frameId: selectedFrameId, nodeId: selectedNodeId }].slice(-100);
+    history.index = history.entries.length - 1;
+  }, [selectedFrameId, selectedNodeId]);
 
   // "?comment=<id>" (from "Needs you" or a notification) opens that thread once comments load.
   const selectCommentRef = useRef(selectComment);
@@ -1059,6 +1170,10 @@ export function HandoffCanvas({
     setCommentMode(false);
     setAnnotationMode(false);
     setCommentError(null);
+    if (isMobile) {
+      setStatesOpen(false);
+      setMobilePanelOpenOverride(false);
+    }
     setCanvasModeOverride(canvasMode);
     updateLinkState(point.frameId, point.sourceNodeId);
   }
@@ -1198,7 +1313,7 @@ export function HandoffCanvas({
     compareFrame(selectedFrame.id);
   }
 
-  function commentOnSelectedElement() {
+  function commentOnSelectedElement(draft?: string) {
     if (!selectedNode || !selectedFrame) return;
     const x = selectedNode.bounds.x.value;
     const y = selectedNode.bounds.y.value;
@@ -1210,12 +1325,14 @@ export function HandoffCanvas({
       sourceNodeId: selectedNode.sourceNodeId,
       x: x - selectedFrame.sourceX + width / 2,
       y: y - selectedFrame.sourceY + height / 2,
+      draft,
     });
     setPanelMode("comments");
     setCommentMode(false);
+    // The new-comment box opens on the canvas; on phones the full-screen panel would cover it.
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpenOverride(true);
+      setMobilePanelOpenOverride(false);
     }
     setCanvasModeOverride(canvasMode);
     updateLinkState(selectedFrame.id, selectedNode.sourceNodeId);
@@ -1229,9 +1346,10 @@ export function HandoffCanvas({
     setPendingPoint({ frameId: frame.id, sourceNodeId: null, x: frame.sourceWidth / 2, y: frame.sourceHeight / 2 });
     setPanelMode("comments");
     setCommentMode(false);
+    // The new-comment box opens on the canvas; on phones the full-screen panel would cover it.
     if (isMobile) {
       setStatesOpen(false);
-      setMobilePanelOpenOverride(true);
+      setMobilePanelOpenOverride(false);
     }
     setCanvasModeOverride(canvasMode);
     updateLinkState(frame.id, null);
@@ -1285,7 +1403,7 @@ export function HandoffCanvas({
           <div className="flex min-w-0 items-center gap-1.5" title={metaParts.join(" · ")}>
             <span className="min-w-0 truncate text-[13px] font-semibold tracking-[-0.01em] text-foreground max-sm:sr-only lg:max-w-[150px] xl:max-w-[220px]">{metadata.handoffName}</span>
             <label className="sr-only" htmlFor="review-version-select">Version</label>
-            <span className="relative inline-flex min-w-[5.5rem] shrink items-center">
+            <span className="relative inline-flex min-w-[5.5rem] shrink items-center max-lg:min-w-[8rem]">
               <select
                 className="h-7 w-full min-w-0 max-w-[260px] appearance-none truncate xl:max-w-[340px] 2xl:max-w-[420px] rounded-[7px] border border-white/[0.08] bg-white/[0.03] bg-[length:12px] bg-[position:right_7px_center] py-0 pl-2 !pr-7 font-mono text-[11px] text-foreground-muted transition-colors hover:border-white/[0.16] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary"
                 id="review-version-select"
@@ -1300,7 +1418,7 @@ export function HandoffCanvas({
             </span>
             {canCompare ? (
               <button
-                className="canvas-tool hidden h-7 shrink-0 border border-white/[0.08] sm:inline-flex"
+                className="canvas-tool hidden h-7 shrink-0 border border-white/[0.08] lg:inline-flex"
                 onClick={() => {
                   setCommentMode(false);
                   if (isMobile) setStatesOpen(false);
@@ -1316,7 +1434,7 @@ export function HandoffCanvas({
             ) : null}
             {metadata.canUseLocalPreview ? (
               <button
-                className="canvas-tool hidden h-7 shrink-0 border border-white/[0.08] sm:inline-flex"
+                className="canvas-tool hidden h-7 shrink-0 border border-white/[0.08] lg:inline-flex"
                 onClick={() => {
                   setCommentMode(false);
                   setSearchOpen(false);
@@ -1361,7 +1479,14 @@ export function HandoffCanvas({
           >
             <PanelRightIcon />
           </button>
-          <div className="relative">
+          <div
+            className="relative"
+            onKeyDown={(event) => {
+              if (event.key !== "Escape" || !moreOpen) return;
+              event.stopPropagation();
+              setMoreOpen(false);
+            }}
+          >
             <button aria-expanded={moreOpen} aria-label="More" className="canvas-tool" onClick={() => setMoreOpen((current) => !current)} title="More" type="button">
               <MoreIcon />
             </button>
@@ -1369,18 +1494,38 @@ export function HandoffCanvas({
               <>
                 <button aria-label="Close menu" className="fixed inset-0 z-40 cursor-default" onClick={() => setMoreOpen(false)} tabIndex={-1} type="button" />
                 <div className="dial-popover absolute right-0 top-10 z-50 w-56 p-1.5" role="menu">
-                  <button className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06]" onClick={() => { setMoreOpen(false); setShortcutsOpen(true); }} role="menuitem" type="button">
+                  {document.querySelector("[data-screen-view-host]") ? (
+                    <button className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06] md:hidden" onClick={() => { setMoreOpen(false); window.dispatchEvent(new Event(showScreenViewEvent)); }} role="menuitem" type="button">
+                      <svg aria-hidden="true" className="size-4 text-foreground-subtle" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><rect height="11" rx="1.5" width="7" x="4.5" y="2.5" /><path d="M2 6v4M14 6v4" /></svg>
+                      <span className="flex-1">Screen by screen</span>
+                    </button>
+                  ) : null}
+                  {/* Below desktop width the header has no room for these, so they live here. */}
+                  {canCompare ? (
+                    <button className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06] lg:hidden" onClick={() => { setMoreOpen(false); setCommentMode(false); if (isMobile) setStatesOpen(false); setSearchOpen(false); onOpenComparison(); }} role="menuitem" type="button">
+                      <CompareIcon className="size-4 text-foreground-subtle" />
+                      <span className="flex-1">Compare with the previous version</span>
+                    </button>
+                  ) : null}
+                  {metadata.canUseLocalPreview ? (
+                    <button className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06] phone-hidden lg:hidden" onClick={() => { setMoreOpen(false); setCommentMode(false); setSearchOpen(false); setLocalPreviewOpen(true); }} role="menuitem" type="button">
+                      <svg aria-hidden="true" className="size-4 text-foreground-subtle" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><rect height="9" rx="1.5" width="12" x="2" y="2.5" /><path d="M6 14h4M8 11.5V14" /></svg>
+                      <span className="flex-1">Local preview</span>
+                    </button>
+                  ) : null}
+                  {canCompare || metadata.canUseLocalPreview ? <div aria-hidden="true" className={"mx-1 my-1 h-px bg-white/[0.06] lg:hidden" + (canCompare ? "" : " phone-hidden")} /> : null}
+                  <button className="touch-hidden flex w-full items-center gap-2.5 rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06]" onClick={() => { setMoreOpen(false); setShortcutsOpen(true); }} role="menuitem" type="button">
                     <KeyboardIcon className="size-4 text-foreground-subtle" />
                     <span className="flex-1">Keyboard shortcuts</span>
                     <kbd className="canvas-kbd">?</kbd>
                   </button>
                   {metadata.canManageIntegrations ? (
-                    <button className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06]" onClick={() => { setMoreOpen(false); setPanelMode("mcp"); setCommentMode(false); setAnnotationMode(false); if (isMobile) { setStatesOpen(false); setMobilePanelOpenOverride(true); } }} role="menuitem" type="button">
+                    <button className="phone-hidden flex w-full items-center gap-2.5 rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06]" onClick={() => { setMoreOpen(false); setPanelMode("mcp"); setCommentMode(false); setAnnotationMode(false); if (isMobile) { setStatesOpen(false); setMobilePanelOpenOverride(true); } }} role="menuitem" type="button">
                       <span aria-hidden="true" className="grid size-4 place-items-center font-mono text-[9px] text-foreground-subtle">AI</span>
                       <span className="flex-1">Connect an AI coding tool</span>
                     </button>
                   ) : null}
-                  <div className="px-1 pt-1 [&>button]:w-full [&>button]:justify-start"><InstallAppButton compact /></div>
+                  <div className="px-1 pt-1 [&>button]:w-full [&>button]:justify-start"><InstallAppButton /></div>
                 </div>
               </>
             ) : null}
@@ -1495,7 +1640,7 @@ export function HandoffCanvas({
       ) : null}
 
       <div className={"relative grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] overflow-hidden " + (statesOpen && detailsOpen ? "lg:grid-cols-[240px_minmax(0,1fr)_320px]" : statesOpen ? "lg:grid-cols-[240px_minmax(0,1fr)]" : detailsOpen ? "lg:grid-cols-[minmax(0,1fr)_320px]" : "lg:grid-cols-[minmax(0,1fr)]")}>
-        {isMobile && (statesOpen || mobilePanelOpen) ? (
+        {isMobile && statesOpen ? (
           <button
             aria-label="Close canvas side panel"
             className="absolute inset-0 z-20 cursor-default bg-black/35 lg:hidden"
@@ -1660,7 +1805,7 @@ export function HandoffCanvas({
             )}
           </div>
         ) : null}
-        <div className="relative col-start-1 row-start-1 flex h-full min-h-0 min-w-0 lg:col-auto lg:row-auto">
+        <div className="relative col-start-1 row-start-1 flex h-full min-h-0 min-w-0 lg:col-auto lg:row-auto" data-details-sheet={isMobile && mobilePanelOpen ? "" : undefined}>
         {/* Figma-style floating bar: canvas tools, overlays and zoom, kept off the top nav. */}
         <div aria-label="Canvas tools" className="canvas-floatbar" role="toolbar">
           <button
@@ -1774,6 +1919,15 @@ export function HandoffCanvas({
           changesVisible={showChanges}
           viewMemoryKey={`${handoffId}:${metadata.selectedVersionId}:${visualFrame.id}`}
           focusRequest={focusRequest}
+          compareNodeId={compareNodeSummary && compareNodeSummary.sourceNodeId !== selectedNodeId ? compareNodeSummary.sourceNodeId : null}
+          detailsDrawerOpen={isMobile && mobilePanelOpen}
+          onCompareNode={(nodeId) => {
+            if (!selectedNodeId) {
+              selectNode(nodeId);
+              return;
+            }
+            setCompareNodeId(nodeId === selectedNodeId ? null : nodeId);
+          }}
           showResolvedPins={showResolvedPins}
           selectedNodeId={selectedNodeId}
           onSelectNode={selectNode}
@@ -1815,25 +1969,15 @@ export function HandoffCanvas({
         </div>
         <aside
           aria-label="Handoff details"
-          aria-modal={isMobile && mobilePanelOpen ? true : undefined}
-          className={"min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-surface " + (mobilePanelOpen ? "absolute inset-0 z-30 flex w-full border-l-0 shadow-2xl lg:static lg:z-auto lg:w-auto lg:border-l lg:shadow-none" : "hidden lg:static") + (detailsOpen ? " lg:flex" : " lg:hidden")}
+          
+          className={"min-h-0 min-w-0 flex-col overflow-hidden border-l border-border bg-surface " + (mobilePanelOpen ? "absolute inset-x-0 bottom-0 z-30 flex h-[58%] w-full rounded-t-[14px] border-l-0 border-t shadow-[0_-12px_32px_rgb(0_0_0/0.45)] sm:inset-y-0 sm:left-auto sm:right-0 sm:h-auto sm:w-[min(400px,62vw)] sm:rounded-none sm:border-l sm:border-t-0 sm:shadow-2xl lg:static lg:h-auto lg:rounded-none lg:z-auto lg:w-auto lg:border-l lg:shadow-none" : "hidden lg:static") + (detailsOpen ? " lg:flex" : " lg:hidden")}
           ref={detailsPanelRef}
           role={isMobile && mobilePanelOpen ? "dialog" : undefined}
           tabIndex={isMobile && mobilePanelOpen ? -1 : undefined}
         >
-          {isMobile && mobilePanelOpen ? (
-            <div className="flex shrink-0 justify-end border-b border-border px-2 py-1.5 lg:hidden">
-              <button
-                aria-label="Close details panel"
-                className="dial-button min-h-8 px-2.5 text-[11px]"
-                onClick={() => setMobilePanelOpenOverride(false)}
-                type="button"
-              >
-                Close
-              </button>
-            </div>
-          ) : null}
-          <div className="canvas-tabs shrink-0" role="tablist" aria-label="Details panels">
+          {/* On phones and tablets Close shares the tab row instead of taking a row of its own. */}
+          <div className="flex shrink-0 items-center">
+          <div className="canvas-tabs min-w-0 flex-1" role="tablist" aria-label="Details panels">
             {([
               ["inspect", "Inspect", InspectIcon, null],
               ["comments", "Comments", CommentIcon, openCommentCount || null],
@@ -1866,8 +2010,8 @@ export function HandoffCanvas({
             {(() => {
               const extras = ([
                 ["agent", "Agent handoff", Boolean(metadata.canManageIntegrations && metadata.reviewHref && metadata.versionIsPublished)],
-                ["local", "Local preview", metadata.canUseLocalPreview && isMobile],
-                ["mcp", "AI coding tool (MCP)", metadata.canManageIntegrations],
+                ["local", "Local preview", metadata.canUseLocalPreview && isMobile && !isPhone],
+                ["mcp", "AI coding tool (MCP)", metadata.canManageIntegrations && !isPhone],
               ] as const).filter(([, , visible]) => visible);
               if (!extras.length) return null;
               const activeExtra = extras.find(([mode]) => mode !== "local" && mode === panelMode);
@@ -1907,6 +2051,18 @@ export function HandoffCanvas({
                 </div>
               );
             })()}
+          </div>
+          {isMobile && mobilePanelOpen ? (
+            <button
+              aria-label="Close details panel"
+              className="mr-2.5 mt-1.5 grid size-9 shrink-0 place-items-center rounded-control text-foreground-subtle hover:bg-surface-raised hover:text-foreground lg:hidden"
+              onClick={() => setMobilePanelOpenOverride(false)}
+              title="Close"
+              type="button"
+            >
+              <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 16 16"><path d="m4 4 8 8m0-8-8 8" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" /></svg>
+            </button>
+          ) : null}
           </div>
           {panelMode === "annotations" ? (
             <CanvasAnnotationsPanel key={`${selectedAnnotationId ?? "new"}:${pendingAnnotationPoint?.frameId ?? ""}:${pendingAnnotationPoint?.x ?? ""}:${pendingAnnotationPoint?.y ?? ""}`} annotations={annotations} screenNames={{ [overviewCanvasFrameId]: "Canvas", ...Object.fromEntries(screens.map((screen) => [screen.id, screen.name])) }} selectedAnnotationId={selectedAnnotationId} pendingPoint={pendingAnnotationPoint} placing={annotationMode} canEdit={metadata.canAnnotate} hasSelectedScreen={Boolean(selectedFrame)} error={annotationError} onSelect={selectAnnotation} onStartPlacement={() => { setCommentMode(false); setSelectedAnnotationId(null); setPendingAnnotationPoint(null); setAnnotationMode(true); }} onPlaceAtSelectedScreen={annotateSelectedScreen} onCancel={() => { setAnnotationMode(false); setPendingAnnotationPoint(null); setSelectedAnnotationId(null); }} onCreate={createAnnotation} onUpdate={updateAnnotation} onDelete={deleteAnnotation} />
@@ -1982,7 +2138,13 @@ export function HandoffCanvas({
             canComment={metadata.canComment}
             canCompare={canCompare}
             onCompare={compareSelectedFrame}
-            onAddComment={commentOnSelectedElement}
+            onAddComment={() => commentOnSelectedElement()}
+            compareNode={detailedCompareNode}
+            onClearCompare={() => setCompareNodeId(null)}
+            onFindColor={findColor}
+            nodeChanges={selectedNodeChanges}
+            earlierVersionLabel={comparisonSummary?.earlierVersionLabel ?? null}
+            onCommentWithDraft={(draft) => commentOnSelectedElement(draft)}
             onSelectNode={selectNode}
             onCopyLink={() => navigator.clipboard?.writeText(window.location.href)}
             inspecting={canvasMode === "inspect"}

@@ -414,7 +414,7 @@ export function VersionCompare({
             onClick={onClose}
             type="button"
           >
-            Close <span className="ml-1 text-foreground-subtle">Esc</span>
+            Close <span className="touch-hidden ml-1 text-foreground-subtle">Esc</span>
           </button>
         </header>
         {versions.length < 2 ? (

@@ -187,9 +187,11 @@ select option {
   color: var(--primary-foreground);
 }
 
+/* Focus rings sit flush against the element's edge (offset 0), so a border and its ring read as one
+   line, never two rings with a gap between them. */
 :focus-visible {
   outline: 2px solid rgb(255 255 255 / 0.6);
-  outline-offset: 2px;
+  outline-offset: 0;
 }
 
 dialog::backdrop {
@@ -203,39 +205,50 @@ dialog::backdrop {
   -webkit-backdrop-filter: blur(var(--overlay-backdrop-blur));
 }
 
+/* One focus ring on the comment box: a lighter border plus a soft halo, not a second outline. */
 .comment-composer:focus-within {
-  border-color: rgb(255 255 255 / 0.34);
-  outline: 2px solid rgb(255 255 255 / 0.6);
-  outline-offset: 2px;
+  border-color: rgb(255 255 255 / 0.3);
+  box-shadow: 0 0 0 3px rgb(255 255 255 / 0.07);
 }
 
+.comment-composer textarea:focus,
 .comment-composer textarea:focus-visible {
   outline: none;
 }
 
+/* Comment pins are speech bubbles: round except the bottom-left corner, which points at the spot. */
 .comment-pin {
-  border-color: rgb(255 255 255 / 0.72);
-  background: color-mix(in srgb, var(--surface) 88%, white 12%);
-  color: var(--foreground);
-  box-shadow: 0 2px 8px rgb(0 0 0 / 0.56), inset 0 1px 0 rgb(255 255 255 / 0.2);
+  border-radius: 14px 14px 14px 3px;
+  border: 1.5px solid rgb(0 0 0 / 0.55);
+  background: #ffffff;
+  color: #18181b;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.35), 0 4px 12px rgb(0 0 0 / 0.35);
+  transition: scale 150ms ease, background-color 150ms ease, color 150ms ease, box-shadow 150ms ease;
+}
+
+.comment-pin:hover {
+  scale: 1.08;
 }
 
 .comment-pin[data-resolved="true"] {
-  border-color: var(--border-strong);
-  background: var(--surface-raised);
-  color: var(--foreground-muted);
+  background: #3a3a3c;
+  border-color: rgb(255 255 255 / 0.16);
+  color: rgb(255 255 255 / 0.6);
 }
 
-.comment-pin[data-selected="true"] {
-  outline: 2px solid rgb(255 255 255 / 0.72);
-  outline-offset: 2px;
+.comment-pin[data-selected="true"],
+.comment-pin-pending {
+  background: #f07a2a;
+  border-color: rgb(0 0 0 / 0.35);
+  color: #ffffff;
+  scale: 1.12;
+  box-shadow: 0 0 0 3px rgb(240 122 42 / 0.28), 0 6px 16px rgb(0 0 0 / 0.45);
 }
 
 .comment-pin:focus-visible {
-  outline: 2px solid var(--foreground);
-  outline-offset: 4px;
+  outline: 2px solid #ffffff;
+  outline-offset: 0;
 }
-
 
 .capture-primary-action {
   border: 1px solid transparent;
@@ -256,7 +269,7 @@ dialog::backdrop {
 
 .capture-primary-action:focus-visible {
   outline: 2px solid rgb(255 255 255 / 0.6);
-  outline-offset: 2px;
+  outline-offset: 0;
 }
 
 .capture-primary-action:disabled {
@@ -342,6 +355,20 @@ dialog::backdrop {
   }
 }
 
+/* Desktop-only tools (local preview, AI tool setup) are hidden on phones, upright or sideways. */
+/* .phone-only says why instead, where a hidden tool would leave a gap. */
+.phone-only {
+  display: none;
+}
+@media (max-width: 767px), (pointer: coarse) and (max-height: 500px) {
+  .phone-hidden {
+    display: none !important;
+  }
+  .phone-only {
+    display: revert;
+  }
+}
+
 /* Phones: the app fills the screen edge to edge instead of sitting in an inset window. */
 @media (max-width: 639px) {
   .workspace-window {
@@ -407,7 +434,7 @@ dialog::backdrop {
 
 .canvas-publish-action:focus-visible {
   outline: 2px solid rgb(255 255 255 / 0.6);
-  outline-offset: 2px;
+  outline-offset: 0;
 }
 
 .canvas-publish-action:disabled {
@@ -577,7 +604,7 @@ dialog::backdrop {
 }
 .handoff-card:has(.handoff-card-link:focus-visible) {
   outline: 2px solid rgb(255 255 255 / 0.6);
-  outline-offset: 2px;
+  outline-offset: 0;
 }
 .handoff-card:active {
   transform: scale(0.985);
@@ -1202,7 +1229,7 @@ html[data-splash="seen"] .app-splash {
 .needs-you-reply:focus-visible,
 .needs-you-done:focus-visible {
   outline: 2px solid rgb(255 255 255 / 0.6);
-  outline-offset: 2px;
+  outline-offset: 0;
 }
 
 .viewer-count {
@@ -1280,6 +1307,11 @@ html[data-splash="seen"] .app-splash {
   .handoff-tab .handoff-tab-close {
     opacity: 1;
   }
+}
+/* Fingers need a bigger target than the 20px ×; the hit area grows without moving the icon. */
+@media (pointer: coarse) {
+  .handoff-tab .handoff-tab-close { position: relative; }
+  .handoff-tab .handoff-tab-close::after { content: ""; position: absolute; inset: -8px -6px; }
 }
 
 /* Quick open (⌘K). */
@@ -1404,7 +1436,7 @@ html[data-splash="seen"] .app-splash {
 }
 .canvas-tool:focus-visible {
   outline: 2px solid rgb(255 255 255 / 0.5);
-  outline-offset: 1px;
+  outline-offset: 0;
 }
 .canvas-tool-count {
   border-radius: 9999px;
@@ -1500,7 +1532,7 @@ html[data-splash="seen"] .app-splash {
 }
 .inspector-action:focus-visible {
   outline: 2px solid rgb(255 255 255 / 0.5);
-  outline-offset: 1px;
+  outline-offset: 0;
 }
 }
 
@@ -1628,10 +1660,36 @@ html[data-splash="seen"] .app-splash {
   flex-shrink: 0;
   background: rgb(255 255 255 / 0.1);
 }
-/* Phones pinch to zoom, so the bar keeps only the zoom level (tap to fit). */
+/* Phones pinch to zoom, so the bar keeps only the zoom level (tap to fit). Layout grids and the
+   screen count go too, so change stepping and the zoom level stay on screen at 320px; anything that
+   still doesn't fit scrolls sideways rather than being cut off. */
 @media (max-width: 639px) {
   .canvas-floatbar [aria-label="Zoom out"],
-  .canvas-floatbar [aria-label="Zoom in"] { display: none; }
+  .canvas-floatbar [aria-label="Zoom in"],
+  .canvas-floatbar [aria-label="Toggle Figma layout grids"],
+  .canvas-floatbar #canvas-mobile-screens-toggle > .font-mono { display: none; }
+  .canvas-floatbar { gap: 0; overflow-x: auto; scrollbar-width: none; }
+  .canvas-floatbar::-webkit-scrollbar { display: none; }
+  .canvas-floatbar-divider { margin: 0 2px; }
+}
+
+/* Phones: the details panel is a bottom sheet over 58% of the canvas, so the tools sit just above it. */
+@media (max-width: 639px) {
+  [data-details-sheet] > .canvas-floatbar { bottom: calc(58% + 10px); }
+}
+
+/* iOS zooms the whole page when a field under 16px gets focus, so touch screens get 16px fields. */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="color"], [type="file"]),
+  textarea,
+  select { font-size: max(16px, 1em); }
+}
+
+/* Comment mode (C): a speech-bubble cursor whose tail tip is the click point, over the canvas and the
+   element boxes on it. Existing pins and the comment box keep their own cursors. */
+[data-comment-cursor],
+[data-comment-cursor] :not([data-comment-pin], [data-comment-pin] *) {
+  cursor: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='28' height='28' viewBox='0 0 28 28'><path d='M3 25.5V12.5C3 7.25 7.25 3 12.5 3h3C20.75 3 25 7.25 25 12.5S20.75 22 15.5 22H8.5L3 25.5Z' fill='%23ffffff' stroke='%23141414' stroke-width='1.6' stroke-linejoin='round'/><path d='M14 8.5v7M10.5 12h7' stroke='%23f07a2a' stroke-width='2' stroke-linecap='round'/></svg>") 3 25, crosshair !important;
 }
 
 /* While Space is held the whole canvas pans, so pins and element boxes show the hand, not their own cursor. */

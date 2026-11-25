@@ -11,6 +11,10 @@ import { InspectorExport } from "./InspectorExport";
 import { formatFrameSize, formatPixelValue, formatPrecisePixelValue, formatWholeNumber, inspectionBounds, inspectionGeometryNotice, inspectionMeasurementEntries } from "./format-captured-measurement";
 import { capturedGridTracks, formatGridTrack, shouldShowGridLayout } from "./grid-layout";
 import { formatFigmaTextMetric, readPaintDetails, readTextStyleRuns, type TextStyleRun } from "./text-style-runs";
+import { cssDifferences, cssTextForNode } from "./css-from-node";
+import { comparisonChangeLabel, comparisonValueLabel, separateSupplementalChanges } from "./compare-presentation";
+import { formatComparisonValue } from "./format-captured-measurement";
+import type { SnapshotDiffChange } from "../../server/services/diff";
 
 type ElementInspectorProps = {
   frame: CanvasFrameOption;
@@ -34,7 +38,38 @@ type ElementInspectorProps = {
   removingScreen?: boolean;
   /** This screen is marked for removal in the next (unpublished) version. */
   screenMarkedForRemoval?: boolean;
+  /** A second layer picked with Shift+click; the inspector lists where the two differ. */
+  compareNode?: SnapshotNode | null;
+  onClearCompare?: () => void;
+  /** Lights up every layer using this colour and lists them in search. */
+  onFindColor?: (color: string) => void;
+  /** What changed on the selected element since the earlier version. */
+  nodeChanges?: SnapshotDiffChange[];
+  earlierVersionLabel?: string | null;
+  /** Starts a comment on the element with this text filled in. */
+  onCommentWithDraft?: (draft: string) => void;
 };
+
+/** "Width: 343px → 320px" lines for a change comment. */
+function changeDraft(changes: SnapshotDiffChange[], earlierVersionLabel: string | null | undefined) {
+  const lines = changes.map((change) => `- ${comparisonChangeLabel(change)}: ${comparisonValueLabel(change, "before", formatComparisonValue)} → ${comparisonValueLabel(change, "after", formatComparisonValue)}`);
+  return `Changed since ${earlierVersionLabel ? "v" + earlierVersionLabel : "the last version"}:\n${lines.join("\n")}\n\n`;
+}
+
+function FindColorButton({ color, onFind }: { color: string; onFind?: (color: string) => void }) {
+  if (!onFind) return null;
+  return (
+    <button
+      aria-label={`Find layers using ${color}`}
+      className="grid size-5 shrink-0 place-items-center rounded-[5px] text-foreground-subtle hover:bg-white/[0.08] hover:text-foreground"
+      onClick={() => onFind(color)}
+      title="Find every layer using this colour"
+      type="button"
+    >
+      <svg aria-hidden="true" className="size-3" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.25" /><path d="m10.25 10.25 3 3" /></svg>
+    </button>
+  );
+}
 
 function valueText(value: unknown) {
   if (typeof value === "string") return value;
@@ -281,6 +316,12 @@ export function ElementInspector({
   onRemoveScreen,
   removingScreen = false,
   screenMarkedForRemoval = false,
+  compareNode = null,
+  onClearCompare,
+  onFindColor,
+  nodeChanges = [],
+  earlierVersionLabel = null,
+  onCommentWithDraft,
 }: ElementInspectorProps) {
   const [linkCopied, setLinkCopied] = useState(false);
   const [textCopied, setTextCopied] = useState(false);
@@ -363,6 +404,19 @@ export function ElementInspector({
     }
   }
 
+  async function copyCss() {
+    if (!selectedNode) return;
+    try {
+      await navigator.clipboard.writeText(cssTextForNode(selectedNode));
+      showToast("Copied CSS for " + (selectedNode.name || "this layer"));
+    } catch {
+      showToast("The browser blocked copying");
+    }
+  }
+  const visibleChanges = separateSupplementalChanges(nodeChanges).visible;
+  const differences = selectedNode && compareNode && compareNode.sourceNodeId !== selectedNode.sourceNodeId ? cssDifferences(selectedNode, compareNode) : null;
+  const css = selectedNode ? cssTextForNode(selectedNode) : "";
+
   async function copyLink() {
     try {
       await onCopyLink();
@@ -432,11 +486,69 @@ export function ElementInspector({
             </div>
             <div className="mt-3 flex flex-wrap gap-1.5">
               {selectedTypography?.content ? <button className="inspector-action" onClick={() => void copyText(selectedTypography.content!)} title="Copy the exact text of this layer" type="button">{textCopied ? "Copied" : "Copy text"}</button> : null}
+              <button className="inspector-action" onClick={copyCss} title="CSS from the values Figma stores for this layer (⌘⇧C copies it too)" type="button">Copy CSS</button>
               <button className="inspector-action" onClick={copyLink} title="A link that opens this screen with this element selected" type="button">{linkCopied ? "Copied" : "Copy link"}</button>
               {canComment ? <button className="inspector-action" onClick={onAddComment} type="button">Comment</button> : null}
               {canCompare ? <button className="inspector-action" onClick={onCompare} type="button">Compare</button> : null}
             </div>
           </div>
+
+          {differences ? (
+            <section aria-labelledby="inspector-compare-title" className="mb-4 rounded-[12px] border border-[#5aa9ff]/30 bg-[#5aa9ff]/[0.06] p-3">
+              <div className="flex items-start justify-between gap-2">
+                <h3 className="min-w-0 text-[12px] font-medium text-foreground" id="inspector-compare-title">
+                  Compared with <span className="text-[#8cc4ff]">{compareNode?.name || "the other layer"}</span>
+                </h3>
+                {onClearCompare ? <button className="inspector-action shrink-0" onClick={onClearCompare} title="Stop comparing (Esc)" type="button">Clear</button> : null}
+              </div>
+              {differences.length ? (
+                <table className="mt-2 w-full table-fixed text-[11px]">
+                  <thead>
+                    <tr className="text-left text-[10px] text-foreground-subtle">
+                      <th className="w-[34%] pb-1 font-normal">Property</th>
+                      <th className="pb-1 font-normal">This</th>
+                      <th className="pb-1 font-normal text-[#8cc4ff]">Other</th>
+                    </tr>
+                  </thead>
+                  <tbody className="font-mono">
+                    {differences.map((row) => (
+                      <tr className="border-t border-white/[0.06] align-top" key={row.property}>
+                        <td className="truncate py-1 pr-1 text-foreground-subtle" title={row.property}>{row.property}</td>
+                        <td className="break-words py-1 pr-1 text-foreground">{row.first ?? "—"}</td>
+                        <td className="break-words py-1 text-[#b9dbff]">{row.second ?? "—"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              ) : <p className="mt-1.5 text-[11px] text-foreground-muted">Same size, spacing, colours and text style.</p>}
+              <p className="mt-2 text-[10px] text-foreground-subtle">Distances between them are drawn on the canvas.<span className="touch-hidden"> Shift+click another layer to compare with it instead.</span></p>
+            </section>
+          ) : null}
+
+          {visibleChanges.length ? (
+            <section aria-labelledby="inspector-changes-title" className="mb-4 rounded-[12px] border border-warning/25 bg-warning/[0.05] p-3">
+              <div className="flex items-center justify-between gap-2">
+                <h3 className="text-[12px] font-medium text-foreground" id="inspector-changes-title">
+                  Changed since {earlierVersionLabel ? "v" + earlierVersionLabel : "the last version"}
+                </h3>
+                {canComment && onCommentWithDraft ? (
+                  <button className="inspector-action shrink-0" onClick={() => onCommentWithDraft(changeDraft(visibleChanges, earlierVersionLabel))} title="Start a comment on this element with these changes filled in" type="button">Comment</button>
+                ) : null}
+              </div>
+              <ul className="mt-2 space-y-2">
+                {visibleChanges.map((change, index) => (
+                  <li className="text-[11px]" key={change.path + index}>
+                    <p className="text-foreground-muted">{comparisonChangeLabel(change)}</p>
+                    <p className="mt-0.5 break-words font-mono text-[11px] leading-4">
+                      <span className="text-foreground-subtle line-through decoration-foreground-subtle/50">{comparisonValueLabel(change, "before", formatComparisonValue)}</span>
+                      <span className="px-1.5 text-foreground-subtle">→</span>
+                      <span className="text-foreground">{comparisonValueLabel(change, "after", formatComparisonValue)}</span>
+                    </p>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          ) : null}
 
           <InspectorExport
             element={{
@@ -447,6 +559,17 @@ export function ElementInspector({
             frame={frame}
             key={selectedNode.sourceNodeId}
           />
+
+          {css ? (
+            <details className="group border-t border-border py-3">
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-2">
+                <span className="dial-section-title">CSS</span>
+                <span className="text-[10px] text-foreground-subtle group-open:hidden">Show</span>
+              </summary>
+              <pre className="mt-2 max-h-64 select-text overflow-auto whitespace-pre-wrap break-words rounded-control bg-surface-inset p-2.5 font-mono text-[11px] leading-[17px] text-foreground-muted">{css}</pre>
+              <p className="mt-1.5 text-[10px] leading-4 text-foreground-subtle">Only values Figma stores. Fill and hug sizes follow their parent or content, so they aren’t fixed here.</p>
+            </details>
+          ) : null}
 
           {comments.length ? <section className="border-t border-border py-3">
             <div className="mb-2 flex items-center justify-between gap-2">
@@ -546,7 +669,10 @@ export function ElementInspector({
                     {paint.color ? (
                       <div className="mt-1.5 flex items-center justify-between gap-3 text-[10px]">
                         <span className="text-foreground-subtle">Color</span>
-                        <CopyValue label={`${paint.label} color`} value={paint.color} />
+                        <span className="flex min-w-0 items-center gap-1">
+                          <CopyValue label={`${paint.label} color`} value={paint.color} />
+                          <FindColorButton color={paint.color} onFind={onFindColor} />
+                        </span>
                       </div>
                     ) : null}
                     {paint.gradientStops.length ? (
@@ -658,7 +784,7 @@ export function ElementInspector({
               ) : null}
             </span>
           </div>
-          <p className="mt-2 text-[12px] leading-5 text-foreground-subtle">{inspecting ? "Click an element on this screen to inspect it." : "Press I (Inspect), then click an element on this screen."}</p>
+          <p className="mt-2 text-[12px] leading-5 text-foreground-subtle"><span className="touch-hidden">{inspecting ? "Click an element on this screen to inspect it." : "Press I (Inspect), then click an element on this screen."}</span><span className="touch-only">{inspecting ? "Tap an element on this screen to inspect it." : "Tap the arrow tool, then tap an element on this screen."}</span></p>
           <dl className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3 text-[12px]">
             <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Size</dt><dd className="font-mono text-foreground">{formatFrameSize(frame.sourceWidth, frame.sourceHeight)}</dd></div>
             <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Elements</dt><dd className="font-mono text-foreground">{frame.nodes.length}</dd></div>

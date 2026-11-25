@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { showToast } from "@/src/components/shell/Toaster";
 import type { CanvasFrameOption } from "./FrameNavigator";
 
 type Format = "png" | "jpg" | "svg";
@@ -36,7 +37,7 @@ function loadImage(url: string) {
  * Draws part of the screen at the chosen scale. The image is drawn at the size of the whole screen times
  * the scale, so an SVG screen renders sharp at any scale and a raster one is resampled from its pixels.
  */
-async function exportRaster(frame: CanvasFrameOption, area: Area, scale: number, format: "png" | "jpg", fileName: string) {
+async function renderRaster(frame: CanvasFrameOption, area: Area, scale: number, format: "png" | "jpg") {
   const objectUrl = URL.createObjectURL(await (await fetch(frame.imageSrc, { cache: "no-store" })).blob());
   try {
     const image = await loadImage(objectUrl);
@@ -53,10 +54,14 @@ async function exportRaster(frame: CanvasFrameOption, area: Area, scale: number,
     context.drawImage(image, -area.x * scale, -area.y * scale, frame.sourceWidth * scale, frame.sourceHeight * scale);
     const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, format === "png" ? "image/png" : "image/jpeg", 0.92));
     if (!blob) throw new Error("The browser could not export this image.");
-    download(blob, fileName);
+    return blob;
   } finally {
     URL.revokeObjectURL(objectUrl);
   }
+}
+
+async function exportRaster(frame: CanvasFrameOption, area: Area, scale: number, format: "png" | "jpg", fileName: string) {
+  download(await renderRaster(frame, area, scale, format), fileName);
 }
 
 async function exportFile(url: string, fileName: string) {
@@ -113,6 +118,31 @@ export function InspectorExport({ frame, element }: {
 
   const formats: Format[] = svgUrl ? ["png", "jpg", "svg"] : ["png", "jpg"];
 
+  // Copies a PNG to the clipboard, to paste into Slack or a ticket. The ClipboardItem gets a promise
+  // so Safari still counts it as part of the click.
+  async function copyImage() {
+    const what = scope === "element" ? element?.name || "element" : frame.name;
+    const blob = rasterArea
+      ? renderRaster(frame, rasterArea, activeScale, "png")
+      : layerExport?.contentType === "image/png"
+        ? fetch(layerExport.downloadUrl, { cache: "no-store" }).then((response) => response.blob())
+        : null;
+    if (!blob || typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
+      showToast("This browser can’t copy images. Use PNG to download it.");
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+      showToast(`Copied ${what} as an image`);
+    } catch {
+      setError("The browser blocked copying the image. Use PNG to download it.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
     <section aria-labelledby="inspector-export-title" className="border-t border-border py-3">
       <div className="mb-2 flex items-center justify-between gap-2">
@@ -135,6 +165,15 @@ export function InspectorExport({ frame, element }: {
             </button>
           ))}
         </div>
+        <button
+          className="min-h-8 flex-1 rounded-control bg-surface-inset text-[12px] text-foreground-muted hover:bg-surface-raised hover:text-foreground disabled:opacity-50"
+          disabled={busy || (!rasterArea && layerExport?.contentType !== "image/png")}
+          onClick={() => void copyImage()}
+          title={`Copy ${scope === "element" ? "this element" : "this screen"} as a PNG at ${activeScale}x, to paste anywhere`}
+          type="button"
+        >
+          Copy
+        </button>
         {formats.map((format) => (
           <button
             className="min-h-8 flex-1 rounded-control bg-surface-inset text-[12px] text-foreground-muted hover:bg-surface-raised hover:text-foreground disabled:opacity-50"

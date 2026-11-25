@@ -165,7 +165,8 @@ export function LocalPreviewOverlay({
   return (
     <div aria-labelledby="local-preview-title" aria-modal="true" className="fixed inset-0 z-[70] flex flex-col bg-background text-foreground" role="dialog">
       <header className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border px-4 py-2.5">
-        <h2 className="text-[14px] font-semibold" id="local-preview-title">Local preview</h2>
+        {/* On narrow screens the title and Close share the first row and the controls wrap below. */}
+        <h2 className="text-[14px] font-semibold max-md:order-first max-md:flex-1" id="local-preview-title">Local preview</h2>
         <form className="flex min-w-0 flex-1 basis-72 items-center gap-2" onSubmit={saveUrl}>
           <label className="sr-only" htmlFor="local-preview-url">Local or test environment address</label>
           <input
@@ -193,10 +194,10 @@ export function LocalPreviewOverlay({
             </button>
           ))}
         </div>
-        <div aria-label="Local build viewport" className="flex items-center gap-1.5" role="group">
+        <div aria-label="Local build viewport" className="flex min-w-0 items-center gap-1.5 max-sm:w-full" role="group">
           <label className="sr-only" htmlFor="local-preview-device">Device</label>
           <select
-            className="h-9 rounded-control border border-border bg-surface-inset px-2.5 text-[12px] text-foreground outline-none focus:border-foreground-subtle"
+            className="h-9 min-w-0 rounded-control border border-border bg-surface-inset px-2.5 text-[12px] text-foreground outline-none focus:border-foreground-subtle max-sm:flex-1"
             id="local-preview-device"
             onChange={(event) => {
               const preset = devices.find((entry) => entry.id === event.target.value);
@@ -250,7 +251,7 @@ export function LocalPreviewOverlay({
             <input aria-label="Local build opacity" className="w-24 accent-[var(--foreground)]" max="100" min="10" onChange={(event) => setOpacity(Number(event.target.value))} type="range" value={opacity} />
           </label>
         ) : null}
-        <button aria-label="Close local preview" className="ml-auto grid size-9 place-items-center rounded-control text-foreground-subtle hover:bg-surface-raised hover:text-foreground" onClick={onClose} title="Close (Esc)" type="button">
+        <button aria-label="Close local preview" className="ml-auto grid size-9 shrink-0 place-items-center max-md:order-first rounded-control text-foreground-subtle hover:bg-surface-raised hover:text-foreground" onClick={onClose} title="Close (Esc)" type="button">
           <svg aria-hidden="true" className="size-4" fill="none" viewBox="0 0 16 16"><path d="m4 4 8 8m0-8-8 8" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" /></svg>
         </button>
         {error ? <p className="w-full text-[12px] text-danger" role="alert">{error}</p> : null}
@@ -301,7 +302,7 @@ export function LocalPreviewOverlay({
                   const height = layout === "Design" ? frame.sourceHeight : layout === "Local" ? viewHeight : Math.max(frame.sourceHeight, viewHeight);
                   return (
                     <figure className="relative m-0 shrink-0" key={layout} style={{ width: width * scale, height: height * scale }}>
-                      <figcaption className="absolute -top-6 left-0 whitespace-nowrap text-[11px] text-foreground-subtle">
+                      <figcaption className="absolute -top-6 left-0 max-w-full truncate whitespace-nowrap text-[11px] text-foreground-subtle">
                         {layout}
                         <span className="ml-1.5 font-mono tabular-nums">
                           {layout === "Design" ? `${formatPrecisePixelValue(frame.sourceWidth)} × ${formatPrecisePixelValue(frame.sourceHeight)}` : `${viewWidth} × ${viewHeight}`}

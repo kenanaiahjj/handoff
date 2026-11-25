@@ -117,7 +117,7 @@ export function CanvasAnnotationsPanel({
         ) : null}
         {placing ? (
           <div aria-live="polite" className="mt-2 space-y-2 text-[10px] leading-4 text-foreground-muted">
-            <p>Click a frame or empty canvas point to place a note, or use the button to place it at the selected screen center.</p>
+            <p><span className="touch-hidden">Click</span><span className="touch-only">Tap</span> a frame or empty canvas point to place a note, or use the button to place it at the selected screen center.</p>
             <button
               className="min-h-8 rounded-control border border-transparent px-2.5 text-[10px] font-medium text-foreground hover:bg-surface-raised disabled:cursor-not-allowed disabled:opacity-50"
               disabled={!hasSelectedScreen}

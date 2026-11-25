@@ -157,7 +157,7 @@ export function FrameNavigator({
             <path d="m10.5 10.5 3 3" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" />
           </svg>
           <span className="min-w-0 flex-1 truncate">Search all screens</span>
-          <kbd className="rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono text-[10px] text-foreground-muted">⌘ F</kbd>
+          <kbd className="touch-hidden rounded-chip bg-surface-raised px-1.5 py-0.5 font-mono text-[10px] text-foreground-muted">⌘ F</kbd>
         </button>
         <input
           aria-label="Filter screens"

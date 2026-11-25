@@ -7,6 +7,8 @@ import { useEffect, useMemo, useRef, useState } from "react";
 export type MobileScreen = { id: string; name: string; imageUrl: string; width: number; height: number; changed: boolean };
 
 const canvasPreferenceKey = "asbir-mobile-canvas";
+export const showScreenViewEvent = "asbir:show-screen-view";
+export const focusCanvasScreenEvent = "asbir:focus-canvas-screen";
 
 /**
  * Phone review: one screen at a time, swipe sideways between screens, scroll down long ones.
@@ -39,14 +41,20 @@ export function MobileReview({
     }
   }, []);
 
-  // Keep the counter in step with swiping.
+  // Keep the counter in step with swiping. Coming back from the canvas remounts the track at the
+  // first slide, so it first returns to the screen the counter shows.
   useEffect(() => {
     const track = trackRef.current;
     if (!track) return;
+    if (index && Math.round(track.scrollLeft / Math.max(track.clientWidth, 1)) !== index) {
+      track.scrollTo({ left: Math.min(index, visible.length - 1) * track.clientWidth });
+    }
     const onScroll = () => setIndex(Math.round(track.scrollLeft / Math.max(track.clientWidth, 1)));
     track.addEventListener("scroll", onScroll, { passive: true });
     return () => track.removeEventListener("scroll", onScroll);
-  }, [visible]);
+    // Re-run when the track remounts (showCanvas) or the list changes, not on every swipe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visible, showCanvas]);
 
   function goTo(next: number) {
     const track = trackRef.current;
@@ -55,8 +63,26 @@ export function MobileReview({
     track.scrollTo({ left: clamped * track.clientWidth, behavior: "smooth" });
   }
 
+  // The canvas's More menu offers a way back here ("Screen by screen").
+  useEffect(() => {
+    const showScreens = () => {
+      setShowCanvas(false);
+      try {
+        sessionStorage.removeItem(canvasPreferenceKey);
+      } catch {
+        // Not remembered; fine.
+      }
+    };
+    window.addEventListener(showScreenViewEvent, showScreens);
+    return () => window.removeEventListener(showScreenViewEvent, showScreens);
+  }, []);
+
+  const current = visible[Math.min(index, visible.length - 1)];
+
   function openCanvas() {
     setShowCanvas(true);
+    // The canvas opens on the screen being looked at here, not on the whole page.
+    if (current) window.dispatchEvent(new CustomEvent(focusCanvasScreenEvent, { detail: current.id }));
     try {
       sessionStorage.setItem(canvasPreferenceKey, "1");
     } catch {
@@ -64,8 +90,8 @@ export function MobileReview({
     }
   }
 
-  if (showCanvas) return null;
-  const current = visible[Math.min(index, visible.length - 1)];
+  // A marker so the canvas knows this view exists and can offer it.
+  if (showCanvas) return <span data-screen-view-host hidden />;
 
   return (
     <div className="mobile-review fixed inset-0 z-[55] flex flex-col bg-background text-foreground md:hidden">
@@ -87,10 +113,10 @@ export function MobileReview({
       {changedCount ? (
         <div className="flex shrink-0 items-center gap-2 px-3 py-2">
           <div aria-label="Which screens" className="dial-segmented" role="group">
-            <button aria-pressed={!changedOnly} className="min-h-8 px-3 text-[12px]" onClick={() => { setChangedOnly(false); trackRef.current?.scrollTo({ left: 0 }); }} type="button">
+            <button aria-pressed={!changedOnly} className="min-h-8 px-3 text-[12px]" onClick={() => { setChangedOnly(false); setIndex(0); trackRef.current?.scrollTo({ left: 0 }); }} type="button">
               All {screens.length}
             </button>
-            <button aria-pressed={changedOnly} className="min-h-8 px-3 text-[12px]" onClick={() => { setChangedOnly(true); trackRef.current?.scrollTo({ left: 0 }); }} type="button">
+            <button aria-pressed={changedOnly} className="min-h-8 px-3 text-[12px]" onClick={() => { setChangedOnly(true); setIndex(0); trackRef.current?.scrollTo({ left: 0 }); }} type="button">
               Changed {changedCount}
             </button>
           </div>

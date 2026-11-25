@@ -14,11 +14,16 @@ const MAX_SCALE = 5;
 
 const viewMemoryPrefix = "asbir-canvas-view:";
 
-function readView(key: string | null): CanvasTransform | null {
+type SavedView = CanvasTransform & { width?: number };
+
+/** A saved view, unless it was saved at a clearly different canvas width (a rotated tablet, a phone-sized window). */
+function readView(key: string | null, width: number): CanvasTransform | null {
   if (!key) return null;
   try {
-    const saved = JSON.parse(sessionStorage.getItem(viewMemoryPrefix + key) ?? "null") as CanvasTransform | null;
-    return saved && [saved.scale, saved.offsetX, saved.offsetY].every(Number.isFinite) ? saved : null;
+    const saved = JSON.parse(sessionStorage.getItem(viewMemoryPrefix + key) ?? "null") as SavedView | null;
+    if (!saved || ![saved.scale, saved.offsetX, saved.offsetY].every(Number.isFinite)) return null;
+    if (width > 0 && saved.width && Math.abs(saved.width - width) / saved.width > 0.15) return null;
+    return { scale: saved.scale, offsetX: saved.offsetX, offsetY: saved.offsetY };
   } catch {
     return null;
   }
@@ -133,7 +138,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
   }, [fitToFrame, setTransform]);
 
   useEffect(() => {
-    restoreRef.current = readView(memoryKey);
+    restoreRef.current = readView(memoryKey, containerRef.current?.clientWidth ?? 0);
     touchedRef.current = false;
     autoFit();
     const container = containerRef.current;
@@ -151,12 +156,27 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
     return () => observer.disconnect();
   }, [autoFit, memoryKey]);
 
+  // The canvas moves by transform only. Focusing something off-screen (a comment box, a layer) makes
+  // the browser scroll this overflow-hidden box to it, shifting everything out of view, so undo that.
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container) return;
+    const resetScroll = () => {
+      if (container.scrollLeft || container.scrollTop) {
+        container.scrollLeft = 0;
+        container.scrollTop = 0;
+      }
+    };
+    container.addEventListener("scroll", resetScroll);
+    return () => container.removeEventListener("scroll", resetScroll);
+  }, []);
+
   // Save the view once the person has panned or zoomed.
   useEffect(() => {
     if (!memoryKey || !touchedRef.current) return;
     const timer = window.setTimeout(() => {
       try {
-        sessionStorage.setItem(viewMemoryPrefix + memoryKey, JSON.stringify(transform));
+        sessionStorage.setItem(viewMemoryPrefix + memoryKey, JSON.stringify({ ...transform, width: containerRef.current?.clientWidth ?? 0 }));
       } catch {
         // Storage blocked: the view just isn't remembered.
       }

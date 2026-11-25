@@ -78,7 +78,8 @@ test("mobile canvas drawers expose dialog semantics and in-panel close buttons",
   assert.ok(/aria-modal=\{isMobile && statesOpen \? true : undefined\}/.test(source), "screen drawer must expose modal state on mobile");
   assert.ok(/aria-label="Close screens panel"/.test(source), "screen drawer must have an internal close control");
   assert.ok(/role=\{isMobile && mobilePanelOpen \? "dialog" : undefined\}/.test(source), "details drawer must be announced as a mobile dialog");
-  assert.ok(/aria-modal=\{isMobile && mobilePanelOpen \? true : undefined\}/.test(source), "details drawer must expose modal state on mobile");
+  // The details drawer is a non-modal sheet: the canvas above it stays live so people can keep inspecting.
+  assert.ok(!/aria-modal=\{isMobile && mobilePanelOpen/.test(source), "details drawer must not trap the canvas behind it");
   assert.ok(/aria-label="Close details panel"/.test(source), "details drawer must have an internal close control");
 });
 

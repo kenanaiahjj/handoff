@@ -13,6 +13,8 @@ export type PendingCommentPoint = {
   sourceNodeId: string | null;
   x: number;
   y: number;
+  /** Text to start the comment with (e.g. what changed on the element). */
+  draft?: string;
 };
 
 export type CommentSubmit = (body: string, attachmentIds: string[]) => Promise<void>;
@@ -49,6 +51,7 @@ export function CommentComposer({
   onCancel,
   autoFocus = false,
   compact = false,
+  initialBody = "",
 }: {
   label: string;
   submitLabel: string;
@@ -57,10 +60,11 @@ export function CommentComposer({
   autoFocus?: boolean;
   /** Smaller field for the on-canvas popover. */
   compact?: boolean;
+  initialBody?: string;
 }) {
   const inputId = useId();
   const endpoint = useCommentEndpoint();
-  const [body, setBody] = useState("");
+  const [body, setBody] = useState(initialBody);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [uploads, setUploads] = useState<Upload[]>([]);
@@ -520,7 +524,7 @@ export function CommentThread({
 
       {commentMode ? (
         <div aria-live="polite" className="mt-3 rounded-[10px] border border-dashed border-white/[0.14] px-3 py-2.5 text-[12px] leading-5 text-foreground">
-          <p>Click anywhere on a screen to drop a pin.</p>
+          <p><span className="touch-hidden">Click</span><span className="touch-only">Tap</span> anywhere on a screen to drop a pin.</p>
           <button className="mt-1.5 text-[12px] font-medium text-foreground-muted underline-offset-2 hover:text-foreground hover:underline disabled:cursor-not-allowed disabled:no-underline disabled:opacity-50" disabled={!hasSelectedScreen} onClick={onPlaceAtSelectedScreen} title={hasSelectedScreen ? undefined : "Select a screen first"} type="button">
             Or comment on the whole selected screen
           </button>
@@ -529,7 +533,7 @@ export function CommentThread({
       {pendingPoint && canWrite ? (
         <div className="mt-3 space-y-2">
           <p className="text-[12px] font-medium text-foreground">New comment on {frameName(pendingPoint.frameId)}{pendingPoint.sourceNodeId ? " · element" : ""}</p>
-          <CommentComposer autoFocus label="Add a comment" submitLabel="Post" onSubmit={(body, attachmentIds) => onCreate(body, pendingPoint, attachmentIds)} />
+          <CommentComposer autoFocus initialBody={pendingPoint.draft} key={pendingPoint.draft ?? ""} label="Add a comment" submitLabel="Post" onSubmit={(body, attachmentIds) => onCreate(body, pendingPoint, attachmentIds)} />
         </div>
       ) : null}
       {error ? <p aria-live="assertive" className="mt-3 rounded-control border border-[#76522a] bg-[#332718] p-2.5 text-[11px] text-[#efb45f]">{error}</p> : null}
@@ -558,7 +562,7 @@ export function CommentThread({
             <svg className="size-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><path d="M3 12.5V4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v5A1.5 1.5 0 0 1 11.5 11H5.5L3 12.5Z" /></svg>
           </span>
           <p className="mt-3 text-[13px] font-medium text-foreground">{activeTab === "open" ? "No open comments" : "No resolved comments"}</p>
-          {activeTab === "open" && canWrite ? <p className="mt-1 text-[12px] leading-5 text-foreground-subtle">Press C, then click a screen to leave feedback. You can attach screenshots.</p> : null}
+          {activeTab === "open" && canWrite ? <p className="mt-1 text-[12px] leading-5 text-foreground-subtle"><span className="touch-hidden">Press C, then click a screen to leave feedback.</span><span className="touch-only">Tap the comment tool, then tap a screen to leave feedback.</span> You can attach screenshots.</p> : null}
         </div>
       ) : null}
     </section>

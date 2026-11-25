@@ -142,7 +142,7 @@ export function ChangesListView({
           ))}
         </div>
         <button className="dial-button min-h-8 px-3 text-[12px]" onClick={onClose} type="button">
-          Close <kbd className="font-mono text-[10px] text-foreground-subtle">Esc</kbd>
+          Close <kbd className="touch-hidden font-mono text-[10px] text-foreground-subtle">Esc</kbd>
         </button>
       </header>
 

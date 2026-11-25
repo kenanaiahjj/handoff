@@ -111,11 +111,11 @@ export function CanvasToolbar({
         </button>
       ) : publishEndpoint ? (
         latestIsPublished ? (
-          <span className="canvas-publish-status" role="status">
+          <span className="canvas-publish-status" role="status" title="Published">
             <svg aria-hidden="true" className="size-3.5" fill="none" viewBox="0 0 16 16">
               <path d="m3.5 8.2 2.8 2.8 6.2-6.2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" />
             </svg>
-            Published
+            <span className="max-sm:sr-only">Published</span>
           </span>
         ) : (
           <button

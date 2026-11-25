@@ -5,7 +5,9 @@ import type { HandoffComment } from "./CommentPin";
 import { CommentComposer, CommentMessage, type PendingCommentPoint } from "./CommentThread";
 
 const popoverWidth = 320;
-const pinGap = 22;
+// The pin is a bubble drawn up and to the right of its point, so the box sits clear of it on either side.
+const pinGapRight = 42;
+const pinGapLeft = 12;
 
 type Placement = {
   /** Pin position in the canvas layer's coordinates (before zoom). */
@@ -14,6 +16,11 @@ type Placement = {
   inverseScale: number;
   /** Open to the left when the pin is too close to the viewport's right edge. */
   flip: boolean;
+  /**
+   * Narrow canvases (phones) have no room beside the pin, so the box docks along the bottom of the
+   * canvas instead. It is then rendered outside the zoomed layer and ignores x, y and inverseScale.
+   */
+  sheet?: boolean;
 };
 
 type CanvasCommentPopoverProps = Placement & (
@@ -44,7 +51,7 @@ type CanvasCommentPopoverProps = Placement & (
 export function CanvasCommentPopover(props: CanvasCommentPopoverProps) {
   const [resolving, setResolving] = useState(false);
   const [resolveError, setResolveError] = useState<string | null>(null);
-  const { x, y, inverseScale, flip } = props;
+  const { x, y, inverseScale, flip, sheet = false } = props;
   const labelId = `canvas-comment-${props.mode === "thread" ? props.root.id : "new"}`;
 
   async function toggleResolved() {
@@ -63,15 +70,19 @@ export function CanvasCommentPopover(props: CanvasCommentPopoverProps) {
   return (
     <div
       aria-labelledby={labelId}
-      className="dial-popover absolute z-40 flex max-h-[480px] flex-col overflow-hidden text-foreground"
+      className={"dial-popover absolute z-40 flex flex-col overflow-hidden text-foreground " + (sheet ? "max-h-[55%]" : "max-h-[480px]")}
       data-comment-pin
       data-comment-popover
       onPointerDown={(event) => event.stopPropagation()}
       onWheel={(event) => event.stopPropagation()}
       role="dialog"
-      style={{
-        left: flip ? x - (pinGap + popoverWidth) * inverseScale : x + pinGap * inverseScale,
-        top: y - 16 * inverseScale,
+      style={sheet ? {
+        left: 8,
+        right: 8,
+        bottom: "calc(8px + env(safe-area-inset-bottom))",
+      } : {
+        left: flip ? x - (pinGapLeft + popoverWidth) * inverseScale : x + pinGapRight * inverseScale,
+        top: y - 34 * inverseScale,
         width: popoverWidth,
         transform: `scale(${inverseScale})`,
         transformOrigin: "top left",
@@ -106,7 +117,7 @@ export function CanvasCommentPopover(props: CanvasCommentPopoverProps) {
 
       {props.mode === "compose" ? (
         <div className="p-3">
-          <CommentComposer autoFocus compact label="Add a comment" onCancel={props.onClose} onSubmit={(body, attachmentIds) => props.onCreate(body, props.point, attachmentIds)} submitLabel="Post" />
+          <CommentComposer autoFocus compact initialBody={props.point.draft} key={props.point.draft ?? ""} label="Add a comment" onCancel={props.onClose} onSubmit={(body, attachmentIds) => props.onCreate(body, props.point, attachmentIds)} submitLabel="Post" />
         </div>
       ) : (
         <>

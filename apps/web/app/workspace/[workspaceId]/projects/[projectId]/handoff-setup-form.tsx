@@ -336,6 +336,11 @@ export function HandoffSetupForm({ input, mode }: {
         {mode === "project" ? "Create a new handoff or add a version. Capture from Figma or upload a snapshot." : "Capture an update from Figma or upload a snapshot."}
       </p>
 
+      {/* Capturing needs Figma's desktop plugin and uploads need its exported file, so phones get a pointer instead. */}
+      <p className={"phone-only rounded-control bg-surface-inset text-foreground-muted " + (mode === "project" ? "mt-5 px-3.5 py-3 text-[13px] leading-5" : "px-3 py-2.5 text-[11px] leading-4")}>
+        Adding a version needs Figma on a computer. Open this page there to capture screens or upload a snapshot.
+      </p>
+      <div className="phone-hidden">
       {token ? (
         <div className="mt-5">
           <label className="block text-xs font-medium text-foreground-muted" htmlFor="figma-capture-token">One-time capture token</label>
@@ -509,6 +514,7 @@ export function HandoffSetupForm({ input, mode }: {
       ) : null}
       {errorMessage && token ? <p className="mt-3 text-xs text-warning" role="alert">{errorMessage}</p> : null}
       {notice ? <p className="mt-3 text-xs leading-5 text-success" role="status">{notice}</p> : null}
+      </div>
     </section>
   );
 }

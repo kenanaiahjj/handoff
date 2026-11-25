@@ -10,7 +10,7 @@ export function SearchButton() {
     >
       <svg aria-hidden="true" className="size-3.5 shrink-0" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.6" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" /><path d="m10.5 10.5 3 3" /></svg>
       <span className="flex-1">Search</span>
-      <kbd className="font-mono text-[10px] text-foreground-subtle">⌘K</kbd>
+      <kbd className="touch-hidden font-mono text-[10px] text-foreground-subtle">⌘K</kbd>
     </button>
   );
 }

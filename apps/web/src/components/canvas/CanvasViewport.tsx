@@ -114,6 +114,11 @@ type CanvasViewportProps = {
   onViewportChange: (controls: CanvasViewportControls) => void;
   /** Bump `seq` to centre and zoom to a screen (picked from the list, search, or [ and ]), or to one element on it. */
   focusRequest?: { frameId: string; nodeId?: string; seq: number } | null;
+  /** A second layer picked with Shift+click; distances to it stay drawn. */
+  compareNodeId?: string | null;
+  /** True while the details panel slides over the canvas's right side (tablets), so selections are kept clear of it. */
+  detailsDrawerOpen?: boolean;
+  onCompareNode?: (sourceNodeId: string) => void;
 };
 
 function statusLabel(status: CanvasFrameChangeStatus | undefined) {
@@ -151,6 +156,72 @@ function elementRectInFrame(
 }
 
 const measurementGuideColor = "#f24e1e";
+const compareGuideColor = "#3b93f5";
+const pinnedGuideColor = "#d9468f";
+
+/** Gap lines with their pixel badges between two layers (Figma's red measurement lines). */
+function DistanceGuides({ guides, color, inverseScale, frameWidth, frameHeight, outlineRects = [] }: {
+  guides: ReturnType<typeof getElementDistanceGuides>;
+  color: string;
+  inverseScale: number;
+  frameWidth: number;
+  frameHeight: number;
+  outlineRects?: ElementRect[];
+}) {
+  return (
+    <svg
+      aria-hidden="true"
+      className="pointer-events-none absolute left-0 top-0 z-10 overflow-visible"
+      height={frameHeight}
+      viewBox={`0 0 ${frameWidth} ${frameHeight}`}
+      width={frameWidth}
+    >
+      {outlineRects.map((rect, index) => (
+        <rect fill="none" height={rect.height} key={"outline-" + index} stroke={color} strokeDasharray="4 3" strokeWidth={1} vectorEffect="non-scaling-stroke" width={rect.width} x={rect.x} y={rect.y} />
+      ))}
+      {guides.map((guide) => {
+        const segments = [guide.segment, ...guide.extensions];
+        const label = formatPrecisePixelValue(guide.distance);
+        const badgeWidth = Math.max(26, label.length * 7.5 + 10) * inverseScale;
+        const badgeHeight = 18 * inverseScale;
+        const badgeX = guide.axis === "horizontal"
+          ? guide.labelX - badgeWidth / 2
+          : guide.labelX - 2 * inverseScale;
+        return (
+          <g key={guide.axis}>
+            {segments.map((segment, index) => (
+              <line
+                key={`${guide.axis}-segment-${index}`}
+                stroke={color}
+                strokeLinecap="round"
+                strokeOpacity={index === 0 ? 1 : 0.7}
+                strokeWidth={1}
+                vectorEffect="non-scaling-stroke"
+                x1={segment.x1}
+                x2={segment.x2}
+                y1={segment.y1}
+                y2={segment.y2}
+              />
+            ))}
+            <rect fill={color} height={badgeHeight} rx={2 * inverseScale} width={badgeWidth} x={badgeX} y={guide.labelY - badgeHeight / 2} />
+            <text
+              dominantBaseline="middle"
+              fill="#fff"
+              fontFamily="system-ui, sans-serif"
+              fontSize={12 * inverseScale}
+              fontWeight={600}
+              textAnchor="middle"
+              x={badgeX + badgeWidth / 2}
+              y={guide.labelY}
+            >
+              {label}
+            </text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
 
 export function CanvasViewport({
   frame,
@@ -187,9 +258,15 @@ export function CanvasViewport({
   onPlaceAnnotation,
   onViewportChange,
   focusRequest = null,
+  compareNodeId = null,
+  detailsDrawerOpen = false,
+  onCompareNode,
 }: CanvasViewportProps) {
   const dragRef = useRef<{ pointerId: number; x: number; y: number; startX: number; startY: number; moved: boolean } | null>(null);
   const suppressClickRef = useRef(false);
+  // Touch points on the canvas, for two-finger pinch and pan on phones and tablets.
+  const touchesRef = useRef(new Map<number, { x: number; y: number }>());
+  const pinchRef = useRef<{ distance: number; x: number; y: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [altHeld, setAltHeld] = useState(false);
   // Holding Space pans with a drag from any tool, as in Figma; clicks don't select or place anything.
@@ -265,6 +342,36 @@ export function CanvasViewport({
       focusOnScreen(focusRequest.frameId);
     }
   }, [focusOnScreen, focusRequest, zoomToRect]);
+  // ⌥-click keeps a measurement between the selection and the clicked layer on the canvas until Esc.
+  const [pinnedPairs, setPinnedPairs] = useState<Array<[string, string]>>([]);
+  const zoomToNode = useCallback((nodeId: string) => {
+    const node = overlayNodesRef.current.get(nodeId);
+    const origin = frameOriginRef.current;
+    const rect = node ? elementRectInFrame(node.bounds, { kind: origin.kind, sourceX: origin.x, sourceY: origin.y }) : null;
+    if (!rect || rect.width <= 0 || rect.height <= 0) return;
+    const pad = Math.max(160, Math.max(rect.width, rect.height) * 0.6);
+    zoomToRect({ x: rect.x - pad, y: rect.y - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 });
+  }, [zoomToRect]);
+  // The details panel covers the right of the canvas on tablets and its lower part on phones, so
+  // move a selection that is under it (or off-screen) into the part still showing.
+  useEffect(() => {
+    if (!detailsDrawerOpen || !selectedNodeId) return;
+    const phone = viewportSize.width < 640;
+    const node = overlayNodesRef.current.get(selectedNodeId);
+    const origin = frameOriginRef.current;
+    const rect = node ? elementRectInFrame(node.bounds, { kind: origin.kind, sourceX: origin.x, sourceY: origin.y }) : null;
+    if (!rect) return;
+    const visibleWidth = phone ? viewportSize.width : viewportSize.width - Math.min(400, window.innerWidth * 0.62);
+    // The phone sheet is 58% of the canvas wrapper, which here is about the canvas's own height.
+    const visibleHeight = phone ? viewportSize.height * 0.42 : viewportSize.height - 72;
+    const screenX = (rect.x + rect.width / 2 - frame.sourceWidth / 2) * transform.scale + transform.offsetX + viewportSize.width / 2;
+    const screenY = (rect.y + rect.height / 2 - frame.sourceHeight / 2) * transform.scale + transform.offsetY + viewportSize.height / 2;
+    const dx = screenX < 24 || screenX > visibleWidth - 24 ? visibleWidth / 2 - screenX : 0;
+    const dy = screenY < 24 || screenY > visibleHeight ? (phone ? visibleHeight / 2 : viewportSize.height / 2) - screenY : 0;
+    if (dx || dy) panBy(dx, dy);
+    // Only when the selection or the drawer changes, not on every pan or zoom.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [detailsDrawerOpen, selectedNodeId]);
   // A shared link to a screen (#screen=…) opens zoomed on that screen, not on the whole canvas.
   const linkFocusedRef = useRef(false);
   useEffect(() => {
@@ -287,6 +394,7 @@ export function CanvasViewport({
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Alt") setAltHeld(true);
+      if (event.key === "Escape") setPinnedPairs([]);
       // M shows or hides the minimap.
       if (event.key.toLowerCase() === "m" && !event.metaKey && !event.ctrlKey && !event.altKey) {
         const typing = event.target instanceof HTMLElement && (event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName));
@@ -328,7 +436,45 @@ export function CanvasViewport({
     };
   }, [containerRef]);
 
+  function pinchState() {
+    const [a, b] = [...touchesRef.current.values()];
+    return { distance: Math.max(1, Math.hypot(a.x - b.x, a.y - b.y)), x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 };
+  }
+
+  /** Two fingers zoom around their midpoint and pan as they move, in every tool. */
+  function trackTouch(event: PointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== "touch") return false;
+    touchesRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+    // A fresh touch starts clean: a pinch that ended without a click mustn't swallow this tap.
+    if (touchesRef.current.size === 1) suppressClickRef.current = false;
+    if (touchesRef.current.size !== 2) return false;
+    // A second finger turns a one-finger pan (or a pending tap) into a pinch.
+    dragRef.current = null;
+    setIsDragging(false);
+    suppressClickRef.current = true;
+    pinchRef.current = pinchState();
+    for (const id of touchesRef.current.keys()) {
+      try {
+        event.currentTarget.setPointerCapture(id);
+      } catch {
+        // The pointer already ended.
+      }
+    }
+    return true;
+  }
+
+  function releaseTouch(event: PointerEvent<HTMLDivElement>) {
+    if (event.pointerType !== "touch") return;
+    touchesRef.current.delete(event.pointerId);
+    if (touchesRef.current.size < 2 && pinchRef.current) {
+      pinchRef.current = null;
+      // The finger left on the glass shouldn't then select or place what it rests on.
+      suppressClickRef.current = true;
+    }
+  }
+
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
+    if (trackTouch(event)) return;
     // Shift-click marks screens; stop the browser from also selecting text across the page.
     if (event.shiftKey) {
       event.preventDefault();
@@ -351,6 +497,17 @@ export function CanvasViewport({
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (event.pointerType === "touch" && touchesRef.current.has(event.pointerId)) {
+      touchesRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const previous = pinchRef.current;
+      if (previous && touchesRef.current.size === 2) {
+        const next = pinchState();
+        panBy(next.x - previous.x, next.y - previous.y);
+        zoomAt(next.distance / previous.distance, { x: next.x, y: next.y });
+        pinchRef.current = next;
+        return;
+      }
+    }
     let drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return;
@@ -365,6 +522,7 @@ export function CanvasViewport({
   }
 
   function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
+    releaseTouch(event);
     const drag = dragRef.current;
     if (drag?.pointerId === event.pointerId) {
       // A Space-held click that didn't drag still shouldn't select or place anything.
@@ -379,6 +537,7 @@ export function CanvasViewport({
   }
 
   function handlePointerCancel(event: PointerEvent<HTMLDivElement>) {
+    releaseTouch(event);
     if (dragRef.current?.pointerId === event.pointerId) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       dragRef.current = null;
@@ -472,6 +631,21 @@ export function CanvasViewport({
   const pendingCommentPosition = commentPopover?.pendingPoint
     ? canvasAnchorToViewportPoint(commentPopover.pendingPoint, frame, screens, overviewOrigin)
     : null;
+  // Phones: the comment box docks along the bottom of the canvas instead of beside its pin.
+  const sheetComments = viewportSize.width > 0 && viewportSize.width < 640;
+  const pendingCommentKey = commentPopover?.pendingPoint
+    ? `${commentPopover.pendingPoint.frameId}:${commentPopover.pendingPoint.x}:${commentPopover.pendingPoint.y}`
+    : null;
+  // The pin must stay visible above that sheet, so move it into the top part of the canvas.
+  useEffect(() => {
+    if (!sheetComments || !pendingCommentKey || !pendingCommentPosition) return;
+    const screenX = (pendingCommentPosition.x - frame.sourceWidth / 2) * transform.scale + transform.offsetX + viewportSize.width / 2;
+    const screenY = (pendingCommentPosition.y - frame.sourceHeight / 2) * transform.scale + transform.offsetY + viewportSize.height / 2;
+    const fits = screenX >= 24 && screenX <= viewportSize.width - 48 && screenY >= 48 && screenY <= viewportSize.height * 0.4;
+    if (!fits) panBy(viewportSize.width / 2 - screenX, viewportSize.height * 0.25 - screenY);
+    // Only when a new pin is placed, not on every pan or zoom.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingCommentKey]);
   const openThreadKey = openThreadPin ? openThreadPin.comment.id : null;
   const openThreadPoint = openThreadPin ? { x: openThreadPin.comment.x, y: openThreadPin.comment.y } : null;
 
@@ -482,8 +656,8 @@ export function CanvasViewport({
     const screenX = (point.x - frame.sourceWidth / 2) * transform.scale + transform.offsetX + viewportSize.width / 2;
     const screenY = (point.y - frame.sourceHeight / 2) * transform.scale + transform.offsetY + viewportSize.height / 2;
     const margin = 48;
-    const fits = screenX >= margin && screenX <= viewportSize.width - margin && screenY >= margin && screenY <= viewportSize.height - 200;
-    if (!fits) panBy(viewportSize.width * 0.4 - screenX, viewportSize.height * 0.3 - screenY);
+    const fits = screenX >= margin && screenX <= viewportSize.width - margin && screenY >= margin && screenY <= (sheetComments ? viewportSize.height * 0.4 : viewportSize.height - 200);
+    if (!fits) panBy((sheetComments ? 0.5 : 0.4) * viewportSize.width - screenX, (sheetComments ? 0.25 : 0.3) * viewportSize.height - screenY);
     // Only re-center when a different thread opens, not on every pan or zoom.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openThreadKey]);
@@ -600,20 +774,62 @@ export function CanvasViewport({
     selectedNodeId !== hoveredNodeId && selectedRect && hoveredRect
     ? getElementDistanceGuides(selectedRect, hoveredRect)
     : [];
+  const compareRect = compareNodeId && compareNodeId !== selectedNodeId ? elementRectInFrame(overlayNodesById.get(compareNodeId)?.bounds, frame) : null;
+  const compareGuides = interactionMode === "inspect" && selectedRect && compareRect ? getElementDistanceGuides(selectedRect, compareRect) : [];
+  const pinnedGuides = pinnedPairs.flatMap(([first, second], index) => {
+    const a = elementRectInFrame(overlayNodesById.get(first)?.bounds, frame);
+    const b = elementRectInFrame(overlayNodesById.get(second)?.bounds, frame);
+    return a && b ? [{ key: `pin-${index}`, rects: [a, b], guides: getElementDistanceGuides(a, b) }] : [];
+  });
   const distanceAnnouncement = distanceGuides
     .map((guide) => (guide.axis === "horizontal" ? "Horizontal" : "Vertical") + " gap " + formatPrecisePixelValue(guide.distance) + " pixels")
     .join(". ");
+
+  const composePopover = commentPopover?.pendingPoint && pendingCommentPosition ? (
+    <CanvasCommentPopover
+      flip={popoverFlips(pendingCommentPosition.x)}
+      inverseScale={inverseScale}
+      key={pendingCommentKey}
+      mode="compose"
+      onClose={commentPopover.onClose}
+      onCreate={commentPopover.onCreate}
+      point={commentPopover.pendingPoint}
+      sheet={sheetComments}
+      x={pendingCommentPosition.x}
+      y={pendingCommentPosition.y}
+    />
+  ) : null;
+  const threadPopover = commentPopover && openThreadPin && !commentPopover.pendingPoint ? (
+    <CanvasCommentPopover
+      canResolve={commentPopover.canResolve}
+      canWrite={commentPopover.canWrite}
+      flip={popoverFlips(openThreadPin.comment.x)}
+      index={openThreadPin.index}
+      inverseScale={inverseScale}
+      key={openThreadPin.comment.id}
+      mode="thread"
+      onClose={commentPopover.onClose}
+      onReply={commentPopover.onReply}
+      onResolve={commentPopover.onResolve}
+      replies={comments.filter((comment) => comment.parentCommentId === openThreadPin.comment.id)}
+      root={comments.find((comment) => comment.id === openThreadPin.comment.id) ?? openThreadPin.comment}
+      sheet={sheetComments}
+      x={openThreadPin.comment.x}
+      y={openThreadPin.comment.y}
+    />
+  ) : null;
 
   return (
     <section aria-label="Design canvas" className="flex min-h-0 min-w-0 flex-1 flex-col bg-surface">
       <div
         aria-describedby="canvas-keyboard-help"
         aria-label={interactionMode === "inspect"
-          ? "Inspect mode. Select a highlighted element to inspect it, scroll or drag to pan, and use Ctrl or Command + scroll or a trackpad pinch to zoom."
-          : "View mode. Scroll or drag to pan and use Ctrl or Command + scroll or a trackpad pinch to zoom. Switch to Inspect to select design elements."}
-        className={"review-dot-grid group relative grid min-h-0 min-w-0 flex-1 touch-none place-items-center overflow-hidden outline-none focus-visible:outline-none " + (isDragging ? "cursor-grabbing" : spaceHeld ? "cursor-grab" : commentMode || annotationMode ? "cursor-crosshair" : "cursor-grab")}
+          ? "Inspect mode. Select a highlighted element to inspect it, scroll or drag to pan, and pinch or use Ctrl or Command + scroll to zoom."
+          : "View mode. Scroll or drag to pan, and pinch or use Ctrl or Command + scroll to zoom. Switch to Inspect to select design elements."}
+        className={"review-dot-grid @container group relative grid min-h-0 min-w-0 flex-1 touch-none place-items-center overflow-hidden outline-none focus-visible:outline-none " + (isDragging ? "cursor-grabbing" : spaceHeld ? "cursor-grab" : commentMode || annotationMode ? "cursor-crosshair" : "cursor-grab")}
         data-canvas-viewport=""
         data-space-pan={spaceHeld ? "" : undefined}
+        data-comment-cursor={commentMode && !spaceHeld && !isDragging ? "" : undefined}
         onClick={handleCanvasClick}
         onPointerCancel={handlePointerCancel}
         onMouseDown={(event) => {
@@ -843,7 +1059,22 @@ export function CanvasViewport({
                     event.preventDefault();
                     return;
                   }
-                  if (!commentMode && !annotationMode) onSelectNode(node.sourceNodeId);
+                  if (commentMode || annotationMode) return;
+                  if (event.altKey && selectedNodeId && selectedNodeId !== node.sourceNodeId) {
+                    // Keep this measurement on the canvas.
+                    const pair: [string, string] = [selectedNodeId, node.sourceNodeId];
+                    setPinnedPairs((current) => current.some(([a, b]) => (a === pair[0] && b === pair[1]) || (a === pair[1] && b === pair[0])) ? current : [...current, pair]);
+                    return;
+                  }
+                  if (event.shiftKey && onCompareNode) {
+                    onCompareNode(node.sourceNodeId);
+                    return;
+                  }
+                  onSelectNode(node.sourceNodeId);
+                }}
+                onDoubleClick={(event) => {
+                  if (commentMode || annotationMode || event.altKey || event.shiftKey) return;
+                  zoomToNode(node.sourceNodeId);
                 }}
                 onMouseEnter={() => { if (interactionMode === "inspect") setHoveredNode({ nodeId: node.sourceNodeId, frameId: frame.id }); }}
                 onMouseLeave={() => { if (interactionMode === "inspect") setHoveredNode(null); }}
@@ -873,62 +1104,20 @@ export function CanvasViewport({
             </span>
           ) : null}
 
-          {distanceGuides.length ? (
-            <svg
+          {compareRect ? (
+            <span
               aria-hidden="true"
-              className="pointer-events-none absolute left-0 top-0 z-10 overflow-visible"
-              height={frame.sourceHeight}
-              viewBox={`0 0 ${frame.sourceWidth} ${frame.sourceHeight}`}
-              width={frame.sourceWidth}
-            >
-              {distanceGuides.map((guide) => {
-                const segments = [guide.segment, ...guide.extensions];
-                const label = formatPrecisePixelValue(guide.distance);
-                const badgeWidth = Math.max(26, label.length * 7.5 + 10) * inverseScale;
-                const badgeHeight = 18 * inverseScale;
-                const badgeX = guide.axis === "horizontal"
-                  ? guide.labelX - badgeWidth / 2
-                  : guide.labelX - 2 * inverseScale;
-                return (
-                  <g key={guide.axis}>
-                    {segments.map((segment, index) => (
-                      <line
-                        key={`${guide.axis}-segment-${index}`}
-                        stroke={measurementGuideColor}
-                        strokeLinecap="round"
-                        strokeOpacity={index === 0 ? 1 : 0.7}
-                        strokeWidth={1}
-                        vectorEffect="non-scaling-stroke"
-                        x1={segment.x1}
-                        x2={segment.x2}
-                        y1={segment.y1}
-                        y2={segment.y2}
-                      />
-                    ))}
-                    <rect
-                      fill={measurementGuideColor}
-                      height={badgeHeight}
-                      rx={2 * inverseScale}
-                      width={badgeWidth}
-                      x={badgeX}
-                      y={guide.labelY - badgeHeight / 2}
-                    />
-                    <text
-                      dominantBaseline="middle"
-                      fill="#fff"
-                      fontFamily="system-ui, sans-serif"
-                      fontSize={12 * inverseScale}
-                      fontWeight={600}
-                      textAnchor="middle"
-                      x={badgeX + badgeWidth / 2}
-                      y={guide.labelY}
-                    >
-                      {label}
-                    </text>
-                  </g>
-                );
-              })}
-            </svg>
+              className="pointer-events-none absolute border-[#5aa9ff] bg-[#5aa9ff]/15"
+              style={{ left: compareRect.x, top: compareRect.y, width: compareRect.width, height: compareRect.height, borderWidth: 2 * inverseScale, borderStyle: "dashed", borderRadius: 2 * inverseScale }}
+            />
+          ) : null}
+          {pinnedGuides.map((pin) => (
+            <DistanceGuides color={pinnedGuideColor} frameHeight={frame.sourceHeight} frameWidth={frame.sourceWidth} guides={pin.guides} inverseScale={inverseScale} key={pin.key} outlineRects={pin.rects} />
+          ))}
+          {compareGuides.length ? <DistanceGuides color={compareGuideColor} frameHeight={frame.sourceHeight} frameWidth={frame.sourceWidth} guides={compareGuides} inverseScale={inverseScale} /> : null}
+          {distanceGuides.length ? <DistanceGuides color={measurementGuideColor} frameHeight={frame.sourceHeight} frameWidth={frame.sourceWidth} guides={distanceGuides} inverseScale={inverseScale} /> : null}
+          {pinnedPairs.length ? (
+            <span className="sr-only" role="status">{pinnedPairs.length} pinned {pinnedPairs.length === 1 ? "measurement" : "measurements"}. Press Escape to clear.</span>
           ) : null}
 
           {annotationPins.map(({ annotation, x, y }) => (
@@ -970,43 +1159,17 @@ export function CanvasViewport({
             <>
               <span
                 aria-hidden="true"
-                className="pointer-events-none absolute z-30 grid size-7 place-items-center rounded-full border-2 border-primary-foreground bg-primary text-[12px] font-semibold text-primary-foreground shadow-lg"
-                style={{ left: pendingCommentPosition.x - 14 * inverseScale, top: pendingCommentPosition.y - 14 * inverseScale, transform: `scale(${inverseScale})`, transformOrigin: "top left" }}
+                className="comment-pin comment-pin-pending pointer-events-none absolute z-30 grid size-7 place-items-center text-[15px] font-semibold"
+                style={{ left: pendingCommentPosition.x, top: pendingCommentPosition.y - 28, transform: `scale(${inverseScale})`, transformOrigin: "bottom left" }}
               >
                 +
               </span>
-              <CanvasCommentPopover
-                flip={popoverFlips(pendingCommentPosition.x)}
-                inverseScale={inverseScale}
-                key={`${commentPopover.pendingPoint.frameId}:${commentPopover.pendingPoint.x}:${commentPopover.pendingPoint.y}`}
-                mode="compose"
-                onClose={commentPopover.onClose}
-                onCreate={commentPopover.onCreate}
-                point={commentPopover.pendingPoint}
-                x={pendingCommentPosition.x}
-                y={pendingCommentPosition.y}
-              />
+              {sheetComments ? null : composePopover}
             </>
           ) : null}
-          {commentPopover && openThreadPin && !commentPopover.pendingPoint ? (
-            <CanvasCommentPopover
-              canResolve={commentPopover.canResolve}
-              canWrite={commentPopover.canWrite}
-              flip={popoverFlips(openThreadPin.comment.x)}
-              index={openThreadPin.index}
-              inverseScale={inverseScale}
-              key={openThreadPin.comment.id}
-              mode="thread"
-              onClose={commentPopover.onClose}
-              onReply={commentPopover.onReply}
-              onResolve={commentPopover.onResolve}
-              replies={comments.filter((comment) => comment.parentCommentId === openThreadPin.comment.id)}
-              root={comments.find((comment) => comment.id === openThreadPin.comment.id) ?? openThreadPin.comment}
-              x={openThreadPin.comment.x}
-              y={openThreadPin.comment.y}
-            />
-          ) : null}
+          {sheetComments ? null : threadPopover}
         </div>
+        {sheetComments ? composePopover ?? threadPopover : null}
         <span aria-atomic="true" aria-live="polite" className="sr-only">{distanceAnnouncement}</span>
         {minimapVisible && fitted && frame.kind === "overview" && frame.exact && screens.length > 1 && screensRect ? (
           <CanvasMinimap
@@ -1082,7 +1245,7 @@ function CanvasMinimap({
   return (
     <div
       aria-label="Minimap: click to move the view (M hides it)"
-      className="absolute bottom-3 right-3 z-30 hidden cursor-pointer overflow-hidden rounded-[8px] border border-white/[0.08] bg-surface/90 shadow-[0_8px_24px_rgb(0_0_0/0.45)] backdrop-blur-md sm:block"
+      className="absolute bottom-3 right-3 z-30 hidden cursor-pointer overflow-hidden rounded-[8px] border border-white/[0.08] bg-surface/90 shadow-[0_8px_24px_rgb(0_0_0/0.45)] backdrop-blur-md @min-[560px]:block @max-[960px]:bottom-[64px]"
       onClick={(event) => event.stopPropagation()}
       onPointerDown={(event) => {
         event.stopPropagation();
