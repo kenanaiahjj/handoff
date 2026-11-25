@@ -71,7 +71,7 @@ export function OnboardingForm({ roles, user, workspaceNames, profile }: { roles
       }
       setRedirectTo(result.redirectTo);
       setPending(false);
-      setNextStep("profile");
+      setStep("profile");
     } catch {
       setError("We couldn't reach the server. Try again.");
       setPending(false);
@@ -276,7 +276,7 @@ export function OnboardingForm({ roles, user, workspaceNames, profile }: { roles
   );
 
   function renderStep(which: Step) {
-    if (which === "profile") return <ProfileStep onDone={() => setNextStep("install")} profile={profile} />;
+    if (which === "profile") return <ProfileStep onDone={() => setStep("install")} profile={profile} />;
     if (which === "install") return <InstallStep onDone={() => setNextStep("done")} />;
     if (which === "done") {
       return (
