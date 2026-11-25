@@ -18,6 +18,8 @@ const groups: Array<{ title: string; items: Array<[string[], string]> }> = [
     items: [
       [["["], "Previous screen (zooms to it)"],
       [["]"], "Next screen (zooms to it)"],
+      [["⇧", "["], "Previous change (zooms to it)"],
+      [["⇧", "]"], "Next change (zooms to it)"],
       [["⌘", "F"], "Search text, colors and elements"],
       [["⌘", "L"], "Copy a link to the selected screen or element"],
       [["Enter"], "Select the first layer inside"],
@@ -32,7 +34,8 @@ const groups: Array<{ title: string; items: Array<[string[], string]> }> = [
       [["G"], "Layout grids"],
       [["D"], "Show or hide change highlights"],
       [["+", "−"], "Zoom in and out (also ⌘+ and ⌘−)"],
-      [["0"], "Fit everything (also ⌘0)"],
+      [["0"], "Fit all screens (also ⌘0)"],
+      [["M"], "Show or hide the minimap"],
       [["⇧", "2"], "Zoom to the selected screen"],
       [["Alt"], "Hold over an element to measure distances"],
     ],

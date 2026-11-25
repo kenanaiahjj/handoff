@@ -1423,62 +1423,56 @@ html[data-splash="seen"] .app-splash {
 }
 .canvas-tabs {
   container-type: inline-size;
-  width: 100%;
   display: flex;
-  flex-wrap: wrap;
-  align-items: stretch;
-  gap: 0;
-  border-bottom: 1px solid var(--border);
-  padding: 0 6px;
-}
-/* Icons only when every tab still fits with them; the labels alone fit a narrow panel. */
-.canvas-tab-icon {
-  display: none;
-}
-@container (min-width: 430px) {
-  .canvas-tab-icon {
-    display: block;
-  }
-}
-/* A narrow panel wraps the tabs; shorter rows keep two of them compact. */
-@container (max-width: 429px) {
-  .canvas-tab {
-    min-height: 36px;
-  }
+  align-items: center;
+  gap: 2px;
+  margin: 10px 10px 4px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--surface-inset);
+  box-shadow: inset 0 0 0 1px rgb(255 255 255 / 0.04);
 }
 .canvas-tab {
   position: relative;
-  /* Full labels, never truncated: tabs that don't fit wrap onto a second row. */
-  flex-shrink: 0;
+  flex: 1 1 auto;
+  min-width: 0;
   display: inline-flex;
-  min-height: 42px;
+  height: 30px;
   align-items: center;
-  gap: 5px;
-  padding: 0 7px;
+  justify-content: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-radius: 7px;
   font-size: 12px;
   font-weight: 500;
   color: var(--foreground-subtle);
   white-space: nowrap;
-  transition: color 120ms ease;
+  transition: color 120ms ease, background-color 120ms ease;
 }
 .canvas-tab:hover {
   color: var(--foreground);
 }
 .canvas-tab[aria-selected="true"] {
   color: var(--foreground);
+  background: color-mix(in srgb, var(--surface-raised) 100%, white 4%);
+  box-shadow: 0 1px 2px rgb(0 0 0 / 0.4), inset 0 1px 0 rgb(255 255 255 / 0.06);
 }
-.canvas-tab[aria-selected="true"]::after {
-  content: "";
-  position: absolute;
-  inset: auto 6px -1px;
-  height: 2px;
-  border-radius: 2px;
-  background: var(--foreground);
+.canvas-tab-more {
+  flex: 0 0 auto;
+  padding: 0 7px;
+}
+/* A narrow panel shows only icons on the other tabs; the open tab keeps its label. */
+@container (max-width: 400px) {
+  .canvas-tab:not([aria-selected="true"]) {
+    flex: 0 0 auto;
+  }
+  .canvas-tab:not([aria-selected="true"]) .canvas-tab-label {
+    display: none;
+  }
 }
 .canvas-tab:focus-visible {
   outline: 2px solid rgb(255 255 255 / 0.5);
   outline-offset: -2px;
-  border-radius: 6px;
 }
 .canvas-tab-count {
   font-family: var(--font-mono, ui-monospace, monospace);
@@ -1626,6 +1620,7 @@ html[data-splash="seen"] .app-splash {
   padding: 0;
 }
 .canvas-floatbar .canvas-tool { height: 32px; min-width: 32px; }
+.canvas-floatbar .canvas-tool.canvas-tool-icon { min-width: 24px; padding: 0 4px; }
 .canvas-floatbar-divider {
   margin: 0 4px;
   height: 20px;

@@ -112,8 +112,8 @@ type CanvasViewportProps = {
   onSelectAnnotation: (annotationId: string) => void;
   onPlaceAnnotation: (point: PendingCommentPoint) => void;
   onViewportChange: (controls: CanvasViewportControls) => void;
-  /** Bump `seq` to centre and zoom to a screen (picked from the list, search, or [ and ]). */
-  focusRequest?: { frameId: string; seq: number } | null;
+  /** Bump `seq` to centre and zoom to a screen (picked from the list, search, or [ and ]), or to one element on it. */
+  focusRequest?: { frameId: string; nodeId?: string; seq: number } | null;
 };
 
 function statusLabel(status: CanvasFrameChangeStatus | undefined) {
@@ -197,11 +197,33 @@ export function CanvasViewport({
   const spaceHeldRef = useRef(false);
   const [hoveredNode, setHoveredNode] = useState<{ nodeId: string; frameId: string } | null>(null);
   const hoveredNodeId = hoveredNode?.frameId === frame.id ? hoveredNode.nodeId : null;
-  const { containerRef, viewportSize, transform, interacting, fitted, fitToFrame, zoomToRect, zoomBy, zoomAt, panBy } = useCanvasViewport(
+  // Fit shows the screens, not the whole Figma page they were captured from (often mostly empty).
+  const screensRect = useMemo(() => {
+    if (frame.kind !== "overview" || !screens.length) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const screen of screens) {
+      minX = Math.min(minX, screen.sourceX - frame.sourceX);
+      minY = Math.min(minY, screen.sourceY - frame.sourceY);
+      maxX = Math.max(maxX, screen.sourceX - frame.sourceX + screen.sourceWidth);
+      maxY = Math.max(maxY, screen.sourceY - frame.sourceY + screen.sourceHeight);
+    }
+    return Number.isFinite(minX) ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : null;
+  }, [frame.kind, frame.sourceX, frame.sourceY, screens]);
+  const { containerRef, viewportSize, transform, interacting, fitted, fitToFrame, zoomToRect, centerOn, zoomBy, zoomAt, panBy } = useCanvasViewport(
     frame.sourceWidth,
     frame.sourceHeight,
     viewMemoryKey,
+    screensRect,
   );
+  const [minimapVisible, setMinimapVisible] = useState(true);
+  useEffect(() => {
+    try {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- the preference lives in localStorage, only readable after mount.
+      if (localStorage.getItem("asbir.canvas.minimap") === "0") setMinimapVisible(false);
+    } catch {
+      // Storage blocked: the minimap just shows.
+    }
+  }, []);
   const [scaleSource] = useState(createZoomScaleSource);
   useEffect(() => scaleSource.set(fitted ? transform.scale : null), [fitted, scaleSource, transform.scale]);
   const controls = useMemo<CanvasViewportControls>(() => ({
@@ -229,9 +251,20 @@ export function CanvasViewport({
     if (!screen) return;
     zoomToRect({ x: screen.sourceX - origin.x, y: screen.sourceY - origin.y, width: screen.sourceWidth, height: screen.sourceHeight });
   }, [zoomToRect]);
+  const overlayNodesRef = useRef<Map<string, { bounds: MeasuredRect }>>(new Map());
   useEffect(() => {
-    if (focusRequest) focusOnScreen(focusRequest.frameId);
-  }, [focusOnScreen, focusRequest]);
+    if (!focusRequest) return;
+    const node = focusRequest.nodeId ? overlayNodesRef.current.get(focusRequest.nodeId) : undefined;
+    const origin = frameOriginRef.current;
+    const rect = node ? elementRectInFrame(node.bounds, { kind: origin.kind, sourceX: origin.x, sourceY: origin.y }) : null;
+    if (rect && rect.width > 0 && rect.height > 0) {
+      // Leave room around the element so its surroundings stay readable.
+      const pad = Math.max(160, Math.max(rect.width, rect.height) * 0.6);
+      zoomToRect({ x: rect.x - pad, y: rect.y - pad, width: rect.width + pad * 2, height: rect.height + pad * 2 });
+    } else {
+      focusOnScreen(focusRequest.frameId);
+    }
+  }, [focusOnScreen, focusRequest, zoomToRect]);
   // A shared link to a screen (#screen=…) opens zoomed on that screen, not on the whole canvas.
   const linkFocusedRef = useRef(false);
   useEffect(() => {
@@ -254,6 +287,20 @@ export function CanvasViewport({
     };
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Alt") setAltHeld(true);
+      // M shows or hides the minimap.
+      if (event.key.toLowerCase() === "m" && !event.metaKey && !event.ctrlKey && !event.altKey) {
+        const typing = event.target instanceof HTMLElement && (event.target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(event.target.tagName));
+        if (!typing) {
+          setMinimapVisible((current) => {
+            try {
+              localStorage.setItem("asbir.canvas.minimap", current ? "0" : "1");
+            } catch {
+              // Storage blocked: the choice isn't remembered.
+            }
+            return !current;
+          });
+        }
+      }
       if (event.code !== "Space" || event.metaKey || event.ctrlKey || event.altKey) return;
       // Only take Space when focus is on the page or the canvas, so it still presses focused buttons
       // and types in fields.
@@ -543,8 +590,12 @@ export function CanvasViewport({
     viewportSize.height,
     viewportSize.width,
   ]);
+  useEffect(() => {
+    overlayNodesRef.current = overlayNodesById;
+  });
   const selectedRect = elementRectInFrame(selectedBounds, frame);
   const hoveredRect = elementRectInFrame(hoveredBounds, frame);
+  const hoveredOverlayNode = hoveredNodeId ? overlayNodesById.get(hoveredNodeId) : undefined;
   const distanceGuides = interactionMode === "inspect" && altHeld && selectedNodeId && hoveredNodeId &&
     selectedNodeId !== hoveredNodeId && selectedRect && hoveredRect
     ? getElementDistanceGuides(selectedRect, hoveredRect)
@@ -802,6 +853,26 @@ export function CanvasViewport({
             );
           })}
 
+          {interactionMode === "inspect" && hoveredRect && hoveredOverlayNode && !distanceGuides.length && !isDragging && !spaceHeld ? (
+            // Name and size of the layer under the pointer, like Figma's hover label.
+            <span
+              aria-hidden="true"
+              className="pointer-events-none absolute z-20 whitespace-nowrap rounded-[4px] bg-[#e3a13a] font-medium text-[#1a1203] shadow-sm"
+              style={{
+                left: hoveredRect.x,
+                top: hoveredRect.y,
+                transform: `translateY(calc(-100% - ${4 * inverseScale}px)) scale(${inverseScale})`,
+                transformOrigin: "bottom left",
+                padding: "2px 6px",
+                fontSize: 11,
+                lineHeight: "16px",
+              }}
+            >
+              {hoveredOverlayNode.name || hoveredOverlayNode.type}
+              <span className="ml-1.5 font-mono opacity-70">{formatPrecisePixelValue(hoveredRect.width)} × {formatPrecisePixelValue(hoveredRect.height)}</span>
+            </span>
+          ) : null}
+
           {distanceGuides.length ? (
             <svg
               aria-hidden="true"
@@ -937,7 +1008,120 @@ export function CanvasViewport({
           ) : null}
         </div>
         <span aria-atomic="true" aria-live="polite" className="sr-only">{distanceAnnouncement}</span>
+        {minimapVisible && fitted && frame.kind === "overview" && frame.exact && screens.length > 1 && screensRect ? (
+          <CanvasMinimap
+            area={screensRect}
+            frameHeight={frame.sourceHeight}
+            frameWidth={frame.sourceWidth}
+            onCenter={centerOn}
+            originX={frame.sourceX}
+            originY={frame.sourceY}
+            screens={screens}
+            selectedFrameId={selectedFrameId}
+            transform={transform}
+            viewportHeight={viewportSize.height}
+            viewportWidth={viewportSize.width}
+          />
+        ) : null}
       </div>
     </section>
+  );
+}
+
+/**
+ * A small overview of every screen with the visible area outlined. Click or drag in it to move the
+ * view there; the zoom stays as it is. M hides it.
+ */
+function CanvasMinimap({
+  area,
+  screens,
+  originX,
+  originY,
+  frameWidth,
+  frameHeight,
+  transform,
+  viewportWidth,
+  viewportHeight,
+  selectedFrameId,
+  onCenter,
+}: {
+  area: { x: number; y: number; width: number; height: number };
+  screens: CanvasFrameOption[];
+  originX: number;
+  originY: number;
+  frameWidth: number;
+  frameHeight: number;
+  transform: { scale: number; offsetX: number; offsetY: number };
+  viewportWidth: number;
+  viewportHeight: number;
+  selectedFrameId: string | null;
+  onCenter: (x: number, y: number) => void;
+}) {
+  const maxWidth = 176;
+  const maxHeight = 112;
+  // A margin around the screens so the view box can sit at their edges.
+  const margin = Math.max(area.width, area.height) * 0.08;
+  const box = { x: area.x - margin, y: area.y - margin, width: area.width + margin * 2, height: area.height + margin * 2 };
+  const ratio = Math.min(maxWidth / box.width, maxHeight / box.height);
+  const width = box.width * ratio;
+  const height = box.height * ratio;
+  // The part of the canvas on screen, in canvas pixels (the canvas is drawn centred on the viewport).
+  const view = {
+    x: (-transform.offsetX - viewportWidth / 2) / transform.scale + frameWidth / 2,
+    y: (-transform.offsetY - viewportHeight / 2) / transform.scale + frameHeight / 2,
+    width: viewportWidth / transform.scale,
+    height: viewportHeight / transform.scale,
+  };
+  const draggingRef = useRef(false);
+
+  function centerAt(event: PointerEvent<HTMLDivElement>) {
+    const rect = event.currentTarget.getBoundingClientRect();
+    onCenter(box.x + (event.clientX - rect.left) / ratio, box.y + (event.clientY - rect.top) / ratio);
+  }
+
+  return (
+    <div
+      aria-label="Minimap: click to move the view (M hides it)"
+      className="absolute bottom-3 right-3 z-30 hidden cursor-pointer overflow-hidden rounded-[8px] border border-white/[0.08] bg-surface/90 shadow-[0_8px_24px_rgb(0_0_0/0.45)] backdrop-blur-md sm:block"
+      onClick={(event) => event.stopPropagation()}
+      onPointerDown={(event) => {
+        event.stopPropagation();
+        draggingRef.current = true;
+        event.currentTarget.setPointerCapture(event.pointerId);
+        centerAt(event);
+      }}
+      onPointerMove={(event) => {
+        if (draggingRef.current) centerAt(event);
+      }}
+      onPointerUp={(event) => {
+        draggingRef.current = false;
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      }}
+      role="img"
+      style={{ width, height }}
+      title="Minimap (M)"
+    >
+      {screens.map((screen) => (
+        <span
+          className={"absolute rounded-[1px] " + (screen.id === selectedFrameId ? "bg-[#e3a13a]/80" : "bg-white/25")}
+          key={screen.id}
+          style={{
+            left: (screen.sourceX - originX - box.x) * ratio,
+            top: (screen.sourceY - originY - box.y) * ratio,
+            width: Math.max(1.5, screen.sourceWidth * ratio),
+            height: Math.max(1.5, screen.sourceHeight * ratio),
+          }}
+        />
+      ))}
+      <span
+        className="pointer-events-none absolute rounded-[2px] border border-white/80 bg-white/[0.06]"
+        style={{
+          left: (view.x - box.x) * ratio,
+          top: (view.y - box.y) * ratio,
+          width: view.width * ratio,
+          height: view.height * ratio,
+        }}
+      />
+    </div>
   );
 }

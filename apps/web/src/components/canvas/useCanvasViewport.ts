@@ -28,8 +28,18 @@ function readView(key: string | null): CanvasTransform | null {
  * Pan and zoom for one canvas. With a `memoryKey` the view is remembered for this browser tab, so
  * coming back to a screen (or switching tabs) puts you where you left off instead of fitting again.
  */
-export function useCanvasViewport(frameWidth: number, frameHeight: number, memoryKey: string | null = null) {
+type CanvasRect = { x: number; y: number; width: number; height: number };
+
+/**
+ * `fitRect` is the part of the canvas Fit should show (the screens), when that's smaller than the
+ * whole canvas: a capture of a few screens spread over a big Figma page would otherwise fit at 1%.
+ */
+export function useCanvasViewport(frameWidth: number, frameHeight: number, memoryKey: string | null = null, fitRect: CanvasRect | null = null) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const fitRectRef = useRef(fitRect);
+  useEffect(() => {
+    fitRectRef.current = fitRect;
+  });
   // A saved view waiting to be applied; layout resizes refit only once the person has moved.
   const restoreRef = useRef<CanvasTransform | null>(null);
   const touchedRef = useRef(false);
@@ -93,12 +103,20 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
     const rect = container.getBoundingClientRect();
     const availableWidth = Math.max(1, rect.width - 72);
     const availableHeight = Math.max(1, rect.height - 72);
+    const area = fitRectRef.current && fitRectRef.current.width > 0 && fitRectRef.current.height > 0
+      ? fitRectRef.current
+      : { x: 0, y: 0, width: frameWidth, height: frameHeight };
     const scale = Math.max(
       MIN_SCALE,
-      Math.min(1, availableWidth / frameWidth, availableHeight / frameHeight),
+      Math.min(1, availableWidth / area.width, availableHeight / area.height),
     );
 
-    setTransform({ scale, offsetX: 0, offsetY: 0 });
+    // The canvas is drawn centred on the viewport, so offsets are measured from its centre.
+    setTransform({
+      scale,
+      offsetX: -(area.x + area.width / 2 - frameWidth / 2) * scale,
+      offsetY: -(area.y + area.height / 2 - frameHeight / 2) * scale,
+    });
     setFitted(true);
   }, [frameHeight, frameWidth, setTransform]);
 
@@ -201,6 +219,18 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
     });
   }, [updateTransform]);
 
+  /** Moves the view so a canvas point (pixels from the canvas's top-left) is in the middle, keeping the zoom. */
+  const centerOn = useCallback((x: number, y: number) => {
+    touchedRef.current = true;
+    restoreRef.current = null;
+    const current = latestRef.current;
+    setTransform({
+      ...current,
+      offsetX: -(x - frameWidth / 2) * current.scale,
+      offsetY: -(y - frameHeight / 2) * current.scale,
+    });
+  }, [frameHeight, frameWidth, setTransform]);
+
   const panBy = useCallback((deltaX: number, deltaY: number) => {
     touchedRef.current = true;
     updateTransform((current) => ({
@@ -218,6 +248,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
     fitted,
     fitToFrame: fitByUser,
     zoomToRect,
+    centerOn,
     zoomBy,
     zoomAt,
     panBy,

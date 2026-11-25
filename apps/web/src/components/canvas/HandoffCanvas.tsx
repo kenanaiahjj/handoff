@@ -241,7 +241,7 @@ export function HandoffCanvas({
   const [showChanges, setShowChanges] = useState(true);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   // Centres and zooms the canvas to a screen; each request gets a new seq so repeats still apply.
-  const [focusRequest, setFocusRequest] = useState<{ frameId: string; seq: number } | null>(null);
+  const [focusRequest, setFocusRequest] = useState<{ frameId: string; nodeId?: string; seq: number } | null>(null);
   const focusScreen = useCallback((frameId: string) => {
     setFocusRequest((current) => ({ frameId, seq: (current?.seq ?? 0) + 1 }));
   }, []);
@@ -371,6 +371,31 @@ export function HandoffCanvas({
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reacts to panel switches made in many handlers.
     if (!isMobile) setDetailsOpen(true);
   }, [isMobile, panelMode]);
+
+  // The right panel reopens on the tab used last (in this browser). Agent and MCP aren't restored:
+  // they depend on the version and are opened on purpose.
+  useEffect(() => {
+    let saved: string | null = null;
+    try {
+      saved = localStorage.getItem("asbir.canvas.panelTab");
+    } catch {
+      // Storage blocked: start on Inspect.
+    }
+    if (saved === "comments" || saved === "annotations" || saved === "version" || saved === "info") {
+      // Restoring isn't a switch, so it shouldn't reopen a details panel the user hid.
+      previousPanelModeRef.current = saved;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- localStorage is only readable after mount.
+      setPanelMode(saved);
+    }
+  }, []);
+  useEffect(() => {
+    if (panelMode === "agent" || panelMode === "mcp") return;
+    try {
+      localStorage.setItem("asbir.canvas.panelTab", panelMode);
+    } catch {
+      // Storage blocked: the tab isn't remembered.
+    }
+  }, [panelMode]);
 
   const toggleScreensPanel = useCallback(() => {
     setSearchOpen(false);
@@ -760,7 +785,11 @@ export function HandoffCanvas({
         const current = measureUnits.indexOf(getMeasureUnit());
         setMeasureUnit(measureUnits[(current + 1) % measureUnits.length]);
       }
-      if (event.key === "[" || event.key === "]") {
+      // Shift+[ and Shift+] step through the changed elements (the keys arrive as "{" and "}").
+      if (event.shiftKey && (event.code === "BracketLeft" || event.code === "BracketRight")) {
+        event.preventDefault();
+        stepChangeRef.current(event.code === "BracketRight" ? 1 : -1);
+      } else if (event.key === "[" || event.key === "]") {
         event.preventDefault();
         stepScreenRef.current(event.key === "]" ? 1 : -1);
       }
@@ -859,6 +888,9 @@ export function HandoffCanvas({
 
   // "[" and "]" step through the screens in list order (only the changed ones when filtered).
   const stepScreenRef = useRef<(direction: 1 | -1) => void>(() => {});
+  // Shift+[ and Shift+] (and the arrows by Changes) step through the changed elements in screen
+  // order, top to bottom, zooming to each.
+  const stepChangeRef = useRef<(direction: 1 | -1) => void>(() => {});
   const selectedFrameIdRef = useRef<string | null>(null);
   const togglePanelsRef = useRef<() => void>(() => {});
   // Figma-style layer moves: Enter goes into the selection, Shift+Enter out to its parent, and
@@ -900,6 +932,21 @@ export function HandoffCanvas({
       const next = index === -1 ? (direction === 1 ? 0 : list.length - 1) : (index + direction + list.length) % list.length;
       selectFrame(list[next].id);
       focusScreen(list[next].id);
+    };
+    stepChangeRef.current = (direction) => {
+      if (!changedNodeIds.length) return;
+      if (!showChanges) setShowChanges(true);
+      const changed = new Set(changedNodeIds);
+      const list = canvasScreens.length ? canvasScreens : screens;
+      const ordered = list.flatMap((screen) => screen.nodes
+        .filter((node) => changed.has(node.sourceNodeId))
+        .sort((a, b) => ((a.bounds.y.value ?? 0) - (b.bounds.y.value ?? 0)) || ((a.bounds.x.value ?? 0) - (b.bounds.x.value ?? 0))));
+      if (!ordered.length) return;
+      const index = ordered.findIndex((node) => node.sourceNodeId === selectedNode?.sourceNodeId);
+      const next = index === -1 ? (direction === 1 ? 0 : ordered.length - 1) : (index + direction + ordered.length) % ordered.length;
+      const target = ordered[next];
+      selectNode(target.sourceNodeId);
+      setFocusRequest((current) => ({ frameId: target.sourceFrameId, nodeId: target.sourceNodeId, seq: (current?.seq ?? 0) + 1 }));
     };
     selectedFrameIdRef.current = selectedFrameId;
     togglePanelsRef.current = () => {
@@ -1375,19 +1422,40 @@ export function HandoffCanvas({
           {(() => {
             const added = comparisonSummary.added + comparisonSummary.onlyInAfterCapture;
             const removed = comparisonSummary.removed + comparisonSummary.onlyInBeforeCapture;
-            const realChanges = [
-              comparisonSummary.changed ? `${comparisonSummary.changed} screen${comparisonSummary.changed === 1 ? "" : "s"} changed` : "",
-              added ? `${added} new` : "",
-              removed ? `${removed} removed` : "",
-            ].filter(Boolean);
+            const stats = [
+              { count: comparisonSummary.changed, label: "changed", tone: "text-warning" },
+              { count: added, label: "new", tone: "text-success" },
+              { count: removed, label: "removed", tone: "text-danger" },
+            ].filter((stat) => stat.count > 0);
+            const edits = comparisonSummary.changeCount;
             return (
-              <div className="min-w-0">
-                <p className="flex flex-wrap items-center gap-x-2">
-                  <span aria-hidden="true" className={"size-1.5 shrink-0 rounded-full " + (realChanges.length || comparisonSummary.changeCount ? "bg-warning" : "bg-foreground-subtle")} />
-                  <span className="font-semibold text-foreground">{realChanges.length ? realChanges.join(" · ") : comparisonSummary.changeCount ? "Screens changed" : "No changes"}</span>
-                  {comparisonSummary.changeCount ? <span>· {formatComparisonChangeCount(comparisonSummary.changeCount, comparisonSummary.visualChangeCount)}</span> : null}
-                  <span>since {comparisonSummary.earlierVersionLabel}</span>
-                </p>
+              <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+                <span className="inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-white/[0.08] bg-white/[0.03] px-2.5 font-mono text-[11px] tabular-nums text-foreground-muted">
+                  <span>v{comparisonSummary.earlierVersionLabel}</span>
+                  <svg aria-hidden="true" className="size-3 text-foreground-subtle" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 16 16"><path d="M3.5 8h9m-3-3 3 3-3 3" /></svg>
+                  <span className="text-foreground">v{metadata.versionLabel}</span>
+                </span>
+                {stats.length ? (
+                  <p aria-label="Changes in this version" className="flex items-center gap-2 whitespace-nowrap">
+                    {stats.map((stat, index) => (
+                      <span className="inline-flex items-center gap-2" key={stat.label}>
+                        {index ? <span aria-hidden="true" className="text-foreground-subtle">·</span> : null}
+                        <span>
+                          <span className={"font-semibold tabular-nums " + stat.tone}>{stat.count}</span>
+                          <span className="text-foreground-muted"> {stat.label}</span>
+                        </span>
+                      </span>
+                    ))}
+                  </p>
+                ) : (
+                  <span className="font-medium text-foreground">Screens changed</span>
+                )}
+                {edits ? (
+                  <span className="hidden items-center gap-3 text-foreground-subtle sm:flex" title={formatComparisonChangeCount(edits, comparisonSummary.visualChangeCount)}>
+                    <span aria-hidden="true" className="h-3.5 w-px bg-white/[0.1]" />
+                    <span className="tabular-nums">{edits} {edits === 1 ? "edit" : "edits"}</span>
+                  </span>
+                ) : null}
               </div>
             );
           })()}
@@ -1670,6 +1738,16 @@ export function HandoffCanvas({
                 {changedNodeIds.length ? <span className="canvas-tool-count">{changedNodeIds.length}</span> : null}
               </button>
             ) : null}
+            {showChanges && changedNodeIds.length ? (
+              <span className="flex items-center">
+                <button aria-label="Previous change" className="canvas-tool canvas-tool-icon" onClick={() => stepChangeRef.current(-1)} title="Previous change (⇧[)" type="button">
+                  <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 16 16"><path d="M10 3.5 5.5 8l4.5 4.5" /></svg>
+                </button>
+                <button aria-label="Next change" className="canvas-tool canvas-tool-icon" onClick={() => stepChangeRef.current(1)} title="Next change (⇧])" type="button">
+                  <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.8" viewBox="0 0 16 16"><path d="M6 3.5 10.5 8 6 12.5" /></svg>
+                </button>
+              </span>
+            ) : null}
           </div>
           <span aria-hidden="true" className="canvas-floatbar-divider" />
           <ZoomControls
@@ -1764,6 +1842,7 @@ export function HandoffCanvas({
               ...(metadata.team ? [["info", "Info", InfoIcon, null] as const] : []),
             ] as const).map(([mode, label, TabIcon, count]) => (
               <button
+                aria-label={count ? `${label} (${count})` : label}
                 aria-selected={panelMode === mode}
                 className="canvas-tab"
                 key={mode}
@@ -1776,10 +1855,11 @@ export function HandoffCanvas({
                   if (isMobile) setMobilePanelOpenOverride(true);
                 }}
                 role="tab"
+                title={label}
                 type="button"
               >
-                <TabIcon className="canvas-tab-icon size-3.5" />
-                <span>{label}</span>
+                <TabIcon aria-hidden="true" className="size-3.5 shrink-0" />
+                <span className="canvas-tab-label">{label}</span>
                 {count ? <span className="canvas-tab-count">{count}</span> : null}
               </button>
             ))}
@@ -1792,8 +1872,8 @@ export function HandoffCanvas({
               if (!extras.length) return null;
               const activeExtra = extras.find(([mode]) => mode !== "local" && mode === panelMode);
               return (
-                <div className="relative ml-auto flex">
-                  <button aria-expanded={panelMoreOpen} aria-label={activeExtra ? `${activeExtra[1]} (more panels)` : "More panels"} aria-selected={Boolean(activeExtra)} className="canvas-tab" onClick={() => setPanelMoreOpen((current) => !current)} role="tab" title={activeExtra ? activeExtra[1] : "More panels"} type="button">
+                <div className="relative flex shrink-0">
+                  <button aria-expanded={panelMoreOpen} aria-label={activeExtra ? `${activeExtra[1]} (more panels)` : "More panels"} aria-selected={Boolean(activeExtra)} className="canvas-tab canvas-tab-more" onClick={() => setPanelMoreOpen((current) => !current)} role="tab" title={activeExtra ? activeExtra[1] : "More panels"} type="button">
                     <svg aria-hidden="true" className="size-4" fill="currentColor" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="12.5" cy="8" r="1.25" /></svg>
                   </button>
                   {panelMoreOpen ? (

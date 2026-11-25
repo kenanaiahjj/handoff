@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { showToast } from "@/src/components/shell/Toaster";
 import { typographyFromTextSegments, type SnapshotNode } from "@asbir/snapshot-contract";
 import type { HandoffComment } from "../comments/CommentPin";
 import type { CanvasFrameOption } from "./FrameNavigator";
@@ -128,6 +129,7 @@ function CopyValue({ label, value, displayValue = value, className }: { label: s
         try {
           await navigator.clipboard.writeText(value);
           setCopied(true);
+          showToast(`Copied ${value.length > 40 ? label : value}`);
           window.setTimeout(() => setCopied(false), 1200);
         } catch {
           setCopied(false);
@@ -139,6 +141,12 @@ function CopyValue({ label, value, displayValue = value, className }: { label: s
       {copied ? "Copied" : displayValue}
     </button>
   );
+}
+
+/** A typography value: copyable when it's a real value, plain text for "Mixed…" or "Unavailable". */
+function InspectorValue({ label, value }: { label: string; value: string }) {
+  if (value === "Unavailable" || value.startsWith("Mixed")) return <>{value}</>;
+  return <CopyValue className="max-w-full truncate text-right text-[12px] text-foreground hover:text-white hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" label={label} value={value} />;
 }
 
 function colorTokenValue(value: unknown) {
@@ -460,8 +468,8 @@ export function ElementInspector({
                   <dd className="text-right"><CopyValue label={`${label.toLowerCase()} radius`} value={formatLength(value)} /></dd>
                 </div>
               ))}
-              {rotation ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Rotation</dt><dd className="font-mono text-right text-foreground">{formatPixelValue(rotation)}°</dd></div> : null}
-              {opacity !== null && opacity < 1 ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Opacity</dt><dd className="font-mono text-right text-foreground">{percentText(opacity)}</dd></div> : null}
+              {rotation ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Rotation</dt><dd className="text-right"><CopyValue label="rotation" value={`${formatPixelValue(rotation)}deg`} displayValue={`${formatPixelValue(rotation)}°`} /></dd></div> : null}
+              {opacity !== null && opacity < 1 ? <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Opacity</dt><dd className="text-right"><CopyValue label="opacity" value={String(Number(opacity.toFixed(3)))} displayValue={percentText(opacity)} /></dd></div> : null}
             </dl>
           </section> : null}
           <MeasurementGroup title="Padding" values={selectedNode.padding} />
@@ -570,12 +578,12 @@ export function ElementInspector({
             <h3 className="dial-section-title mb-2">Typography</h3>
             {selectedTypography ? (
               <dl className="space-y-1.5 text-[12px]">
-                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Font</dt><dd className="max-w-40 truncate text-right text-foreground">{selectedTypography.fontFamily ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
-                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Size</dt><dd className="text-right text-foreground">{selectedTypography.fontSize.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.fontSize)}</dd></div>
-                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Weight</dt><dd className="text-right text-foreground">{selectedTypography.fontWeight ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable")}</dd></div>
-                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Line height</dt><dd className="text-right text-foreground">{selectedTypography.lineHeight.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.lineHeight)}</dd></div>
-                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Letter spacing</dt><dd className="text-right text-foreground">{selectedTypography.letterSpacing.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.letterSpacing)}</dd></div>
-                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Alignment</dt><dd className="text-right text-foreground">{selectedTypography.textAlign ?? "Unavailable"}</dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Font</dt><dd className="max-w-40 truncate text-right text-foreground"><InspectorValue label="font" value={String(selectedTypography.fontFamily ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable"))} /></dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Size</dt><dd className="text-right text-foreground"><InspectorValue label="size" value={String(selectedTypography.fontSize.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.fontSize))} /></dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Weight</dt><dd className="text-right text-foreground"><InspectorValue label="weight" value={String(selectedTypography.fontWeight ?? (textStyleRuns.length > 1 ? "Mixed — see text styles" : "Unavailable"))} /></dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Line height</dt><dd className="text-right text-foreground"><InspectorValue label="line height" value={String(selectedTypography.lineHeight.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.lineHeight))} /></dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Letter spacing</dt><dd className="text-right text-foreground"><InspectorValue label="letter spacing" value={String(selectedTypography.letterSpacing.value === null && textStyleRuns.length > 1 ? "Mixed — see text styles" : typographyMeasurementText(selectedTypography.letterSpacing))} /></dd></div>
+                <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Alignment</dt><dd className="text-right text-foreground"><InspectorValue label="alignment" value={String(selectedTypography.textAlign ?? "Unavailable")} /></dd></div>
                 {selectedTypography.content !== null ? <div className="border-t border-border pt-2"><dt className="flex items-center justify-between gap-2 text-foreground-subtle">Text content<button className="rounded-chip px-1.5 py-0.5 text-[11px] text-foreground-muted transition-colors hover:bg-surface-strong hover:text-foreground" onClick={() => void copyText(selectedTypography.content!)} type="button">{textCopied ? "Copied" : "Copy"}</button></dt><dd className="mt-1 select-text whitespace-pre-wrap break-words text-foreground">{selectedTypography.content}</dd></div> : null}
               </dl>
             ) : textStyleRuns.length ? <p className="text-[11px] text-foreground-subtle">Typography is captured per text run.</p> : <p className="text-[11px] text-foreground-subtle">No typography data captured.</p>}

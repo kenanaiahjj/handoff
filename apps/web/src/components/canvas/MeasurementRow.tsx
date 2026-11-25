@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { showToast } from "@/src/components/shell/Toaster";
 import type { Measurement } from "@asbir/snapshot-contract";
 import { formatPrecisePixelValue } from "./format-captured-measurement";
 import { formatLength, useMeasureUnit } from "./measure-unit";
@@ -22,6 +23,7 @@ export function MeasurementRow({ label, measurement }: MeasurementRowProps) {
     try {
       await navigator.clipboard.writeText(displayValue);
       setCopied(true);
+      showToast(`Copied ${label.toLowerCase()} ${displayValue}`);
       window.setTimeout(() => setCopied(false), 1200);
     } catch {
       setCopied(false);
