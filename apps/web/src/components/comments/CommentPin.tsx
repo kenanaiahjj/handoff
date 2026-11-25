@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 export type HandoffInviteRole = "pd" | "qa" | "dev" | "exec";
 
 export type CommentIdentity = {
@@ -34,6 +36,25 @@ type CommentPinProps = {
   onSelect: (commentId: string) => void;
 };
 
+/** The author on a pin: their photo, or the first letter of their first name. */
+function PinFace({ name, image }: { name: string; image: string | null | undefined }) {
+  const [failed, setFailed] = useState<string | null>(null);
+  if (image && failed !== image) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element -- small photo from our own route or the sign-in provider.
+      <img
+        alt=""
+        className="comment-pin-photo size-full rounded-full object-cover"
+        draggable={false}
+        onError={() => setFailed(image)}
+        referrerPolicy="no-referrer"
+        src={image}
+      />
+    );
+  }
+  return <span aria-hidden="true">{name.trim().charAt(0).toUpperCase() || "?"}</span>;
+}
+
 export function CommentPin({ comment, index, inverseScale, selected, onSelect }: CommentPinProps) {
   if (comment.x === null || comment.y === null) return null;
   const author = comment.authorRole ? `${comment.authorName} · ${comment.authorRole.toUpperCase()}` : comment.authorName;
@@ -43,7 +64,7 @@ export function CommentPin({ comment, index, inverseScale, selected, onSelect }:
     <button
       aria-label={`Comment ${index + 1} by ${author}: ${comment.body}${comment.resolvedAt ? ". Resolved" : ". Open"}`}
       aria-pressed={selected}
-      className="comment-pin absolute z-30 grid h-7 min-w-7 place-items-center px-1.5 font-mono text-[11px] font-semibold tabular-nums"
+      className="comment-pin absolute z-30 grid size-7 place-items-center overflow-hidden p-[2px] text-[12px] font-semibold"
       onClick={() => onSelect(comment.id)}
       data-resolved={comment.resolvedAt ? "true" : undefined}
       data-selected={selected ? "true" : undefined}
@@ -55,7 +76,7 @@ export function CommentPin({ comment, index, inverseScale, selected, onSelect }:
       }}
       type="button"
     >
-      {index + 1}
+      <PinFace image={comment.authorImage} name={comment.authorName} />
     </button>
   );
 }

@@ -19,7 +19,7 @@ const skipClass = "min-h-9 rounded-control px-3 text-[13px] text-foreground-subt
 /** Step 2: name, photo, title and department. Everything is optional except the name. */
 export function ProfileStep({ profile, onDone }: { profile: EditableProfile; onDone: () => void }) {
   return (
-    <div className="onboarding-panel dial-popover p-5">
+    <div className="onboarding-panel dial-popover h-full p-5">
       <div className="mb-5 flex items-center justify-between">
         <span className="dial-section-title">Your profile</span>
         <StepDots step={2} total={3} />

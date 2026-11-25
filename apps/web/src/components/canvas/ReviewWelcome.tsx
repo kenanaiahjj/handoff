@@ -2,7 +2,7 @@
 
 import { useRef, useState, type ReactNode } from "react";
 import { DistortionWave, type DistortionWaveHandle } from "distortion-waves";
-import { useWaveSettings } from "../motion/wave";
+import { useWaveSettings, waveStyle } from "../motion/wave";
 import { reviewWelcomeCookie } from "./review-welcome-state";
 
 
@@ -85,6 +85,7 @@ export function ReviewWelcome({
       live={false}
       onFinish={(revealed) => { if (revealed) canvasRef.current?.focus({ preventScroll: true }); }}
       palette={wave.palette}
+          waveStyle={waveStyle}
       reducedMotion={wave.reducedMotion}
       ref={waveRef}
       revealed={started}

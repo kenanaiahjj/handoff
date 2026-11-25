@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 import { DistortionWave } from "distortion-waves";
-import { devJoinedEvent, useWaveSettings } from "@/src/components/motion/wave";
+import { devJoinedEvent, useWaveSettings, waveStyle } from "@/src/components/motion/wave";
 import { useRouter } from "next/navigation";
 import { BrandMark } from "@/src/components/shell/BrandMark";
 
@@ -84,6 +84,7 @@ export function InviteClient({ token }: { token: string }) {
           live={false}
           onFinish={(revealed) => { if (revealed) openRef.current?.focus({ preventScroll: true }); }}
           palette={wave.palette}
+          waveStyle={waveStyle}
           reducedMotion={wave.reducedMotion}
           revealed={joined}
           revealedContent={

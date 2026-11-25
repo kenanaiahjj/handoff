@@ -245,6 +245,28 @@ dialog::backdrop {
   box-shadow: 0 0 0 3px rgb(240 122 42 / 0.28), 0 6px 16px rgb(0 0 0 / 0.45);
 }
 
+/* Onboarding: each step's heading settles in as its panel lands. */
+@media (prefers-reduced-motion: no-preference) {
+  .onboarding-heading {
+    animation: onboarding-heading-in 320ms cubic-bezier(0.23, 1, 0.32, 1) both;
+  }
+}
+@keyframes onboarding-heading-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+}
+
+/* Pins show the author's photo; on a resolved pin it fades back like the rest of the pin. */
+.comment-pin-photo {
+  -webkit-user-drag: none;
+}
+.comment-pin[data-resolved="true"] .comment-pin-photo {
+  opacity: 0.55;
+  filter: grayscale(1);
+}
+
 .comment-pin:focus-visible {
   outline: 2px solid #ffffff;
   outline-offset: 0;
@@ -1703,6 +1725,7 @@ html[data-splash="seen"] .app-splash {
  * element. Inside a wave borders default to none; border utilities and components set their own.
  */
 @layer base {
+  .wave-capture,
   .wave-capture *,
   .wave-capture *::before,
   .wave-capture *::after {

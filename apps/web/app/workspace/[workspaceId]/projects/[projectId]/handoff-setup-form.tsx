@@ -4,7 +4,7 @@ import { type FormEvent, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DistortionWave } from "distortion-waves";
-import { devVersionReadyEvent, useWaveSettings } from "@/src/components/motion/wave";
+import { devVersionReadyEvent, useWaveSettings, waveStyle } from "@/src/components/motion/wave";
 import { showToast } from "@/src/components/shell/Toaster";
 import {
   finalizeVersionLabel,
@@ -414,6 +414,7 @@ export function HandoffSetupForm({ input, mode }: {
         live={false}
         onFinish={(revealed) => { if (revealed) openCanvasRef.current?.focus({ preventScroll: true }); }}
         palette={wave.palette}
+          waveStyle={waveStyle}
         reducedMotion={wave.reducedMotion}
         revealed={Boolean(ready)}
         revealedContent={ready ? (

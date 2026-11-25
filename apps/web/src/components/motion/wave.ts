@@ -1,17 +1,23 @@
 import { useSyncExternalStore } from "react";
-import type { PaletteLike } from "distortion-waves";
+import type { PaletteLike, WaveStyleInput } from "distortion-waves";
 
 /**
  * Colours for the distortion waves: the app's dark surface (#212121) with Asbir orange (#ff8a3d)
- * running through it, and a white leading edge. The neutral colours are the surface itself, so the
+ * running through it, and a light orange leading edge. The neutral colours are the surface itself, so the
  * band the wave lays over a panel stays dark instead of washing it grey. Swap in "mono", "sunset" or
  * another palette here to change every wave at once.
  */
 export const wavePalette: PaletteLike = {
   colors: [[33, 33, 33], [255, 138, 61], [38, 38, 40], [33, 33, 33], [255, 162, 100], [44, 40, 38], [255, 138, 61]],
-  ahead: [255, 255, 255],
+  ahead: [255, 178, 122],
   behind: [255, 138, 61],
 };
+
+/**
+ * Shared shape tweaks: no rim. The rim is a glow (and a near-white hairline) traced around the box's
+ * edge as the wave passes, which reads as a grey frame on the app's dark panels.
+ */
+export const waveStyle: WaveStyleInput = { rimStrength: 0 };
 
 export type WaveSettings = { palette: PaletteLike; reducedMotion: "system" | "always" };
 

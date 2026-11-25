@@ -3,7 +3,7 @@
 import { Avatar } from "@/src/components/Avatar";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { DistortionWave, type DistortionWaveHandle } from "distortion-waves";
-import { devAllClearEvent, useWaveSettings } from "../motion/wave";
+import { devAllClearEvent, useWaveSettings, waveStyle } from "../motion/wave";
 import { activeMentionQuery, CommentBody, encodeMentions, type MentionPerson, useMentionMatches } from "./mentions";
 import type { CanvasFrameOption } from "../canvas/FrameNavigator";
 import { overviewCanvasFrameId } from "../canvas/canvas-anchor";
@@ -429,7 +429,6 @@ function ThreadCard({
             <CommentMessage comment={comment} />
           </div>
           <span className="flex shrink-0 items-center gap-0.5">
-            <span className="grid h-5 min-w-5 place-items-center rounded-full bg-white/[0.07] px-1.5 font-mono text-[10px] text-foreground-muted" title={`Pin ${index + 1}`}>{index + 1}</span>
             {canResolve ? <ResolveButton onToggle={onResolve} resolved={Boolean(comment.resolvedAt)} /> : null}
           </span>
         </div>
@@ -498,15 +497,20 @@ export function CommentThread({
   const [allClear, setAllClear] = useState<false | "resolved" | "demo">(false);
   const wave = useWaveSettings();
   const waveRef = useRef<DistortionWaveHandle>(null);
+  // While the All clear wave runs, the list stays as it was (the thread still open) so the wave
+  // carries the real comments away instead of the empty state the optimistic update leaves behind.
+  const [heldRoots, setHeldRoots] = useState<HandoffComment[] | null>(null);
   const roots = comments.filter((comment) => comment.parentCommentId === null);
   const pinNumber = new Map(roots.map((comment, index) => [comment.id, index]));
   const visibleRoots = roots.filter((comment) => activeTab === "resolved" ? Boolean(comment.resolvedAt) : !comment.resolvedAt);
+  const listRoots = heldRoots ?? visibleRoots;
   const resolvedCount = roots.length - openCount;
   const showAllClear = allClear && activeTab === "open" && !pendingPoint && (openCount === 0 || allClear === "demo");
 
   async function resolveThread(comment: HandoffComment) {
     const last = !comment.resolvedAt && openCount === 1 && activeTab === "open";
     if (last) {
+      setHeldRoots(visibleRoots);
       // Picture the list with the thread still in it, then let the wave carry it away.
       await Promise.race([waveRef.current?.prepare(), new Promise((resolve) => window.setTimeout(resolve, 400))]);
       setAllClear("resolved");
@@ -514,7 +518,10 @@ export function CommentThread({
     try {
       await onResolve(comment.id, !comment.resolvedAt);
     } catch (error) {
-      if (last) setAllClear(false);
+      if (last) {
+        setAllClear(false);
+        setHeldRoots(null);
+      }
       throw error;
     }
   }
@@ -583,7 +590,9 @@ export function CommentThread({
         className="wave-capture mt-3 rounded-[12px]"
         live={false}
         palette={wave.palette}
+        waveStyle={waveStyle}
         reducedMotion={wave.reducedMotion}
+        onFinish={() => setHeldRoots(null)}
         ref={waveRef}
         revealed={showAllClear}
         revealedContent={
@@ -601,9 +610,9 @@ export function CommentThread({
         type="center"
       >
       <div className="h-full bg-surface">
-      {visibleRoots.length ? (
+      {listRoots.length ? (
         <ol className="space-y-2">
-          {visibleRoots.map((comment) => (
+          {listRoots.map((comment) => (
             <ThreadCard
               canResolve={canResolve}
               canWrite={canWrite}

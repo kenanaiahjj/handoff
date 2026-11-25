@@ -13,7 +13,8 @@ export function AuthShell({
   footnote,
   wide = false,
 }: {
-  title: string;
+  /** Leave out to render the heading yourself, inside `children` (onboarding waves it with each step). */
+  title?: string;
   subtitle?: ReactNode;
   children: ReactNode;
   footnote?: ReactNode;
@@ -43,13 +44,22 @@ export function AuthShell({
               width={48}
             />
           </Link>
-          <h1 className="mt-7 text-balance text-center text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">{title}</h1>
-          {subtitle ? <p className="mt-2 text-pretty text-center text-[14px] leading-6 text-foreground-muted">{subtitle}</p> : null}
-          <div className="mt-8">{children}</div>
+          {title ? <AuthHeading subtitle={subtitle} title={title} /> : null}
+          <div className={title ? "mt-8" : undefined}>{children}</div>
         </div>
       </div>
 
       {footnote ? <p className="pb-8 text-center text-[12px] leading-5 text-foreground-subtle">{footnote}</p> : null}
     </main>
+  );
+}
+
+/** The page heading under the app icon. */
+export function AuthHeading({ title, subtitle }: { title: string; subtitle?: ReactNode }) {
+  return (
+    <>
+      <h1 className="mt-7 text-balance text-center text-[22px] font-semibold leading-tight tracking-[-0.02em] text-foreground">{title}</h1>
+      {subtitle ? <p className="mt-2 text-pretty text-center text-[14px] leading-6 text-foreground-muted">{subtitle}</p> : null}
+    </>
   );
 }

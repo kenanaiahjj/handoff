@@ -2,7 +2,7 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { DistortionWave } from "distortion-waves";
-import { useWaveSettings } from "../motion/wave";
+import { useWaveSettings, waveStyle } from "../motion/wave";
 
 type Phase = "confirm" | "pending" | "live";
 
@@ -161,6 +161,7 @@ export function PublishCard({
           live={false}
           onFinish={(revealed) => { if (revealed) copyRef.current?.focus(); }}
           palette={wave.palette}
+          waveStyle={waveStyle}
           reducedMotion={wave.reducedMotion}
           revealed={phase === "live"}
           revealedContent={liveView}
