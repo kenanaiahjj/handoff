@@ -55,9 +55,10 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
   const session = await getSessionForHeaders(requestHeaders);
   const hasPendingInvite = hasPendingHandoffReviewInvite(requestHeaders, shareId);
   const access = await resolvePublishedReviewAccess(shareId, requestHeaders);
-  if (!access) notFound();
-  if (!access.decision.allowed) {
-    if (!session && access.handoff.sharingMode === "workspace") {
+  if (!access || !access.decision.allowed) {
+    // Signed out (including link previews): always ask to sign in, so a pasted link never shows a
+    // 404 and doesn't reveal whether the handoff exists or how it is shared.
+    if (!session) {
       const signInQuery = new URLSearchParams(redirectQuery);
       if (inviteToken) signInQuery.set("invite", inviteToken);
       const signInPath = reviewPath + (signInQuery.toString() ? `?${signInQuery.toString()}` : "");
