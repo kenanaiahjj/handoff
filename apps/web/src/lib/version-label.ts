@@ -17,6 +17,19 @@ export function versionLabelStart(latestLabel: string | null | undefined) {
   return base ? `${base}${versionLabelSeparator}` : "";
 }
 
+/**
+ * The next version number after the latest: the last number in its base goes up by one, keeping any
+ * zero padding. "2.0.5 · Schedules" → "2.0.6", "v1.9" → "v1.10", "Sprint 4" → "Sprint 5". Null without a number.
+ */
+export function nextVersionLabel(latestLabel: string | null | undefined) {
+  const base = versionLabelBase(latestLabel);
+  const match = /(\d+)(\D*)$/.exec(base);
+  if (!match) return null;
+  const [whole, digits, tail] = match;
+  const bumped = String(Number(digits) + 1).padStart(digits.length, "0");
+  return `${base.slice(0, base.length - whole.length)}${bumped}${tail}`;
+}
+
 /** True when the label already begins with the latest version's base, so there is nothing to suggest. */
 export function startsFromLatest(label: string, latestLabel: string | null | undefined) {
   const base = versionLabelBase(latestLabel);

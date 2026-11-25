@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   finalizeVersionLabel,
+  nextVersionLabel,
   releaseNotePreview,
   startsFromLatest,
   versionLabelBase,
@@ -23,6 +24,17 @@ test("versionLabelStart offers the latest base with a separator", () => {
   assert.equal(versionLabelStart("Sprint 4"), "Sprint 4 · ");
   assert.equal(versionLabelStart(null), "");
   assert.equal(versionLabelStart("   "), "");
+});
+
+test("nextVersionLabel bumps the last number of the latest base", () => {
+  assert.equal(nextVersionLabel("2.0.5"), "2.0.6");
+  assert.equal(nextVersionLabel("2.0.5 · Schedules - edits"), "2.0.6");
+  assert.equal(nextVersionLabel("2.0.9"), "2.0.10");
+  assert.equal(nextVersionLabel("v1.09"), "v1.10");
+  assert.equal(nextVersionLabel("Sprint 4"), "Sprint 5");
+  assert.equal(nextVersionLabel("1.0-beta"), "1.1-beta");
+  assert.equal(nextVersionLabel("Launch"), null);
+  assert.equal(nextVersionLabel(null), null);
 });
 
 test("startsFromLatest hides the suggestion once the label already uses it", () => {

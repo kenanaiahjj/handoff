@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { showToast } from "@/src/components/shell/Toaster";
 import {
   finalizeVersionLabel,
+  nextVersionLabel,
   releaseNotePreview,
   startsFromLatest,
   versionLabelBase,
@@ -170,6 +171,8 @@ export function HandoffSetupForm({ input, mode }: {
       : handoffId === input.initialHandoffId ? input.latestVersionLabel ?? null : null;
   const latestBase = versionLabelBase(latestVersionLabel);
   const showLatestSuggestion = Boolean(latestBase) && !startsFromLatest(versionLabel, latestVersionLabel);
+  const nextLabel = nextVersionLabel(latestVersionLabel);
+  const showNextSuggestion = Boolean(nextLabel) && !startsFromLatest(versionLabel, nextLabel);
 
   // Picking another handoff in the project form: look up its newest label for the suggestion.
   useEffect(() => {
@@ -187,8 +190,8 @@ export function HandoffSetupForm({ input, mode }: {
     return () => controller.abort();
   }, [handoffId, input.initialHandoffId, input.latestVersionLabel, input.projectId, input.workspaceId]);
 
-  function startFromLatest() {
-    const start = versionLabelStart(latestVersionLabel);
+  /** Put a suggested label in the field and leave the cursor at its end, ready for a description. */
+  function applyVersionLabel(start: string) {
     setPendingFinalizeUploadId(null);
     setVersionLabel(start);
     requestAnimationFrame(() => {
@@ -387,15 +390,26 @@ export function HandoffSetupForm({ input, mode }: {
                 <span className="min-w-0 truncate text-[11px] text-foreground-subtle" id="setup-version-latest">
                   Latest: <span className="text-foreground-muted">{latestVersionLabel}</span>
                 </span>
-                {showLatestSuggestion ? (
-                  <button
-                    className="dial-button ml-auto min-h-7 shrink-0 rounded-full px-2.5 text-[11px]"
-                    onClick={startFromLatest}
-                    type="button"
-                  >
-                    Start from {latestBase}
-                  </button>
-                ) : null}
+                <span className="ml-auto flex shrink-0 gap-1.5">
+                  {showLatestSuggestion ? (
+                    <button
+                      className="dial-button min-h-7 rounded-full px-2.5 text-[11px]"
+                      onClick={() => applyVersionLabel(versionLabelStart(latestVersionLabel))}
+                      type="button"
+                    >
+                      Start from {latestBase}
+                    </button>
+                  ) : null}
+                  {showNextSuggestion && nextLabel ? (
+                    <button
+                      className="dial-button min-h-7 rounded-full px-2.5 text-[11px]"
+                      onClick={() => applyVersionLabel(nextLabel)}
+                      type="button"
+                    >
+                      Next: {nextLabel}
+                    </button>
+                  ) : null}
+                </span>
               </div>
             ) : null}
           </div>
