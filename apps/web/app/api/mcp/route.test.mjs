@@ -20,6 +20,7 @@ await pool.query(`
   CREATE TABLE handoff_asset (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_version_id TEXT NOT NULL, asset_key TEXT NOT NULL, object_key TEXT NOT NULL, file_name TEXT NOT NULL, content_type TEXT NOT NULL, size_bytes INTEGER NOT NULL, sha256 TEXT NOT NULL, width INTEGER, height INTEGER);
   CREATE TABLE linked_external_task (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_id TEXT NOT NULL, version_id TEXT NOT NULL, source_system TEXT NOT NULL, external_task_id TEXT, external_url TEXT, title TEXT NOT NULL, description TEXT NOT NULL, evidence_json TEXT NOT NULL, created_by_user_id TEXT NOT NULL, created_at TEXT NOT NULL, agent_run_url TEXT, pull_request_url TEXT);
   CREATE TABLE "user" (id TEXT PRIMARY KEY, name TEXT NOT NULL, email TEXT NOT NULL DEFAULT '', image TEXT);
+  CREATE TABLE workspace_handbook (workspace_id TEXT PRIMARY KEY, markdown TEXT NOT NULL, updated_by_user_id TEXT, updated_at TEXT NOT NULL);
   CREATE TABLE IF NOT EXISTS user_presence (user_id TEXT PRIMARY KEY, last_seen_at TIMESTAMPTZ);
   CREATE TABLE handoff_comment (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_version_id TEXT NOT NULL, frame_id TEXT NOT NULL, source_node_id TEXT, x REAL, y REAL, parent_comment_id TEXT, body TEXT NOT NULL, resolved_at TEXT, resolved_by_user_id TEXT, created_by_user_id TEXT NOT NULL, created_by_invite_id TEXT, author_label TEXT, author_role TEXT, created_at TEXT NOT NULL);
   CREATE TABLE layout_finding_state (id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL, handoff_version_id TEXT NOT NULL, finding_key TEXT NOT NULL, status TEXT NOT NULL, assignee_user_id TEXT, note TEXT, updated_by_user_id TEXT NOT NULL, updated_at TEXT NOT NULL);
@@ -385,7 +386,7 @@ test("an MCP client can initialize, discover read-scoped tools, and read an immu
   });
   assert.equal(discovery.response.status, 200, JSON.stringify(discovery.body));
   const toolNames = discovery.body.result.tools.map((tool) => tool.name);
-  for (const name of ["list_handoffs", "list_project_team", "list_frames", "list_elements", "get_snapshot", "get_measurements", "get_token_bindings", "get_version_diff", "list_comments"]) {
+  for (const name of ["list_handoffs", "list_project_team", "list_frames", "list_elements", "get_snapshot", "get_measurements", "get_token_bindings", "get_version_diff", "list_comments", "get_naming_convention"]) {
     assert.ok(toolNames.includes(name), `${name} should be discoverable with handoffs:read`);
   }
   assert.ok(!toolNames.includes("link_task"), "read-only clients must not discover task-link writes");
@@ -462,6 +463,21 @@ test("an MCP client can initialize, discover read-scoped tools, and read an immu
   assert.equal(bindings.length, 1);
   assert.equal(bindings[0].name, "text/primary");
   assert.equal(bindings[0].value, "#222222");
+});
+
+test("MCP returns the workspace's naming handbook, built-in until the workspace saves its own", async () => {
+  const { defaultHandbook, resetHandbook, saveHandbook } = await import("../../../src/server/services/handbook.ts");
+  const builtIn = await callTool("get_naming_convention", {});
+  assert.equal(builtIn.response.status, 200, JSON.stringify(builtIn.body));
+  assert.equal(builtIn.body.result.content[0].text, defaultHandbook());
+  assert.match(builtIn.body.result.content[0].text, /Figma File Guidelines/);
+
+  await saveHandbook(workspaceA, "designer-a", "# Workspace A rules");
+  try {
+    assert.equal((await callTool("get_naming_convention", {})).body.result.content[0].text, "# Workspace A rules");
+  } finally {
+    await resetHandbook(workspaceA);
+  }
 });
 
 test("MCP returns oversized snapshots as bounded summaries and pages precise element data", async () => {

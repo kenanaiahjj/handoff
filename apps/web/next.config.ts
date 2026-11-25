@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import type { NextConfig } from "next";
 
 /** Changes with every build/deploy; open windows compare it with the server to offer a reload. */
@@ -24,12 +26,25 @@ const releaseNotes = git(["log", "-n", "200", "--no-merges", "--format=%H%x09%cs
 const today = new Date().toISOString().slice(0, 10);
 const versionLabel = (releaseNotes[0]?.date ?? today).replaceAll("-", ".");
 
+/** The built-in Figma naming handbook, served until a workspace saves its own copy. */
+function readDefaultHandbook() {
+  for (const candidate of ["../../docs/figma-naming.md", "docs/figma-naming.md"]) {
+    try {
+      return readFileSync(path.resolve(process.cwd(), candidate), "utf8");
+    } catch {
+      // Built from another folder: try the next place.
+    }
+  }
+  return "";
+}
+
 const nextConfig: NextConfig = {
   env: {
     NEXT_PUBLIC_ASBIR_BUILD_ID: buildId,
     NEXT_PUBLIC_ASBIR_COMMIT: commit,
     ASBIR_VERSION_LABEL: versionLabel,
     ASBIR_RELEASE_NOTES: JSON.stringify(releaseNotes),
+    ASBIR_DEFAULT_HANDBOOK: readDefaultHandbook(),
   },
   /* config options here */
   distDir: process.env.ASBIR_NEXT_DIST_DIR || ".next",

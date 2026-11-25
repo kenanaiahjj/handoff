@@ -5,7 +5,7 @@ import { workspaceLogoUrl } from "@/src/server/services/workspace-settings";
 import type { WorkspaceNavSection } from "./WorkspaceShell";
 
 type WorkspaceNavigationProject = { id: string; name: string };
-type WorkspacePage = "overview" | "projects" | "project" | "integrations" | "team" | "profile" | "activity" | "settings";
+type WorkspacePage = "overview" | "projects" | "project" | "integrations" | "team" | "profile" | "activity" | "settings" | "handbook";
 
 export async function createWorkspaceNavigation({
   workspaceId,
@@ -42,6 +42,7 @@ export async function createWorkspaceNavigation({
         { label: "Activity", href: `/activity`, icon: "activity" as const, active: page === "activity" },
         ...(canManage ? [{ label: "Team", href: `/team`, icon: "users" as const, active: page === "team" }] : []),
         { label: "Integrations", href: `/integrations`, icon: "plug" as const, active: page === "integrations" },
+        { label: "Naming handbook", href: `/handbook`, icon: "book" as const, active: page === "handbook" },
         ...(isOwner ? [{ label: "Settings", href: `/settings`, icon: "settings" as const, active: page === "settings" }] : []),
       ],
     },

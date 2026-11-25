@@ -25,7 +25,7 @@ export type WorkspaceChoice = {
 export type WorkspaceNavItem = {
   label: string;
   href: string;
-  icon?: "home" | "grid" | "folder" | "settings" | "users" | "activity" | "plug";
+  icon?: "home" | "grid" | "folder" | "settings" | "users" | "activity" | "plug" | "book";
   /** A project's uploaded icon, shown instead of the folder. */
   imageUrl?: string | null;
   active?: boolean;
@@ -82,6 +82,9 @@ function Icon({ name }: { name: WorkspaceNavItem["icon"] }) {
   }
   if (name === "plug") {
     return <svg {...common}><path d="M7 2.8v3.4M13 2.8v3.4M5 6.2h10v3a5 5 0 0 1-10 0zM10 14.2v3" /></svg>;
+  }
+  if (name === "book") {
+    return <svg {...common}><path d="M10 5.2C8.6 4 6.6 3.6 3.2 3.8v11.4c3.4-.2 5.4.2 6.8 1.4 1.4-1.2 3.4-1.6 6.8-1.4V3.8c-3.4-.2-5.4.2-6.8 1.4zM10 5.2v11.4" /></svg>;
   }
   if (name === "settings") {
     return <svg {...common}><circle cx="10" cy="10" r="2.5" /><path d="M10 2.6v1.5m0 11.8v1.5M2.6 10h1.5m11.8 0h1.5M4.8 4.8l1.1 1.1m8.2 8.2 1.1 1.1m0-10.4-1.1 1.1m-8.2 8.2-1.1 1.1" /><circle cx="10" cy="10" r="6.4" /></svg>;
