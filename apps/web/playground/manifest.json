@@ -1,0 +1,74 @@
+{
+  "generatedBy": "scripts/playground/build.mjs",
+  "versions": [
+    {
+      "label": "1.0",
+      "note": "First pass at Penny: sign in, home, activity, sending money, budgets and settings.",
+      "file": "snapshot-1.0.json"
+    },
+    {
+      "label": "1.1",
+      "note": "Budgets became Insights. Home gets the indigo balance card and an insight banner, Send money says \"Review transfer\", Settings adds Weekly insights, and the Components sheet adds an Accent button with rounder corners.",
+      "file": "snapshot-1.1.json"
+    }
+  ],
+  "comments": [
+    {
+      "frame": "penny-home",
+      "layer": "Insight banner",
+      "x": 300,
+      "y": 18,
+      "author": "Maya Santos",
+      "role": "pd",
+      "hoursAgo": 20,
+      "body": "Love this. Can the banner be dismissed? People will see it every time they open the app.",
+      "replies": [
+        {
+          "author": "Jordan Lee",
+          "role": "dev",
+          "hoursAgo": 18,
+          "body": "Adding a close button and remembering it for 7 days. Does that work?"
+        }
+      ]
+    },
+    {
+      "frame": "penny-send-money",
+      "layer": "Button / Continue",
+      "x": 250,
+      "y": 10,
+      "author": "Jordan Lee",
+      "role": "dev",
+      "hoursAgo": 16,
+      "body": "Is \"Review transfer\" the final copy? The API returns a fee for international transfers, so \"No fee\" isn't always true."
+    },
+    {
+      "frame": "penny-settings",
+      "layer": "Setting / Weekly insights",
+      "x": 24,
+      "y": 20,
+      "author": "Priya Nair",
+      "role": "qa",
+      "hoursAgo": 9,
+      "body": "Toggle state isn't saved after relaunching the app on Android 14."
+    },
+    {
+      "frame": "penny-activity",
+      "layer": "Search",
+      "x": 320,
+      "y": 12,
+      "author": "Maya Santos",
+      "role": "pd",
+      "hoursAgo": 30,
+      "resolved": true,
+      "body": "Search placeholder should mention merchants too.",
+      "replies": [
+        {
+          "author": "Alex Kim",
+          "role": "pd",
+          "hoursAgo": 28,
+          "body": "Done in this version: \"Search transactions\" covers it, kept it short."
+        }
+      ]
+    }
+  ]
+}

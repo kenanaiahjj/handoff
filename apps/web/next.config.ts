@@ -55,6 +55,8 @@ const nextConfig: NextConfig = {
   outputFileTracingIncludes: {
     "/api/figma-plugin": ["./figma-plugin-template/**/*"],
     "/api/capture-sessions/plugin-version": ["./figma-plugin-template/build-id.txt"],
+    // The Playground is created from these files on its first visit (src/server/services/playground.ts).
+    "/playground": ["./playground/**/*"],
   },
   // Addresses used to carry the company workspace's id (/workspace/<id>/projects/…). Links shared
   // before it was dropped keep working.

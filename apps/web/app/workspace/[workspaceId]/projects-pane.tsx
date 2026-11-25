@@ -70,7 +70,9 @@ export function ProjectsPane({ workspaceId, projects: unsorted, canManage = true
         ) : null}
       </div>
       {notice ? <div className="mb-4">{notice}</div> : null}
-      {projects.length ? (
+      {projects.length ? null : (
+        <p className="workspace-empty-state mb-3 py-7 text-[12px]">{canManage ? "No projects yet. Create one to start a design handoff, or look around the Playground first." : "Nothing has been shared with you yet. When a designer invites you to a handoff, its project appears here. Until then, try the Playground."}</p>
+      )}
         <ul className="grid gap-3 sm:grid-cols-2 2xl:grid-cols-3">
           {projects.map((project) => {
             const images = previews.get(project.id) ?? [];
@@ -116,10 +118,32 @@ export function ProjectsPane({ workspaceId, projects: unsorted, canManage = true
               </li>
             );
           })}
+          <li>
+            <PlaygroundCard />
+          </li>
         </ul>
-      ) : (
-        <p className="workspace-empty-state py-7 text-[12px]">{canManage ? "No projects yet. Create one to start a design handoff." : "Nothing has been shared with you yet. When a designer invites you to a handoff, its project appears here."}</p>
-      )}
     </section>
+  );
+}
+
+/** The shared sample project everyone can open, view-only (see app/playground). */
+function PlaygroundCard() {
+  return (
+    <article className="handoff-card group relative flex h-full flex-col overflow-hidden">
+      <div className="handoff-card-preview project-card-preview relative aspect-[16/9] overflow-hidden">
+        {/* eslint-disable-next-line @next/next/no-img-element -- a small static image written by scripts/playground/build.mjs. */}
+        <img alt="" className="absolute inset-0 size-full object-cover object-left" decoding="async" loading="lazy" src="/playground-preview.png" />
+        <span className="absolute left-2.5 top-2.5 rounded-full bg-[#ff8a3d] px-2 py-0.5 text-[11px] font-semibold text-[#1b1006]">Sample</span>
+      </div>
+      <div className="flex flex-1 items-center gap-3 px-4 pb-3.5 pt-3">
+        <ProjectIcon name="Playground" size={32} src={null} />
+        <div className="min-w-0 flex-1">
+          <h3 className="truncate text-[15px] font-semibold leading-5 tracking-[-0.01em] text-foreground">
+            <Link className="handoff-card-link focus-visible:outline-none" href="/playground">Playground</Link>
+          </h3>
+          <p className="mt-0.5 truncate text-[12px] text-foreground-subtle">Try Review changes, Compare and Inspect on a sample app</p>
+        </div>
+      </div>
+    </article>
   );
 }
