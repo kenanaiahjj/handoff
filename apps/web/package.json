@@ -19,6 +19,7 @@
     "@vercel/functions": "^3.11.3",
     "ai": "^7.0.173",
     "better-auth": "^1.7.17",
+    "distortion-waves": "0.1.0",
     "fflate": "^0.8.3",
     "next": "16.4.5",
     "pg": "^8.23.1",

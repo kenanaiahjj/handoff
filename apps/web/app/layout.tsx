@@ -7,6 +7,7 @@ import { UpdateNotice } from "@/src/components/shell/UpdateNotice";
 import { AppBadgeSync } from "@/src/components/shell/AppBadgeSync";
 import { Toaster } from "@/src/components/shell/Toaster";
 import { CanvasNavigationOverlay } from "@/src/components/shell/CanvasNavigationOverlay";
+import { WaveDevBar } from "@/src/components/motion/WaveDevBar";
 
 // Asbir's own typefaces, served from the app (Latin subset of Asbir Sans; variable Asbir Mono).
 const asbirSans = localFont({
@@ -62,6 +63,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
         <CanvasNavigationOverlay />
         {children}
         <Toaster />
+        {/* Local testing only: replay the waves and the canvas tour. */}
+        {process.env.NODE_ENV === "development" ? <WaveDevBar /> : null}
       </body>
     </html>
   );

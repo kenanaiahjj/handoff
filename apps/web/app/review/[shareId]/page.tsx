@@ -1,4 +1,4 @@
-import { headers } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { getSessionForHeaders } from "@/src/server/auth-session";
 import { hasPendingHandoffReviewInvite, listVisiblePublishedReviewVersions, resolvePublishedReviewAccess } from "@/src/server/services/handoff-review-access";
@@ -7,6 +7,8 @@ import { listProjectTeam } from "@/src/server/services/project-access";
 import { getCanvasVersion } from "@/src/server/services/version-canvas";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
 import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
+import { ReviewWelcome } from "@/src/components/canvas/ReviewWelcome";
+import { reviewWelcomeCookie } from "@/src/components/canvas/review-welcome-state";
 
 /**
  * Large captures (250 MB of JSON) take tens of seconds to verify, merge and store. 300 s is the
@@ -99,8 +101,13 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
   ]);
   if (!version || version.handoffId !== handoff.id) notFound();
 
-  return (
-    <main className="h-dvh min-h-0 overflow-hidden bg-surface text-foreground">
+  // First look at this version: a short welcome before the canvas. Deep links (a version or a
+  // comparison in the URL) go straight to what they point at.
+  const selectedIndex = versions.findIndex((entry) => entry.id === selectedVersion.id);
+  const showWelcome = !requestedVersionId && !initialCompareRouteState &&
+    (await cookies()).get(reviewWelcomeCookie)?.value !== selectedVersion.id;
+
+  const surface = (
       <HandoffReviewSurface
         workspaceId={handoff.workspaceId}
         projectId={handoff.projectId}
@@ -124,6 +131,25 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
         canUseLocalPreview={false}
         team={team}
       />
+  );
+
+  return (
+    <main className="h-dvh min-h-0 overflow-hidden bg-surface text-foreground">
+      {showWelcome ? (
+        <ReviewWelcome
+          canComment={access.decision.canComment}
+          handoffName={handoff.name}
+          previousVersionLabel={versions[selectedIndex + 1]?.versionLabel ?? null}
+          projectName={project.name}
+          publishedAt={selectedVersion.createdAt ?? null}
+          releaseNote={selectedVersion.releaseNote ?? null}
+          reviewPath={reviewPath}
+          versionId={selectedVersion.id}
+          versionLabel={selectedVersion.versionLabel}
+        >
+          {surface}
+        </ReviewWelcome>
+      ) : surface}
     </main>
   );
 }

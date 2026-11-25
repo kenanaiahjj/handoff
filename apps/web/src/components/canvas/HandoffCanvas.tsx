@@ -32,6 +32,8 @@ import { formatCapturedAt } from "./captured-at";
 import { filterChangedFrames } from "./changed-frame-filter";
 import { overviewCanvasFrameId } from "./canvas-anchor";
 import { focusCanvasScreenEvent, showScreenViewEvent } from "./MobileReview";
+import { CanvasTour } from "./CanvasTour";
+import { canvasTourEvent } from "./canvas-tour-state";
 import {
   FrameNavigator,
   type CanvasFrameChangeStatus,
@@ -1419,6 +1421,7 @@ export function HandoffCanvas({
             {canCompare ? (
               <button
                 className="canvas-tool hidden h-7 shrink-0 border border-white/[0.08] lg:inline-flex"
+                data-tour="compare"
                 onClick={() => {
                   setCommentMode(false);
                   if (isMobile) setStatesOpen(false);
@@ -1461,6 +1464,7 @@ export function HandoffCanvas({
             sharingEndpoint={sharingEndpoint}
             publishEndpoint={sharingEndpoint ? `${sharingEndpoint}/publish` : null}
             publishVersionId={metadata.selectedVersionId}
+            publishVersionLabel={metadata.versionLabel}
             latestVersionId={metadata.versions[0]?.id ?? metadata.selectedVersionId}
             publishedVersionId={metadata.publishedVersionId}
             pendingChanges={pendingRemovals.length}
@@ -1473,6 +1477,7 @@ export function HandoffCanvas({
             aria-label={(detailsPanelVisible ? "Hide" : "Show") + " the details panel"}
             aria-pressed={detailsPanelVisible}
             className="canvas-tool"
+            data-tour="details"
             onClick={toggleDetailsPanel}
             title={(detailsPanelVisible ? "Hide" : "Show") + " the details panel (⌘\\ hides both panels)"}
             type="button"
@@ -1487,7 +1492,7 @@ export function HandoffCanvas({
               setMoreOpen(false);
             }}
           >
-            <button aria-expanded={moreOpen} aria-label="More" className="canvas-tool" onClick={() => setMoreOpen((current) => !current)} title="More" type="button">
+            <button aria-expanded={moreOpen} aria-label="More" className="canvas-tool" data-tour={canCompare ? "compare-more" : undefined} onClick={() => setMoreOpen((current) => !current)} title="More" type="button">
               <MoreIcon />
             </button>
             {moreOpen ? (
@@ -1514,6 +1519,10 @@ export function HandoffCanvas({
                     </button>
                   ) : null}
                   {canCompare || metadata.canUseLocalPreview ? <div aria-hidden="true" className={"mx-1 my-1 h-px bg-white/[0.06] lg:hidden" + (canCompare ? "" : " phone-hidden")} /> : null}
+                  <button className="flex w-full items-center gap-2.5 rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06]" onClick={() => { setMoreOpen(false); window.dispatchEvent(new Event(canvasTourEvent)); }} role="menuitem" type="button">
+                    <svg aria-hidden="true" className="size-4 text-foreground-subtle" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><circle cx="8" cy="8" r="5.75" /><path d="m10.2 5.8-1.3 3.1-3.1 1.3 1.3-3.1Z" /></svg>
+                    <span className="flex-1">Take the tour</span>
+                  </button>
                   <button className="touch-hidden flex w-full items-center gap-2.5 rounded-[7px] px-2 py-2 text-left text-[12px] text-foreground hover:bg-white/[0.06]" onClick={() => { setMoreOpen(false); setShortcutsOpen(true); }} role="menuitem" type="button">
                     <KeyboardIcon className="size-4 text-foreground-subtle" />
                     <span className="flex-1">Keyboard shortcuts</span>
@@ -1610,7 +1619,7 @@ export function HandoffCanvas({
               List view
             </button>
           ) : null}
-          <span className="glow-ring shrink-0">
+          <span className="glow-ring shrink-0" data-tour="changes">
           <span aria-hidden="true" className="glow-ring-halo" />
           <span aria-hidden="true" className="glow-ring-spin" />
           <button
@@ -1657,6 +1666,7 @@ export function HandoffCanvas({
             aria-label={searchOpen ? "Search screens" : "Snapshot screens"}
             aria-modal={isMobile && statesOpen ? true : undefined}
             className={"absolute inset-y-0 left-0 z-30 w-[min(260px,86vw)] shadow-2xl lg:static lg:z-auto lg:w-auto lg:shadow-none" + (layoutReady ? "" : " max-lg:hidden")}
+            data-tour="screens"
             ref={screenPanelRef}
             role={isMobile && statesOpen ? "dialog" : undefined}
             tabIndex={isMobile ? -1 : undefined}
@@ -1811,6 +1821,7 @@ export function HandoffCanvas({
           <button
             aria-pressed={statesOpen}
             className="canvas-tool shrink-0 lg:hidden"
+            data-tour="screens"
             id="canvas-mobile-screens-toggle"
             onClick={toggleScreensPanel}
             title={(statesOpen ? "Hide" : "Show") + " the screens panel (⌘\\ hides both panels)"}
@@ -1820,7 +1831,7 @@ export function HandoffCanvas({
             <span className="sr-only">Screens</span><span className="font-mono text-[10px] text-foreground-subtle">{screens.length}</span>
           </button>
           <span aria-hidden="true" className="canvas-floatbar-divider lg:hidden" />
-          <div aria-label="Canvas mode" className="canvas-toolgroup shrink-0" role="group">
+          <div aria-label="Canvas mode" className="canvas-toolgroup shrink-0" data-tour="modes" role="group">
             <button aria-pressed={canvasMode === "view" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setCanvasModeOverride("view"); }} title="View: pan without selecting (V)" type="button">
               <HandIcon /><span className="sr-only">View</span>
             </button>
@@ -1875,6 +1886,7 @@ export function HandoffCanvas({
               <button
                 aria-pressed={showChanges}
                 className="canvas-tool"
+                data-tour="changes"
                 onClick={() => setShowChanges((current) => !current)}
                 title={`${showChanges ? "Hide" : "Show"} the highlights on what changed since ${comparisonSummary?.earlierVersionLabel ?? "the previous version"} (D)`}
                 type="button"
@@ -1900,6 +1912,7 @@ export function HandoffCanvas({
             onZoomOut={() => viewportControls?.zoomOut()}
             onFit={() => viewportControls?.fitToFrame()}
             onZoomIn={() => viewportControls?.zoomIn()}
+            tourId="navigate"
           />
         </div>
         <CanvasViewport
@@ -2156,7 +2169,7 @@ export function HandoffCanvas({
         </aside>
       </div>
       {removalDialog}
-
+      <CanvasTour canComment={metadata.canComment} canShare={Boolean(sharingEndpoint)} />
     </div>
     </CommentMediaProvider>
   );

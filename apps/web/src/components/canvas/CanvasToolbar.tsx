@@ -3,6 +3,8 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { useRouter } from "next/navigation";
 import { HandoffAccessDialog } from "./HandoffAccessDialog";
+import { PublishCard } from "./PublishCard";
+import { devPublishDemoEvent } from "../motion/wave";
 import type { ZoomScaleSource } from "./zoom-scale-source";
 
 type CanvasToolbarProps = {
@@ -12,6 +14,8 @@ type CanvasToolbarProps = {
   sharingEndpoint: string | null;
   publishEndpoint: string | null;
   publishVersionId: string;
+  /** Label of the version Publish would make live, for the confirmation card. */
+  publishVersionLabel: string;
   latestVersionId: string;
   publishedVersionId: string | null;
   /** Unpublished changes (screens marked for removal); Publish then opens the review dialog. */
@@ -32,6 +36,7 @@ export function CanvasToolbar({
   sharingEndpoint,
   publishEndpoint,
   publishVersionId,
+  publishVersionLabel,
   latestVersionId,
   publishedVersionId,
   pendingChanges = 0,
@@ -44,7 +49,17 @@ export function CanvasToolbar({
   const [shareStatus, setShareStatus] = useState<ShareStatus>("idle");
   const [locallyPublishedVersionId, setLocallyPublishedVersionId] = useState<string | null>(null);
   const [publishPending, setPublishPending] = useState(false);
-  const [publishError, setPublishError] = useState("");
+  const [publishCardOpen, setPublishCardOpen] = useState(false);
+  const [refreshOnClose, setRefreshOnClose] = useState(false);
+  /** Local testing only: the dev wave bar opens the card with a pretend publish. */
+  const [demoPublish, setDemoPublish] = useState(false);
+
+  useEffect(() => {
+    if (process.env.NODE_ENV !== "development") return;
+    const open = () => setDemoPublish(true);
+    window.addEventListener(devPublishDemoEvent, open);
+    return () => window.removeEventListener(devPublishDemoEvent, open);
+  }, []);
   const currentPublishedVersionId =
     locallyPublishedVersionId === latestVersionId ? locallyPublishedVersionId : publishedVersionId;
   const isLatestVersion = publishVersionId === latestVersionId;
@@ -73,32 +88,46 @@ export function CanvasToolbar({
     }
   }
 
-  async function publishCanvas() {
-    if (!publishEndpoint || !isLatestVersion || publishPending || latestIsPublished) return;
-
+  /** Publishes the open version and resolves to its review link; the card shows any error. */
+  async function publishCanvas(): Promise<string> {
+    if (!publishEndpoint || !isLatestVersion) throw new Error("Select the latest version to publish.");
     setPublishPending(true);
-    setPublishError("");
     try {
-      const response = await fetch(publishEndpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ versionId: publishVersionId }),
-      });
-      const payload = await response.json() as PublishResponse;
-      if (!response.ok || !payload.reviewUrl || !payload.reviewShareId) {
+      let payload: PublishResponse;
+      let ok = false;
+      try {
+        const response = await fetch(publishEndpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ versionId: publishVersionId }),
+        });
+        ok = response.ok;
+        payload = await response.json() as PublishResponse;
+      } catch {
+        throw new Error("Could not reach the publishing service. Try again.");
+      }
+      if (!ok || !payload.reviewUrl || !payload.reviewShareId) {
         throw new Error(payload.error ?? "Could not publish this canvas.");
       }
       setLocallyPublishedVersionId(publishVersionId);
-      router.refresh();
-    } catch (cause) {
-      setPublishError(cause instanceof Error ? cause.message : "Could not reach the publishing service. Try again.");
+      // Refreshing re-renders the page under the wave, so it waits until the card closes.
+      setRefreshOnClose(true);
+      return payload.reviewUrl;
     } finally {
       setPublishPending(false);
     }
   }
 
+  function closePublishCard() {
+    setPublishCardOpen(false);
+    if (refreshOnClose) {
+      setRefreshOnClose(false);
+      router.refresh();
+    }
+  }
+
   return (
-    <div className="flex flex-nowrap items-center gap-1 text-[12px] text-foreground-muted" role="group" aria-label="Canvas controls">
+    <div className="relative flex flex-nowrap items-center gap-1 text-[12px] text-foreground-muted" data-tour="share" role="group" aria-label="Canvas controls">
       {publishEndpoint && pendingChanges > 0 && onReviewChanges ? (
         <button
           className="canvas-publish-action flex h-11 shrink-0 items-center gap-1.5 whitespace-nowrap px-3 text-[12px] font-semibold lg:h-8"
@@ -123,7 +152,9 @@ export function CanvasToolbar({
             aria-describedby={!isLatestVersion ? "canvas-publish-version-hint" : undefined}
             className="canvas-publish-action flex h-11 shrink-0 items-center whitespace-nowrap justify-center px-3 text-[12px] font-semibold lg:h-8 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary-hover disabled:cursor-not-allowed disabled:opacity-60"
             disabled={!isLatestVersion || publishPending}
-            onClick={() => void publishCanvas()}
+            aria-expanded={publishCardOpen}
+            aria-haspopup="dialog"
+            onClick={() => setPublishCardOpen(true)}
             title={!isLatestVersion ? "Select the latest version to publish." : undefined}
             type="button"
           >
@@ -132,7 +163,6 @@ export function CanvasToolbar({
         )
       ) : null}
       {publishEndpoint && !isLatestVersion ? <span className="sr-only" id="canvas-publish-version-hint">Select the latest version to publish.</span> : null}
-      {publishError ? <span aria-live="polite" className="max-w-48 text-[11px] leading-4 text-danger" role="status">{publishError}</span> : null}
       {sharingEndpoint ? (
         <HandoffAccessDialog endpoint={sharingEndpoint} handoffName={shareTitle} publishTarget={{ versionId: publishVersionId, isLatestVersion }} variant="share" />
       ) : (
@@ -153,6 +183,16 @@ export function CanvasToolbar({
           <span className="max-sm:sr-only">{shareStatus === "copied" ? "Copied" : shareStatus === "failed" ? "Try again" : "Share"}</span>
         </button>
       )}
+      {demoPublish ? (
+        <PublishCard
+          onClose={() => setDemoPublish(false)}
+          onPublish={() => new Promise((resolve) => window.setTimeout(() => resolve(shareUrl ?? "/review/demo-link"), 700))}
+          versionLabel={publishVersionLabel}
+        />
+      ) : null}
+      {publishCardOpen ? (
+        <PublishCard onClose={closePublishCard} onPublish={publishCanvas} versionLabel={publishVersionLabel} />
+      ) : null}
       <span aria-live="polite" className="sr-only">
         {shareStatus === "copied" ? "Canvas link copied to clipboard." : shareStatus === "failed" ? "Could not copy the canvas link." : ""}
       </span>
@@ -163,18 +203,20 @@ export function CanvasToolbar({
 /** Zoom out, fit and zoom in. On phones it sits in the tools row so the version picker keeps its room. */
 const noScaleSubscription = () => () => {};
 
-export function ZoomControls({ scale: scaleSource, onZoomOut, onFit, onZoomIn, className }: {
+export function ZoomControls({ scale: scaleSource, onZoomOut, onFit, onZoomIn, className, tourId }: {
   /** The canvas zoom; null (or a null reading) while the canvas is still loading. */
   scale: ZoomScaleSource | null;
   onZoomOut: () => void;
   onFit: () => void;
   onZoomIn: () => void;
   className?: string;
+  /** Marks the controls for the canvas tour. */
+  tourId?: string;
 }) {
   const scale = useSyncExternalStore(scaleSource?.subscribe ?? noScaleSubscription, () => scaleSource?.get() ?? null, () => null);
   const zoomPercentage = scale === null ? "–" : Math.round(scale * 100) + "%";
   return (
-    <div aria-label="Zoom" className={"canvas-toolgroup shrink-0" + (className ? " " + className : "")} role="group">
+    <div aria-label="Zoom" className={"canvas-toolgroup shrink-0" + (className ? " " + className : "")} data-tour={tourId} role="group">
       <button aria-label="Zoom out" className="canvas-tool !min-w-7 !px-0" onClick={onZoomOut} title="Zoom out (−)" type="button">
         <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeWidth="1.5" viewBox="0 0 16 16"><path d="M3.5 8h9" /></svg>
       </button>

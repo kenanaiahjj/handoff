@@ -1696,3 +1696,25 @@ html[data-splash="seen"] .app-splash {
 [data-space-pan] * {
   cursor: inherit !important;
 }
+
+/*
+ * Distortion waves picture their views by copying each element's computed style, but they copy
+ * Tailwind's reset `border-style: solid` without the zero width, which draws a box round every
+ * element. Inside a wave borders default to none; border utilities and components set their own.
+ */
+@layer base {
+  .wave-capture *,
+  .wave-capture *::before,
+  .wave-capture *::after {
+    border-style: none;
+  }
+}
+
+/* Canvas tour: dims everything but the control being explained. */
+.canvas-tour-spotlight {
+  box-shadow: 0 0 0 9999px rgb(0 0 0 / 0.5), 0 0 0 1.5px rgb(255 255 255 / 0.55);
+  transition: left 220ms cubic-bezier(0.2, 0.8, 0.2, 1), top 220ms cubic-bezier(0.2, 0.8, 0.2, 1), width 220ms cubic-bezier(0.2, 0.8, 0.2, 1), height 220ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+@media (prefers-reduced-motion: reduce) {
+  .canvas-tour-spotlight { transition: none; }
+}
