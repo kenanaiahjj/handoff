@@ -10,11 +10,11 @@ type Area = { x: number; y: number; width: number; height: number };
 
 const SCALES = [1, 2, 3, 4] as const;
 
-function safeName(name: string) {
+export function safeName(name: string) {
   return name.replace(/[^a-z0-9_-]+/gi, "-").replace(/^-+|-+$/g, "") || "export";
 }
 
-function download(blob: Blob, fileName: string) {
+export function download(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement("a");
   link.href = url;

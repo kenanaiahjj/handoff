@@ -22,6 +22,7 @@ import { overviewClipPath } from "./overview-clip";
 import { CanvasScreenImages } from "./CanvasScreenImages";
 import { resolutionNeed, sameScreenIds, screensInView } from "./canvas-screen-culling";
 import { createZoomScaleSource, type ZoomScaleSource } from "./zoom-scale-source";
+import { marqueeRect, screensInMarquee, type MarqueeRect } from "./canvas-marquee";
 
 /** Re-reads devicePixelRatio when the window moves to a screen with a different density, or zooms. */
 function subscribeToPixelRatio(onChange: () => void) {
@@ -66,8 +67,13 @@ export type CanvasViewportControls = {
 type CanvasViewportProps = {
   frame: CanvasFrameOption;
   overviewOrigin: { sourceX: number; sourceY: number };
-  interactionMode: "view" | "inspect";
+  /** "select" draws a drag-to-select box over the screens instead of panning. */
+  interactionMode: "view" | "inspect" | "select";
   screens: CanvasFrameOption[];
+  /** Screens picked with the Select tool, outlined in blue. */
+  selectedScreenIds?: ReadonlySet<string>;
+  /** A finished drag-to-select box: the screens it touched, and whether Shift or ⌘ was held to add to the selection. */
+  onMarqueeSelect?: (screenIds: string[], additive: boolean) => void;
   changedOnly: boolean;
   selectedFrameId: string | null;
   frameStatuses: Record<string, CanvasFrameChangeStatus>;
@@ -158,6 +164,8 @@ function elementRectInFrame(
 const measurementGuideColor = "#f24e1e";
 const compareGuideColor = "#3b93f5";
 const pinnedGuideColor = "#d9468f";
+/** Figma's selection blue, for the drag-to-select box and the screens it picks. */
+const marqueeColor = "#0d99ff";
 
 /** Gap lines with their pixel badges between two layers (Figma's red measurement lines). */
 function DistanceGuides({ guides, color, inverseScale, frameWidth, frameHeight, outlineRects = [] }: {
@@ -228,6 +236,8 @@ export function CanvasViewport({
   overviewOrigin,
   interactionMode,
   screens,
+  selectedScreenIds,
+  onMarqueeSelect,
   changedOnly,
   selectedFrameId,
   frameStatuses,
@@ -268,6 +278,9 @@ export function CanvasViewport({
   const touchesRef = useRef(new Map<number, { x: number; y: number }>());
   const pinchRef = useRef<{ distance: number; x: number; y: number } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
+  // The Select tool's drag-to-select box, in the canvas layer's units.
+  const marqueeRef = useRef<{ pointerId: number; startX: number; startY: number; start: { x: number; y: number }; moved: boolean; additive: boolean } | null>(null);
+  const [marquee, setMarquee] = useState<{ rect: MarqueeRect; additive: boolean } | null>(null);
   const [altHeld, setAltHeld] = useState(false);
   // Holding Space pans with a drag from any tool, as in Figma; clicks don't select or place anything.
   const [spaceHeld, setSpaceHeld] = useState(false);
@@ -448,8 +461,10 @@ export function CanvasViewport({
     // A fresh touch starts clean: a pinch that ended without a click mustn't swallow this tap.
     if (touchesRef.current.size === 1) suppressClickRef.current = false;
     if (touchesRef.current.size !== 2) return false;
-    // A second finger turns a one-finger pan (or a pending tap) into a pinch.
+    // A second finger turns a one-finger pan, box or pending tap into a pinch.
     dragRef.current = null;
+    marqueeRef.current = null;
+    setMarquee(null);
     setIsDragging(false);
     suppressClickRef.current = true;
     pinchRef.current = pinchState();
@@ -473,6 +488,15 @@ export function CanvasViewport({
     }
   }
 
+  /** A point on the page, in the canvas layer's units (what screens are positioned in). */
+  function clientToLocal(element: HTMLElement, clientX: number, clientY: number) {
+    const rect = element.getBoundingClientRect();
+    return {
+      x: (clientX - rect.left - rect.width / 2 - transform.offsetX) / transform.scale + frame.sourceWidth / 2,
+      y: (clientY - rect.top - rect.height / 2 - transform.offsetY) / transform.scale + frame.sourceHeight / 2,
+    };
+  }
+
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
     if (trackTouch(event)) return;
     // Shift-click marks screens; stop the browser from also selecting text across the page.
@@ -485,6 +509,19 @@ export function CanvasViewport({
     if (!spacePan) {
       if (commentMode || annotationMode || event.button !== 0 || target.closest("[data-comment-pin], [data-canvas-annotation]")) return;
       if (target.closest("button") && !target.closest("[data-source-node-id]")) return;
+      // The Select tool draws a box over the screens instead of panning (Space or two fingers still pan).
+      if (interactionMode === "select" && frame.kind === "overview") {
+        marqueeRef.current = {
+          pointerId: event.pointerId,
+          startX: event.clientX,
+          startY: event.clientY,
+          start: clientToLocal(event.currentTarget, event.clientX, event.clientY),
+          moved: false,
+          // Shift or ⌘ at the start of the drag (or while it ends) adds to the selection.
+          additive: event.shiftKey || event.metaKey || event.ctrlKey,
+        };
+        return;
+      }
     }
     dragRef.current = {
       pointerId: event.pointerId,
@@ -508,6 +545,23 @@ export function CanvasViewport({
         return;
       }
     }
+    const box = marqueeRef.current;
+    if (box && box.pointerId === event.pointerId) {
+      if (!box.moved && Math.hypot(event.clientX - box.startX, event.clientY - box.startY) < 4) return;
+      if (!box.moved) {
+        box.moved = true;
+        try {
+          event.currentTarget.setPointerCapture(event.pointerId);
+        } catch {
+          // The pointer already ended.
+        }
+      }
+      setMarquee({
+        rect: marqueeRect(box.start, clientToLocal(event.currentTarget, event.clientX, event.clientY)),
+        additive: box.additive || event.shiftKey || event.metaKey || event.ctrlKey,
+      });
+      return;
+    }
     let drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     if (!drag.moved && Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 4) return;
@@ -523,6 +577,19 @@ export function CanvasViewport({
 
   function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
     releaseTouch(event);
+    const box = marqueeRef.current;
+    if (box?.pointerId === event.pointerId) {
+      marqueeRef.current = null;
+      setMarquee(null);
+      if (box.moved) {
+        // The box replaces a click: what it touched becomes the selection.
+        suppressClickRef.current = true;
+        if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+        const rect = marqueeRect(box.start, clientToLocal(event.currentTarget, event.clientX, event.clientY));
+        onMarqueeSelect?.(screensInMarquee(rect, screens, { x: frame.sourceX, y: frame.sourceY }), box.additive || event.shiftKey || event.metaKey || event.ctrlKey);
+      }
+      return;
+    }
     const drag = dragRef.current;
     if (drag?.pointerId === event.pointerId) {
       // A Space-held click that didn't drag still shouldn't select or place anything.
@@ -538,6 +605,10 @@ export function CanvasViewport({
 
   function handlePointerCancel(event: PointerEvent<HTMLDivElement>) {
     releaseTouch(event);
+    if (marqueeRef.current?.pointerId === event.pointerId) {
+      marqueeRef.current = null;
+      setMarquee(null);
+    }
     if (dragRef.current?.pointerId === event.pointerId) {
       if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
       dragRef.current = null;
@@ -573,7 +644,10 @@ export function CanvasViewport({
     const rect = event.currentTarget.getBoundingClientRect();
     const localX = (event.clientX - rect.left - rect.width / 2 - transform.offsetX) / transform.scale + frame.sourceWidth / 2;
     const localY = (event.clientY - rect.top - rect.height / 2 - transform.offsetY) / transform.scale + frame.sourceHeight / 2;
-    if (localX < 0 || localY < 0 || localX > frame.sourceWidth || localY > frame.sourceHeight) return;
+    if (localX < 0 || localY < 0 || localX > frame.sourceWidth || localY > frame.sourceHeight) {
+      if (interactionMode === "select" && !commentMode && !annotationMode) onMarqueeSelect?.([], event.shiftKey || event.metaKey || event.ctrlKey);
+      return;
+    }
 
     const anchor = canvasAnchorAtPoint(
       frame,
@@ -600,8 +674,11 @@ export function CanvasViewport({
     }
 
     if (screen && (!nodeButton || event.shiftKey || pickingFrames)) onSelectFrame(screen.id, { shiftKey: event.shiftKey });
+    // With the Select tool, a click on empty canvas clears the selection (Shift keeps it).
+    else if (!screen && interactionMode === "select") onMarqueeSelect?.([], event.shiftKey || event.metaKey || event.ctrlKey);
   }
 
+  const marqueePreview = marquee ? new Set(screensInMarquee(marquee.rect, screens, { x: frame.sourceX, y: frame.sourceY })) : null;
   const commentPins = layoutCommentPins(comments, screens, frame, showResolvedPins, overviewOrigin);
   const annotationPins = annotations.flatMap((annotation) => {
     const position = canvasAnchorToViewportPoint(annotation, frame, screens, overviewOrigin);
@@ -821,8 +898,10 @@ export function CanvasViewport({
         aria-describedby="canvas-keyboard-help"
         aria-label={interactionMode === "inspect"
           ? "Inspect mode. Select a highlighted element to inspect it, scroll or drag to pan, and pinch or use Ctrl or Command + scroll to zoom."
+          : interactionMode === "select"
+          ? "Select mode. Drag a box over screens to select them, Shift-drag to add more, scroll or hold Space and drag to pan."
           : "View mode. Scroll or drag to pan, and pinch or use Ctrl or Command + scroll to zoom. Switch to Inspect to select design elements."}
-        className={"review-dot-grid @container group relative grid min-h-0 min-w-0 flex-1 touch-none place-items-center overflow-hidden outline-none focus-visible:outline-none " + (isDragging ? "cursor-grabbing" : spaceHeld ? "cursor-grab" : commentMode || annotationMode ? "cursor-crosshair" : "cursor-grab")}
+        className={"review-dot-grid @container group relative grid min-h-0 min-w-0 flex-1 touch-none place-items-center overflow-hidden outline-none focus-visible:outline-none " + (isDragging ? "cursor-grabbing" : spaceHeld ? "cursor-grab" : commentMode || annotationMode || marquee ? "cursor-crosshair" : interactionMode === "select" ? "cursor-default" : "cursor-grab")}
         data-canvas-viewport=""
         data-space-pan={spaceHeld ? "" : undefined}
         data-comment-cursor={commentMode && !spaceHeld && !isDragging ? "" : undefined}
@@ -940,6 +1019,9 @@ export function CanvasViewport({
 
             {frame.kind === "overview" && frame.exact ? stableInViewScreens.map((screen) => {
             const status = frameStatuses[screen.id];
+            // While a box is being dragged, show what letting go would select.
+            const boxed = marqueePreview?.has(screen.id) ?? false;
+            const multiSelected = boxed || (selectedScreenIds?.has(screen.id) && (!marquee || marquee.additive));
             const label = changesVisible ? statusLabel(status) : null;
             const selected = screen.id === selectedFrameId;
             const showLabel = shouldShowCanvasFrameLabel(visualScale, selected, screens.length);
@@ -956,7 +1038,9 @@ export function CanvasViewport({
                   width: screen.sourceWidth,
                   height: screen.sourceHeight,
                   border: statusBorderColor ? (selected ? 3 : 1.5) * inverseScale + "px solid " + statusBorderColor : undefined,
+                  outline: multiSelected ? 2 * inverseScale + "px solid " + marqueeColor : undefined,
                 }}
+                data-multi-selected={multiSelected ? "" : undefined}
               >
                   {pickedFrameIds?.has(screen.id) ? (
                     <span aria-hidden="true" className="absolute inset-0 grid place-items-center bg-black/55 outline outline-danger" style={{ outlineWidth: 3 * inverseScale }}>
@@ -1020,6 +1104,22 @@ export function CanvasViewport({
               </div>
             );
           }) : null}
+
+          {marquee ? (
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute z-30"
+              data-canvas-marquee=""
+              style={{
+                left: marquee.rect.x,
+                top: marquee.rect.y,
+                width: marquee.rect.width,
+                height: marquee.rect.height,
+                border: inverseScale + "px solid " + marqueeColor,
+                backgroundColor: "rgb(13 153 255 / 0.12)",
+              }}
+            />
+          ) : null}
 
           {changedRects.map(({ nodeId, rect }) => (
             <span

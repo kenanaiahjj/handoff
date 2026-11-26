@@ -21,7 +21,9 @@ import { CanvasAnnotationsPanel, type CanvasAnnotationRecord } from "./CanvasAnn
 import { McpConnectionPanel } from "./McpConnectionPanel";
 import { CanvasShortcuts } from "./CanvasShortcuts";
 import { PublishChangesDialog } from "./PublishChangesDialog";
-import { ChangesIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MoreIcon, InfoIcon, NoteIcon, OutlineIcon, PanelLeftIcon, PanelRightIcon, VersionIcon } from "./canvas-icons";
+import { ChangesIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MarqueeIcon, MoreIcon, InfoIcon, NoteIcon, OutlineIcon, PanelLeftIcon, PanelRightIcon, VersionIcon } from "./canvas-icons";
+import { mergeMarqueeSelection } from "./canvas-marquee";
+import { ScreenSelectionBar } from "./ScreenSelectionBar";
 import { ProjectInfoPanel } from "./ProjectInfoPanel";
 import { showToast } from "@/src/components/shell/Toaster";
 import type { ProjectTeamMember } from "@/src/server/services/project-access";
@@ -285,7 +287,10 @@ export function HandoffCanvas({
   const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "info" | "agent" | "mcp">("inspect");
   const [localPreviewOpen, setLocalPreviewOpen] = useState(false);
   const closeLocalPreview = useCallback(() => setLocalPreviewOpen(false), []);
-  const [canvasModeOverride, setCanvasModeOverride] = useState<"view" | "inspect" | null>(null);
+  const [canvasModeOverride, setCanvasModeOverride] = useState<"view" | "inspect" | "select" | null>(null);
+  // Screens picked with the Select tool (drag a box, or click and Shift-click), for exporting or
+  // linking several at once.
+  const [screenSelection, setScreenSelection] = useState<ReadonlySet<string>>(() => new Set());
   // Open by default so the server render already has the desktop layout (screen list included);
   // until the real viewport is known, the list stays hidden below the desktop breakpoint.
   const [statesOpen, setStatesOpen] = useState(true);
@@ -540,6 +545,8 @@ export function HandoffCanvas({
   const selectedCommentId = localSelectedCommentId ?? linkedCommentId;
   const annotationsEndpoint = commentsEndpoint.replace(/\/comments$/, "/annotations");
   const selectedFrame = screens.find((frame) => frame.id === selectedFrameId) ?? null;
+  // Picked screens still on the canvas, in page order (the order they export in).
+  const selectedScreens = screenSelection.size ? canvasScreens.filter((frame) => screenSelection.has(frame.id)) : [];
   const visualFrame = overviewFrame?.exact || overviewSelected
     ? overviewFrame
     : changedOnlyActive
@@ -782,6 +789,12 @@ export function HandoffCanvas({
         return;
       }
       if (editing) return;
+      // ⌘A / Ctrl+A with the Select tool picks every screen on the canvas.
+      if ((event.metaKey || event.ctrlKey) && !event.altKey && !event.shiftKey && event.key.toLowerCase() === "a" && canvasMode === "select") {
+        event.preventDefault();
+        setScreenSelection(new Set(canvasScreens.map((frame) => frame.id)));
+        return;
+      }
       const modified = event.metaKey || event.ctrlKey || event.altKey;
       if (!modified && event.key.toLowerCase() === "c" && metadata.canComment) {
         event.preventDefault();
@@ -846,6 +859,11 @@ export function HandoffCanvas({
         setOutlinesVisible((current) => !current);
       }
       if (key === "v") setCanvasModeOverride("view");
+      if (key === "s") {
+        setCommentMode(false);
+        setAnnotationMode(false);
+        setCanvasModeOverride("select");
+      }
       if (key === "i") {
         setCanvasModeOverride("inspect");
         setPanelMode("inspect");
@@ -872,6 +890,7 @@ export function HandoffCanvas({
       if (event.shiftKey && event.code === "Digit2" && selectedFrameIdRef.current) focusScreen(selectedFrameIdRef.current);
       if (event.key === "Escape") {
         setCompareNodeId(null);
+        setScreenSelection(new Set());
         setRemovalSelecting(false);
         setSearchOpen(false);
         setCommentMode(false);
@@ -883,7 +902,7 @@ export function HandoffCanvas({
     }
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeSearchIndex, closeSearchPanel, copySearchHighlights, focusScreen, metadata.canComment, previewSearchResult, screens, searchOpen, searchResults, selectSearchResult, viewportControls]);
+  }, [activeSearchIndex, canvasMode, canvasScreens, closeSearchPanel, copySearchHighlights, focusScreen, metadata.canComment, previewSearchResult, screens, searchOpen, searchResults, selectSearchResult, viewportControls]);
 
   // Pinch and Ctrl+scroll over the toolbar or side panels would zoom the whole page. The canvas
   // handles its own pinch (and marks the event), so everywhere else just swallow it.
@@ -1848,6 +1867,9 @@ export function HandoffCanvas({
             <button aria-pressed={canvasMode === "inspect" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setCanvasModeOverride("inspect"); setPanelMode("inspect"); }} title="Inspect: select elements (I)" type="button">
               <CursorIcon /><span className="sr-only">Inspect</span>
             </button>
+            <button aria-pressed={canvasMode === "select" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setAnnotationMode(false); setCanvasModeOverride("select"); }} title="Select screens: drag a box over them, Shift to add more (S)" type="button">
+              <MarqueeIcon /><span className="sr-only">Select screens</span>
+            </button>
             {metadata.canComment ? (
               <button
                 aria-pressed={commentMode}
@@ -1928,8 +1950,18 @@ export function HandoffCanvas({
         <CanvasViewport
           frame={visualFrame}
           overviewOrigin={{ sourceX: overviewFrame.sourceX, sourceY: overviewFrame.sourceY }}
-          interactionMode={removalSelecting ? "view" : canvasMode}
+          interactionMode={removalSelecting ? "select" : canvasMode}
           screens={canvasScreens}
+          selectedScreenIds={removalSelecting ? undefined : screenSelection}
+          onMarqueeSelect={(frameIds, additive) => {
+            // In the list's removal Select mode the box marks screens for removal, and only ever adds,
+            // so a stray drag can't drop marks already made.
+            if (canRemoveScreens && removalSelecting) {
+              if (frameIds.length) updateDraft(mergeMarqueeSelection(removalPicked, frameIds, true));
+              return;
+            }
+            setScreenSelection((current) => mergeMarqueeSelection(current, frameIds, additive));
+          }}
           changedOnly={changedOnlyActive}
           selectedFrameId={selectedFrameId}
           frameStatuses={frameStatuses}
@@ -1956,8 +1988,19 @@ export function HandoffCanvas({
           onSelectNode={selectNode}
           onSelectFrame={(frameId, event) => {
             // Shift-click (or select mode) picks screens for removal instead of opening them.
-            if (canRemoveScreens && (removalSelecting || event?.shiftKey)) {
+            if (canRemoveScreens && (removalSelecting || (event?.shiftKey && canvasMode !== "select"))) {
               toggleRemoval(frameId);
+              return;
+            }
+            // The Select tool picks screens instead of opening them: a click picks one, Shift-click adds or removes it.
+            if (canvasMode === "select") {
+              setScreenSelection((current) => {
+                if (!event?.shiftKey) return new Set([frameId]);
+                const next = new Set(current);
+                if (next.has(frameId)) next.delete(frameId);
+                else next.add(frameId);
+                return next;
+              });
               return;
             }
             selectFrame(frameId);
@@ -1989,6 +2032,13 @@ export function HandoffCanvas({
           }}
           onViewportChange={setViewportControls}
         />
+        {selectedScreens.length && !removalSelecting ? (
+          <ScreenSelectionBar
+            onClear={() => setScreenSelection(new Set())}
+            screens={selectedScreens}
+            zipName={metadata.handoffName + " screens"}
+          />
+        ) : null}
         </div>
         <aside
           aria-label="Handoff details"

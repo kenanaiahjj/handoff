@@ -23,7 +23,8 @@ function buildSteps({ canComment, canShare }: { canComment: boolean; canShare: b
       body: () => (
         <>
           <strong className="font-medium text-foreground">View</strong><Keys> (V)</Keys> moves around without selecting.{" "}
-          <strong className="font-medium text-foreground">Inspect</strong><Keys> (I)</Keys> shows any layer&apos;s size, spacing, colours and code.
+          <strong className="font-medium text-foreground">Inspect</strong><Keys> (I)</Keys> shows any layer&apos;s size, spacing, colours and code.{" "}
+          <strong className="font-medium text-foreground">Select</strong><Keys> (S)</Keys> drags a box over screens to export or link them together.
           {canComment ? <> <strong className="font-medium text-foreground">Comment</strong><Keys> (C)</Keys> pins feedback to a spot.</> : null}
         </>
       ),

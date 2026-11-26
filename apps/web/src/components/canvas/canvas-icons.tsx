@@ -15,7 +15,11 @@ export const HandIcon = (props: SVGProps<SVGSVGElement>) => (
 export const CursorIcon = (props: SVGProps<SVGSVGElement>) => (
   <Icon {...props}><path d="m3.5 2.5 9 4-3.8 1.4L7.3 12 3.5 2.5Z" /></Icon>
 );
-export const CommentIcon = (props: SVGProps<SVGSVGElement>) => (
+export const MarqueeIcon = (props: SVGProps<SVGSVGElement>) => (
+  // A dashed selection box with the pointer at its corner.
+  <Icon {...props}><path d="M2.5 9V3.5a1 1 0 0 1 1-1H9" strokeDasharray="1.8 1.6" /><path d="m8 8 5.5 2.3-2.2.8-.8 2.2L8 8Z" /></Icon>
+);
+export const CommentIcon =(props: SVGProps<SVGSVGElement>) => (
   <Icon {...props}><path d="M3 11.8V4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v5a1.5 1.5 0 0 1-1.5 1.5H5.4L3 12.8Z" /></Icon>
 );
 export const NoteIcon = (props: SVGProps<SVGSVGElement>) => (

@@ -1741,3 +1741,6 @@ html[data-splash="seen"] .app-splash {
 @media (prefers-reduced-motion: reduce) {
   .canvas-tour-spotlight { transition: none; }
 }
+
+/* The Select tool's bar for picked screens, stacked just above the canvas toolbar. */
+.canvas-floatbar.canvas-selectionbar { bottom: calc(60px + env(safe-area-inset-bottom)); white-space: nowrap; }

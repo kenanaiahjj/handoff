@@ -9,6 +9,7 @@ const groups: Array<{ title: string; items: Array<[string[], string]> }> = [
       [["V"], "View: pan around without selecting"],
       [["Space"], "Hold and drag to pan from any tool"],
       [["I"], "Inspect: select elements"],
+      [["S"], "Select screens: drag a box over them (⇧ adds, ⌘A all)"],
       [["C"], "Place a comment"],
       [["Esc"], "Cancel or close"],
     ],
