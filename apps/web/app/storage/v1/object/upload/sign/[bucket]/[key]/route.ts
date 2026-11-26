@@ -54,6 +54,12 @@ async function readUploadBody(request: Request, expectedBytes: number) {
   return bytes;
 }
 
+function implementationCheckUpload(contentType: string, contentLength: string | null) {
+  const size = Number(contentLength);
+  if (!["image/png", "image/jpeg", "image/webp"].includes(contentType) || !Number.isSafeInteger(size) || size < 1 || size > 15 * 1024 * 1024) return undefined;
+  return { sizeBytes: size, contentType };
+}
+
 export async function PUT(
   request: Request,
   context: { params: Promise<{ bucket: string; key: string }> },
@@ -79,7 +85,9 @@ export async function PUT(
      WHERE object_key = ? AND finalized_at IS NULL AND expires_at > ?
      LIMIT 1`,
   ).get(key, new Date().toISOString(), key, new Date().toISOString()) as
-    { sizeBytes: number; contentType: string } | undefined;
+    { sizeBytes: number; contentType: string } | undefined
+    // MCP check_implementation screenshots have no declaration row; Supabase's signed URL alone allows them.
+    ?? implementationCheckUpload(contentType, request.headers.get("content-length"));
 
   if (!expected) return response(404, "The upload is no longer available.");
   if (contentType !== expected.contentType) return response(415, "The content type does not match the upload declaration.");

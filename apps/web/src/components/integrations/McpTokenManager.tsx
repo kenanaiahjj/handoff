@@ -28,7 +28,7 @@ const scopeLabels: Record<McpScope, string> = {
   "comments:write": "Add comments to a frozen version",
   "changelog:write": "Draft, review, approve and publish AI changelogs",
   "tasks:write": "Link tasks created through your AI client’s other MCP tools",
-  "implementation:write": "Record which code component builds a design component",
+  "implementation:write": "Record which code builds a design component and report build progress",
 };
 
 type ClientKind = "codex" | "claude" | "gemini" | "other";

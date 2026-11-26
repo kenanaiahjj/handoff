@@ -220,7 +220,9 @@ function verifySvgBytes(bytes: Uint8Array, fileName: string) {
   if (/<!DOCTYPE|<!ENTITY|<\s*(?:script|foreignObject|iframe|object|embed)\b|javascript\s*:|@import\b/i.test(markup)) {
     throw new SnapshotImportError(`The SVG render "${fileName}" contains unsupported active content.`, 415);
   }
-  if (/\son[a-z]+\s*=/i.test(markup)) {
+  // Layer names become id="…" values in Figma's SVG; only real attributes can be event handlers.
+  const attributesOnly = markup.replace(/=\s*"[^"]*"|=\s*'[^']*'/g, '=""');
+  if (/\son[a-z]+\s*=/i.test(attributesOnly)) {
     throw new SnapshotImportError(`The SVG render "${fileName}" contains an unsupported event handler.`, 415);
   }
   const hrefPattern = /(?:xlink:)?href\s*=\s*(["'])(.*?)\1/gi;
@@ -246,7 +248,8 @@ function verifySvgBytes(bytes: Uint8Array, fileName: string) {
     const value = attribute(name);
     const parsed = value ? Number.parseFloat(value) : Number.NaN;
     const number = Number.isFinite(parsed) ? parsed : fallback;
-    return typeof number === "number" && number > 0 && number <= 1_000_000 ? Math.round(number) : null;
+    // A hairline (a 0.5px divider) still has a size; rounding it to 0 used to reject the whole capture's SVGs.
+    return typeof number === "number" && number > 0 && number <= 1_000_000 ? Math.max(1, Math.round(number)) : null;
   };
   const width = dimension("width", viewBox?.[2]);
   const height = dimension("height", viewBox?.[3]);

@@ -157,7 +157,7 @@ export function summarizeScreenChanges(changes: SnapshotDiffChange[], beforeNode
   };
 }
 
-export const elementFields = ["bounds", "layout", "spacing", "typography", "fills", "strokes", "styles", "tokens", "component", "text", "raw"] as const;
+export const elementFields = ["css", "bounds", "layout", "spacing", "typography", "fills", "strokes", "styles", "tokens", "component", "text", "raw"] as const;
 export type ElementField = (typeof elementFields)[number];
 
 export type ElementFilter = { query?: string; type?: string; ids?: string[]; visibleOnly?: boolean; parentId?: string };
