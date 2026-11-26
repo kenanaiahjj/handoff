@@ -1743,4 +1743,5 @@ html[data-splash="seen"] .app-splash {
 }
 
 /* The Select tool's bar for picked screens, stacked just above the canvas toolbar. */
-.canvas-floatbar.canvas-selectionbar { bottom: calc(60px + env(safe-area-inset-bottom)); white-space: nowrap; }
+.canvas-floatbar.canvas-selectionbar { bottom: calc(60px + env(safe-area-inset-bottom)); white-space: nowrap; flex-wrap: wrap; justify-content: center; row-gap: 2px; width: max-content; }
+.canvas-floatbar.canvas-selectionbar > * { flex-shrink: 0; }

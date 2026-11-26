@@ -25,6 +25,8 @@ type HandoffReviewProps = {
   visualOnly: boolean;
   metadata: ReviewMetadata;
   dockPanels?: ReviewDockPanels;
+  /** Records the version this person opened; null where nobody is signed in (public links). */
+  seenEndpoint?: string | null;
 };
 
 type LoadedComparison = {
@@ -45,6 +47,7 @@ export function HandoffReview({
   compareEndpointBase,
   metadata,
   dockPanels = {},
+  seenEndpoint = null,
 }: HandoffReviewProps) {
   // Unpacked once per version; the objects match what the server used to send field for field.
   const frames = useMemo<CanvasFrameOption[]>(
@@ -57,11 +60,48 @@ export function HandoffReview({
   const [comparisonOpen, setComparisonOpen] = useState(Boolean(initialCompareRouteState));
   const [compareRouteState, setCompareRouteState] = useState<CompareRouteState | null>(initialCompareRouteState);
 
-  const previousVersion = useMemo(() => {
+  const versionBefore = useMemo(() => {
     const chronological = [...versions].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     const selectedIndex = chronological.findIndex((version) => version.id === selectedVersionId);
     return selectedIndex > 0 ? chronological[selectedIndex - 1] ?? null : null;
   }, [selectedVersionId, versions]);
+
+  // "Changed since you last looked": opening the newest version records it, and returns the version
+  // this person had open on their previous visit. When that is older than the version just before
+  // this one, the canvas compares with it instead, so everything new to them is highlighted.
+  const [seenBaselineId, setSeenBaselineId] = useState<string | null>(null);
+  const [sinceLastVisit, setSinceLastVisit] = useState(true);
+  const newestVersionId = useMemo(
+    () => [...versions].sort((left, right) => right.createdAt.localeCompare(left.createdAt))[0]?.id ?? null,
+    [versions],
+  );
+  useEffect(() => {
+    if (!seenEndpoint || selectedVersionId !== newestVersionId) return;
+    const controller = new AbortController();
+    fetch(seenEndpoint, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ versionId: selectedVersionId }),
+      signal: controller.signal,
+    })
+      .then(async (response) => response.ok ? (await response.json() as { baselineVersionId?: string | null }).baselineVersionId ?? null : null)
+      .then((baselineVersionId) => setSeenBaselineId(baselineVersionId))
+      .catch(() => undefined);
+    return () => controller.abort();
+  }, [newestVersionId, seenEndpoint, selectedVersionId]);
+  const lastVisitVersion = useMemo(() => {
+    const seen = seenBaselineId ? versions.find((version) => version.id === seenBaselineId) : null;
+    const selected = versions.find((version) => version.id === selectedVersionId);
+    if (!seen || !selected || !versionBefore || seen.id === versionBefore.id) return null;
+    return seen.createdAt < versionBefore.createdAt ? seen : null;
+  }, [seenBaselineId, selectedVersionId, versionBefore, versions]);
+  const previousVersion = sinceLastVisit && lastVisitVersion ? lastVisitVersion : versionBefore;
+  const baselineChoice = lastVisitVersion && versionBefore ? {
+    sinceLastVisit,
+    lastVisitLabel: lastVisitVersion.versionLabel,
+    previousLabel: versionBefore.versionLabel,
+    onToggle: () => setSinceLastVisit((current) => !current),
+  } : null;
 
   const writeCompareRouteState = useCallback((state: CompareRouteState | null) => {
     window.history.replaceState(null, "", updateCompareRouteUrl(window.location.href, state));
@@ -71,7 +111,7 @@ export function HandoffReview({
   const openComparison = useCallback((frameId?: string) => {
     const chronological = [...versions].sort((left, right) => left.createdAt.localeCompare(right.createdAt));
     const selectedIndex = chronological.findIndex((version) => version.id === selectedVersionId);
-    const fromVersion = selectedIndex > 0 ? chronological[selectedIndex - 1] : chronological[0];
+    const fromVersion = selectedIndex > 0 ? previousVersion ?? chronological[selectedIndex - 1] : chronological[0];
     const toVersion = selectedIndex > 0 ? chronological[selectedIndex] : chronological[1];
     if (!fromVersion || !toVersion || fromVersion.id === toVersion.id) return;
     setComparisonOpen(true);
@@ -81,7 +121,7 @@ export function HandoffReview({
       frameId: frameId ?? null,
       mode: null,
     });
-  }, [selectedVersionId, versions, writeCompareRouteState]);
+  }, [previousVersion, selectedVersionId, versions, writeCompareRouteState]);
 
   const closeComparison = useCallback(() => {
     const url = new URL(updateCompareRouteUrl(window.location.href, null));
@@ -246,6 +286,7 @@ export function HandoffReview({
         onOpenComparison={openComparison}
         onOpenChangesList={previousVersion ? () => setChangesListOpen(true) : undefined}
         comparisonOpen={comparisonOpen}
+        baselineChoice={baselineChoice}
         metadata={metadata}
         dockPanels={dockPanels}
       />

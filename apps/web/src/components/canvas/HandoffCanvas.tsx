@@ -21,9 +21,17 @@ import { CanvasAnnotationsPanel, type CanvasAnnotationRecord } from "./CanvasAnn
 import { McpConnectionPanel } from "./McpConnectionPanel";
 import { CanvasShortcuts } from "./CanvasShortcuts";
 import { PublishChangesDialog } from "./PublishChangesDialog";
-import { ChangesIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MarqueeIcon, MoreIcon, InfoIcon, NoteIcon, OutlineIcon, PanelLeftIcon, PanelRightIcon, VersionIcon } from "./canvas-icons";
+import { ChangesIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MarqueeIcon, EyedropperIcon, PenIcon, MoreIcon, InfoIcon, NoteIcon, OutlineIcon, PanelLeftIcon, PanelRightIcon, VersionIcon } from "./canvas-icons";
 import { mergeMarqueeSelection } from "./canvas-marquee";
 import { ScreenSelectionBar } from "./ScreenSelectionBar";
+import { copyScreensImage } from "./screen-image";
+import { useCanvasEyedropper } from "./useCanvasEyedropper";
+import { useCanvasMarkup } from "./useCanvasMarkup";
+import { useCanvasPresence } from "./useCanvasPresence";
+import { PresenceAvatars } from "./PresenceAvatars";
+import { MarkupBar } from "./MarkupBar";
+import { stepOpenThread, visibleThreadIds, type CommentFilter } from "../comments/comment-filters";
+import { authClient } from "@/src/client/auth-client";
 import { ProjectInfoPanel } from "./ProjectInfoPanel";
 import { showToast } from "@/src/components/shell/Toaster";
 import type { ProjectTeamMember } from "@/src/server/services/project-access";
@@ -100,6 +108,8 @@ type HandoffCanvasProps = {
   comparisonOpen: boolean;
   metadata: ReviewMetadata;
   dockPanels: ReviewDockPanels;
+  /** Offered when this person last looked at an older version than the one just before this one. */
+  baselineChoice?: { sinceLastVisit: boolean; lastVisitLabel: string; previousLabel: string; onToggle: () => void } | null;
 };
 
 type CommentPayload = { comments: HandoffComment[] };
@@ -204,6 +214,7 @@ export function HandoffCanvas({
   onOpenComparison,
   onOpenChangesList,
   comparisonOpen,
+  baselineChoice = null,
   metadata,
   dockPanels,
 }: HandoffCanvasProps) {
@@ -284,6 +295,9 @@ export function HandoffCanvas({
   const [selectedAnnotationId, setSelectedAnnotationId] = useState<string | null>(null);
   const [localSelectedCommentId, setSelectedCommentId] = useState<string | null>(null);
   const [showResolvedPins, setShowResolvedPins] = useState(false);
+  const viewerId = authClient.useSession().data?.user.id ?? null;
+  const [commentFilter, setCommentFilter] = useState<CommentFilter>("all");
+  const threadFilter = useMemo(() => visibleThreadIds(comments, commentFilter, viewerId), [comments, commentFilter, viewerId]);
   const [panelMode, setPanelMode] = useState<"inspect" | "comments" | "annotations" | "version" | "info" | "agent" | "mcp">("inspect");
   const [localPreviewOpen, setLocalPreviewOpen] = useState(false);
   const closeLocalPreview = useCallback(() => setLocalPreviewOpen(false), []);
@@ -547,6 +561,34 @@ export function HandoffCanvas({
   const selectedFrame = screens.find((frame) => frame.id === selectedFrameId) ?? null;
   // Picked screens still on the canvas, in page order (the order they export in).
   const selectedScreens = screenSelection.size ? canvasScreens.filter((frame) => screenSelection.has(frame.id)) : [];
+  // Tools that take the pointer over from pan and select: the eyedropper (E) and Draw (P).
+  const [canvasTool, setCanvasTool] = useState<"eyedropper" | "draw" | null>(null);
+  const eyedropper = useCanvasEyedropper(canvasScreens, canvasTool === "eyedropper");
+  const markup = useCanvasMarkup(`asbir-markup:${handoffId}:${metadata.selectedVersionId}`, screens, canvasTool === "draw");
+  const presence = useCanvasPresence(
+    `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/presence`,
+    metadata.selectedVersionId,
+    screens,
+    selectedFrame?.id ?? null,
+  );
+  const presenceScreenNames = useMemo(() => Object.fromEntries(screens.map((screen) => [screen.id, screen.name])), [screens]);
+  const presenceVersionLabels = useMemo(() => Object.fromEntries(metadata.versions.map((version) => [version.id, version.versionLabel])), [metadata.versions]);
+  const { overlay: markupOverlay } = markup;
+  const { overlay: eyedropperOverlay } = eyedropper;
+  const { overlay: presenceOverlay } = presence;
+  const layerOverlay = useCallback((view: Parameters<typeof markupOverlay>[0]) => (
+    <>{markupOverlay(view)}{eyedropperOverlay(view)}{presenceOverlay(view)}</>
+  ), [eyedropperOverlay, markupOverlay, presenceOverlay]);
+  const markupUndoRef = useRef(markup.undo);
+  useEffect(() => {
+    markupUndoRef.current = markup.undo;
+  });
+  function chooseCanvasTool(tool: "eyedropper" | "draw") {
+    setCommentMode(false);
+    setAnnotationMode(false);
+    setPendingPoint(null);
+    setCanvasTool((current) => current === tool ? null : tool);
+  }
   const visualFrame = overviewFrame?.exact || overviewSelected
     ? overviewFrame
     : changedOnlyActive
@@ -795,8 +837,20 @@ export function HandoffCanvas({
         setScreenSelection(new Set(canvasScreens.map((frame) => frame.id)));
         return;
       }
+      // ⌘Z in Draw removes the last stroke.
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "z" && canvasToolRef.current === "draw") {
+        event.preventDefault();
+        markupUndoRef.current();
+        return;
+      }
       const modified = event.metaKey || event.ctrlKey || event.altKey;
+      if (!modified && !event.shiftKey && (event.key.toLowerCase() === "e" || event.key.toLowerCase() === "p")) {
+        event.preventDefault();
+        chooseCanvasToolRef.current(event.key.toLowerCase() === "e" ? "eyedropper" : "draw");
+        return;
+      }
       if (!modified && event.key.toLowerCase() === "c" && metadata.canComment) {
+        setCanvasTool(null);
         event.preventDefault();
         setAnnotationMode(false);
         setPendingAnnotationPoint(null);
@@ -814,6 +868,11 @@ export function HandoffCanvas({
       if ((event.metaKey || event.ctrlKey) && event.key === "\\") {
         event.preventDefault();
         togglePanelsRef.current();
+        return;
+      }
+      // ⌘C with nothing highlighted copies the selection as an image, for Slack or a ticket.
+      if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && event.key.toLowerCase() === "c" && !window.getSelection()?.toString()) {
+        if (copyImageRef.current()) event.preventDefault();
         return;
       }
       // ⌘⇧C copies the selected layer's CSS.
@@ -858,6 +917,7 @@ export function HandoffCanvas({
         setPanelMode("inspect");
         setOutlinesVisible((current) => !current);
       }
+      if (key === "v" || key === "i" || key === "s") setCanvasTool(null);
       if (key === "v") setCanvasModeOverride("view");
       if (key === "s") {
         setCommentMode(false);
@@ -867,6 +927,11 @@ export function HandoffCanvas({
       if (key === "i") {
         setCanvasModeOverride("inspect");
         setPanelMode("inspect");
+      }
+      if (key === "n") {
+        event.preventDefault();
+        stepCommentRef.current(event.shiftKey ? -1 : 1);
+        return;
       }
       if (key === "g") setLayoutGridsVisible((current) => !current);
       if (key === "d") setShowChanges((current) => !current);
@@ -889,6 +954,7 @@ export function HandoffCanvas({
       if (event.key === "0" || (event.shiftKey && event.code === "Digit1")) viewportControls?.fitToFrame();
       if (event.shiftKey && event.code === "Digit2" && selectedFrameIdRef.current) focusScreen(selectedFrameIdRef.current);
       if (event.key === "Escape") {
+        setCanvasTool(null);
         setCompareNodeId(null);
         setScreenSelection(new Set());
         setRemovalSelecting(false);
@@ -983,6 +1049,12 @@ export function HandoffCanvas({
   // order, top to bottom, zooming to each.
   const stepChangeRef = useRef<(direction: 1 | -1) => void>(() => {});
   const copyCssRef = useRef<() => boolean>(() => false);
+  // ⌘C copies what's selected as a picture: picked screens, the selected element, or its screen.
+  const copyImageRef = useRef<() => boolean>(() => false);
+  const canvasToolRef = useRef<"eyedropper" | "draw" | null>(null);
+  const chooseCanvasToolRef = useRef<(tool: "eyedropper" | "draw") => void>(() => {});
+  // N and Shift+N step through the open comment threads (those the filter shows), zooming to each.
+  const stepCommentRef = useRef<(direction: 1 | -1) => void>(() => {});
   // Back/forward through selections (⌘[ / ⌘]). Moving through history doesn't add to it.
   const historyRef = useRef<{ entries: Array<{ frameId: string | null; nodeId: string | null }>; index: number; navigating: boolean }>({ entries: [], index: -1, navigating: false });
   const historyNavRef = useRef<(direction: 1 | -1) => void>(() => {});
@@ -1042,6 +1114,34 @@ export function HandoffCanvas({
       const target = ordered[next];
       selectNode(target.sourceNodeId);
       setFocusRequest((current) => ({ frameId: target.sourceFrameId, nodeId: target.sourceNodeId, seq: (current?.seq ?? 0) + 1 }));
+    };
+    canvasToolRef.current = canvasTool;
+    chooseCanvasToolRef.current = chooseCanvasTool;
+    stepCommentRef.current = (direction) => {
+      const next = stepOpenThread(comments, selectedCommentId, direction, threadFilter);
+      if (!next) {
+        showToast(threadFilter ? "No open comments in this filter" : "No open comments");
+        return;
+      }
+      selectComment(next.id);
+      if (next.frameId !== overviewCanvasFrameId) {
+        setFocusRequest((current) => ({ frameId: next.frameId, nodeId: next.sourceNodeId ?? undefined, seq: (current?.seq ?? 0) + 1 }));
+      }
+    };
+    copyImageRef.current = () => {
+      if (selectedScreens.length) {
+        void copyScreensImage(selectedScreens, screens);
+        return true;
+      }
+      const screen = screens.find((frame) => frame.id === (selectedNode?.sourceFrameId ?? selectedFrameId));
+      if (!screen) return false;
+      const { x, y, width, height } = selectedNode?.bounds ?? {};
+      if (selectedNode && selectedNode.sourceNodeId !== screen.id && x?.value != null && y?.value != null && width?.value && height?.value) {
+        void copyScreensImage([screen], screens, { x: screen.sourceX + x.value, y: screen.sourceY + y.value, width: width.value, height: height.value }, `“${selectedNode.name || "element"}”`);
+        return true;
+      }
+      void copyScreensImage([screen], screens);
+      return true;
     };
     copyCssRef.current = () => {
       if (!detailedSelectedNode) return false;
@@ -1496,6 +1596,15 @@ export function HandoffCanvas({
         <div aria-hidden="true" className="hidden flex-1 lg:block" />
 
         <div className="flex shrink-0 items-center gap-1">
+          <div className="mr-1 hidden sm:block">
+            <PresenceAvatars
+              onJump={focusScreen}
+              screenNames={presenceScreenNames}
+              versionId={metadata.selectedVersionId}
+              versionLabels={presenceVersionLabels}
+              viewers={presence.viewers}
+            />
+          </div>
           {/* Rendered before the viewport is ready too, so the toolbar doesn't jump when it mounts. */}
           <CanvasToolbar
             scale={viewportControls?.scale ?? null}
@@ -1629,6 +1738,16 @@ export function HandoffCanvas({
                   <svg aria-hidden="true" className="size-3 text-foreground-subtle" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" viewBox="0 0 16 16"><path d="M3.5 8h9m-3-3 3 3-3 3" /></svg>
                   <span className="text-foreground">v{metadata.versionLabel}</span>
                 </span>
+                {baselineChoice ? (
+                  <button
+                    className="inline-flex h-6 shrink-0 items-center rounded-full border border-white/[0.08] px-2.5 text-[11px] text-foreground-muted transition-colors hover:border-white/[0.16] hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
+                    onClick={baselineChoice.onToggle}
+                    title={baselineChoice.sinceLastVisit ? `Show only what changed since v${baselineChoice.previousLabel}` : `Show everything that changed since you last looked (v${baselineChoice.lastVisitLabel})`}
+                    type="button"
+                  >
+                    {baselineChoice.sinceLastVisit ? <>Since your last visit · <span className="ml-1 underline-offset-2 hover:underline">only v{baselineChoice.previousLabel}</span></> : <>Since your last visit (v{baselineChoice.lastVisitLabel})</>}
+                  </button>
+                ) : null}
                 {stats.length ? (
                   <p aria-label="Changes in this version" className="flex items-center gap-2 whitespace-nowrap">
                     {stats.map((stat, index) => (
@@ -1874,13 +1993,13 @@ export function HandoffCanvas({
           </button>
           <span aria-hidden="true" className="canvas-floatbar-divider lg:hidden" />
           <div aria-label="Canvas mode" className="canvas-toolgroup shrink-0" data-tour="modes" role="group">
-            <button aria-pressed={canvasMode === "view" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setCanvasModeOverride("view"); }} title="View: pan without selecting (V)" type="button">
+            <button aria-pressed={canvasMode === "view" && !commentMode && !canvasTool} className="canvas-tool" onClick={() => { setCanvasTool(null); setCommentMode(false); setCanvasModeOverride("view"); }} title="View: pan without selecting (V)" type="button">
               <HandIcon /><span className="sr-only">View</span>
             </button>
-            <button aria-pressed={canvasMode === "inspect" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setCanvasModeOverride("inspect"); setPanelMode("inspect"); }} title="Inspect: select elements (I)" type="button">
+            <button aria-pressed={canvasMode === "inspect" && !commentMode && !canvasTool} className="canvas-tool" onClick={() => { setCanvasTool(null); setCommentMode(false); setCanvasModeOverride("inspect"); setPanelMode("inspect"); }} title="Inspect: select elements (I)" type="button">
               <CursorIcon /><span className="sr-only">Inspect</span>
             </button>
-            <button aria-pressed={canvasMode === "select" && !commentMode} className="canvas-tool" onClick={() => { setCommentMode(false); setAnnotationMode(false); setCanvasModeOverride("select"); }} title="Select screens: drag a box over them, Shift to add more (S)" type="button">
+            <button aria-pressed={canvasMode === "select" && !commentMode && !canvasTool} className="canvas-tool" onClick={() => { setCanvasTool(null); setCommentMode(false); setAnnotationMode(false); setCanvasModeOverride("select"); }} title="Select screens: drag a box over them, Shift to add more (S)" type="button">
               <MarqueeIcon /><span className="sr-only">Select screens</span>
             </button>
             {metadata.canComment ? (
@@ -1888,6 +2007,7 @@ export function HandoffCanvas({
                 aria-pressed={commentMode}
                 className="canvas-tool"
                 onClick={() => {
+                  setCanvasTool(null);
                   setAnnotationMode(false);
                   setPendingPoint(null);
                   setCommentThreadOpen(false);
@@ -1900,6 +2020,12 @@ export function HandoffCanvas({
                 <CommentIcon /><span className="sr-only">Comment</span>
               </button>
             ) : null}
+            <button aria-pressed={canvasTool === "eyedropper"} className="canvas-tool" onClick={() => chooseCanvasTool("eyedropper")} title="Eyedropper: click a pixel to copy its colour and see the nearest token (E)" type="button">
+              <EyedropperIcon /><span className="sr-only">Eyedropper</span>
+            </button>
+            <button aria-pressed={canvasTool === "draw"} className="canvas-tool" onClick={() => chooseCanvasTool("draw")} title="Draw: private pen and highlighter, then snapshot to the clipboard (P)" type="button">
+              <PenIcon /><span className="sr-only">Draw</span>
+            </button>
           </div>
           <span aria-hidden="true" className="canvas-floatbar-divider" />
           <div aria-label="Overlays" className="canvas-toolgroup shrink-0" role="group">
@@ -1963,7 +2089,10 @@ export function HandoffCanvas({
         <CanvasViewport
           frame={visualFrame}
           overviewOrigin={{ sourceX: overviewFrame.sourceX, sourceY: overviewFrame.sourceY }}
-          interactionMode={removalSelecting ? "select" : canvasMode}
+          interactionMode={removalSelecting ? "select" : canvasTool ? "view" : canvasMode}
+          pointerTool={canvasTool === "draw" ? markup.pointerTool : canvasTool === "eyedropper" ? eyedropper.pointerTool : null}
+          layerOverlay={layerOverlay}
+          onPointerPageMove={presence.onPointerPageMove}
           screens={canvasScreens}
           selectedScreenIds={removalSelecting ? undefined : screenSelection}
           onMarqueeSelect={(frameIds, additive) => {
@@ -1997,6 +2126,7 @@ export function HandoffCanvas({
             setCompareNodeId(nodeId === selectedNodeId ? null : nodeId);
           }}
           showResolvedPins={showResolvedPins}
+          visibleCommentIds={threadFilter}
           selectedNodeId={selectedNodeId}
           onSelectNode={selectNode}
           onSelectFrame={(frameId, event) => {
@@ -2039,8 +2169,21 @@ export function HandoffCanvas({
           }}
           onViewportChange={setViewportControls}
         />
-        {selectedScreens.length && !removalSelecting ? (
+        {canvasTool === "draw" ? (
+          <MarkupBar
+            color={markup.color}
+            highlighter={markup.highlighter}
+            onClear={markup.clear}
+            onColor={markup.setColor}
+            onDone={() => setCanvasTool(null)}
+            onHighlighter={markup.setHighlighter}
+            onSnapshot={() => void markup.snapshot(selectedFrame)}
+            onUndo={() => markup.undo()}
+            strokeCount={markup.strokes.length}
+          />
+        ) : selectedScreens.length && !removalSelecting ? (
           <ScreenSelectionBar
+            allScreens={screens}
             onClear={() => setScreenSelection(new Set())}
             screens={selectedScreens}
             zipName={metadata.handoffName + " screens"}
@@ -2177,6 +2320,9 @@ export function HandoffCanvas({
                 }
               }}
               onToggleResolvedPins={setShowResolvedPins}
+              filter={commentFilter}
+              onFilterChange={viewerId ? setCommentFilter : undefined}
+              visibleThreadIds={threadFilter}
             />
           </div>
           ) : panelMode === "version" && dockPanels.version ? (

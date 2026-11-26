@@ -6,11 +6,13 @@ import { getSessionForHeaders } from "@/src/server/auth-session";
 import { getDatabase } from "@/src/server/db";
 import { listProjects } from "@/src/server/repositories/projects";
 import { listWorkspaceMcpTokens } from "@/src/server/repositories/mcp-tokens";
+import { isConnectionActive, listMcpClientConnections } from "@/src/server/repositories/mcp-clients";
 import { canSeeWholeWorkspace, filterProjectsForViewer } from "@/src/server/services/review-visibility";
 import { isSlackEnabled } from "@/src/server/services/slack";
 import { McpTokenManager } from "@/src/components/integrations/McpTokenManager";
 import { CopyPrompt } from "@/src/components/integrations/CopyPrompt";
 import { McpConnectGuide } from "@/src/components/integrations/McpConnectGuide";
+import { McpClientList } from "@/src/components/integrations/McpClientList";
 import { mcpServerUrl } from "@/src/components/integrations/mcp-configuration";
 import { ViewerPageShell } from "@/src/components/shell/ViewerPageShell";
 import { WorkspaceShell } from "@/src/components/shell/WorkspaceShell";
@@ -145,16 +147,22 @@ export default async function IntegrationsPage({ params, searchParams }: Integra
   if (!workspace) notFound();
 
   const canManage = canSeeWholeWorkspace(workspace.role);
-  const [projects, tokens] = await Promise.all([
+  const [projects, tokens, connections] = await Promise.all([
     listProjects(workspaceId) as Promise<Array<{ id: string; name: string; handoffCount: number; versionCount: number }>>,
     listWorkspaceMcpTokens({ workspaceId, userId: session.user.id, includeAll: false }),
+    listMcpClientConnections({ workspaceId, userId: session.user.id, includeAll: false }),
   ]);
   const activeTokens = tokens.filter((token) => !token.revokedAt && !token.expired).length;
+  const activeClients = connections.filter(isConnectionActive).length;
+  const mcpStatus = [
+    activeClients ? `${activeClients} connected` : "",
+    activeTokens ? `${activeTokens} token${activeTokens === 1 ? "" : "s"}` : "",
+  ].filter(Boolean).join(" · ");
   const slackOn = isSlackEnabled();
 
   const integrations: Array<{ id: IntegrationId; name: string; summary: string; logo: ReactNode; status: string; connected: boolean }> = [
     { id: "figma", name: "Figma", summary: "Capture frames from Figma straight into a handoff.", logo: <FigmaLogo className="h-5" />, status: "", connected: false },
-    { id: "mcp", name: "AI clients", summary: "Let Claude Code, Codex and other AI tools read handoffs. Sign in once, no tokens.", logo: <McpLogo className="size-5" />, status: activeTokens ? `${activeTokens} active token${activeTokens === 1 ? "" : "s"}` : "", connected: activeTokens > 0 },
+    { id: "mcp", name: "AI clients", summary: "Let Claude Code, Codex and other AI tools read handoffs. Sign in once, no tokens.", logo: <McpLogo className="size-5" />, status: mcpStatus, connected: activeClients + activeTokens > 0 },
     { id: "slack", name: "Slack", summary: "Direct messages for new versions, mentions and the weekly digest.", logo: <SlackLogo className="size-5" />, status: slackOn ? "On" : "Off", connected: slackOn },
   ];
 
@@ -174,6 +182,7 @@ export default async function IntegrationsPage({ params, searchParams }: Integra
         <div className="mt-8 space-y-6">
           <McpConnectGuide />
           <CopyPrompt prompt={mcpPrompt(mcpServerUrl(origin))} title="Or let your AI set it up" />
+          <McpClientList canManageAll={false} workspaceId={workspaceId} />
           <TokenFallback canManageAll={false} workspaceId={workspaceId} />
         </div>
       </ViewerPageShell>
@@ -261,7 +270,7 @@ export default async function IntegrationsPage({ params, searchParams }: Integra
             ) : null}
 
             {open.id === "mcp" ? (
-              <div className="mt-6"><TokenFallback canManageAll={canManage} workspaceId={workspaceId} /></div>
+              <div className="mt-8 space-y-6"><McpClientList canManageAll={canManage} workspaceId={workspaceId} /><TokenFallback canManageAll={canManage} workspaceId={workspaceId} /></div>
             ) : null}
 
             {open.id === "slack" ? (

@@ -2,7 +2,7 @@
 
 import Image from "next/image";
 import { RetryingCanvasImage } from "./RetryingImage";
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
 import type { CanvasFrameChangeStatus, CanvasFrameOption } from "./FrameNavigator";
 import { useCanvasViewport } from "./useCanvasViewport";
 import { attachCanvasWheelZoom } from "./canvas-wheel-zoom";
@@ -55,6 +55,25 @@ function cutOutMaskStyle(rects: CanvasFrameOption["maskRects"]) {
   } as const;
 }
 
+/** A point in Figma page units: the space screens' sourceX / sourceY are in. */
+export type CanvasPagePoint = { x: number; y: number };
+
+/**
+ * A tool that takes the pointer over from panning and selecting, such as drawing or the eyedropper.
+ * Space-drag and two-finger gestures still pan and zoom.
+ */
+export type CanvasPointerTool = {
+  cursor: string;
+  onDown?: (point: CanvasPagePoint, event: PointerEvent<HTMLDivElement>) => void;
+  /** Every move over the canvas, pressed or not. */
+  onMove?: (point: CanvasPagePoint, event: PointerEvent<HTMLDivElement>) => void;
+  onUp?: (point: CanvasPagePoint, event: PointerEvent<HTMLDivElement>) => void;
+  onLeave?: () => void;
+};
+
+/** What a layer overlay needs to draw in page units at a constant on-screen size. */
+export type CanvasLayerView = { inverseScale: number; originX: number; originY: number };
+
 export type CanvasViewportControls = {
   /** The live zoom (null until the canvas has been fitted). A store rather than a number, so a zoom
    * gesture updates the readout without handing the page a new value, and re-rendering it, every frame. */
@@ -89,6 +108,8 @@ type CanvasViewportProps = {
   /** Remembers pan and zoom for this canvas (per handoff and screen). */
   viewMemoryKey?: string | null;
   showResolvedPins: boolean;
+  /** Comment threads the comment filter shows (by first comment id); null shows every pin. */
+  visibleCommentIds?: ReadonlySet<string> | null;
   selectedNodeId: string | null;
   onSelectNode: (sourceNodeId: string) => void;
   onSelectFrame: (frameId: string, event?: { shiftKey: boolean }) => void;
@@ -125,6 +146,12 @@ type CanvasViewportProps = {
   /** True while the details panel slides over the canvas's right side (tablets), so selections are kept clear of it. */
   detailsDrawerOpen?: boolean;
   onCompareNode?: (sourceNodeId: string) => void;
+  /** Drawing, the eyedropper: gets the pointer instead of pan, select and click. */
+  pointerTool?: CanvasPointerTool | null;
+  /** Drawn on top of the screens, inside the zoomed layer (strokes, other people's cursors). */
+  layerOverlay?: (view: CanvasLayerView) => ReactNode;
+  /** Where the pointer is on the page, for live presence; null when it leaves the canvas. */
+  onPointerPageMove?: (point: CanvasPagePoint | null) => void;
 };
 
 function statusLabel(status: CanvasFrameChangeStatus | undefined) {
@@ -250,6 +277,7 @@ export function CanvasViewport({
   changesVisible = true,
   viewMemoryKey = null,
   showResolvedPins,
+  visibleCommentIds = null,
   selectedNodeId,
   onSelectNode,
   onSelectFrame,
@@ -271,7 +299,11 @@ export function CanvasViewport({
   compareNodeId = null,
   detailsDrawerOpen = false,
   onCompareNode,
+  pointerTool = null,
+  layerOverlay,
+  onPointerPageMove,
 }: CanvasViewportProps) {
+  const toolPointerRef = useRef<number | null>(null);
   const dragRef = useRef<{ pointerId: number; x: number; y: number; startX: number; startY: number; moved: boolean } | null>(null);
   const suppressClickRef = useRef(false);
   // Touch points on the canvas, for two-finger pinch and pan on phones and tablets.
@@ -497,8 +529,27 @@ export function CanvasViewport({
     };
   }
 
+  function pagePoint(element: HTMLElement, clientX: number, clientY: number): CanvasPagePoint {
+    const local = clientToLocal(element, clientX, clientY);
+    return { x: local.x + frame.sourceX, y: local.y + frame.sourceY };
+  }
+
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
-    if (trackTouch(event)) return;
+    if (trackTouch(event)) {
+      toolPointerRef.current = null;
+      return;
+    }
+    if (pointerTool && event.button === 0 && !spaceHeldRef.current && !(event.target as HTMLElement).closest("[data-comment-pin], [data-canvas-annotation], [data-canvas-chrome]")) {
+      event.preventDefault();
+      toolPointerRef.current = event.pointerId;
+      try {
+        event.currentTarget.setPointerCapture(event.pointerId);
+      } catch {
+        // The pointer already ended.
+      }
+      pointerTool.onDown?.(pagePoint(event.currentTarget, event.clientX, event.clientY), event);
+      return;
+    }
     // Shift-click marks screens; stop the browser from also selecting text across the page.
     if (event.shiftKey) {
       event.preventDefault();
@@ -534,6 +585,14 @@ export function CanvasViewport({
   }
 
   function handlePointerMove(event: PointerEvent<HTMLDivElement>) {
+    if (onPointerPageMove || pointerTool?.onMove) {
+      const point = pagePoint(event.currentTarget, event.clientX, event.clientY);
+      onPointerPageMove?.(point);
+      if (pointerTool && (toolPointerRef.current === null || toolPointerRef.current === event.pointerId) && !(event.pointerType === "touch" && touchesRef.current.size > 1)) {
+        pointerTool.onMove?.(point, event);
+        if (toolPointerRef.current !== null) return;
+      }
+    }
     if (event.pointerType === "touch" && touchesRef.current.has(event.pointerId)) {
       touchesRef.current.set(event.pointerId, { x: event.clientX, y: event.clientY });
       const previous = pinchRef.current;
@@ -577,6 +636,13 @@ export function CanvasViewport({
 
   function handlePointerUp(event: PointerEvent<HTMLDivElement>) {
     releaseTouch(event);
+    if (toolPointerRef.current === event.pointerId) {
+      toolPointerRef.current = null;
+      suppressClickRef.current = true;
+      if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId);
+      pointerTool?.onUp?.(pagePoint(event.currentTarget, event.clientX, event.clientY), event);
+      return;
+    }
     const box = marqueeRef.current;
     if (box?.pointerId === event.pointerId) {
       marqueeRef.current = null;
@@ -605,6 +671,10 @@ export function CanvasViewport({
 
   function handlePointerCancel(event: PointerEvent<HTMLDivElement>) {
     releaseTouch(event);
+    if (toolPointerRef.current === event.pointerId) {
+      toolPointerRef.current = null;
+      pointerTool?.onUp?.(pagePoint(event.currentTarget, event.clientX, event.clientY), event);
+    }
     if (marqueeRef.current?.pointerId === event.pointerId) {
       marqueeRef.current = null;
       setMarquee(null);
@@ -634,6 +704,7 @@ export function CanvasViewport({
       event.preventDefault();
       return;
     }
+    if (pointerTool) return;
     const target = event.target as HTMLElement;
     if (target.closest("[data-comment-pin]")) return;
     if (target.closest("[data-canvas-annotation]")) return;
@@ -679,7 +750,8 @@ export function CanvasViewport({
   }
 
   const marqueePreview = marquee ? new Set(screensInMarquee(marquee.rect, screens, { x: frame.sourceX, y: frame.sourceY })) : null;
-  const commentPins = layoutCommentPins(comments, screens, frame, showResolvedPins, overviewOrigin);
+  const commentPins = layoutCommentPins(comments, screens, frame, showResolvedPins, overviewOrigin)
+    .filter(({ comment }) => !visibleCommentIds || visibleCommentIds.has(comment.id) || comment.id === selectedCommentId);
   const annotationPins = annotations.flatMap((annotation) => {
     const position = canvasAnchorToViewportPoint(annotation, frame, screens, overviewOrigin);
     if (!position) return [];
@@ -901,20 +973,31 @@ export function CanvasViewport({
           : interactionMode === "select"
           ? "Select mode. Drag a box over screens to select them, Shift-drag to add more, scroll or hold Space and drag to pan."
           : "View mode. Scroll or drag to pan, and pinch or use Ctrl or Command + scroll to zoom. Switch to Inspect to select design elements."}
-        className={"review-dot-grid @container group relative grid min-h-0 min-w-0 flex-1 touch-none place-items-center overflow-hidden outline-none focus-visible:outline-none " + (isDragging ? "cursor-grabbing" : spaceHeld ? "cursor-grab" : commentMode || annotationMode || marquee ? "cursor-crosshair" : interactionMode === "select" ? "cursor-default" : "cursor-grab")}
+        className={"review-dot-grid @container group relative grid min-h-0 min-w-0 flex-1 touch-none select-none place-items-center overflow-hidden outline-none focus-visible:outline-none " +(isDragging ? "cursor-grabbing" : spaceHeld ? "cursor-grab" : commentMode || annotationMode || marquee ? "cursor-crosshair" : interactionMode === "select" ? "cursor-default" : "cursor-grab")}
         data-canvas-viewport=""
         data-space-pan={spaceHeld ? "" : undefined}
         data-comment-cursor={commentMode && !spaceHeld && !isDragging ? "" : undefined}
         onClick={handleCanvasClick}
+        // Panning starts only after 4px of movement; until then Windows browsers would start their own
+        // drag of the screens (as a selection or image) and cancel the pointer, so the canvas never panned.
+        onDragStart={(event) => {
+          if (!(event.target instanceof HTMLElement && event.target.closest("input, textarea, [contenteditable='true']"))) event.preventDefault();
+        }}
         onPointerCancel={handlePointerCancel}
         onMouseDown={(event) => {
           if (event.shiftKey) event.preventDefault();
         }}
         onPointerDown={handlePointerDown}
+        onPointerLeave={(event) => {
+          if (toolPointerRef.current === event.pointerId) return;
+          onPointerPageMove?.(null);
+          pointerTool?.onLeave?.();
+        }}
         onPointerMove={handlePointerMove}
         onPointerUp={handlePointerUp}
         onKeyDown={handleCanvasKeyDown}
         ref={containerRef}
+        style={pointerTool && !spaceHeld && !isDragging ? { cursor: pointerTool.cursor } : undefined}
         role="region"
         tabIndex={0}
       >
@@ -1261,6 +1344,7 @@ export function CanvasViewport({
             </>
           ) : null}
           {sheetComments ? null : threadPopover}
+          {layerOverlay?.({ inverseScale, originX: frame.sourceX, originY: frame.sourceY })}
         </div>
         {sheetComments ? composePopover ?? threadPopover : null}
         <span aria-atomic="true" aria-live="polite" className="sr-only">{distanceAnnouncement}</span>

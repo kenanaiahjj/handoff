@@ -299,6 +299,7 @@ export function HandoffReviewSurface({
       visualOnly={visualOnly}
       metadata={metadata}
       dockPanels={dockPanels}
+      seenEndpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/seen`}
       compareEndpointBase={publicReviewShareId
         ? `/api/review/${encodeURIComponent(publicReviewShareId)}/compare`
         : `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/compare`}

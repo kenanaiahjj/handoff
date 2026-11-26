@@ -5,6 +5,7 @@ import { showToast } from "@/src/components/shell/Toaster";
 import type { CanvasFrameOption } from "./FrameNavigator";
 import { download, safeName } from "./InspectorExport";
 import { screenExportFileNames, screenLinkLines } from "./screen-bulk-export";
+import { copyScreensImage } from "./screen-image";
 
 async function fetchImage(screen: CanvasFrameOption) {
   const response = await fetch(screen.imageSrc, { cache: "no-store" });
@@ -16,9 +17,10 @@ async function fetchImage(screen: CanvasFrameOption) {
  * Floats above the canvas toolbar while screens are picked with the Select tool: export them all at
  * once (their captured images, zipped) or copy a link to each for a ticket.
  */
-export function ScreenSelectionBar({ screens, zipName, onClear }: {
+export function ScreenSelectionBar({ screens, allScreens, zipName, onClear }: {
   /** The selected screens, in page order. */
   screens: CanvasFrameOption[];
+  allScreens: CanvasFrameOption[];
   zipName: string;
   onClear: () => void;
 }) {
@@ -61,6 +63,9 @@ export function ScreenSelectionBar({ screens, zipName, onClear }: {
       <span aria-hidden="true" className="canvas-floatbar-divider" />
       <button className="canvas-tool" disabled={exporting} onClick={exportScreens} title={count === 1 ? "Download this screen’s image" : "Download the selected screens’ images as a zip"} type="button">
         {exporting ? "Exporting…" : "Export"}
+      </button>
+      <button className="canvas-tool" onClick={() => void copyScreensImage(screens, allScreens)} title={count === 1 ? "Copy this screen as an image (⌘C)" : "Copy the selected screens side by side as one image (⌘C)"} type="button">
+        Copy image
       </button>
       <button className="canvas-tool" onClick={copyLinks} title="Copy a link to each selected screen" type="button">
         Copy links

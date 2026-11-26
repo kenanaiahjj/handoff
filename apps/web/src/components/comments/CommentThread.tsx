@@ -1,6 +1,7 @@
 "use client";
 
 import { Avatar } from "@/src/components/Avatar";
+import { commentFilterLabels, type CommentFilter } from "./comment-filters";
 import { useEffect, useId, useRef, useState, type FormEvent } from "react";
 import { DistortionWave, type DistortionWaveHandle } from "distortion-waves";
 import { devAllClearEvent, useWaveSettings, waveStyle } from "../motion/wave";
@@ -42,6 +43,11 @@ type CommentThreadProps = {
   onStartComment: () => void;
   onPlaceAtSelectedScreen: () => void;
   onToggleResolvedPins: (show: boolean) => void;
+  /** Everyone / Mine / Mentions me. Left out where there is no signed-in person to filter by. */
+  filter?: CommentFilter;
+  onFilterChange?: (filter: CommentFilter) => void;
+  /** Threads that pass the filter (by first comment id); null shows every thread. */
+  visibleThreadIds?: ReadonlySet<string> | null;
 };
 
 const maxAttachments = 4;
@@ -491,6 +497,9 @@ export function CommentThread({
   onStartComment,
   onPlaceAtSelectedScreen,
   onToggleResolvedPins,
+  filter = "all",
+  onFilterChange,
+  visibleThreadIds = null,
 }: CommentThreadProps) {
   const [activeTab, setActiveTab] = useState<"open" | "resolved">("open");
   // Resolving the last open thread waves the list into an "All clear" view.
@@ -502,9 +511,12 @@ export function CommentThread({
   const [heldRoots, setHeldRoots] = useState<HandoffComment[] | null>(null);
   const roots = comments.filter((comment) => comment.parentCommentId === null);
   const pinNumber = new Map(roots.map((comment, index) => [comment.id, index]));
-  const visibleRoots = roots.filter((comment) => activeTab === "resolved" ? Boolean(comment.resolvedAt) : !comment.resolvedAt);
+  const filteredRoots = visibleThreadIds ? roots.filter((comment) => visibleThreadIds.has(comment.id)) : roots;
+  const visibleRoots = filteredRoots.filter((comment) => activeTab === "resolved" ? Boolean(comment.resolvedAt) : !comment.resolvedAt);
   const listRoots = heldRoots ?? visibleRoots;
-  const resolvedCount = roots.length - openCount;
+  const filteredOpenCount = visibleThreadIds ? filteredRoots.filter((comment) => !comment.resolvedAt).length : openCount;
+  const resolvedCount = filteredRoots.length - filteredOpenCount;
+  const filterSuffix = filter === "mine" ? " of yours" : filter === "mentions" ? " that mention you" : "";
   const showAllClear = allClear && activeTab === "open" && !pendingPoint && (openCount === 0 || allClear === "demo");
 
   async function resolveThread(comment: HandoffComment) {
@@ -560,7 +572,7 @@ export function CommentThread({
         <div aria-label="Comment status" className="dial-segmented h-8" role="group">
           {(["open", "resolved"] as const).map((tab) => (
             <button aria-pressed={activeTab === tab} className="min-h-7 px-3 text-[12px] capitalize" key={tab} onClick={() => { setActiveTab(tab); setAllClear(false); }} type="button">
-              {tab} <span className="ml-0.5 font-mono text-[10px] text-foreground-subtle">{tab === "open" ? openCount : resolvedCount}</span>
+              {tab} <span className="ml-0.5 font-mono text-[10px] text-foreground-subtle">{tab === "open" ? filteredOpenCount : resolvedCount}</span>
             </button>
           ))}
         </div>
@@ -569,6 +581,17 @@ export function CommentThread({
           Resolved pins
         </label>
       </div>
+
+      {onFilterChange ? (
+        <div aria-label="Whose comments" className="dial-segmented mt-2 h-8 w-full" role="group">
+          {(Object.keys(commentFilterLabels) as CommentFilter[]).map((option) => (
+            <button aria-pressed={filter === option} className="min-h-7 flex-1 px-2 text-[12px]" key={option} onClick={() => { onFilterChange(option); setAllClear(false); }} type="button">
+              {commentFilterLabels[option]}
+            </button>
+          ))}
+        </div>
+      ) : null}
+      <p className="touch-hidden mt-2 text-[11px] text-foreground-subtle">Press <kbd className="font-mono text-foreground-muted">N</kbd> for the next open comment, <kbd className="font-mono text-foreground-muted">⇧N</kbd> for the previous.</p>
 
       {commentMode ? (
         <div aria-live="polite" className="mt-3 rounded-[10px] border border-dashed border-white/[0.14] px-3 py-2.5 text-[12px] leading-5 text-foreground">
@@ -633,7 +656,7 @@ export function CommentThread({
           <span aria-hidden="true" className="grid size-10 place-items-center rounded-full bg-white/[0.05] text-foreground-subtle">
             <svg className="size-5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><path d="M3 12.5V4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v5A1.5 1.5 0 0 1 11.5 11H5.5L3 12.5Z" /></svg>
           </span>
-          <p className="mt-3 text-[13px] font-medium text-foreground">{activeTab === "open" ? "No open comments" : "No resolved comments"}</p>
+          <p className="mt-3 text-[13px] font-medium text-foreground">{activeTab === "open" ? "No open comments" : "No resolved comments"}{filterSuffix}</p>
           {activeTab === "open" && canWrite ? <p className="mt-1 text-[12px] leading-5 text-foreground-subtle"><span className="touch-hidden">Press C, then click a screen to leave feedback.</span><span className="touch-only">Tap the comment tool, then tap a screen to leave feedback.</span> You can attach screenshots.</p> : null}
         </div>
       ) : null}

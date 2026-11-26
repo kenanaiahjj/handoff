@@ -22,6 +22,13 @@ export const MarqueeIcon = (props: SVGProps<SVGSVGElement>) => (
 export const CommentIcon =(props: SVGProps<SVGSVGElement>) => (
   <Icon {...props}><path d="M3 11.8V4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v5a1.5 1.5 0 0 1-1.5 1.5H5.4L3 12.8Z" /></Icon>
 );
+export const EyedropperIcon = (props: SVGProps<SVGSVGElement>) => (
+  <Icon {...props}><path d="m9.2 4.3 2.5 2.5M10.6 2.9a1.6 1.6 0 0 1 2.3 2.3l-1.2 1.2-2.3-2.3 1.2-1.2ZM8.8 5.4l-5.3 5.3-.6 2.4 2.4-.6 5.3-5.3" /></Icon>
+);
+export const PenIcon = (props: SVGProps<SVGSVGElement>) => (
+  // A freehand squiggle with a pen tip.
+  <Icon {...props}><path d="M2.5 12.5c1.5-2 2.6-.4 3.8-1.6M10.5 2.8l2.7 2.7-6 6-3.2.6.6-3.2 5.9-6.1Z" /></Icon>
+);
 export const NoteIcon = (props: SVGProps<SVGSVGElement>) => (
   <Icon {...props}><path d="M4 2.8h8v10.4H4zM6 5.5h4M6 8h4M6 10.5h2" /></Icon>
 );

@@ -9,6 +9,7 @@ import {
   workspaceMcpEndpoint,
 } from "./mcp-configuration";
 import { useConfirm } from "@/src/components/ConfirmDialog";
+import { formatLastUsed } from "./McpClientList";
 
 type McpScope = "handoffs:read" | "comments:write" | "changelog:write" | "tasks:write" | "implementation:write";
 type TokenRecord = {
@@ -18,6 +19,7 @@ type TokenRecord = {
   expiresAt: string;
   revokedAt: string | null;
   createdAt: string;
+  lastUsedAt: string | null;
   expired: boolean;
   createdBy: string;
   createdByName: string;
@@ -251,7 +253,7 @@ export function McpTokenManager({ workspaceId, canManageAll }: { workspaceId: st
                   <span className="min-w-0 flex-1">
                     <span className="block truncate text-[13px] font-medium text-foreground">{token.name}</span>
                     <span className="block truncate text-[11px] text-foreground-subtle">
-                      {token.revokedAt ? "Revoked" : token.expired ? "Expired" : `Expires ${new Date(token.expiresAt).toLocaleDateString()}`}
+                      {token.revokedAt ? "Revoked" : token.expired ? "Expired" : `${formatLastUsed(token.lastUsedAt)} · Expires ${new Date(token.expiresAt).toLocaleDateString()}`}
                       {canManageAll ? ` · ${token.createdByName}` : ""}
                       {" · "}{token.scopes.join(", ")}
                     </span>

@@ -10,6 +10,7 @@ import { listHandoffVersions, listHandoffVersionsPage, listHandoffs, listHandoff
 import { getProject, listProjects, listProjectsPage } from "@/src/server/repositories/projects";
 import { getHandbook } from "@/src/server/services/handbook";
 import { mcpScopes, resolveWorkspaceMcpToken, type McpScope } from "@/src/server/repositories/mcp-tokens";
+import { checkAndTouchMcpClient } from "@/src/server/repositories/mcp-clients";
 import { getDatabase } from "@/src/server/db";
 import { authIssuer, mcpResource, protectedResourceMetadataUrl } from "@/src/server/mcp/urls";
 import { listLinkedExternalTasksPage } from "@/src/server/repositories/linked-external-tasks";
@@ -1036,8 +1037,11 @@ async function resolveOAuthAccess(token: string, requestedWorkspaceId: string | 
     )
     .get(userId, requestedWorkspaceId, requestedWorkspaceId)) as { workspaceId: string; role: string; email: string } | undefined;
   if (!membership) return null;
+  const clientId = typeof payload.azp === "string" ? payload.azp : typeof payload.client_id === "string" ? payload.client_id : null;
+  // Shows the client under Connected AI clients, and refuses it once someone disconnects it there.
+  if (clientId && !(await checkAndTouchMcpClient({ userId, clientId, workspaceId: membership.workspaceId, issuedAt: typeof payload.iat === "number" ? payload.iat : null }))) return null;
   return {
-    id: `oauth:${typeof payload.azp === "string" ? payload.azp : typeof payload.client_id === "string" ? payload.client_id : userId}`,
+    id: `oauth:${clientId ?? userId}`,
     workspaceId: membership.workspaceId,
     createdBy: userId,
     viewer: { id: userId, email: membership.email, role: membership.role },

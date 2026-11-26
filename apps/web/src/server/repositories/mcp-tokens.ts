@@ -1,5 +1,6 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getDatabase } from "../db";
+import { isMissingSchema, lastUsedThrottleMs } from "./mcp-clients";
 
 export const mcpScopes = ["handoffs:read", "comments:write", "changelog:write", "tasks:write", "implementation:write"] as const;
 export type McpScope = (typeof mcpScopes)[number];
@@ -28,24 +29,30 @@ export async function createWorkspaceMcpToken(input: {
     .run(id, input.workspaceId, input.createdBy, input.name.trim(), hashToken(secret), JSON.stringify(input.scopes), expiresAt, createdAt.toISOString()));
   return {
     token: secret,
-    metadata: { id, name: input.name.trim(), scopes: input.scopes, expiresAt, createdAt: createdAt.toISOString(), revokedAt: null, expired: false },
+    metadata: { id, name: input.name.trim(), scopes: input.scopes, expiresAt, createdAt: createdAt.toISOString(), revokedAt: null, lastUsedAt: null, expired: false },
   };
 }
 
 export async function listWorkspaceMcpTokens(input: { workspaceId: string; userId: string; includeAll: boolean }) {
   const scopeFilter = input.includeAll ? "" : " AND workspace_mcp_token.created_by_user_id = ?";
-  const rows = (await getDatabase()
+  const select = (lastUsed: string) => getDatabase()
     .prepare(
       `SELECT workspace_mcp_token.id, workspace_mcp_token.name,
               workspace_mcp_token.scopes_json AS scopesJson, workspace_mcp_token.expires_at AS expiresAt,
               workspace_mcp_token.revoked_at AS revokedAt, workspace_mcp_token.created_at AS createdAt,
+              ${lastUsed} AS lastUsedAt,
               workspace_mcp_token.created_by_user_id AS createdBy, "user".name AS createdByName
        FROM workspace_mcp_token
        JOIN "user" ON "user".id = workspace_mcp_token.created_by_user_id
        WHERE workspace_mcp_token.workspace_id = ?${scopeFilter}
        ORDER BY workspace_mcp_token.created_at DESC LIMIT 100`,
     )
-    .all(...(input.includeAll ? [input.workspaceId] : [input.workspaceId, input.userId]))) as Array<Record<string, unknown>>;
+    .all(...(input.includeAll ? [input.workspaceId] : [input.workspaceId, input.userId]));
+  // Until the last_used_at migration runs, list tokens without it.
+  const rows = (await select("workspace_mcp_token.last_used_at").catch((error: unknown) => {
+    if (isMissingSchema(error)) return select("NULL");
+    throw error;
+  })) as Array<Record<string, unknown>>;
   return rows.map((row) => ({
     id: row.id as string,
     name: row.name as string,
@@ -53,6 +60,7 @@ export async function listWorkspaceMcpTokens(input: { workspaceId: string; userI
     expiresAt: row.expiresAt as string,
     revokedAt: row.revokedAt as string | null,
     createdAt: row.createdAt as string,
+    lastUsedAt: (row.lastUsedAt as string | null) ?? null,
     createdBy: row.createdBy as string,
     createdByName: row.createdByName as string,
     expired: Date.parse(row.expiresAt as string) <= Date.now(),
@@ -95,6 +103,7 @@ export async function resolveWorkspaceMcpToken(token: string) {
     )
     .get(record.workspaceId, record.createdBy)) as { role: string; email: string } | undefined;
   if (!membership) return null;
+  await touchWorkspaceMcpToken(record.id);
   return {
     id: record.id,
     workspaceId: record.workspaceId,
@@ -104,4 +113,15 @@ export async function resolveWorkspaceMcpToken(token: string) {
     scopes: JSON.parse(record.scopesJson) as McpScope[],
     expiresAt: record.expiresAt,
   };
+}
+
+/** Records when a token was last used, at most every few minutes. */
+async function touchWorkspaceMcpToken(tokenId: string, now = new Date()) {
+  try {
+    await getDatabase()
+      .prepare(`UPDATE workspace_mcp_token SET last_used_at = ? WHERE id = ? AND (last_used_at IS NULL OR last_used_at < ?)`)
+      .run(now.toISOString(), tokenId, new Date(now.getTime() - lastUsedThrottleMs).toISOString());
+  } catch (error) {
+    if (!isMissingSchema(error)) throw error;
+  }
 }
