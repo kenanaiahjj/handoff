@@ -1,7 +1,7 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getDatabase } from "../db";
 
-export const mcpScopes = ["handoffs:read", "comments:write", "changelog:write", "tasks:write"] as const;
+export const mcpScopes = ["handoffs:read", "comments:write", "changelog:write", "tasks:write", "implementation:write"] as const;
 export type McpScope = (typeof mcpScopes)[number];
 
 function hashToken(token: string) {

@@ -10,7 +10,7 @@ import {
 } from "./mcp-configuration";
 import { useConfirm } from "@/src/components/ConfirmDialog";
 
-type McpScope = "handoffs:read" | "comments:write" | "changelog:write" | "tasks:write";
+type McpScope = "handoffs:read" | "comments:write" | "changelog:write" | "tasks:write" | "implementation:write";
 type TokenRecord = {
   id: string;
   name: string;
@@ -28,6 +28,7 @@ const scopeLabels: Record<McpScope, string> = {
   "comments:write": "Add comments to a frozen version",
   "changelog:write": "Draft, review, approve and publish AI changelogs",
   "tasks:write": "Link tasks created through your AI client’s other MCP tools",
+  "implementation:write": "Record which code component builds a design component",
 };
 
 type ClientKind = "codex" | "claude" | "gemini" | "other";

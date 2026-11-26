@@ -434,10 +434,10 @@ test("an MCP client can initialize, discover read-scoped tools, and read an immu
     .run(typographyVersionId, workspaceA, handoffA, now, typographySnapshot.contentHash, JSON.stringify(typographySnapshot), now);
   const textElements = parseToolText((await callRpc("tools/call", {
     name: "list_elements",
-    arguments: { projectId: projectA, handoffId: handoffA, versionId: typographyVersionId, frameId: frameA },
+    arguments: { projectId: projectA, handoffId: handoffA, versionId: typographyVersionId, frameId: frameA, fields: ["typography"] },
   }, { ...options, protocolVersion: initialized.body.result.protocolVersion })).body);
-  assert.equal(textElements.elements[0].typography.lineHeight.value, 19.5);
-  assert.equal(textElements.elements[0].typography.letterSpacing.value, 0.32499998807907104);
+  assert.equal(textElements.elements[0].typography.lineHeight, 19.5);
+  assert.equal(textElements.elements[0].typography.letterSpacing, 0.32499998807907104);
   await database.prepare("DELETE FROM handoff_version WHERE id = ?").run(typographyVersionId);
 
   const measurementsResponse = await callRpc("tools/call", {
@@ -499,11 +499,13 @@ test("MCP returns oversized snapshots as bounded summaries and pages precise ele
     frameId: frameA,
     offset: 0,
     limit: 2,
+    fields: ["bounds", "raw"],
   })).body);
   assert.equal(firstPage.elements.length, 2);
-  assert.equal(firstPage.elements[0].sourceNodeId, "stress-0");
+  assert.equal(firstPage.elements[0].id, "stress-0");
+  assert.equal(firstPage.elements[0].bounds.x, 0.25);
+  assert.equal(firstPage.elements[0].bounds.width, 120.75);
   assert.equal(firstPage.elements[0].layoutBounds.x.value, 0.25);
-  assert.equal(firstPage.elements[0].layoutBounds.width.value, 120.75);
   assert.equal(firstPage.elements[0].sourcePayload.stressMarker.length, 1_000);
   assert.ok(Buffer.byteLength(JSON.stringify(firstPage), "utf8") < 1_048_576);
   assert.deepEqual(firstPage.page, { offset: 0, limit: 2, total: 1_200, hasMore: true, nextOffset: 2 });
@@ -517,7 +519,7 @@ test("MCP returns oversized snapshots as bounded summaries and pages precise ele
     limit: 2,
   })).body);
   assert.equal(lastPage.elements.length, 1);
-  assert.equal(lastPage.elements[0].sourceNodeId, "stress-1199");
+  assert.equal(lastPage.elements[0].id, "stress-1199");
   assert.equal(lastPage.page.hasMore, false);
   assert.equal(lastPage.page.nextOffset, null);
 
