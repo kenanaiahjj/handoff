@@ -1,3 +1,4 @@
+import { roleFeaturesFor } from "@/src/server/services/workspace-settings";
 import Link from "next/link";
 import { workspaceRouteSlugs } from "@/src/server/services/route-slugs";
 import { headers } from "next/headers";
@@ -69,6 +70,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
   const visible = (await visibleHandoffIds(workspaceId, { id: session.user.id, email: session.user.email, role: membership.role }));
   if (visible && !visible.has(handoffId)) notFound();
   if (!project) notFound();
+  const features = await roleFeaturesFor(workspaceId, membership.role);
   const versions = versionRows as ReviewVersionSummary[];
   if (!versions.length) {
     const projectHref = (await workspaceRouteSlugs(workspaceId)).project(projectId);
@@ -250,6 +252,7 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
         canUseLocalPreview={true}
         team={team}
         dockPanels={dockPanels}
+        features={features}
       />
       </MentionProvider>
       </div>

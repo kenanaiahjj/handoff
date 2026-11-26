@@ -50,17 +50,15 @@ export function Toaster() {
   return (
     <div aria-live="polite" className="pointer-events-none fixed inset-x-0 bottom-0 z-[70] flex flex-col items-center gap-2 px-4 pb-[max(16px,env(safe-area-inset-bottom))] sm:pb-6" role="status">
       {toasts.map((toast) => (
-        <div className="app-toast pointer-events-auto flex max-w-[min(92vw,420px)] items-center gap-2.5 rounded-full bg-primary py-2.5 pl-3 pr-4 text-[13px] font-semibold text-primary-foreground shadow-[0_16px_40px_-12px_rgb(0_0_0/0.8)]" data-leaving={toast.leaving || undefined} key={toast.id}>
-          {toast.tone === "error" ? (
-            <span aria-hidden="true" className="grid size-5 shrink-0 place-items-center rounded-full bg-danger text-white">
-              <svg className="size-3" fill="none" viewBox="0 0 16 16"><path d="M8 4.5v4.5M8 11.5v.01" stroke="currentColor" strokeLinecap="round" strokeWidth="2" /></svg>
-            </span>
-          ) : (
-            <span aria-hidden="true" className="grid size-5 shrink-0 place-items-center rounded-full bg-success text-white">
-              <svg className="size-3" fill="none" viewBox="0 0 16 16"><path d="m3.5 8.5 3 3 6-7" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" /></svg>
-            </span>
-          )}
-          {toast.message}
+        <div className="app-toast dark-toast toast-surface pointer-events-auto" data-leaving={toast.leaving || undefined} data-tone={toast.tone} key={toast.id}>
+          <span aria-hidden="true" className="dark-toast-icon">
+            {toast.tone === "error" ? (
+              <svg className="size-3.5" fill="none" viewBox="0 0 16 16"><path d="M8 4.5v4M8 11.25v.01" stroke="currentColor" strokeLinecap="round" strokeWidth="1.9" /></svg>
+            ) : (
+              <svg className="size-3.5" fill="none" viewBox="0 0 16 16"><path d="m3.75 8.25 2.75 2.75 5.75-6.25" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.9" /></svg>
+            )}
+          </span>
+          <span className="dark-toast-title whitespace-normal">{toast.message}</span>
         </div>
       ))}
     </div>

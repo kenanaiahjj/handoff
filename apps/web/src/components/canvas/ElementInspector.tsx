@@ -24,6 +24,10 @@ type ElementInspectorProps = {
   comments: HandoffComment[];
   canComment: boolean;
   canCompare: boolean;
+  /** False when this role can't select single elements (Settings → Features by role). */
+  canInspect?: boolean;
+  /** False when this role can't download assets. */
+  canExport?: boolean;
   onCompare: () => void;
   onAddComment: () => void;
   onSelectNode: (sourceNodeId: string) => void;
@@ -306,6 +310,8 @@ export function ElementInspector({
   comments,
   canComment,
   canCompare,
+  canInspect = true,
+  canExport = true,
   onCompare,
   onAddComment,
   onSelectNode,
@@ -550,7 +556,7 @@ export function ElementInspector({
             </section>
           ) : null}
 
-          <InspectorExport
+          {canExport ? <InspectorExport
             element={{
               name: selectedNode.name || "element",
               bounds: { x: selectedNode.bounds.x.value, y: selectedNode.bounds.y.value, width: selectedNode.bounds.width.value, height: selectedNode.bounds.height.value },
@@ -558,7 +564,7 @@ export function ElementInspector({
             }}
             frame={frame}
             key={selectedNode.sourceNodeId}
-          />
+          /> : null}
 
           {css ? (
             <details className="group border-t border-border py-3">
@@ -784,12 +790,12 @@ export function ElementInspector({
               ) : null}
             </span>
           </div>
-          <p className="mt-2 text-[12px] leading-5 text-foreground-subtle"><span className="touch-hidden">{inspecting ? "Click an element on this screen to inspect it." : "Press I (Inspect), then click an element on this screen."}</span><span className="touch-only">{inspecting ? "Tap an element on this screen to inspect it." : "Tap the arrow tool, then tap an element on this screen."}</span></p>
+          {canInspect ? <p className="mt-2 text-[12px] leading-5 text-foreground-subtle"><span className="touch-hidden">{inspecting ? "Click an element on this screen to inspect it." : "Press I (Inspect), then click an element on this screen."}</span><span className="touch-only">{inspecting ? "Tap an element on this screen to inspect it." : "Tap the arrow tool, then tap an element on this screen."}</span></p> : null}
           <dl className="mt-4 space-y-1.5 border-t border-white/[0.06] pt-3 text-[12px]">
             <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Size</dt><dd className="font-mono text-foreground">{formatFrameSize(frame.sourceWidth, frame.sourceHeight)}</dd></div>
             <div className="dial-row flex min-h-9 items-center justify-between gap-3 px-3"><dt className="text-foreground-subtle">Elements</dt><dd className="font-mono text-foreground">{frame.nodes.length}</dd></div>
           </dl>
-          <div className="mt-4"><InspectorExport frame={frame} /></div>
+          {canExport ? <div className="mt-4"><InspectorExport frame={frame} /></div> : null}
         </div>
       )}
     </div>

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { getDatabase } from "../db";
 import { allowedEmailDomains } from "./onboarding";
 import { projectIconMaxBytes, sniffImageType } from "./project-icons";
+import { featuresForRole, normalizeRoleFeatureSettings, type RoleFeatureSettings } from "@/src/lib/role-features";
 
 export class WorkspaceSettingsError extends Error {}
 
@@ -87,4 +88,28 @@ export async function deleteWorkspaceLogo(workspaceId: string) {
 
 export function workspaceLogoUrl(workspaceId: string, version: string | null | undefined) {
   return version ? `/api/workspaces/${encodeURIComponent(workspaceId)}/logo?v=${version}` : null;
+}
+
+/**
+ * The per-role feature switches owners set in Settings. Falls back to the defaults when nothing is
+ * saved, or when the role_features migration hasn't been applied to this database yet.
+ */
+export async function getRoleFeatureSettings(workspaceId: string): Promise<RoleFeatureSettings> {
+  try {
+    const row = (await getDatabase().prepare("SELECT role_features AS value FROM workspace WHERE id = ?").get(workspaceId)) as { value: string | null } | undefined;
+    return normalizeRoleFeatureSettings(row?.value ? JSON.parse(row.value) : null);
+  } catch {
+    return normalizeRoleFeatureSettings(null);
+  }
+}
+
+export async function updateRoleFeatureSettings(workspaceId: string, input: unknown) {
+  const settings = normalizeRoleFeatureSettings(input);
+  await getDatabase().prepare("UPDATE workspace SET role_features = ? WHERE id = ?").run(JSON.stringify(settings), workspaceId);
+  return settings;
+}
+
+/** The canvas features someone gets in this workspace, from their workspace role. */
+export async function roleFeaturesFor(workspaceId: string, role: string | null | undefined) {
+  return featuresForRole(await getRoleFeatureSettings(workspaceId), role);
 }

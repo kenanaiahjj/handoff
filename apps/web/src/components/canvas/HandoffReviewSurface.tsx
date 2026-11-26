@@ -1,3 +1,4 @@
+import { allFeaturesOn, type RoleFeatureFlags } from "@/src/lib/role-features";
 import { notFound } from "next/navigation";
 import type { SnapshotEnvelope, SnapshotNode, VisualOnlySnapshot } from "@asbir/snapshot-contract";
 import type { ReviewDockPanels, ReviewMetadata } from "./HandoffCanvas";
@@ -227,6 +228,7 @@ export function HandoffReviewSurface({
   canUseLocalPreview,
   team,
   dockPanels,
+  features,
 }: {
   workspaceId: string;
   projectId: string;
@@ -250,6 +252,8 @@ export function HandoffReviewSurface({
   canUseLocalPreview: boolean;
   team?: ProjectTeamMember[] | null;
   dockPanels?: ReviewDockPanels;
+  /** Canvas features this viewer's role gets (Settings → Features by role). Omitted: everything. */
+  features?: RoleFeatureFlags;
 }) {
   const { frames, visualOnly, captureScope } = buildCanvasFrames(selectedVersion, publicReviewShareId);
   const versionOptions = versions.map(({ id, versionLabel, releaseNote, createdAt }) => ({ id, versionLabel, releaseNote, createdAt }));
@@ -284,6 +288,7 @@ export function HandoffReviewSurface({
     commentIdentity: commentIdentity ?? null,
     canUseLocalPreview,
     team: team ?? null,
+    features: features ?? allFeaturesOn,
   };
 
   return (

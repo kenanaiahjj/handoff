@@ -24,6 +24,7 @@ import { PublishChangesDialog } from "./PublishChangesDialog";
 import { ChangesIcon, CommentIcon, CompareIcon, CursorIcon, GridIcon, HandIcon, InspectIcon, KeyboardIcon, MarqueeIcon, EyedropperIcon, PenIcon, MoreIcon, InfoIcon, NoteIcon, OutlineIcon, PanelLeftIcon, PanelRightIcon, VersionIcon } from "./canvas-icons";
 import { mergeMarqueeSelection } from "./canvas-marquee";
 import { ScreenSelectionBar } from "./ScreenSelectionBar";
+import { CopyNotice, showCopyNotice } from "./CopyNotice";
 import { copyScreensImage } from "./screen-image";
 import { useCanvasEyedropper } from "./useCanvasEyedropper";
 import { useCanvasMarkup } from "./useCanvasMarkup";
@@ -53,6 +54,7 @@ import {
 import type { VersionOption } from "./VersionCompare";
 import { cssTextForNode } from "./css-from-node";
 import { screensInFlowOrder } from "./screen-flow-order";
+import type { RoleFeatureFlags } from "@/src/lib/role-features";
 import type { SnapshotDiffChange } from "../../server/services/diff";
 
 export type ReviewMetadata = {
@@ -82,6 +84,8 @@ export type ReviewMetadata = {
   canUseLocalPreview: boolean;
   /** Project team for the Info tab; null hides the tab (e.g. anonymous public review links). */
   team: ProjectTeamMember[] | null;
+  /** Canvas features this viewer's role gets; owners choose them in Settings → Features by role. */
+  features: RoleFeatureFlags;
 };
 
 export type ReviewDockPanels = Partial<Record<"version", ReactNode>>;
@@ -209,7 +213,7 @@ export function HandoffCanvas({
   changedNodeIds = [],
   versionChanges = [],
   startChangedOnly = false,
-  canCompare,
+  canCompare: canCompareProp,
   onCompareScreen,
   onOpenComparison,
   onOpenChangesList,
@@ -314,7 +318,11 @@ export function HandoffCanvas({
   const [layoutReady, setLayoutReady] = useState(false);
   const [mobilePanelOpenOverride, setMobilePanelOpenOverride] = useState<boolean | null>(null);
   const [isMobile, setIsMobile] = useState(false);
-  const canvasMode = canvasModeOverride ?? (linkedNode ? "inspect" : "view");
+  // Roles without element inspection (Settings → Features by role) stay in View: a click selects the whole screen.
+  const features = metadata.features;
+  const canCompare = canCompareProp && features.versionCompare;
+  const requestedCanvasMode = canvasModeOverride ?? (linkedNode ? "inspect" : "view");
+  const canvasMode = requestedCanvasMode === "inspect" && !features.elementInspection ? "view" : requestedCanvasMode;
   const mobilePanelOpen = mobilePanelOpenOverride ?? (isMobile && Boolean(linkedNode));
   const [commentMode, setCommentMode] = useState(false);
   const [commentThreadOpen, setCommentThreadOpen] = useState(false);
@@ -555,7 +563,8 @@ export function HandoffCanvas({
     : changedOnlyActive && !canvasScreens.some((frame) => frame.id === requestedSelectedFrameId)
     ? canvasScreens[0]?.id ?? null
     : requestedSelectedFrameId;
-  const requestedSelectedNodeId = localSelectedNodeId ?? linkedNode?.sourceNodeId ?? null;
+  // Without element inspection nothing below a screen is ever selected (search, links and comments still find the screen).
+  const requestedSelectedNodeId = features.elementInspection ? localSelectedNodeId ?? linkedNode?.sourceNodeId ?? null : null;
   const selectedCommentId = localSelectedCommentId ?? linkedCommentId;
   const annotationsEndpoint = commentsEndpoint.replace(/\/comments$/, "/annotations");
   const selectedFrame = screens.find((frame) => frame.id === selectedFrameId) ?? null;
@@ -1065,6 +1074,7 @@ export function HandoffCanvas({
   const layerNavRef = useRef<(move: "child" | "parent" | "next" | "previous") => boolean>(() => false);
   useEffect(() => {
     layerNavRef.current = (move) => {
+      if (!features.elementInspection) return false;
       const screen = screens.find((frame) => frame.id === (selectedNode?.sourceFrameId ?? selectedFrameId));
       if (!screen) return false;
       const layers = screen.nodes.filter((node) => node.visible !== false && node.sourceNodeId !== screen.id);
@@ -1129,12 +1139,16 @@ export function HandoffCanvas({
       }
     };
     copyImageRef.current = () => {
+      if (!features.copyImage) return false;
       if (selectedScreens.length) {
         void copyScreensImage(selectedScreens, screens);
         return true;
       }
       const screen = screens.find((frame) => frame.id === (selectedNode?.sourceFrameId ?? selectedFrameId));
-      if (!screen) return false;
+      if (!screen) {
+        showCopyNotice("Nothing selected", "error", "Click a screen first, then copy");
+        return true;
+      }
       const { x, y, width, height } = selectedNode?.bounds ?? {};
       if (selectedNode && selectedNode.sourceNodeId !== screen.id && x?.value != null && y?.value != null && width?.value && height?.value) {
         void copyScreensImage([screen], screens, { x: screen.sourceX + x.value, y: screen.sourceY + y.value, width: width.value, height: height.value }, `“${selectedNode.name || "element"}”`);
@@ -1282,6 +1296,12 @@ export function HandoffCanvas({
 
   function selectNode(sourceNodeId: string) {
     const node = screens.flatMap((frame) => frame.nodes).find((entry) => entry.sourceNodeId === sourceNodeId);
+    // Without element inspection, anything that would pick a layer (search, links, history) picks its screen.
+    if (!features.elementInspection) {
+      const frameId = node?.sourceFrameId ?? screens.find((frame) => frame.id === sourceNodeId)?.id;
+      if (frameId) selectFrame(frameId);
+      return;
+    }
     if (node) setSelectedFrameId(node.sourceFrameId);
     setSelectedNodeId(sourceNodeId);
     setSelectedCommentId(null);
@@ -1778,7 +1798,7 @@ export function HandoffCanvas({
               List view
             </button>
           ) : null}
-          <span className="glow-ring shrink-0" data-tour="changes">
+          {features.versionCompare ? <span className="glow-ring shrink-0" data-tour="changes">
           <span aria-hidden="true" className="glow-ring-halo" />
           <span aria-hidden="true" className="glow-ring-spin" />
           <button
@@ -1793,7 +1813,7 @@ export function HandoffCanvas({
           >
             Review changes
           </button>
-          </span>
+          </span> : null}
           <button
             aria-label="Hide this summary for this version"
             className="grid size-7 shrink-0 place-items-center rounded-[7px] text-foreground-subtle hover:bg-white/[0.06] hover:text-foreground"
@@ -1996,9 +2016,11 @@ export function HandoffCanvas({
             <button aria-pressed={canvasMode === "view" && !commentMode && !canvasTool} className="canvas-tool" onClick={() => { setCanvasTool(null); setCommentMode(false); setCanvasModeOverride("view"); }} title="View: pan without selecting (V)" type="button">
               <HandIcon /><span className="sr-only">View</span>
             </button>
-            <button aria-pressed={canvasMode === "inspect" && !commentMode && !canvasTool} className="canvas-tool" onClick={() => { setCanvasTool(null); setCommentMode(false); setCanvasModeOverride("inspect"); setPanelMode("inspect"); }} title="Inspect: select elements (I)" type="button">
-              <CursorIcon /><span className="sr-only">Inspect</span>
-            </button>
+            {features.elementInspection ? (
+              <button aria-pressed={canvasMode === "inspect" && !commentMode && !canvasTool} className="canvas-tool" onClick={() => { setCanvasTool(null); setCommentMode(false); setCanvasModeOverride("inspect"); setPanelMode("inspect"); }} title="Inspect: select elements (I)" type="button">
+                <CursorIcon /><span className="sr-only">Inspect</span>
+              </button>
+            ) : null}
             <button aria-pressed={canvasMode === "select" && !commentMode && !canvasTool} className="canvas-tool" onClick={() => { setCanvasTool(null); setCommentMode(false); setAnnotationMode(false); setCanvasModeOverride("select"); }} title="Select screens: drag a box over them, Shift to add more (S)" type="button">
               <MarqueeIcon /><span className="sr-only">Select screens</span>
             </button>
@@ -2086,6 +2108,7 @@ export function HandoffCanvas({
             tourId="navigate"
           />
         </div>
+        <CopyNotice />
         <CanvasViewport
           frame={visualFrame}
           overviewOrigin={{ sourceX: overviewFrame.sourceX, sourceY: overviewFrame.sourceY }}
@@ -2184,6 +2207,8 @@ export function HandoffCanvas({
         ) : selectedScreens.length && !removalSelecting ? (
           <ScreenSelectionBar
             allScreens={screens}
+            canCopyImage={features.copyImage}
+            canExport={features.assetExport}
             onClear={() => setScreenSelection(new Set())}
             screens={selectedScreens}
             zipName={metadata.handoffName + " screens"}
@@ -2374,6 +2399,8 @@ export function HandoffCanvas({
             onSelectNode={selectNode}
             onCopyLink={() => navigator.clipboard?.writeText(window.location.href)}
             inspecting={canvasMode === "inspect"}
+            canInspect={features.elementInspection}
+            canExport={features.assetExport}
             onRemoveScreen={canRemoveScreens && selectedFrame?.kind === "frame" ? () => toggleRemoval(selectedFrame.id) : undefined}
             screenMarkedForRemoval={Boolean(selectedFrame && removalPicked.has(selectedFrame.id))}
             removingScreen={removingScreen}

@@ -3,16 +3,17 @@ import { notFound, redirect } from "next/navigation";
 import { getSessionForHeaders } from "@/src/server/auth-session";
 import { getDatabase } from "@/src/server/db";
 import { listProjects } from "@/src/server/repositories/projects";
-import { getWorkspaceSettings, workspaceLogoUrl } from "@/src/server/services/workspace-settings";
+import { getRoleFeatureSettings, getWorkspaceSettings, workspaceLogoUrl } from "@/src/server/services/workspace-settings";
 import { WorkspaceShell } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 import { WorkspaceSettingsForm } from "@/src/components/shell/WorkspaceSettingsForm";
+import { RoleFeaturesForm } from "@/src/components/shell/RoleFeaturesForm";
 
 export const instant = false;
 
 type SettingsPageProps = { params: Promise<{ workspaceId: string }> };
 
-/** Owners only: the workspace's name, logo and which email domains can join on their own. */
+/** Owners only: the workspace's name, logo, which email domains can join, and which features each role gets. */
 export default async function SettingsPage({ params }: SettingsPageProps) {
   const session = await getSessionForHeaders(await headers());
   if (!session) redirect("/sign-in");
@@ -26,9 +27,10 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
     .get(workspaceId, session.user.id)) as { id: string; name: string; role: string } | undefined;
   if (!workspace) notFound();
   if (workspace.role !== "owner") redirect(`/workspace`);
-  const [settings, projects] = await Promise.all([
+  const [settings, projects, roleFeatures] = await Promise.all([
     getWorkspaceSettings(workspaceId),
     listProjects(workspaceId) as Promise<Array<{ id: string; name: string }>>,
+    getRoleFeatureSettings(workspaceId),
   ]);
   if (!settings) notFound();
 
@@ -50,6 +52,9 @@ export default async function SettingsPage({ params }: SettingsPageProps) {
             name={settings.name}
             workspaceId={workspaceId}
           />
+        </div>
+        <div className="mt-5">
+          <RoleFeaturesForm settings={roleFeatures} workspaceId={workspaceId} />
         </div>
       </main>
     </WorkspaceShell>

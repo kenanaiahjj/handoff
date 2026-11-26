@@ -69,10 +69,10 @@ export function NewVersionNotice({
     <div aria-live="polite" className="pointer-events-none fixed inset-x-0 top-0 z-[60] flex justify-center px-4 pt-[max(12px,env(safe-area-inset-top))]">
       <section
         aria-labelledby="new-version-notice-title"
-        className="pointer-events-auto flex w-full max-w-[460px] items-center gap-3 rounded-[14px] border border-white/[0.09] bg-[#121212] py-2.5 pl-4 pr-2.5 shadow-[0_24px_64px_-12px_rgb(0_0_0/0.85)]"
+        className="pointer-events-auto flex w-full max-w-[460px] items-center gap-3 toast-surface rounded-[14px] py-2.5 pl-4 pr-2.5"
         role="status"
       >
-        <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-[#55c987]" />
+        <span aria-hidden="true" className="size-2 shrink-0 rounded-full bg-[var(--toast-brand)] shadow-[0_0_0_3px_rgb(227_161_58/0.18)]" />
         <p className="min-w-0 flex-1 text-[13px] leading-5 text-foreground" id="new-version-notice-title">
           New version published: <span className="font-semibold">{latest.versionLabel}</span>
         </p>

@@ -1,5 +1,6 @@
 import type { CanvasFrameOption } from "./FrameNavigator";
 import { showToast } from "@/src/components/shell/Toaster";
+import { showCopyNotice } from "./CopyNotice";
 
 /** In Figma page units (the same space as a screen's sourceX/sourceY). */
 export type PageRect = { x: number; y: number; width: number; height: number };
@@ -110,16 +111,21 @@ export async function renderPageArea(area: PageRect, screens: CanvasFrameOption[
  * counts it as part of the key press or click.
  */
 export async function copyPngToClipboard(render: () => Promise<Blob>, label: string) {
+  // On the canvas the message shows beside the cursor; elsewhere it's a normal toast.
+  const notify = (message: string, tone: "pending" | "success" | "error", detail?: string) => {
+    if (!showCopyNotice(message, tone, detail) && tone !== "pending") showToast(detail ? `${message} · ${detail}` : message, tone);
+  };
   if (typeof ClipboardItem === "undefined" || !navigator.clipboard?.write) {
-    showToast("This browser can’t copy images. Use Export to download it.", "error");
+    notify("Can’t copy images here", "error", "Use Export to download it");
     return false;
   }
+  notify("Copying image…", "pending", label);
   try {
     await navigator.clipboard.write([new ClipboardItem({ "image/png": render() })]);
-    showToast(`Copied ${label} as an image`);
+    notify("Copied to clipboard", "success", label);
     return true;
   } catch (cause) {
-    showToast(cause instanceof Error && cause.name !== "NotAllowedError" ? cause.message : "The browser blocked copying the image.", "error");
+    notify("Couldn’t copy the image", "error", cause instanceof Error && cause.name !== "NotAllowedError" ? cause.message : "The browser blocked the clipboard");
     return false;
   }
 }

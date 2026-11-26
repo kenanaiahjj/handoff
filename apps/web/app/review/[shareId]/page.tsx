@@ -1,3 +1,4 @@
+import { roleFeaturesFor } from "@/src/server/services/workspace-settings";
 import { cookies, headers } from "next/headers";
 import { notFound, redirect } from "next/navigation";
 import { getSessionForHeaders } from "@/src/server/auth-session";
@@ -96,9 +97,10 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
   if (!selectedVersion) notFound();
 
   // Signed-in or invited reviewers see the project team; anonymous link viewers don't get anyone's email.
-  const [version, team] = await Promise.all([
+  const [version, team, features] = await Promise.all([
     getCanvasVersion({ workspaceId: handoff.workspaceId, versionId: selectedVersion.id }),
     session || access.invite ? listProjectTeam(handoff.workspaceId, handoff.projectId).catch(() => null) : null,
+    roleFeaturesFor(handoff.workspaceId, access.membershipRole),
   ]);
   if (!version || version.handoffId !== handoff.id) notFound();
 
@@ -131,6 +133,7 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
         commentIdentity={access.invite ? { label: access.invite.email, role: access.invite.role } : null}
         canUseLocalPreview={false}
         team={team}
+        features={features}
       />
   );
 

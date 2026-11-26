@@ -120,7 +120,7 @@ export function UpdateNotice() {
 
   return (
     <div aria-live="polite" className="update-notice pointer-events-none fixed inset-x-0 bottom-0 z-[60] flex justify-center px-4 pb-[max(16px,env(safe-area-inset-bottom))] sm:justify-end sm:px-6 sm:pb-6">
-      <section aria-labelledby="update-notice-title" className="update-card pointer-events-auto relative w-full max-w-[420px] rounded-[16px] border border-white/[0.09] bg-[#121212] p-5 shadow-[0_24px_64px_-12px_rgb(0_0_0/0.85)]" role="status">
+      <section aria-labelledby="update-notice-title" className="update-card pointer-events-auto relative w-full max-w-[420px] toast-surface rounded-[16px] p-5" role="status">
         <button
           aria-label="Close"
           className="absolute right-3 top-3 grid size-8 place-items-center rounded-[8px] text-foreground-subtle transition-colors hover:bg-white/[0.06] hover:text-foreground"

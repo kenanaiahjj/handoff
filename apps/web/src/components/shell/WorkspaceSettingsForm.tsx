@@ -3,7 +3,7 @@
 import { useRouter } from "next/navigation";
 import { type FormEvent, type KeyboardEvent, useRef, useState, useTransition } from "react";
 import { ProjectIcon, squareImage } from "@/src/components/shell/ProjectIcon";
-import { showErrorToast } from "./Toaster";
+import { showErrorToast, showToast } from "./Toaster";
 
 type Props = {
   workspaceId: string;
@@ -32,17 +32,15 @@ export function WorkspaceSettingsForm({ workspaceId, name: initialName, logoUrl:
   const [draft, setDraft] = useState("");
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
 
   async function patch(body: object, key: string) {
     setBusy(key);
     setError("");
-    setNotice("");
     try {
       const response = await fetch(`${base}/settings`, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify(body) });
       const payload = (await response.json().catch(() => ({}))) as { error?: string; name?: string; allowedEmailDomains?: string[] | null };
       if (!response.ok) throw new Error(payload.error ?? "Couldn't save.");
-      setNotice("Saved.");
+      showToast("Saved");
       startRefresh(() => router.refresh());
       return payload;
     } catch (cause) {
@@ -167,9 +165,7 @@ export function WorkspaceSettingsForm({ workspaceId, name: initialName, logoUrl:
         )}
       </section>
 
-      <p aria-live="polite" className="min-h-5 text-[12px]">
-        {error ? <span className="text-danger">{error}</span> : <span className="text-foreground-subtle">{notice}</span>}
-      </p>
+      {error ? <p aria-live="polite" className="text-[12px] text-danger">{error}</p> : null}
     </div>
   );
 }

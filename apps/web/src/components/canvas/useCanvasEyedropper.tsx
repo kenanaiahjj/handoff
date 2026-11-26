@@ -95,7 +95,7 @@ export function useCanvasEyedropper(screens: readonly CanvasFrameOption[], activ
     return (
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute z-40 flex items-center gap-1.5 rounded-full border border-white/15 bg-[#151515]/95 py-1 pl-1 pr-2.5 font-mono text-[11px] text-white shadow-lg"
+        className="pointer-events-none absolute z-40 flex items-center gap-1.5 toast-surface rounded-full py-1 pl-1 pr-2.5 font-mono text-[11px]"
         style={{
           left: hover.point.x - view.originX,
           top: hover.point.y - view.originY,
