@@ -1151,6 +1151,17 @@ export function HandoffCanvas({
     }
   }
 
+  /** The Select tool's click, on the canvas or in the list: pick one screen, or add or remove it with Shift. */
+  function pickScreen(frameId: string, additive: boolean) {
+    setScreenSelection((current) => {
+      if (!additive) return new Set([frameId]);
+      const next = new Set(current);
+      if (next.has(frameId)) next.delete(frameId);
+      else next.add(frameId);
+      return next;
+    });
+  }
+
   function selectFrame(frameId: string) {
     setSelectedFrameId(frameId);
     setSelectedNodeId(null);
@@ -1808,6 +1819,8 @@ export function HandoffCanvas({
               <FrameNavigator
                 frames={frames}
                 activeFrameId={selectedFrameId}
+                selectedScreenIds={screenSelection}
+                onPickScreen={canvasMode === "select" ? pickScreen : undefined}
                 onSelect={(frameId) => {
                   selectFrame(frameId);
                   focusScreen(frameId);
@@ -1994,13 +2007,7 @@ export function HandoffCanvas({
             }
             // The Select tool picks screens instead of opening them: a click picks one, Shift-click adds or removes it.
             if (canvasMode === "select") {
-              setScreenSelection((current) => {
-                if (!event?.shiftKey) return new Set([frameId]);
-                const next = new Set(current);
-                if (next.has(frameId)) next.delete(frameId);
-                else next.add(frameId);
-                return next;
-              });
+              pickScreen(frameId, Boolean(event?.shiftKey));
               return;
             }
             selectFrame(frameId);

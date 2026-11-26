@@ -60,6 +60,10 @@ type FrameNavigatorProps = {
   comparisonSummary: FrameComparisonSummary | null;
   changedOnly: boolean;
   onChangedOnlyChange: (changedOnly: boolean) => void;
+  /** Screens picked with the canvas's Select tool, marked in blue here too. */
+  selectedScreenIds?: ReadonlySet<string>;
+  /** Set while the Select tool is on: a row click picks that screen (Shift or ⌘ adds or removes it) instead of opening it. */
+  onPickScreen?: (frameId: string, additive: boolean) => void;
   /** Owners and designers on the latest version: tick several screens and remove them in one version. */
   removal?: {
     /** Opens the publish dialog with the pending changes. */
@@ -86,6 +90,8 @@ export function FrameNavigator({
   comparisonSummary,
   changedOnly,
   onChangedOnlyChange,
+  selectedScreenIds,
+  onPickScreen,
   removal,
 }: FrameNavigatorProps) {
   const [screenQuery, setScreenQuery] = useState("");
@@ -217,6 +223,8 @@ export function FrameNavigator({
         {visibleFrames.map((frame, index) => {
           // In select mode "selected" means marked for removal; otherwise it's the open screen.
           const selected = selecting ? picked.has(frame.id) : frame.id === activeFrameId;
+          // Picked with the Select tool (not shown while ticking screens for removal).
+          const multiSelected = !selecting && Boolean(selectedScreenIds?.has(frame.id));
           const status = frameStatuses[frame.id];
           const statusLabel = comparisonFrameStatusShortLabel(status);
           const statusTone = statusLabel === "New" ? "bg-[#183a2d] text-success" : "bg-[#43331f] text-[#efae3d]";
@@ -224,8 +232,13 @@ export function FrameNavigator({
             <li data-frame-id={frame.id} key={frame.id}>
               <button
                 aria-pressed={selected}
-                className={"flex min-h-9 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] font-medium transition-colors " + (selected ? "bg-surface-strong text-foreground" : "text-foreground-muted hover:bg-surface-inset hover:text-foreground")}
-                onClick={() => (selecting ? togglePicked(frame.id) : onSelect(frame.id))}
+                className={"flex min-h-9 w-full items-center gap-2 rounded-control px-2.5 text-left text-[13px] font-medium transition-colors " + (multiSelected ? "bg-[#0d99ff]/15 text-foreground shadow-[inset_2px_0_0_#0d99ff] hover:bg-[#0d99ff]/20" : selected ? "bg-surface-strong text-foreground" : "text-foreground-muted hover:bg-surface-inset hover:text-foreground")}
+                data-multi-selected={multiSelected ? "" : undefined}
+                onClick={(event) => {
+                  if (selecting) togglePicked(frame.id);
+                  else if (onPickScreen) onPickScreen(frame.id, event.shiftKey || event.metaKey || event.ctrlKey);
+                  else onSelect(frame.id);
+                }}
                 title={frame.pageName ? `${frame.name} · ${frame.pageName}` : frame.name}
                 type="button"
               >
@@ -243,7 +256,7 @@ export function FrameNavigator({
                 ) : statusLabel ? (
                   <span className={"shrink-0 whitespace-nowrap rounded-control px-1.5 py-0.5 text-[10px] font-medium leading-4 " + statusTone} title={status ? comparisonFrameStatusLabel(status) : undefined}>{statusLabel}</span>
                 ) : null}
-                <span className="sr-only">Screen {index + 1} of {screens.length}</span>
+                <span className="sr-only">Screen {index + 1} of {screens.length}{multiSelected ? ", selected" : ""}</span>
               </button>
             </li>
           );
