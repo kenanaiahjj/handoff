@@ -321,7 +321,7 @@ function updateLayerAssetReport(capture: CaptureReadyMessage) {
     `${report.exportedCount} exported`,
     `${report.eligibleCount} eligible`,
     report.modeSkippedCount ? `${report.modeSkippedCount} excluded by mode` : "",
-    report.limitSkippedCount ? `${report.limitSkippedCount} skipped by the 256-item cap` : "",
+    report.limitSkippedCount ? `${report.limitSkippedCount} skipped by the ${report.limit.toLocaleString()}-item cap` : "",
     report.sizeSkippedCount ? `${report.sizeSkippedCount} skipped by size limits` : "",
     report.exportFailureCount ? `${report.exportFailureCount} failed` : "",
     report.fallbackCount ? `${report.fallbackCount} used PNG fallback` : "",

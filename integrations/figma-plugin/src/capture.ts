@@ -16,10 +16,14 @@ const allowedRootTypes = new Set(["FRAME", "COMPONENT", "INSTANCE", "COMPONENT_S
 const maxNodes = 50_000;
 const maxStructuredPayloadBytes = MAX_SNAPSHOT_JSON_BYTES;
 const metadataLookupBatchSize = 50;
-const maxLayerExportCount = 256;
-const maxLayerExportBytes = 20 * 1024 * 1024;
+/** Icons, images and vector art saved as their own files per capture; repeats of one icon are saved once. */
+export const maxLayerExportCount = 2000;
+const maxLayerExportBytes = 96 * 1024 * 1024;
 const maxSingleLayerExportBytes = 5 * 1024 * 1024;
-const layerExportBatchSize = 4;
+const layerExportBatchSize = 8;
+const maxIconSize = 96;
+const shapeNodeTypes = new Set(["RECTANGLE", "ELLIPSE", "LINE"]);
+const drawnNodeTypes = new Set(["VECTOR", "BOOLEAN_OPERATION", "POLYGON", "STAR"]);
 const frameRenderBatchSize = 2;
 const vectorAssetNodeTypes = new Set(["VECTOR", "BOOLEAN_OPERATION", "RECTANGLE", "ELLIPSE", "LINE", "POLYGON", "STAR"]);
 const compositeAssetNodeTypes = new Set(["GROUP", "FRAME", "COMPONENT", "INSTANCE", "COMPONENT_SET"]);
@@ -783,24 +787,74 @@ function layerExportPriority(node: SceneNode) {
     const settings = nodeProperty(node, "exportSettings");
     const hasExportSettings = Array.isArray(settings) && settings.length > 0;
     const name = nodeProperty(node, "name");
-    const hasAssetName = typeof name === "string" && /\b(icon|logo|image|photo|avatar|illustration|asset|brand|badge)\b/i.test(name);
+    const named = typeof name === "string" && hasAssetName(node);
     const hasChildren = nodeChildren(node).length > 0;
-    return (image ? 1_000 : 0) + (hasExportSettings ? 500 : 0) + (hasAssetName ? 200 : 0) + (!hasChildren ? 100 : 0);
+    return (image ? 1_000 : 0) + (hasExportSettings ? 500 : 0) + (named ? 200 : 0) + (isIconRoot(node) ? 150 : 0) + (!hasChildren ? 100 : 0);
   } catch {
     return 0;
   }
 }
 
+function hasAssetName(node: SceneNode) {
+  const name = nodeProperty(node, "name");
+  return typeof name === "string" && /\b(icon|logo|image|photo|avatar|illustration|asset|brand|badge|flag|emoji)\b/i.test(name);
+}
+
+/** A small group, frame or instance drawn only from vector shapes: one icon, saved as one file. */
+export function isIconRoot(node: SceneNode) {
+  try {
+    const type = nodeProperty(node, "type");
+    if (typeof type !== "string" || !compositeAssetNodeTypes.has(type)) return false;
+    const rect = safeRectOf(node);
+    if (!rect || rect.width > maxIconSize || rect.height > maxIconSize || rect.width <= 0 || rect.height <= 0) return false;
+    let seen = 0;
+    let drawn = false;
+    const visit = (current: SceneNode): boolean => {
+      for (const child of nodeChildren(current)) {
+        if ((seen += 1) > 300) return false;
+        const childType = nodeProperty(child, "type");
+        if (typeof childType !== "string" || hasImageFill(child)) return false;
+        if (drawnNodeTypes.has(childType) || (shapeNodeTypes.has(childType) && childType !== "RECTANGLE")) drawn = true;
+        else if (!shapeNodeTypes.has(childType) && !compositeAssetNodeTypes.has(childType)) return false;
+        if (!visit(child)) return false;
+      }
+      return true;
+    };
+    return visit(node) && drawn;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Layers worth saving as their own file: images, vector art, icons, and anything the designer marked
+ * for export or named like an asset. Plain rectangles, cards and sections are left to the screenshot.
+ */
 function canExportLayer(node: SceneNode) {
   try {
     if (nodeProperty(node, "visible") !== true) return false;
     const type = nodeProperty(node, "type");
-    if (hasImageFill(node) || type === "IMAGE" || (typeof type === "string" && (vectorAssetNodeTypes.has(type) || compositeAssetNodeTypes.has(type)))) return true;
+    if (hasImageFill(node) || type === "IMAGE") return true;
     const settings = nodeProperty(node, "exportSettings");
-    return Array.isArray(settings) && settings.length > 0;
+    if (Array.isArray(settings) && settings.length > 0) return true;
+    if (typeof type !== "string") return false;
+    if (drawnNodeTypes.has(type)) return true;
+    if (shapeNodeTypes.has(type)) return hasAssetName(node);
+    if (compositeAssetNodeTypes.has(type)) return isIconRoot(node) || hasAssetName(node);
+    return false;
   } catch {
     return false;
   }
+}
+
+/** FNV-1a over the bytes: spots repeats of one icon so it is uploaded once (the plugin has no crypto). */
+function contentFingerprint(contentType: string, bytes: Uint8Array) {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < bytes.length; index += 1) {
+    hash ^= bytes[index];
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return `${contentType}:${bytes.length}:${(hash >>> 0).toString(16)}`;
 }
 
 function safeRectOf(node: SceneNode): Rect | null {
@@ -1150,12 +1204,19 @@ export async function captureFigmaCanvas(
     };
     snapshotFrames.push(frameSnapshot);
 
+    // Layers inside an icon are part of that icon's file, not files of their own.
+    const insideIcon = new Set<string>();
     for (const item of frameNodes) {
       const order = layerCandidateOrder++;
       const sourceNodeId = nodeProperty(item.node, "id");
       const name = nodeProperty(item.node, "name");
+      if (typeof sourceNodeId === "string" && item.parentId && insideIcon.has(item.parentId)) {
+        insideIcon.add(sourceNodeId);
+        continue;
+      }
       const rect = safeRectOf(item.node);
       if (sourceNodeId === entry.root.id || typeof sourceNodeId !== "string" || !canExportLayer(item.node) || !rect || rect.width <= 0 || rect.height <= 0) continue;
+      if (isIconRoot(item.node)) insideIcon.add(sourceNodeId);
       const frameReport = layerFrameReports.get(entry.root.id)!;
       frameReport.eligibleCount += 1;
       const imageLayer = hasImageFill(item.node) || nodeProperty(item.node, "type") === "IMAGE";
@@ -1315,6 +1376,7 @@ export async function captureFigmaCanvas(
   const selectedLayerCandidates = layerCandidates.sort(compareLayerExportCandidates);
   const layerRenders: LayerExportAssetBytes[] = [];
   let layerExportBytes = 0;
+  const savedByContent = new Map<string, LayerExportAssetBytes>();
   let transferBudgetReached = false;
   for (const candidate of selectedLayerCandidates) {
     layerFrameReports.get(candidate.entry.root.id)!.selectedCount += 1;
@@ -1378,6 +1440,18 @@ export async function captureFigmaCanvas(
         continue;
       }
 
+      const fingerprint = contentFingerprint(result.contentType, result.bytes);
+      const repeat = savedByContent.get(fingerprint);
+      if (repeat) {
+        // The same icon again: point this layer at the file already saved.
+        const repeatFrame = snapshotFrames.find((item) => item.sourceFrameId === result.candidate.entry.root.id);
+        const repeatNode = repeatFrame?.nodes.find((item) => item.sourceNodeId === result.candidate.sourceNodeId);
+        if (!repeatNode) { frameReport.exportFailureCount += 1; continue; }
+        repeatNode.sourcePayload.layerExportAssetKey = repeat.key;
+        repeatNode.sourcePayload.layerExportContentType = repeat.contentType;
+        frameReport.exportedCount += 1;
+        continue;
+      }
       const assetIndex = layerRenders.length + 1;
       const slug = assetNameSlug(result.candidate.name);
       const key = `layer-${String(assetIndex).padStart(4, "0")}-${slug}`;
@@ -1405,6 +1479,7 @@ export async function captureFigmaCanvas(
       snapshotNode.sourcePayload.layerExportAssetKey = asset.key;
       snapshotNode.sourcePayload.layerExportContentType = asset.contentType;
       layerRenders.push(asset);
+      savedByContent.set(fingerprint, asset);
       layerExportBytes += asset.bytes.byteLength;
       totalRenderBytes += asset.bytes.byteLength;
       frameReport.exportedCount += 1;

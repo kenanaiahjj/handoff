@@ -1,6 +1,6 @@
 import type { CaptureReadyMessage, LayerAssetFrameReport, LayerAssetReport } from "./types";
 
-export function aggregateLayerAssetReport(mode: LayerAssetReport["mode"], frames: LayerAssetFrameReport[], limit = 256): LayerAssetReport {
+export function aggregateLayerAssetReport(mode: LayerAssetReport["mode"], frames: LayerAssetFrameReport[], limit = 2000): LayerAssetReport {
   const total = frames.reduce((summary, frame) => ({
     eligibleCount: summary.eligibleCount + frame.eligibleCount,
     modeSkippedCount: summary.modeSkippedCount + frame.modeSkippedCount,

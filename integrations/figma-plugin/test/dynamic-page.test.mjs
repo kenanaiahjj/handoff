@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import * as captureModule from "../src/capture.ts";
-import { captureFigmaCanvas } from "../src/capture.ts";
+import { maxLayerExportCount, captureFigmaCanvas } from "../src/capture.ts";
 import { frameRenderCrop } from "../src/render-crop.ts";
 
 function installCaptureFixture({ failHighResolution = false, failPaintRead = false } = {}) {
@@ -821,7 +821,8 @@ test("keeps the frame capture when an individual layer export fails", async () =
 
 test("reports the per-capture layer asset cap while retaining every structured layer", async () => {
   const fixture = installCaptureFixture();
-  const exportableLayers = Array.from({ length: 300 }, (_, index) => ({
+  const total = maxLayerExportCount + 44;
+  const exportableLayers = Array.from({ length: total }, (_, index) => ({
     id: `vector-${index}`,
     type: "VECTOR",
     name: `Vector ${index}`,
@@ -832,7 +833,7 @@ test("reports the per-capture layer asset cap while retaining every structured l
     children: [],
     parent: fixture.frame,
     async exportAsync() {
-      return '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><path d="M0 0h18v18H0z" /></svg>';
+      return `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><path d="M0 0h${index}v18H0z" /></svg>`;
     },
   }));
   fixture.frame.children = exportableLayers;
@@ -841,15 +842,49 @@ test("reports the per-capture layer asset cap while retaining every structured l
   const capturedNodes = result.payload.frames[0].nodes;
   const capWarning = result.warnings.find((warning) => warning.includes("eligible layer assets"));
 
-  assert.equal(capturedNodes.length, exportableLayers.length + 1);
-  assert.equal(capturedNodes.filter((node) => node.sourceNodeId.startsWith("vector-")).length, 300);
-  assert.equal(result.layerRenders.length, 256);
-  assert.equal(result.payload.sourceMetadata.layerExportAssetCount, 256);
+  assert.equal(maxLayerExportCount, 2000);
+  assert.equal(capturedNodes.filter((node) => node.sourceNodeId.startsWith("vector-")).length, total);
+  assert.equal(result.layerRenders.length, maxLayerExportCount);
+  assert.equal(result.payload.sourceMetadata.layerExportAssetCount, maxLayerExportCount);
   assert.equal(result.payload.sourceMetadata.layerExportSkippedCount, 44);
-  assert.equal(result.layerAssetReport.eligibleCount, 300);
-  assert.equal(result.layerAssetReport.selectedCount, 256);
+  assert.equal(result.layerAssetReport.eligibleCount, total);
   assert.equal(result.layerAssetReport.limitSkippedCount, 44);
-  assert.match(capWarning ?? "", /Selected 256 of 300 matching eligible layer assets.*all 300 eligible layers and their captured properties remain available/i);
+  assert.match(capWarning ?? "", new RegExp(`Selected ${maxLayerExportCount} of ${total} matching eligible layer assets`));
+});
+
+test("saves a repeated icon once and points every copy at that file", async () => {
+  const fixture = installCaptureFixture();
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18"><path d="M2 9l5 5 9-9" /></svg>';
+  fixture.frame.children = Array.from({ length: 5 }, (_, index) => ({
+    id: `check-${index}`, type: "VECTOR", name: "Check", visible: true,
+    absoluteBoundingBox: { x: index * 20, y: 20, width: 18, height: 18 }, fills: [], strokes: [], children: [], parent: fixture.frame,
+    async exportAsync() { return svg; },
+  }));
+
+  const result = await captureFigmaCanvas("selected", () => {});
+  const keys = result.payload.frames[0].nodes.filter((node) => node.sourceNodeId.startsWith("check-")).map((node) => node.sourcePayload.layerExportAssetKey);
+
+  assert.equal(result.layerRenders.length, 1);
+  assert.equal(new Set(keys).size, 1);
+  assert.equal(keys[0], result.layerRenders[0].key);
+});
+
+test("an icon is one file; its vector parts and plain rectangles and cards are not saved separately", async () => {
+  const fixture = installCaptureFixture();
+  const svg = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24"><path d="M0 0h24v24H0z" /></svg>';
+  const icon = { id: "icon", type: "INSTANCE", name: "Chevron", visible: true, absoluteBoundingBox: { x: 10, y: 10, width: 24, height: 24 }, fills: [], strokes: [], parent: fixture.frame, async exportAsync() { return svg; } };
+  const path = { id: "icon-path", type: "VECTOR", name: "Vector", visible: true, absoluteBoundingBox: { x: 14, y: 14, width: 16, height: 16 }, fills: [], strokes: [], children: [], parent: icon, async exportAsync() { return svg.replace("h24", "h16"); } };
+  icon.children = [path];
+  const background = { id: "background", type: "RECTANGLE", name: "Rectangle 12", visible: true, absoluteBoundingBox: { x: 0, y: 0, width: 390, height: 200 }, fills: [], strokes: [], children: [], parent: fixture.frame, async exportAsync() { throw new Error("should not export"); } };
+  const label = { id: "label", type: "TEXT", name: "Title", visible: true, absoluteBoundingBox: { x: 0, y: 220, width: 100, height: 20 }, fills: [], strokes: [], children: [], characters: "Title" };
+  const card = { id: "card", type: "FRAME", name: "Card", visible: true, absoluteBoundingBox: { x: 0, y: 210, width: 360, height: 120 }, fills: [], strokes: [], parent: fixture.frame, children: [label], async exportAsync() { throw new Error("should not export"); } };
+  label.parent = card;
+  fixture.frame.children = [icon, background, card];
+
+  const result = await captureFigmaCanvas("selected", () => {});
+
+  assert.deepEqual(result.layerRenders.map((asset) => asset.sourceNodeId), ["icon"]);
+  assert.equal(result.layerAssetReport.eligibleCount, 1);
 });
 
 test("uses 2x renders for multiple small frames even when their combined area is large", async () => {
