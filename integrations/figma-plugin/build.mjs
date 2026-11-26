@@ -21,8 +21,12 @@ const storageOrigin = deriveStorageOrigin(storageUrl);
 const networkAccess = buildPluginNetworkAccess(publicUrl, supabaseUrl, storageUrl);
 
 await mkdir(outputDirectory, { recursive: true });
+// Figma's plugin sandbox has no working BigInt, and zod v4 calls BigInt("…") as soon as it loads, so
+// the plugin failed with "An error occurred while loading the plugin environment". Route every BigInt
+// in code.js through a stand-in; only zod's int64 limits use it, and the plugin never checks bigints.
+const bigIntShim = `var __asbirBigInt=typeof BigInt==="function"?BigInt:function(value){return Number(value)};`;
 const [, uiBuild] = await Promise.all([
-  build({ entryPoints: [path.join(here, "src/code.ts")], outfile: path.join(outputDirectory, "code.js"), bundle: true, platform: "browser", format: "iife", target: ["es2022"], minify: true, legalComments: "none", define: { __ASBIR_HANDOFF_ORIGIN__: JSON.stringify(endpoint.origin) } }),
+  build({ entryPoints: [path.join(here, "src/code.ts")], outfile: path.join(outputDirectory, "code.js"), bundle: true, platform: "browser", format: "iife", target: ["es2022"], minify: true, legalComments: "none", banner: { js: bigIntShim }, define: { __ASBIR_HANDOFF_ORIGIN__: JSON.stringify(endpoint.origin), BigInt: "__asbirBigInt" } }),
   build({ entryPoints: [path.join(here, "src/ui.ts")], outfile: path.join(outputDirectory, "ui.js"), bundle: true, platform: "browser", format: "iife", target: ["es2022"], minify: true, legalComments: "none", define: { __ASBIR_HANDOFF_ORIGIN__: JSON.stringify(endpoint.origin), __ASBIR_STORAGE_ORIGIN__: JSON.stringify(storageOrigin), __ASBIR_PLUGIN_BUILD__: JSON.stringify(buildPlaceholder) }, write: false }),
 ]);
 
