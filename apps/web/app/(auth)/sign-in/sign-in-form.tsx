@@ -82,7 +82,9 @@ export function SignInForm({ redirectTo, googleEnabled, googleError, companyDoma
         setErrorMessage(result.error.message ?? "We couldn't sign you in.");
         return;
       }
-      window.location.assign(redirectTo);
+      // Signing in for an AI client (MCP): the server continues that request and returns where to go.
+      const next = (result.data as { url?: unknown } | null)?.url;
+      window.location.assign(typeof next === "string" && next ? next : redirectTo);
     } catch {
       setErrorMessage("We couldn't reach the sign-in service. Try again.");
     } finally {

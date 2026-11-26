@@ -124,7 +124,7 @@ export default async function PublishedReviewPage({ params, searchParams }: Publ
         reviewShareId={shareId}
         publicReviewShareId={shareId}
         publishedVersionId={handoff.publishedVersionId}
-        canManageIntegrations={false}
+        canManageIntegrations={Boolean(session && access.membershipRole)}
         canManageSharing={false}
         canAnnotate={access.decision.canWrite}
         canComment={access.decision.canComment}

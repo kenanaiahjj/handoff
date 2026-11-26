@@ -2,13 +2,16 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-const source = readFileSync(new URL("./McpConnectionPanel.tsx", import.meta.url), "utf8");
+const panel = readFileSync(new URL("./McpConnectionPanel.tsx", import.meta.url), "utf8");
+const guide = readFileSync(new URL("../integrations/McpConnectGuide.tsx", import.meta.url), "utf8");
 
-test("agent setup explains every MCP scope needed for handoff workflows", () => {
-  const setupStep = source.match(/<li[^>]*>[^<]*<span[^>]*>1<\/span>[\s\S]*?Create a token[\s\S]*?<\/li>/);
-  assert.ok(setupStep, "the first setup step must explain the token scopes");
-  assert.match(setupStep[0], /handoffs:read/);
-  assert.match(setupStep[0], /comments:write[\s\S]*comment/i);
-  assert.match(setupStep[0], /changelog:write[\s\S]*changelog draft/i);
-  assert.match(setupStep[0], /tasks:write[\s\S]*task/i);
+test("the in-canvas panel uses the shared sign-in guide, not a token form", () => {
+  assert.match(panel, /<McpConnectGuide compact \/>/);
+  assert.doesNotMatch(panel, /Create a token/);
+});
+
+test("the guide sets up each client with browser sign-in and no token", () => {
+  assert.match(guide, /claude mcp add --transport http/);
+  assert.match(guide, /codex mcp login asbir-handoff/);
+  assert.match(guide, /No token to copy/);
 });

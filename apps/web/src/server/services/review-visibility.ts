@@ -11,8 +11,10 @@ export type Viewer = { id: string; email: string; role: string };
 export type HandoffNewness = { latestVersionId: string | null; isNew: boolean };
 
 /**
- * Handoffs a reviewer can open: ones with an active invite to their email, plus every handoff
- * in a project where they are the PD in charge. Owners and designers get `null` (no filter).
+ * Handoffs a reviewer, developer or QA can open: published handoffs shared with the workspace or
+ * anyone with the link (the same ones the review page lets any member open), ones with an active
+ * invite to their email, and every handoff in a project they are on or lead as PD. Owners and
+ * designers get `null` (no filter). MCP tokens and the API use this, so it must match the review page.
  */
 export async function visibleHandoffIds(workspaceId: string, viewer: Viewer): Promise<Set<string> | null> {
   if (canSeeWholeWorkspace(viewer.role)) return null;
@@ -23,7 +25,9 @@ export async function visibleHandoffIds(workspaceId: string, viewer: Viewer): Pr
        JOIN project ON project.id = handoff.project_id AND project.workspace_id = handoff.workspace_id
        WHERE handoff.workspace_id = ?
          AND (
-           project.pd_in_charge_user_id = ?
+           (handoff.sharing_mode IN ('workspace', 'anyone')
+             AND handoff.review_share_id IS NOT NULL AND handoff.published_version_id IS NOT NULL)
+           OR project.pd_in_charge_user_id = ?
            OR EXISTS (
              SELECT 1 FROM project_member
              WHERE project_member.project_id = handoff.project_id

@@ -135,3 +135,22 @@ test("a reviewer's MCP token reaches only handoffs shared with that reviewer", a
   await database.prepare("UPDATE project SET pd_in_charge_user_id = 'reviewer' WHERE id = 'project-a'").run();
   assert.deepEqual([...(await visibleHandoffIds("workspace-a", access.viewer))].sort(), ["handoff-a", "handoff-a-other"], "a PD in charge sees the whole project");
 });
+
+test("a developer's MCP token reaches published handoffs shared with the workspace, like the review page", async () => {
+  await database.prepare('INSERT INTO "user" (id, email) VALUES (?, ?)').run("developer", "dev@example.test");
+  await database.prepare("INSERT INTO workspace_membership (workspace_id, user_id, role, created_at) VALUES (?, ?, ?, ?)")
+    .run("workspace-a", "developer", "developer", now);
+  const issued = await createWorkspaceMcpToken({
+    workspaceId: "workspace-a", createdBy: "developer", name: "Developer agent", scopes: ["handoffs:read"], expiresInDays: 1,
+  });
+  const access = await resolveWorkspaceMcpToken(issued.token);
+  assert.equal(access?.viewer.role, "developer");
+  assert.equal((await visibleHandoffIds("workspace-a", access.viewer)).size, 0, "unpublished handoffs stay hidden");
+
+  await database.prepare("UPDATE handoff SET review_share_id = 'share-a', published_version_id = 'version-a', sharing_mode = 'workspace' WHERE id = 'handoff-a'").run();
+  await database.prepare("UPDATE handoff SET review_share_id = 'share-other', published_version_id = 'version-a-other', sharing_mode = 'invited' WHERE id = 'handoff-a-other'").run();
+  await database.prepare("UPDATE handoff SET review_share_id = 'share-b', published_version_id = 'version-b', sharing_mode = 'anyone' WHERE id = 'handoff-b'").run();
+  const allowed = await visibleHandoffIds("workspace-a", access.viewer);
+  assert.deepEqual([...allowed], ["handoff-a"], "workspace-shared handoffs show; invite-only and other workspaces do not");
+  assert.ok(await scopedLoaders(allowed).loadHandoff("workspace-a", "project-a", "handoff-a"));
+});

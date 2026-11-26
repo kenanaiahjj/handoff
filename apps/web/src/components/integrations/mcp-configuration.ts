@@ -1,3 +1,8 @@
+/** The MCP server's URL. AI clients sign in through the browser (OAuth), so no token is needed. */
+export function mcpServerUrl(origin: string) {
+  return new URL("/api/mcp", origin).toString();
+}
+
 export function workspaceMcpEndpoint(origin: string, workspaceId: string) {
   const endpoint = new URL("/api/mcp", origin);
   endpoint.searchParams.set("workspaceId", workspaceId);

@@ -10,7 +10,9 @@ import { canSeeWholeWorkspace, filterProjectsForViewer } from "@/src/server/serv
 import { isSlackEnabled } from "@/src/server/services/slack";
 import { McpTokenManager } from "@/src/components/integrations/McpTokenManager";
 import { CopyPrompt } from "@/src/components/integrations/CopyPrompt";
-import { workspaceMcpEndpoint } from "@/src/components/integrations/mcp-configuration";
+import { McpConnectGuide } from "@/src/components/integrations/McpConnectGuide";
+import { mcpServerUrl } from "@/src/components/integrations/mcp-configuration";
+import { ViewerPageShell } from "@/src/components/shell/ViewerPageShell";
 import { WorkspaceShell } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 
@@ -88,14 +90,29 @@ function mcpPrompt(endpoint: string) {
     "Connect the Asbir Handoff MCP server to this AI client.",
     "",
     `- Server: streamable HTTP at ${endpoint}`,
-    "- Auth: \"Authorization: Bearer <token>\" header. Read the token from the ASBIR_MCP_TOKEN environment variable; never write the token itself into a file or print it.",
-    "- Codex: add [mcp_servers.asbir_handoff] to ~/.codex/config.toml with url and bearer_token_env_var = \"ASBIR_MCP_TOKEN\".",
-    "- Claude Code: add asbir_handoff to the project's .mcp.json with type \"http\", the url, and headers.Authorization = \"Bearer ${ASBIR_MCP_TOKEN}\".",
-    "- Other clients: use that client's own MCP config file and variable syntax.",
+    "- Auth: OAuth. Don't ask me for a token; the client opens a browser where I sign in to Asbir Handoff and click Allow.",
+    "- Claude Code: run `claude mcp add --transport http --scope user asbir-handoff <url>`, then I'll run /mcp and choose Authenticate.",
+    "- Codex: run `codex mcp add asbir-handoff --url <url>`, then `codex mcp login asbir-handoff`.",
+    "- Other clients: add a remote MCP server with that URL in the client's own config.",
     "",
-    "If ASBIR_MCP_TOKEN isn't set, stop and ask me to create a token in Asbir Handoff (Integrations → AI clients) and set it myself.",
     "Then check that the server connects and list its tools.",
   ].join("\n");
+}
+
+/** Tokens are still there for scripts and CI, which can't sign in through a browser. */
+function TokenFallback({ canManageAll, workspaceId }: { canManageAll: boolean; workspaceId: string }) {
+  return (
+    <details className="group rounded-panel border border-border">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 text-[13px] text-foreground">
+        <span>
+          Use a token instead
+          <span className="block text-[12px] text-foreground-subtle">For scripts and CI that can&apos;t sign in through a browser.</span>
+        </span>
+        <svg aria-hidden="true" className="size-3.5 shrink-0 text-foreground-subtle transition-transform group-open:rotate-90" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5" /></svg>
+      </summary>
+      <div className="border-t border-border p-4"><McpTokenManager canManageAll={canManageAll} workspaceId={workspaceId} /></div>
+    </details>
+  );
 }
 
 function slackPrompt() {
@@ -137,13 +154,32 @@ export default async function IntegrationsPage({ params, searchParams }: Integra
 
   const integrations: Array<{ id: IntegrationId; name: string; summary: string; logo: ReactNode; status: string; connected: boolean }> = [
     { id: "figma", name: "Figma", summary: "Capture frames from Figma straight into a handoff.", logo: <FigmaLogo className="h-5" />, status: "", connected: false },
-    { id: "mcp", name: "AI clients", summary: "Let Codex, Claude Code and other MCP clients read handoffs.", logo: <McpLogo className="size-5" />, status: activeTokens ? `${activeTokens} active token${activeTokens === 1 ? "" : "s"}` : "Not connected", connected: activeTokens > 0 },
+    { id: "mcp", name: "AI clients", summary: "Let Claude Code, Codex and other AI tools read handoffs. Sign in once, no tokens.", logo: <McpLogo className="size-5" />, status: activeTokens ? `${activeTokens} active token${activeTokens === 1 ? "" : "s"}` : "", connected: activeTokens > 0 },
     { id: "slack", name: "Slack", summary: "Direct messages for new versions, mentions and the weekly digest.", logo: <SlackLogo className="size-5" />, status: slackOn ? "On" : "Off", connected: slackOn },
   ];
 
   // Reviewers, developers and QA connect their AI tools and see Slack; capturing from Figma is for designers.
   const available = canManage ? integrations : integrations.filter((item) => item.id !== "figma");
   const openParam = (await searchParams).open;
+
+  // Reviewers, developers and QA connect AI tools from an app-like page that matches their home,
+  // not the managers' dashboard.
+  if (!canManage) {
+    return (
+      <ViewerPageShell title={workspace.name}>
+        <h1 className="text-[26px] font-semibold leading-tight tracking-[-0.02em]">Connect your AI tools</h1>
+        <p className="mt-1.5 max-w-xl text-[14px] text-foreground-muted">
+          Let Claude Code, Codex or Cursor read the handoffs shared with you: what changed between versions, before and after screenshots, measurements and comments.
+        </p>
+        <div className="mt-8 space-y-6">
+          <McpConnectGuide />
+          <CopyPrompt prompt={mcpPrompt(mcpServerUrl(origin))} title="Or let your AI set it up" />
+          <TokenFallback canManageAll={false} workspaceId={workspaceId} />
+        </div>
+      </ViewerPageShell>
+    );
+  }
+
   const open = available.find((item) => item.id === (Array.isArray(openParam) ? openParam[0] : openParam));
 
   return (
@@ -199,7 +235,7 @@ export default async function IntegrationsPage({ params, searchParams }: Integra
             </header>
 
             {open.id === "figma" ? <div className="mt-7"><CopyPrompt prompt={figmaPrompt(origin)} /></div> : null}
-            {open.id === "mcp" ? <div className="mt-7"><CopyPrompt prompt={mcpPrompt(workspaceMcpEndpoint(origin, workspaceId))} /></div> : null}
+            {open.id === "mcp" ? <div className="mt-7 space-y-6"><McpConnectGuide /><CopyPrompt prompt={mcpPrompt(mcpServerUrl(origin))} title="Or let your AI set it up" /></div> : null}
             {open.id === "slack" && !slackOn && canManage ? <div className="mt-7"><CopyPrompt prompt={slackPrompt()} /></div> : null}
 
             {open.id === "figma" ? (
@@ -225,7 +261,7 @@ export default async function IntegrationsPage({ params, searchParams }: Integra
             ) : null}
 
             {open.id === "mcp" ? (
-              <div className="mt-7"><McpTokenManager canManageAll={canManage} workspaceId={workspaceId} /></div>
+              <div className="mt-6"><TokenFallback canManageAll={canManage} workspaceId={workspaceId} /></div>
             ) : null}
 
             {open.id === "slack" ? (
