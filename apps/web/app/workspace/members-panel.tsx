@@ -4,23 +4,7 @@ import { Avatar } from "@/src/components/Avatar";
 import { useState } from "react";
 import { useConfirm } from "@/src/components/ConfirmDialog";
 import type { Member } from "@/src/server/services/members";
-
-const roleOptions = [
-  { value: "owner", label: "Owner" },
-  { value: "designer", label: "Designer" },
-  { value: "reviewer", label: "Reviewer" },
-  { value: "developer", label: "Developer" },
-  { value: "qa", label: "QA" },
-] as const;
-
-const jobLabels: Record<string, string> = {
-  designer: "Product designer",
-  dev: "Developer",
-  qa: "QA",
-  pm: "Project manager",
-  marketing: "Marketing",
-  exec: "Executive",
-};
+import { inviteRoleLabel, inviteRoles, memberRoleLabel, memberRoleValue, type InviteRole } from "@/src/lib/team-roles";
 
 /** Team members. Owners change roles, remove people, and approve designer requests. */
 export function MembersPanel({
@@ -64,8 +48,8 @@ export function MembersPanel({
     }
   }
 
-  const changeRole = (member: Member, role: string) =>
-    send(member.id, { method: "PATCH", body: JSON.stringify({ role }) }, `${member.name} is now ${roleOptions.find((option) => option.value === role)?.label.toLowerCase()}.`);
+  const changeRole = (member: Member, role: InviteRole) =>
+    send(member.id, { method: "PATCH", body: JSON.stringify({ jobRole: role }) }, `${member.name} is now ${role === "owner" ? "an owner" : inviteRoleLabel(role)}.`);
 
   async function remove(member: Member) {
     const confirmed = await confirm({
@@ -91,7 +75,7 @@ export function MembersPanel({
                 <button
                   className="h-7 rounded-[7px] bg-[#f4f4f4] px-2.5 text-[11px] font-medium text-[#161616] hover:bg-white disabled:opacity-50"
                   disabled={busy === member.id}
-                  onClick={() => void changeRole(member, "designer")}
+                  onClick={() => void send(member.id, { method: "PATCH", body: JSON.stringify({ role: "designer" }) }, `${member.name} is now a product designer.`)}
                   type="button"
                 >
                   Approve
@@ -124,13 +108,12 @@ export function MembersPanel({
                   {isYou ? <span className="ml-1.5 font-normal text-foreground-subtle">(you)</span> : null}
                 </span>
                 <span className="block truncate text-[11px] text-foreground-subtle">
-                  {member.jobRole ? `${jobLabels[member.jobRole] ?? member.jobRole} · ` : ""}
                   {member.email}
                 </span>
               </span>
               {locked ? (
                 <span className="shrink-0 text-[11px] capitalize text-foreground-muted" >
-                  {roleOptions.find((option) => option.value === member.role)?.label ?? member.role}
+                  {memberRoleLabel(member.role, member.jobRole)}
                 </span>
               ) : (
                 <>
@@ -139,12 +122,11 @@ export function MembersPanel({
                     className="h-7 shrink-0 rounded-[7px] border border-transparent bg-surface-inset px-1.5 text-[11px] max-sm:ml-[38px] max-sm:h-9 max-sm:flex-1 text-foreground outline-none focus-visible:border-foreground/30 disabled:opacity-50"
                     disabled={busy === member.id}
                     id={`member-role-${member.id}`}
-                    onChange={(event) => void changeRole(member, event.target.value)}
-                    value={member.role}
+                    onChange={(event) => void changeRole(member, event.target.value as InviteRole)}
+                    value={memberRoleValue(member.role, member.jobRole)}
                   >
-                    {roleOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
+                    {memberRoleValue(member.role, member.jobRole) === "reviewer" ? <option disabled value="reviewer">Reviewer</option> : null}
+                    {inviteRoles.map((role) => <option key={role} value={role}>{inviteRoleLabel(role)}</option>)}
                   </select>
                   <button
                     aria-label={`Remove ${member.name}`}

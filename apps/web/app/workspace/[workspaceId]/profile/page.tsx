@@ -8,7 +8,7 @@ import { canSeeWholeWorkspace, filterProjectsForViewer } from "@/src/server/serv
 import { WorkspaceShell } from "@/src/components/shell/WorkspaceShell";
 import { createWorkspaceNavigation } from "@/src/components/shell/workspace-navigation";
 import { ProfileForm } from "@/src/components/profile/ProfileForm";
-import { jobRoles, workspaceRoleDetails } from "@/src/lib/team-roles";
+import { inviteRoleLabel, isJobRole, memberRoleLabel, workspaceRoleDetails } from "@/src/lib/team-roles";
 
 export const instant = false;
 
@@ -36,7 +36,9 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
     (await listProjects(workspaceId)) as Array<{ id: string; name: string; handoffCount: number; versionCount: number }>,
   );
   const roleDetail = workspaceRoleDetails.find((detail) => detail.role === workspace.role);
-  const jobLabel = profile.jobRole && profile.jobRole in jobRoles ? jobRoles[profile.jobRole as keyof typeof jobRoles].label : null;
+  // One role: what they do. Owners also keep their job (if they picked one) as a second chip.
+  const roleLabel = memberRoleLabel(workspace.role, profile.jobRole);
+  const jobLabel = workspace.role === "owner" && isJobRole(profile.jobRole) ? inviteRoleLabel(profile.jobRole) : null;
 
   return (
     <WorkspaceShell
@@ -49,7 +51,7 @@ export default async function ProfilePage({ params }: ProfilePageProps) {
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">Profile</h1>
         <p className="mt-2 text-sm leading-6 text-foreground-muted">How you appear to your team on comments, mentions and the team list.</p>
         <section aria-label="Edit profile" className="workspace-pane mt-6 p-5 sm:p-7">
-          <ProfileForm identity={{ roleLabel: roleDetail?.label ?? workspace.role, roleSummary: roleDetail?.summary ?? null, jobLabel }} initial={profile} submitLabel="Save changes" />
+          <ProfileForm identity={{ roleLabel, roleSummary: roleDetail?.summary ?? null, jobLabel }} initial={profile} submitLabel="Save changes" />
         </section>
       </main>
     </WorkspaceShell>

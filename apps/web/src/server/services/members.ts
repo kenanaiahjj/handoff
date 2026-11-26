@@ -1,6 +1,7 @@
 import { getDatabase } from "../db";
 import type { WorkspaceRole } from "../workspace-access";
 import { removeSuperadmin } from "./superadmins";
+import { jobRoleForAccessChange, workspaceRoleForInvite, type InviteRole } from "@/src/lib/team-roles";
 
 export class MemberChangeError extends Error {
   constructor(message: string, readonly status: 400 | 403 | 404 | 409) {
@@ -72,19 +73,35 @@ async function lockWorkspace(workspaceId: string) {
   (await getDatabase().prepare("SELECT id FROM workspace WHERE id = ? FOR UPDATE").get(workspaceId));
 }
 
-export async function changeMemberRole(input: { workspaceId: string; actorId: string; userId: string; role: WorkspaceRole }) {
+/**
+ * Changes someone's role. Pass `jobRole` (what they do: Marketing, QA, Owner…) and their access follows
+ * from it, or `role` to set access directly. Either way the job role is kept in step, so the team
+ * only ever sees one role for a person.
+ */
+export async function changeMemberRole(input: { workspaceId: string; actorId: string; userId: string } & ({ role: WorkspaceRole } | { jobRole: InviteRole })) {
   const database = getDatabase();
+  const role = "jobRole" in input ? (workspaceRoleForInvite(input.jobRole) as WorkspaceRole) : input.role;
   await database.transaction(async () => {
     await lockWorkspace(input.workspaceId);
     const member = (await editableMember(input.workspaceId, input.actorId, input.userId));
-    if (member.role === "owner" && input.role !== "owner" && (await ownerCount(input.workspaceId)) <= 1) {
+    if (member.role === "owner" && role !== "owner" && (await ownerCount(input.workspaceId)) <= 1) {
       throw new MemberChangeError("The team needs at least one owner.", 409);
     }
     (await database
       .prepare("UPDATE workspace_membership SET role = ? WHERE workspace_id = ? AND user_id = ?")
-      .run(input.role, input.workspaceId, input.userId));
+      .run(role, input.workspaceId, input.userId));
+    const current = (await database.prepare("SELECT job_role AS jobRole FROM user_profile WHERE user_id = ?").get(input.userId)) as { jobRole: string | null } | undefined;
+    const job = "jobRole" in input ? (input.jobRole === "owner" ? null : input.jobRole) : jobRoleForAccessChange(role, current?.jobRole ?? null);
+    if (job && job !== current?.jobRole) {
+      (await database
+        .prepare(
+          `INSERT INTO user_profile (user_id, job_role, onboarded_at) VALUES (?, ?, ?)
+           ON CONFLICT (user_id) DO UPDATE SET job_role = excluded.job_role`,
+        )
+        .run(input.userId, job, new Date().toISOString()));
+    }
     // Someone added as an owner by email is re-made owner on each visit; stop that once demoted.
-    if (input.role !== "owner") (await removeSuperadmin(member.email));
+    if (role !== "owner") (await removeSuperadmin(member.email));
     // Any role decision answers a pending designer request.
     (await database.prepare("UPDATE user_profile SET requested_role = NULL WHERE user_id = ?").run(input.userId));
   })();

@@ -52,6 +52,35 @@ export function workspaceRoleForInvite(role: InviteRole): WorkspaceRoleName {
   return jobRoles[role].workspaceRole;
 }
 
+/** The job role a workspace role implies when an owner sets access directly (Reviewer implies none). */
+const jobForWorkspaceRole: Partial<Record<string, JobRole>> = { designer: "designer", developer: "dev", qa: "qa" };
+
+/** Whether a stored job role still agrees with someone's access (a pending designer is still a reviewer). */
+function jobMatchesAccess(job: JobRole, role: string) {
+  return workspaceRoleForInvite(job) === role || jobRoles[job].workspaceRole === role;
+}
+
+/**
+ * The one role people see for a member: what they do (Marketing, QA…), not the access behind it.
+ * A job role left over from onboarding that no longer matches their access is ignored.
+ */
+export function memberRoleValue(role: string, jobRole: string | null): InviteRole | "reviewer" {
+  if (role === "owner") return "owner";
+  if (isJobRole(jobRole) && jobMatchesAccess(jobRole, role)) return jobRole;
+  return jobForWorkspaceRole[role] ?? "reviewer";
+}
+
+export function memberRoleLabel(role: string, jobRole: string | null) {
+  const value = memberRoleValue(role, jobRole);
+  return value === "reviewer" ? "Reviewer" : inviteRoleLabel(value);
+}
+
+/** The job role to store when an owner changes someone's access directly, or null to leave it. */
+export function jobRoleForAccessChange(role: string, currentJob: string | null): JobRole | null {
+  if (isJobRole(currentJob) && jobMatchesAccess(currentJob, role)) return null;
+  return jobForWorkspaceRole[role] ?? null;
+}
+
 /** Label for an older invite stored with only a workspace role. */
 export function workspaceRoleLabel(role: string) {
   return ({ owner: "Owner", designer: "Product designer", reviewer: "Reviewer", developer: "Developer", qa: "QA" } as Record<string, string>)[role] ?? role;

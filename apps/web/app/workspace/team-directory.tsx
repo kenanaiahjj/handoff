@@ -5,7 +5,7 @@ import { profileSubtitle } from "@/src/lib/profile-fields";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useConfirm } from "@/src/components/ConfirmDialog";
 import type { Member } from "@/src/server/services/members";
-import { jobRoles, workspaceRoleDetails } from "@/src/lib/team-roles";
+import { inviteRoleLabel, inviteRoles, jobRoles, memberRoleLabel, memberRoleValue, workspaceRoleDetails, type InviteRole } from "@/src/lib/team-roles";
 import { dayMs, formatLastActive } from "@/src/lib/last-active";
 
 type RoleFilter = "all" | "requests" | Member["role"];
@@ -113,7 +113,7 @@ export function TeamDirectory({
     const needle = query.trim().toLowerCase();
     const filtered = members.filter((member) => {
       if (roleFilter === "requests" ? !member.requestedRole : roleFilter !== "all" && member.role !== roleFilter) return false;
-      return !needle || `${member.name} ${member.email} ${jobLabel(member.jobRole) ?? ""} ${member.title ?? ""} ${member.department ?? ""}`.toLowerCase().includes(needle);
+      return !needle || `${member.name} ${member.email} ${memberRoleLabel(member.role, member.jobRole)} ${member.title ?? ""} ${member.department ?? ""}`.toLowerCase().includes(needle);
     });
     const time = (iso: string | null) => (iso ? new Date(iso).getTime() : 0);
     return filtered.sort((a, b) =>
@@ -141,8 +141,8 @@ export function TeamDirectory({
     }
   }
 
-  async function changeRole(member: Member, role: Member["role"]) {
-    if (role === member.role) return;
+  async function changeRole(member: Member, role: InviteRole) {
+    if (role === memberRoleValue(member.role, member.jobRole)) return;
     if (role === "owner") {
       const confirmed = await confirm({
         title: `Make ${member.name} an owner?`,
@@ -151,7 +151,7 @@ export function TeamDirectory({
       });
       if (!confirmed) return;
     }
-    await send(member, { method: "PATCH", body: JSON.stringify({ role }) }, `${member.name} is now ${roleLabel(role).toLowerCase()}.`);
+    await send(member, { method: "PATCH", body: JSON.stringify({ jobRole: role }) }, `${member.name} is now ${role === "owner" ? "an owner" : inviteRoleLabel(role)}.`);
   }
 
   async function remove(member: Member) {
@@ -164,12 +164,12 @@ export function TeamDirectory({
   }
 
   function exportCsv() {
-    const header = ["Name", "Email", "Role", "Job", "Joined", "Last active"];
+    const header = ["Name", "Email", "Role", "Access", "Joined", "Last active"];
     const rows = shown.map((member) => [
       member.name,
       member.email,
+      memberRoleLabel(member.role, member.jobRole),
       roleLabel(member.role),
-      jobLabel(member.jobRole) ?? "",
       member.joinedAt.slice(0, 10),
       member.lastActiveAt ? member.lastActiveAt.slice(0, 10) : "never",
     ]);
@@ -305,14 +305,14 @@ export function TeamDirectory({
                   {member.requestedRole ? <span className="ml-1.5 rounded-full bg-warning/15 px-1.5 py-px text-[10px] font-medium text-warning">Requested designer</span> : null}
                 </span>
                 <a className="block truncate text-[12px] text-foreground-subtle hover:text-foreground" href={`mailto:${member.email}`}>
-                  {profileSubtitle(member, member.jobRole ? jobLabel(member.jobRole) ?? "" : "")}{member.title || member.department || member.jobRole ? " · " : ""}{member.email}
+                  {profileSubtitle(member)}{member.title || member.department ? " · " : ""}{member.email}
                 </a>
                 <span className="mt-0.5 block text-[11px] text-foreground-subtle sm:hidden">{member.lastActiveAt ? `Active ${lastActive.toLowerCase()}` : lastActive}</span>
               </span>
               <span className="w-28 shrink-0 text-[12px] text-foreground-muted max-sm:hidden" title={`Joined ${new Date(member.joinedAt).toLocaleDateString()}`}>{lastActive}</span>
               <span className="flex w-[13.5rem] shrink-0 items-center gap-1 max-sm:ml-11 max-sm:w-auto">
                 {locked ? (
-                  <span className="flex-1 px-2.5 text-[13px] text-foreground-muted max-sm:px-0">{roleLabel(member.role)}</span>
+                  <span className="flex-1 px-2.5 text-[13px] text-foreground-muted max-sm:px-0" title={`${roleLabel(member.role)} access`}>{memberRoleLabel(member.role, member.jobRole)}</span>
                 ) : (
                   <>
                     <label className="sr-only" htmlFor={`team-role-${member.id}`}>Role for {member.name}</label>
@@ -320,10 +320,12 @@ export function TeamDirectory({
                       className="h-8 min-w-0 flex-1 rounded-control border border-transparent bg-surface-inset pl-2.5 pr-1.5 text-[13px] text-foreground outline-none hover:bg-surface-raised focus-visible:border-foreground/30 disabled:opacity-50 max-sm:h-9 max-sm:w-[160px] max-sm:flex-none"
                       disabled={busy === member.id}
                       id={`team-role-${member.id}`}
-                      onChange={(event) => void changeRole(member, event.target.value as Member["role"])}
-                      value={member.role}
+                      onChange={(event) => void changeRole(member, event.target.value as InviteRole)}
+                      title={`${roleLabel(member.role)} access`}
+                      value={memberRoleValue(member.role, member.jobRole)}
                     >
-                      {workspaceRoleDetails.map((detail) => <option key={detail.role} value={detail.role}>{detail.label}</option>)}
+                      {memberRoleValue(member.role, member.jobRole) === "reviewer" ? <option disabled value="reviewer">Reviewer</option> : null}
+                      {inviteRoles.map((role) => <option key={role} value={role}>{inviteRoleLabel(role)}</option>)}
                     </select>
                   </>
                 )}

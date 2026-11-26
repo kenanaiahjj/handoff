@@ -89,3 +89,29 @@ test("members show when they last used the app, or that they never signed in", a
   assert.equal(members.find((member) => member.id === "riley").lastActiveAt, "2026-11-17T09:30:00.000Z", "the newest session wins");
   assert.equal(members.find((member) => member.id === "dee").lastActiveAt, null);
 });
+
+const jobOf = async (userId) => (await database.prepare("SELECT job_role FROM user_profile WHERE user_id = ?").get(userId))?.job_role;
+
+test("picking what someone does sets their access and replaces their onboarding pick", async () => {
+  await changeMemberRole({ workspaceId: "ws", actorId: "owner", userId: "riley", jobRole: "dev" });
+  assert.equal(await roleOf("riley"), "developer");
+  assert.equal(await jobOf("riley"), "dev");
+
+  await changeMemberRole({ workspaceId: "ws", actorId: "owner", userId: "riley", jobRole: "marketing" });
+  assert.equal(await roleOf("riley"), "reviewer");
+  assert.equal(await jobOf("riley"), "marketing");
+
+  // Making someone an owner keeps what they do.
+  await changeMemberRole({ workspaceId: "ws", actorId: "owner", userId: "riley", jobRole: "owner" });
+  assert.equal(await roleOf("riley"), "owner");
+  assert.equal(await jobOf("riley"), "marketing");
+});
+
+test("setting access directly keeps a stale onboarding pick from showing", async () => {
+  await database.prepare("UPDATE user_profile SET job_role = 'qa' WHERE user_id = 'riley'").run();
+  await changeMemberRole({ workspaceId: "ws", actorId: "owner", userId: "riley", role: "developer" });
+  assert.equal(await jobOf("riley"), "dev");
+  // Someone with no profile row (an older invite) gets one.
+  await changeMemberRole({ workspaceId: "ws", actorId: "owner", userId: "admin", role: "qa" });
+  assert.equal(await jobOf("admin"), "qa");
+});

@@ -17,3 +17,12 @@ test("each invite role grants the matching access", () => {
   // Self sign-up as a designer still starts as a reviewer until approved.
   assert.equal(jobRoles.designer.workspaceRole, "reviewer");
 });
+
+test("a member shows one role: what they do, ignoring a stale onboarding pick", async () => {
+  const { memberRoleLabel } = await import("./team-roles.ts");
+  assert.equal(memberRoleLabel("developer", "qa"), "Developer");
+  assert.equal(memberRoleLabel("reviewer", "marketing"), "Marketing");
+  assert.equal(memberRoleLabel("reviewer", "designer"), "Product designer");
+  assert.equal(memberRoleLabel("reviewer", null), "Reviewer");
+  assert.equal(memberRoleLabel("owner", "pm"), "Owner");
+});
