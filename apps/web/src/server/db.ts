@@ -207,9 +207,17 @@ function isLocalDatabaseUrl(connectionString: string) {
   return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
 }
 
-function databasePoolMax() {
-  const configured = Number(process.env.DATABASE_POOL_MAX ?? "");
-  return Number.isInteger(configured) && configured >= 1 && configured <= 50 ? configured : 5;
+/**
+ * On Vercel every instance opens its own pool, and a canvas loading hundreds of images spins up many
+ * instances at once. Supabase's pooler refuses everyone past 200 clients (EMAXCONN), so deployed
+ * instances keep at most 2 connections whatever DATABASE_POOL_MAX says.
+ */
+export const MAX_SERVERLESS_POOL_SIZE = 2;
+
+export function databasePoolMax(env: NodeJS.ProcessEnv = process.env) {
+  const configured = Number(env.DATABASE_POOL_MAX ?? "");
+  const size = Number.isInteger(configured) && configured >= 1 && configured <= 50 ? configured : 5;
+  return env.VERCEL ? Math.min(size, MAX_SERVERLESS_POOL_SIZE) : size;
 }
 
 function createPool() {
