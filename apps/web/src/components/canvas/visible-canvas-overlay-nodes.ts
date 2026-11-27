@@ -14,7 +14,40 @@ type VisibleCanvasOverlayInput = {
   minimumTargetSize?: number;
   selectedNodeId?: string | null;
   highlightedNodeIds?: readonly string[];
+  /** Extra room around the viewport, as a fraction of its size on each side. */
+  margin?: number;
+  /** The zoom the minimum target size is judged at (defaults to `scale`). */
+  targetScale?: number;
 };
+
+/** An area of the canvas in its own pixels (from the canvas's top-left). */
+export type CanvasRegion = { left: number; right: number; top: number; bottom: number };
+
+/** The part of the canvas the viewport shows, grown by `margin` of the viewport's size on each side. */
+export function visibleCanvasRegion(input: {
+  frameWidth: number;
+  frameHeight: number;
+  viewportWidth: number;
+  viewportHeight: number;
+  offsetX: number;
+  offsetY: number;
+  scale: number;
+  margin?: number;
+}): CanvasRegion {
+  const { frameWidth, frameHeight, viewportWidth, viewportHeight, offsetX, offsetY, scale, margin = 0 } = input;
+  const padX = viewportWidth * margin;
+  const padY = viewportHeight * margin;
+  return {
+    left: frameWidth / 2 + (-viewportWidth / 2 - padX - offsetX) / scale,
+    right: frameWidth / 2 + (viewportWidth / 2 + padX - offsetX) / scale,
+    top: frameHeight / 2 + (-viewportHeight / 2 - padY - offsetY) / scale,
+    bottom: frameHeight / 2 + (viewportHeight / 2 + padY - offsetY) / scale,
+  };
+}
+
+export function regionContains(outer: CanvasRegion, inner: CanvasRegion) {
+  return inner.left >= outer.left && inner.right <= outer.right && inner.top >= outer.top && inner.bottom <= outer.bottom;
+}
 
 export function getVisibleCanvasOverlayNodes(input: VisibleCanvasOverlayInput) {
   const {
@@ -41,12 +74,7 @@ export function getVisibleCanvasOverlayNodes(input: VisibleCanvasOverlayInput) {
     !Number.isFinite(viewportHeight) || viewportHeight <= 0
   ) return [];
 
-  const visibleBounds = {
-    left: frameWidth / 2 + (-viewportWidth / 2 - offsetX) / scale,
-    right: frameWidth / 2 + (viewportWidth / 2 - offsetX) / scale,
-    top: frameHeight / 2 + (-viewportHeight / 2 - offsetY) / scale,
-    bottom: frameHeight / 2 + (viewportHeight / 2 - offsetY) / scale,
-  };
+  const visibleBounds = visibleCanvasRegion({ frameWidth, frameHeight, viewportWidth, viewportHeight, offsetX, offsetY, scale, margin: input.margin });
   const highlighted = new Set(highlightedNodeIds);
 
   return nodes.filter((node) => {
@@ -70,6 +98,7 @@ export function getVisibleCanvasOverlayNodes(input: VisibleCanvasOverlayInput) {
     ) return false;
 
     const explicitlyEmphasized = node.sourceNodeId === selectedNodeId || highlighted.has(node.sourceNodeId);
-    return explicitlyEmphasized || (width * scale >= minimumTargetSize && height * scale >= minimumTargetSize);
+    const targetScale = input.targetScale ?? scale;
+    return explicitlyEmphasized || (width * targetScale >= minimumTargetSize && height * targetScale >= minimumTargetSize);
   });
 }

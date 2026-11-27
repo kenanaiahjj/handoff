@@ -28,7 +28,7 @@ import { CopyNotice, showCopyNotice } from "./CopyNotice";
 import { copyScreensImage } from "./screen-image";
 import { useCanvasEyedropper } from "./useCanvasEyedropper";
 import { useCanvasMarkup } from "./useCanvasMarkup";
-import { useCanvasPresence } from "./useCanvasPresence";
+import { firstName, presenceColor, useCanvasPresence } from "./useCanvasPresence";
 import { PresenceAvatars } from "./PresenceAvatars";
 import { MarkupBar } from "./MarkupBar";
 import { stepOpenThread, visibleThreadIds, type CommentFilter } from "../comments/comment-filters";
@@ -574,12 +574,48 @@ export function HandoffCanvas({
   const [canvasTool, setCanvasTool] = useState<"eyedropper" | "draw" | null>(null);
   const eyedropper = useCanvasEyedropper(canvasScreens, canvasTool === "eyedropper");
   const markup = useCanvasMarkup(`asbir-markup:${handoffId}:${metadata.selectedVersionId}`, screens, canvasTool === "draw");
+  // Follow: whose view this canvas copies, if anyone's. Any pan or zoom of your own stops it.
+  const [followingUserId, setFollowingUserId] = useState<string | null>(null);
+  const viewportControlsRef = useRef(viewportControls);
+  useEffect(() => {
+    viewportControlsRef.current = viewportControls;
+  });
+  const getPageView = useCallback(() => viewportControlsRef.current?.getPageView() ?? null, []);
+  const presenceFollow = useMemo(() => ({ getView: getPageView, following: followingUserId }), [followingUserId, getPageView]);
   const presence = useCanvasPresence(
     `/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/presence`,
     metadata.selectedVersionId,
     screens,
     selectedFrame?.id ?? null,
+    presenceFollow,
   );
+  const followedViewer = followingUserId ? presence.viewers.find((viewer) => viewer.userId === followingUserId) ?? null : null;
+  const stopFollowing = useCallback(() => setFollowingUserId(null), []);
+  // Stop when they leave or go to another version.
+  const followedGone = Boolean(followingUserId) && (!followedViewer || followedViewer.versionId !== metadata.selectedVersionId);
+  if (followedGone) setFollowingUserId(null);
+  // Older clients send no view; then following just waits until they do.
+  const followedView = followedViewer?.view ?? null;
+  const followedViewKey = followedView ? `${followedView.x},${followedView.y},${followedView.width},${followedView.height}` : null;
+  const viewportReady = viewportControls !== null;
+  useEffect(() => {
+    if (!followingUserId || !followedView || !viewportReady) return;
+    viewportControlsRef.current?.showPageRect(followedView);
+    // Only a change in their view (or a newly ready viewport) moves yours.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [followingUserId, followedViewKey, viewportReady]);
+  useEffect(() => {
+    if (!followingUserId) return;
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") setFollowingUserId(null);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [followingUserId]);
+  const followViewer = useCallback((userId: string) => {
+    setFollowingUserId((current) => (current === userId ? null : userId));
+  }, []);
+  const overviewOrigin = useMemo(() => ({ sourceX: overviewFrame.sourceX, sourceY: overviewFrame.sourceY }), [overviewFrame.sourceX, overviewFrame.sourceY]);
   const presenceScreenNames = useMemo(() => Object.fromEntries(screens.map((screen) => [screen.id, screen.name])), [screens]);
   const presenceVersionLabels = useMemo(() => Object.fromEntries(metadata.versions.map((version) => [version.id, version.versionLabel])), [metadata.versions]);
   const { overlay: markupOverlay } = markup;
@@ -1618,7 +1654,9 @@ export function HandoffCanvas({
         <div className="flex shrink-0 items-center gap-1">
           <div className="mr-1 hidden sm:block">
             <PresenceAvatars
-              onJump={focusScreen}
+              followers={presence.followers}
+              following={followingUserId}
+              onFollow={followViewer}
               screenNames={presenceScreenNames}
               versionId={metadata.selectedVersionId}
               versionLabels={presenceVersionLabels}
@@ -2109,9 +2147,19 @@ export function HandoffCanvas({
           />
         </div>
         <CopyNotice />
+        {followedViewer ? (
+          <>
+            <div aria-hidden="true" className="pointer-events-none absolute inset-0 z-20 border-2" style={{ borderColor: presenceColor(followedViewer.userId) }} />
+            <div className="absolute left-1/2 top-3 z-30 flex -translate-x-1/2 items-center gap-2 rounded-full py-1 pl-3 pr-1 text-xs font-medium text-white shadow-lg" role="status" style={{ backgroundColor: presenceColor(followedViewer.userId) }}>
+              <span>Following {firstName(followedViewer.name) || "them"}</span>
+              <button className="rounded-full bg-black/20 px-2 py-0.5 hover:bg-black/30 focus-visible:outline-2 focus-visible:outline-white" onClick={stopFollowing} title="Stop following (Esc)" type="button">Stop</button>
+            </div>
+          </>
+        ) : null}
         <CanvasViewport
           frame={visualFrame}
-          overviewOrigin={{ sourceX: overviewFrame.sourceX, sourceY: overviewFrame.sourceY }}
+          overviewOrigin={overviewOrigin}
+          onUserMove={followingUserId ? stopFollowing : undefined}
           interactionMode={removalSelecting ? "select" : canvasTool ? "view" : canvasMode}
           pointerTool={canvasTool === "draw" ? markup.pointerTool : canvasTool === "eyedropper" ? eyedropper.pointerTool : null}
           layerOverlay={layerOverlay}

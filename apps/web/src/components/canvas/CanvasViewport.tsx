@@ -3,11 +3,11 @@
 import Image from "next/image";
 import { RetryingCanvasImage } from "./RetryingImage";
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent, type PointerEvent, type ReactNode } from "react";
-import type { CanvasFrameChangeStatus, CanvasFrameOption } from "./FrameNavigator";
-import { useCanvasViewport } from "./useCanvasViewport";
+import type { CanvasFrameChangeStatus, CanvasFrameOption, CanvasOverlayNode } from "./FrameNavigator";
+import { glideMs, useCanvasViewport } from "./useCanvasViewport";
 import { attachCanvasWheelZoom } from "./canvas-wheel-zoom";
 import { getCanvasImageRenderPlan } from "./canvas-image-plan";
-import { getVisibleCanvasOverlayNodes } from "./visible-canvas-overlay-nodes";
+import { getVisibleCanvasOverlayNodes, regionContains, visibleCanvasRegion, type CanvasRegion } from "./visible-canvas-overlay-nodes";
 import { canvasAnchorAtPoint, canvasAnchorToViewportPoint } from "./canvas-anchor";
 import { CommentPin, type HandoffComment } from "../comments/CommentPin";
 import type { PendingCommentPoint } from "../comments/CommentThread";
@@ -55,6 +55,17 @@ function cutOutMaskStyle(rects: CanvasFrameOption["maskRects"]) {
   } as const;
 }
 
+type OverlayCullInputs = readonly unknown[];
+type OverlayCull = { inputs: OverlayCullInputs; region: CanvasRegion; nodes: readonly CanvasOverlayNode[] };
+const emptyOverlayNodes: readonly CanvasOverlayNode[] = [];
+/** Extra room kept around the view for clickable layers, as a fraction of the viewport per side. */
+const overlayMargin = 0.25;
+
+/** True when both lists hold the same node objects in the same order (a new version brings new objects). */
+function sameOverlayNodes<T>(a: readonly T[], b: readonly T[]) {
+  return a.length === b.length && a.every((node, index) => node === b[index]);
+}
+
 /** A point in Figma page units: the space screens' sourceX / sourceY are in. */
 export type CanvasPagePoint = { x: number; y: number };
 
@@ -81,7 +92,14 @@ export type CanvasViewportControls = {
   fitToFrame: () => void;
   zoomOut: () => void;
   zoomIn: () => void;
+  /** Shows this area of the page (Figma page units) as large as it fits, gliding there (Follow). */
+  showPageRect: (rect: CanvasPageRect) => void;
+  /** The area of the page on screen now, in Figma page units. */
+  getPageView: () => CanvasPageRect | null;
 };
+
+/** An area in Figma page units. */
+export type CanvasPageRect = { x: number; y: number; width: number; height: number };
 
 type CanvasViewportProps = {
   frame: CanvasFrameOption;
@@ -146,6 +164,8 @@ type CanvasViewportProps = {
   /** True while the details panel slides over the canvas's right side (tablets), so selections are kept clear of it. */
   detailsDrawerOpen?: boolean;
   onCompareNode?: (sourceNodeId: string) => void;
+  /** Called when the person pans or zooms themselves (Follow stops then). */
+  onUserMove?: () => void;
   /** Drawing, the eyedropper: gets the pointer instead of pan, select and click. */
   pointerTool?: CanvasPointerTool | null;
   /** Drawn on top of the screens, inside the zoomed layer (strokes, other people's cursors). */
@@ -302,6 +322,7 @@ export function CanvasViewport({
   pointerTool = null,
   layerOverlay,
   onPointerPageMove,
+  onUserMove,
 }: CanvasViewportProps) {
   const toolPointerRef = useRef<number | null>(null);
   const dragRef = useRef<{ pointerId: number; x: number; y: number; startX: number; startY: number; moved: boolean } | null>(null);
@@ -331,16 +352,17 @@ export function CanvasViewport({
     }
     return Number.isFinite(minX) ? { x: minX, y: minY, width: maxX - minX, height: maxY - minY } : null;
   }, [frame.kind, frame.sourceX, frame.sourceY, screens]);
-  const { containerRef, viewportSize, transform, interacting, fitted, fitToFrame, zoomToRect, centerOn, zoomBy, zoomAt, panBy } = useCanvasViewport(
+  const { containerRef, viewportSize, transform, interacting, gliding, showRect, getViewRect, fitted, fitToFrame, zoomToRect, centerOn, zoomBy, zoomAt, panBy } = useCanvasViewport(
     frame.sourceWidth,
     frame.sourceHeight,
     viewMemoryKey,
     screensRect,
+    onUserMove,
   );
   const [minimapVisible, setMinimapVisible] = useState(true);
   useEffect(() => {
     try {
-      // eslint-disable-next-line react-hooks/set-state-in-effect -- the preference lives in localStorage, only readable after mount.
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- the preference lives in localStorage, only readable after mount.
       if (localStorage.getItem("asbir.canvas.minimap") === "0") setMinimapVisible(false);
     } catch {
       // Storage blocked: the minimap just shows.
@@ -353,7 +375,13 @@ export function CanvasViewport({
     fitToFrame,
     zoomOut: () => zoomBy(1 / 1.2),
     zoomIn: () => zoomBy(1.2),
-  }), [fitToFrame, scaleSource, zoomBy]);
+    // Page units are the canvas layer's pixels plus the frame's page position.
+    showPageRect: (rect) => showRect({ ...rect, x: rect.x - frame.sourceX, y: rect.y - frame.sourceY }),
+    getPageView: () => {
+      const view = getViewRect();
+      return view ? { ...view, x: view.x + frame.sourceX, y: view.y + frame.sourceY } : null;
+    },
+  }), [fitToFrame, frame.sourceX, frame.sourceY, getViewRect, scaleSource, showRect, zoomBy]);
   const visibleScreenIds = useMemo(() => new Set(screens.map((screen) => screen.id)), [screens]);
 
   useEffect(() => onViewportChange(controls), [controls, onViewportChange]);
@@ -749,10 +777,18 @@ export function CanvasViewport({
     else if (!screen && interactionMode === "select") onMarqueeSelect?.([], event.shiftKey || event.metaKey || event.ctrlKey);
   }
 
-  const marqueePreview = marquee ? new Set(screensInMarquee(marquee.rect, screens, { x: frame.sourceX, y: frame.sourceY })) : null;
-  const commentPins = layoutCommentPins(comments, screens, frame, showResolvedPins, overviewOrigin)
-    .filter(({ comment }) => !visibleCommentIds || visibleCommentIds.has(comment.id) || comment.id === selectedCommentId);
-  const annotationPins = annotations.flatMap((annotation) => {
+  // Everything below that doesn't depend on the pan or zoom is memoised, so a gesture frame only
+  // re-renders the moving layer's transform and the few overlays that follow the viewport.
+  const marqueePreview = useMemo(
+    () => marquee ? new Set(screensInMarquee(marquee.rect, screens, { x: frame.sourceX, y: frame.sourceY })) : null,
+    [frame.sourceX, frame.sourceY, marquee, screens],
+  );
+  const commentPins = useMemo(
+    () => layoutCommentPins(comments, screens, frame, showResolvedPins, overviewOrigin)
+      .filter(({ comment }) => !visibleCommentIds || visibleCommentIds.has(comment.id) || comment.id === selectedCommentId),
+    [comments, frame, overviewOrigin, screens, selectedCommentId, showResolvedPins, visibleCommentIds],
+  );
+  const annotationPins = useMemo(() => annotations.flatMap((annotation) => {
     const position = canvasAnchorToViewportPoint(annotation, frame, screens, overviewOrigin);
     if (!position) return [];
     return [{
@@ -760,7 +796,7 @@ export function CanvasViewport({
       x: position.x,
       y: position.y,
     }];
-  });
+  }), [annotations, frame, overviewOrigin, screens]);
   // Borders, labels and image sizes follow the zoom only once a gesture settles. While zooming they
   // stay as they were, so the canvas layer's content doesn't change and the browser can scale the
   // picture it already drew instead of redrawing every screen on every frame.
@@ -875,40 +911,45 @@ export function CanvasViewport({
   }), [changedNodeIds, frame, overlayNodesById]);
   const selectedBounds = selectedNodeId ? overlayNodesById.get(selectedNodeId)?.bounds : undefined;
   const hoveredBounds = hoveredNodeId ? overlayNodesById.get(hoveredNodeId)?.bounds : undefined;
-  const visibleOverlayNodes = useMemo(() => {
-    if (interactionMode !== "inspect" && !commentMode && !annotationMode) return [];
-    return getVisibleCanvasOverlayNodes({
-      nodes: overlayNodes,
-      frameWidth: frame.sourceWidth,
-      frameHeight: frame.sourceHeight,
-      frameOriginX: frame.kind === "overview" ? frame.sourceX : 0,
-      frameOriginY: frame.kind === "overview" ? frame.sourceY : 0,
-      viewportWidth: viewportSize.width,
-      viewportHeight: viewportSize.height,
-      offsetX: transform.offsetX,
-      offsetY: transform.offsetY,
-      scale: transform.scale,
-      selectedNodeId,
-      highlightedNodeIds,
-    });
-  }, [
-    annotationMode,
-    commentMode,
-    frame.kind,
-    frame.sourceHeight,
-    frame.sourceWidth,
-    frame.sourceX,
-    frame.sourceY,
-    highlightedNodeIds,
-    interactionMode,
-    overlayNodes,
-    selectedNodeId,
-    transform.offsetX,
-    transform.offsetY,
-    transform.scale,
-    viewportSize.height,
-    viewportSize.width,
-  ]);
+  // Clickable layers: those in a region a quarter-viewport larger than the view on each side. The
+  // list is kept while the view stays inside that region and the inputs are unchanged, so a pan
+  // doesn't re-scan every layer and rebuild the buttons each frame. Tiny layers become clickable at
+  // the zoom a gesture settles on, like the borders and labels.
+  const overlayActive = interactionMode === "inspect" || commentMode || annotationMode;
+  const overlayOriginX = frame.kind === "overview" ? frame.sourceX : 0;
+  const overlayOriginY = frame.kind === "overview" ? frame.sourceY : 0;
+  const viewGeometry = {
+    frameWidth: frame.sourceWidth,
+    frameHeight: frame.sourceHeight,
+    viewportWidth: viewportSize.width,
+    viewportHeight: viewportSize.height,
+    offsetX: transform.offsetX,
+    offsetY: transform.offsetY,
+    scale: transform.scale,
+  };
+  const [overlayCull, setOverlayCull] = useState<OverlayCull | null>(null);
+  const overlayInputs: OverlayCullInputs = [overlayActive, overlayNodes, visualScale, selectedNodeId, highlightedNodeIds, overlayOriginX, overlayOriginY, frame.sourceWidth, frame.sourceHeight, viewportSize.width, viewportSize.height];
+  const overlayCullFits = overlayCull !== null &&
+    overlayCull.inputs.every((value, index) => value === overlayInputs[index]) &&
+    (!overlayActive || regionContains(overlayCull.region, visibleCanvasRegion(viewGeometry)));
+  let visibleOverlayNodes = overlayCull?.nodes ?? emptyOverlayNodes;
+  if (!overlayCullFits) {
+    const nodes = overlayActive
+      ? getVisibleCanvasOverlayNodes({
+          nodes: overlayNodes,
+          ...viewGeometry,
+          targetScale: visualScale,
+          frameOriginX: overlayOriginX,
+          frameOriginY: overlayOriginY,
+          margin: overlayMargin,
+          selectedNodeId,
+          highlightedNodeIds,
+        })
+      : emptyOverlayNodes;
+    const kept = overlayCull && sameOverlayNodes(overlayCull.nodes, nodes) ? overlayCull.nodes : nodes;
+    visibleOverlayNodes = kept;
+    setOverlayCull({ inputs: overlayInputs, region: visibleCanvasRegion({ ...viewGeometry, margin: overlayMargin }), nodes: kept });
+  }
   useEffect(() => {
     overlayNodesRef.current = overlayNodesById;
   });
@@ -930,6 +971,269 @@ export function CanvasViewport({
     .map((guide) => (guide.axis === "horizontal" ? "Horizontal" : "Vertical") + " gap " + formatPrecisePixelValue(guide.distance) + " pixels")
     .join(". ");
 
+  const sectionsLayer = useMemo(() => (
+    <>{
+frame.kind === "overview" && frame.exact ? frame.sections?.map((section) => (
+            // Under the screens (z-index -1 stays inside this transformed layer), like a section in Figma.
+            <div
+              aria-hidden="true"
+              className="pointer-events-none absolute"
+              key={"section:" + section.id}
+              style={{
+                left: section.x,
+                top: section.y,
+                width: section.width,
+                height: section.height,
+                zIndex: -1,
+                backgroundColor: section.fill ?? undefined,
+                border: inverseScale + "px solid rgba(255, 255, 255, 0.16)",
+                borderRadius: 4 * inverseScale,
+              }}
+            >
+              {section.width * visualScale >= 72 ? (
+                // Above the section's top-left corner, like Figma, so it never covers the screens inside.
+                <span
+                  className="absolute max-w-full truncate rounded-chip bg-surface/95 font-medium text-foreground-muted shadow-sm"
+                  style={{
+                    left: 0,
+                    bottom: "100%",
+                    marginBottom: 4 * inverseScale,
+                    maxWidth: section.width,
+                    padding: 3 * inverseScale + "px " + 7 * inverseScale + "px",
+                    borderRadius: 7 * inverseScale,
+                    fontSize: 12 * inverseScale,
+                    lineHeight: 1.3,
+                  }}
+                  title={section.name}
+                >
+                  {section.name}
+                </span>
+              ) : null}
+            </div>
+          )) : null
+    }</>
+  ), [frame.exact, frame.kind, frame.sections, inverseScale, visualScale]);
+
+  const baseImageLayer = useMemo(() => (
+    <>{
+imageRenderPlan.showBaseImage ? (
+            <RetryingCanvasImage
+              alt={(frame.fileName.toLowerCase().endsWith(".svg") ? "Figma vector render: " : "Frozen design render: ") + frame.name}
+              className="pointer-events-none select-none object-fill"
+              draggable={false}
+              height={frame.pixelHeight}
+              priority
+              src={frame.imageSrc}
+              style={{ width: frame.sourceWidth, height: frame.sourceHeight, ...cutOutMaskStyle(frame.maskRects), clipPath: overviewClipPath(frame.keepRects) }}
+              unoptimized
+              width={frame.pixelWidth}
+            />
+          ) : null
+    }</>
+  ), [frame.fileName, frame.imageSrc, frame.keepRects, frame.maskRects, frame.name, frame.pixelHeight, frame.pixelWidth, frame.sourceHeight, frame.sourceWidth, imageRenderPlan.showBaseImage]);
+
+  const screenFramesLayer = useMemo(() => (
+    <>{
+frame.kind === "overview" && frame.exact ? stableInViewScreens.map((screen) => {
+            const status = frameStatuses[screen.id];
+            // While a box is being dragged, show what letting go would select.
+            const boxed = marqueePreview?.has(screen.id) ?? false;
+            const multiSelected = boxed || (selectedScreenIds?.has(screen.id) && (!marquee || marquee.additive));
+            const label = changesVisible ? statusLabel(status) : null;
+            const selected = screen.id === selectedFrameId;
+            const showLabel = shouldShowCanvasFrameLabel(visualScale, selected, screens.length);
+              const isNew = label === "New";
+              const statusBorderColor = label === "Changed" ? "#e3a13a" : isNew ? "#55c987" : null;
+              const borderColor = label === "Changed" ? "#e3a13a" : isNew ? "#55c987" : selected ? "#888888" : "#4c4c4c";
+            return (
+              <div
+                className="pointer-events-none absolute"
+                key={screen.id}
+                style={{
+                  left: screen.sourceX - frame.sourceX,
+                  top: screen.sourceY - frame.sourceY,
+                  width: screen.sourceWidth,
+                  height: screen.sourceHeight,
+                  border: statusBorderColor ? (selected ? 3 : 1.5) * inverseScale + "px solid " + statusBorderColor : undefined,
+                  outline: multiSelected ? 2 * inverseScale + "px solid " + marqueeColor : undefined,
+                }}
+                data-multi-selected={multiSelected ? "" : undefined}
+              >
+                  {pickedFrameIds?.has(screen.id) ? (
+                    <span aria-hidden="true" className="absolute inset-0 grid place-items-center bg-black/55 outline outline-danger" style={{ outlineWidth: 3 * inverseScale }}>
+                      <span className="whitespace-nowrap rounded-full bg-danger font-semibold text-white shadow-lg" style={{ fontSize: 12 * inverseScale, padding: `${4 * inverseScale}px ${10 * inverseScale}px` }}>
+                        Removing
+                      </span>
+                    </span>
+                  ) : null}
+                  {showLabel ? (
+                    <div
+                    className="pointer-events-auto absolute inset-x-0 z-20 flex items-center gap-1 whitespace-nowrap"
+                  style={{
+                    bottom: "100%",
+                    marginBottom: 4 * inverseScale,
+                  }}
+                >
+                    <button
+                      aria-label={"Select screen " + screen.name + (label ? ", " + label : "")}
+                        aria-pressed={selected}
+                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-chip bg-surface/95 text-left text-foreground-muted shadow-sm hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+                      onClick={(event) => onSelectFrame(screen.id, { shiftKey: event.shiftKey })}
+                      style={{
+                        minHeight: 24 * inverseScale + "px",
+                        borderRadius: 7 * inverseScale + "px",
+                        padding: 3 * inverseScale + "px " + 6 * inverseScale + "px",
+                        fontSize: 12 * inverseScale + "px",
+                        lineHeight: 1.3,
+                        border: "1px solid " + borderColor,
+                      }}
+                      type="button"
+                    >
+                      <span className="min-w-0 flex-1 truncate" title={screen.name}>{screen.name}</span>
+                      {label ? (
+                        <span
+                          className="shrink-0 rounded-chip font-medium"
+                          style={{
+                            padding: 2 * inverseScale + "px " + 4 * inverseScale + "px",
+                            borderRadius: 4 * inverseScale + "px",
+                            fontSize: 10 * inverseScale + "px",
+                            color: isNew ? "#76e0a5" : "#ffca71",
+                            backgroundColor: isNew ? "#173b2b" : "#46351e",
+                          }}
+                        >
+                          {label}
+                        </span>
+                      ) : null}
+                    </button>
+                    {canCompare && status === "changed" ? (
+                      <button
+                        aria-label={"Compare " + screen.name + " before and after this version"}
+                        className="rounded-chip border border-border-strong bg-surface-muted/95 px-1.5 py-0.5 text-foreground-muted shadow-sm hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
+                        onClick={() => onCompareScreen(screen.id)}
+                        style={{ minHeight: 24 * inverseScale + "px", borderRadius: 7 * inverseScale + "px", padding: 3 * inverseScale + "px " + 6 * inverseScale + "px", fontSize: 11 * inverseScale + "px" }}
+                        type="button"
+                      >
+                        Compare
+                      </button>
+                    ) : null}
+                    </div>
+                  ) : null}
+              </div>
+            );
+          }) : null
+    }</>
+  ), [canCompare, changesVisible, frame.exact, frame.kind, frame.sourceX, frame.sourceY, frameStatuses, inverseScale, marquee, marqueePreview, onCompareScreen, onSelectFrame, pickedFrameIds, screens.length, selectedFrameId, selectedScreenIds, stableInViewScreens, visualScale]);
+
+  const changedRectsLayer = useMemo(() => (
+    <>{
+changedRects.map(({ nodeId, rect }) => (
+            <span
+              aria-hidden="true"
+              className="canvas-changed-outline pointer-events-none absolute"
+              key={"changed:" + nodeId}
+              style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height, borderWidth: 1.5 * inverseScale, borderRadius: 2 * inverseScale }}
+            />
+          ))
+    }</>
+  ), [changedRects, inverseScale]);
+
+  const annotationPinsLayer = useMemo(() => (
+    <>{
+annotationPins.map(({ annotation, x, y }) => (
+            <button
+              aria-label={`Canvas note: ${annotation.title}. ${annotation.body}`}
+              className={"absolute z-20 max-w-none rounded-control border px-2.5 py-2 text-left shadow-xl " + (annotation.id === selectedAnnotationId ? "border-[#f3ce7e] bg-[#f4d89e] text-[#34260f]" : "border-[#d2b774] bg-[#f3dfb5] text-[#3e321a] hover:bg-[#f7e6c5]")}
+              data-canvas-annotation
+              key={annotation.id}
+              onClick={() => onSelectAnnotation(annotation.id)}
+              style={{
+                left: x + 10 * inverseScale,
+                top: y + 10 * inverseScale,
+                width: 230,
+                transform: `scale(${inverseScale})`,
+                transformOrigin: "top left",
+              }}
+              type="button"
+            >
+              <span aria-hidden="true" className="absolute -left-[5px] -top-[5px] size-2.5 rounded-full border border-[#423719] bg-[#f3bd5e]" />
+              <span className="block font-semibold">{annotation.title}</span>
+              <span className="mt-1 block whitespace-pre-wrap break-words">{annotation.body}</span>
+              <span className="mt-1.5 block border-t border-black/15 pt-1 text-[0.8em] text-[#685734]">{annotation.authorName}</span>
+            </button>
+          ))
+    }</>
+  ), [annotationPins, inverseScale, onSelectAnnotation, selectedAnnotationId]);
+
+  const commentPinsLayer = useMemo(() => (
+    <>{
+commentPins.map(({ comment, index }) => (
+            <span data-comment-pin key={comment.id}>
+              <CommentPin
+                comment={comment}
+                index={index}
+                inverseScale={inverseScale}
+                selected={comment.id === selectedCommentId}
+                onSelect={onSelectComment}
+              />
+            </span>
+          ))
+    }</>
+  ), [commentPins, inverseScale, onSelectComment, selectedCommentId]);
+
+  const overlayButtonsLayer = useMemo(() => (
+    <>{
+visibleOverlayNodes.map((node) => {
+            const x = node.bounds.x.value === null ? null : node.bounds.x.value - (frame.kind === "overview" ? frame.sourceX : 0);
+            const y = node.bounds.y.value === null ? null : node.bounds.y.value - (frame.kind === "overview" ? frame.sourceY : 0);
+            const width = node.bounds.width.value;
+            const height = node.bounds.height.value;
+            if (x === null || y === null || width === null || height === null || width <= 0 || height <= 0) return null;
+            const isSelected = node.sourceNodeId === selectedNodeId;
+            const isHighlighted = highlightedNodeIdSet.has(node.sourceNodeId);
+            return (
+              <button
+                aria-hidden="true"
+                aria-label={"Select " + node.name + ", " + node.type + ", " + formatPrecisePixelValue(node.bounds.x.value ?? x) + ", " + formatPrecisePixelValue(node.bounds.y.value ?? y)}
+                tabIndex={-1}
+                className={"absolute rounded-[2px] outline-none transition-colors focus-visible:border-2 focus-visible:border-white " + (isSelected ? "border-2 border-[#e3a13a] bg-[#e3a13a]/20" : isHighlighted ? "border border-[#e3a13a] bg-[#e3a13a]/15" : outlinesVisible ? "border border-white/30 hover:border-white/80 hover:bg-white/10" : "border border-transparent hover:border-white/70 hover:bg-white/10")}
+                data-source-node-id={node.sourceNodeId}
+                key={node.sourceNodeId}
+                onClick={(event) => {
+                  if (suppressClickRef.current) {
+                    suppressClickRef.current = false;
+                    event.preventDefault();
+                    return;
+                  }
+                  if (commentMode || annotationMode) return;
+                  if (event.altKey && selectedNodeId && selectedNodeId !== node.sourceNodeId) {
+                    // Keep this measurement on the canvas.
+                    const pair: [string, string] = [selectedNodeId, node.sourceNodeId];
+                    setPinnedPairs((current) => current.some(([a, b]) => (a === pair[0] && b === pair[1]) || (a === pair[1] && b === pair[0])) ? current : [...current, pair]);
+                    return;
+                  }
+                  if (event.shiftKey && onCompareNode) {
+                    onCompareNode(node.sourceNodeId);
+                    return;
+                  }
+                  onSelectNode(node.sourceNodeId);
+                }}
+                onDoubleClick={(event) => {
+                  if (commentMode || annotationMode || event.altKey || event.shiftKey) return;
+                  zoomToNode(node.sourceNodeId);
+                }}
+                onMouseEnter={() => { if (interactionMode === "inspect") setHoveredNode({ nodeId: node.sourceNodeId, frameId: frame.id }); }}
+                onMouseLeave={() => { if (interactionMode === "inspect") setHoveredNode(null); }}
+                style={{ left: x, top: y, width, height }}
+                type="button"
+              />
+            );
+          })
+    }</>
+  ), [annotationMode, commentMode, frame.id, frame.kind, frame.sourceX, frame.sourceY, highlightedNodeIdSet, interactionMode, onCompareNode, onSelectNode, outlinesVisible, selectedNodeId, visibleOverlayNodes, zoomToNode]);
+  const layerOverlayContent = useMemo(
+    () => layerOverlay?.({ inverseScale, originX: frame.sourceX, originY: frame.sourceY }),
+    [frame.sourceX, frame.sourceY, inverseScale, layerOverlay],
+  );
   const composePopover = commentPopover?.pendingPoint && pendingCommentPosition ? (
     <CanvasCommentPopover
       flip={popoverFlips(pendingCommentPosition.x)}
@@ -1019,61 +1323,13 @@ export function CanvasViewport({
             visibility: fitted ? undefined : "hidden",
             transformOrigin: "center center",
             // Its own GPU layer only while moving; afterwards it's redrawn sharp at the new zoom.
-            willChange: interacting ? "transform" : undefined,
+            willChange: interacting || gliding ? "transform" : undefined,
+            transition: gliding ? `transform ${glideMs}ms cubic-bezier(0.22, 1, 0.36, 1)` : undefined,
           }}
         >
-          {frame.kind === "overview" && frame.exact ? frame.sections?.map((section) => (
-            // Under the screens (z-index -1 stays inside this transformed layer), like a section in Figma.
-            <div
-              aria-hidden="true"
-              className="pointer-events-none absolute"
-              key={"section:" + section.id}
-              style={{
-                left: section.x,
-                top: section.y,
-                width: section.width,
-                height: section.height,
-                zIndex: -1,
-                backgroundColor: section.fill ?? undefined,
-                border: inverseScale + "px solid rgba(255, 255, 255, 0.16)",
-                borderRadius: 4 * inverseScale,
-              }}
-            >
-              {section.width * visualScale >= 72 ? (
-                // Above the section's top-left corner, like Figma, so it never covers the screens inside.
-                <span
-                  className="absolute max-w-full truncate rounded-chip bg-surface/95 font-medium text-foreground-muted shadow-sm"
-                  style={{
-                    left: 0,
-                    bottom: "100%",
-                    marginBottom: 4 * inverseScale,
-                    maxWidth: section.width,
-                    padding: 3 * inverseScale + "px " + 7 * inverseScale + "px",
-                    borderRadius: 7 * inverseScale,
-                    fontSize: 12 * inverseScale,
-                    lineHeight: 1.3,
-                  }}
-                  title={section.name}
-                >
-                  {section.name}
-                </span>
-              ) : null}
-            </div>
-          )) : null}
+          {sectionsLayer}
 
-          {imageRenderPlan.showBaseImage ? (
-            <RetryingCanvasImage
-              alt={(frame.fileName.toLowerCase().endsWith(".svg") ? "Figma vector render: " : "Frozen design render: ") + frame.name}
-              className="pointer-events-none select-none object-fill"
-              draggable={false}
-              height={frame.pixelHeight}
-              priority
-              src={frame.imageSrc}
-              style={{ width: frame.sourceWidth, height: frame.sourceHeight, ...cutOutMaskStyle(frame.maskRects), clipPath: overviewClipPath(frame.keepRects) }}
-              unoptimized
-              width={frame.pixelWidth}
-            />
-          ) : null}
+          {baseImageLayer}
 
           {imageRenderPlan.showFrameImages ? (
             <CanvasScreenImages
@@ -1100,93 +1356,7 @@ export function CanvasViewport({
               : frame.kind === "frame" ? <LayoutGridOverlay frame={frame} /> : null
             : null}
 
-            {frame.kind === "overview" && frame.exact ? stableInViewScreens.map((screen) => {
-            const status = frameStatuses[screen.id];
-            // While a box is being dragged, show what letting go would select.
-            const boxed = marqueePreview?.has(screen.id) ?? false;
-            const multiSelected = boxed || (selectedScreenIds?.has(screen.id) && (!marquee || marquee.additive));
-            const label = changesVisible ? statusLabel(status) : null;
-            const selected = screen.id === selectedFrameId;
-            const showLabel = shouldShowCanvasFrameLabel(visualScale, selected, screens.length);
-              const isNew = label === "New";
-              const statusBorderColor = label === "Changed" ? "#e3a13a" : isNew ? "#55c987" : null;
-              const borderColor = label === "Changed" ? "#e3a13a" : isNew ? "#55c987" : selected ? "#888888" : "#4c4c4c";
-            return (
-              <div
-                className="pointer-events-none absolute"
-                key={screen.id}
-                style={{
-                  left: screen.sourceX - frame.sourceX,
-                  top: screen.sourceY - frame.sourceY,
-                  width: screen.sourceWidth,
-                  height: screen.sourceHeight,
-                  border: statusBorderColor ? (selected ? 3 : 1.5) * inverseScale + "px solid " + statusBorderColor : undefined,
-                  outline: multiSelected ? 2 * inverseScale + "px solid " + marqueeColor : undefined,
-                }}
-                data-multi-selected={multiSelected ? "" : undefined}
-              >
-                  {pickedFrameIds?.has(screen.id) ? (
-                    <span aria-hidden="true" className="absolute inset-0 grid place-items-center bg-black/55 outline outline-danger" style={{ outlineWidth: 3 * inverseScale }}>
-                      <span className="whitespace-nowrap rounded-full bg-danger font-semibold text-white shadow-lg" style={{ fontSize: 12 * inverseScale, padding: `${4 * inverseScale}px ${10 * inverseScale}px` }}>
-                        Removing
-                      </span>
-                    </span>
-                  ) : null}
-                  {showLabel ? (
-                    <div
-                    className="pointer-events-auto absolute inset-x-0 z-20 flex items-center gap-1 whitespace-nowrap"
-                  style={{
-                    bottom: "100%",
-                    marginBottom: 4 * inverseScale,
-                  }}
-                >
-                    <button
-                      aria-label={"Select screen " + screen.name + (label ? ", " + label : "")}
-                        aria-pressed={selected}
-                      className="flex min-w-0 flex-1 items-center gap-1.5 rounded-chip bg-surface/95 text-left text-foreground-muted shadow-sm hover:bg-surface-raised focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
-                      onClick={(event) => onSelectFrame(screen.id, { shiftKey: event.shiftKey })}
-                      style={{
-                        minHeight: 24 * inverseScale + "px",
-                        borderRadius: 7 * inverseScale + "px",
-                        padding: 3 * inverseScale + "px " + 6 * inverseScale + "px",
-                        fontSize: 12 * inverseScale + "px",
-                        lineHeight: 1.3,
-                        border: "1px solid " + borderColor,
-                      }}
-                      type="button"
-                    >
-                      <span className="min-w-0 flex-1 truncate" title={screen.name}>{screen.name}</span>
-                      {label ? (
-                        <span
-                          className="shrink-0 rounded-chip font-medium"
-                          style={{
-                            padding: 2 * inverseScale + "px " + 4 * inverseScale + "px",
-                            borderRadius: 4 * inverseScale + "px",
-                            fontSize: 10 * inverseScale + "px",
-                            color: isNew ? "#76e0a5" : "#ffca71",
-                            backgroundColor: isNew ? "#173b2b" : "#46351e",
-                          }}
-                        >
-                          {label}
-                        </span>
-                      ) : null}
-                    </button>
-                    {canCompare && status === "changed" ? (
-                      <button
-                        aria-label={"Compare " + screen.name + " before and after this version"}
-                        className="rounded-chip border border-border-strong bg-surface-muted/95 px-1.5 py-0.5 text-foreground-muted shadow-sm hover:bg-surface-raised hover:text-white focus-visible:outline focus-visible:outline-2 focus-visible:outline-white"
-                        onClick={() => onCompareScreen(screen.id)}
-                        style={{ minHeight: 24 * inverseScale + "px", borderRadius: 7 * inverseScale + "px", padding: 3 * inverseScale + "px " + 6 * inverseScale + "px", fontSize: 11 * inverseScale + "px" }}
-                        type="button"
-                      >
-                        Compare
-                      </button>
-                    ) : null}
-                    </div>
-                  ) : null}
-              </div>
-            );
-          }) : null}
+          {screenFramesLayer}
 
           {marquee ? (
             <div
@@ -1204,61 +1374,9 @@ export function CanvasViewport({
             />
           ) : null}
 
-          {changedRects.map(({ nodeId, rect }) => (
-            <span
-              aria-hidden="true"
-              className="canvas-changed-outline pointer-events-none absolute"
-              key={"changed:" + nodeId}
-              style={{ left: rect.x, top: rect.y, width: rect.width, height: rect.height, borderWidth: 1.5 * inverseScale, borderRadius: 2 * inverseScale }}
-            />
-          ))}
+          {changedRectsLayer}
 
-          {visibleOverlayNodes.map((node) => {
-            const x = node.bounds.x.value === null ? null : node.bounds.x.value - (frame.kind === "overview" ? frame.sourceX : 0);
-            const y = node.bounds.y.value === null ? null : node.bounds.y.value - (frame.kind === "overview" ? frame.sourceY : 0);
-            const width = node.bounds.width.value;
-            const height = node.bounds.height.value;
-            if (x === null || y === null || width === null || height === null || width <= 0 || height <= 0) return null;
-            const isSelected = node.sourceNodeId === selectedNodeId;
-            const isHighlighted = highlightedNodeIdSet.has(node.sourceNodeId);
-            return (
-              <button
-                aria-hidden="true"
-                aria-label={"Select " + node.name + ", " + node.type + ", " + formatPrecisePixelValue(node.bounds.x.value ?? x) + ", " + formatPrecisePixelValue(node.bounds.y.value ?? y)}
-                tabIndex={-1}
-                className={"absolute rounded-[2px] outline-none transition-colors focus-visible:border-2 focus-visible:border-white " + (isSelected ? "border-2 border-[#e3a13a] bg-[#e3a13a]/20" : isHighlighted ? "border border-[#e3a13a] bg-[#e3a13a]/15" : outlinesVisible ? "border border-white/30 hover:border-white/80 hover:bg-white/10" : "border border-transparent hover:border-white/70 hover:bg-white/10")}
-                data-source-node-id={node.sourceNodeId}
-                key={node.sourceNodeId}
-                onClick={(event) => {
-                  if (suppressClickRef.current) {
-                    suppressClickRef.current = false;
-                    event.preventDefault();
-                    return;
-                  }
-                  if (commentMode || annotationMode) return;
-                  if (event.altKey && selectedNodeId && selectedNodeId !== node.sourceNodeId) {
-                    // Keep this measurement on the canvas.
-                    const pair: [string, string] = [selectedNodeId, node.sourceNodeId];
-                    setPinnedPairs((current) => current.some(([a, b]) => (a === pair[0] && b === pair[1]) || (a === pair[1] && b === pair[0])) ? current : [...current, pair]);
-                    return;
-                  }
-                  if (event.shiftKey && onCompareNode) {
-                    onCompareNode(node.sourceNodeId);
-                    return;
-                  }
-                  onSelectNode(node.sourceNodeId);
-                }}
-                onDoubleClick={(event) => {
-                  if (commentMode || annotationMode || event.altKey || event.shiftKey) return;
-                  zoomToNode(node.sourceNodeId);
-                }}
-                onMouseEnter={() => { if (interactionMode === "inspect") setHoveredNode({ nodeId: node.sourceNodeId, frameId: frame.id }); }}
-                onMouseLeave={() => { if (interactionMode === "inspect") setHoveredNode(null); }}
-                style={{ left: x, top: y, width, height }}
-                type="button"
-              />
-            );
-          })}
+          {overlayButtonsLayer}
 
           {interactionMode === "inspect" && hoveredRect && hoveredOverlayNode && !distanceGuides.length && !isDragging && !spaceHeld ? (
             // Name and size of the layer under the pointer, like Figma's hover label.
@@ -1296,40 +1414,9 @@ export function CanvasViewport({
             <span className="sr-only" role="status">{pinnedPairs.length} pinned {pinnedPairs.length === 1 ? "measurement" : "measurements"}. Press Escape to clear.</span>
           ) : null}
 
-          {annotationPins.map(({ annotation, x, y }) => (
-            <button
-              aria-label={`Canvas note: ${annotation.title}. ${annotation.body}`}
-              className={"absolute z-20 max-w-none rounded-control border px-2.5 py-2 text-left shadow-xl " + (annotation.id === selectedAnnotationId ? "border-[#f3ce7e] bg-[#f4d89e] text-[#34260f]" : "border-[#d2b774] bg-[#f3dfb5] text-[#3e321a] hover:bg-[#f7e6c5]")}
-              data-canvas-annotation
-              key={annotation.id}
-              onClick={() => onSelectAnnotation(annotation.id)}
-              style={{
-                left: x + 10 * inverseScale,
-                top: y + 10 * inverseScale,
-                width: 230,
-                transform: `scale(${inverseScale})`,
-                transformOrigin: "top left",
-              }}
-              type="button"
-            >
-              <span aria-hidden="true" className="absolute -left-[5px] -top-[5px] size-2.5 rounded-full border border-[#423719] bg-[#f3bd5e]" />
-              <span className="block font-semibold">{annotation.title}</span>
-              <span className="mt-1 block whitespace-pre-wrap break-words">{annotation.body}</span>
-              <span className="mt-1.5 block border-t border-black/15 pt-1 text-[0.8em] text-[#685734]">{annotation.authorName}</span>
-            </button>
-          ))}
+          {annotationPinsLayer}
 
-          {commentPins.map(({ comment, index }) => (
-            <span data-comment-pin key={comment.id}>
-              <CommentPin
-                comment={comment}
-                index={index}
-                inverseScale={inverseScale}
-                selected={comment.id === selectedCommentId}
-                onSelect={onSelectComment}
-              />
-            </span>
-          ))}
+          {commentPinsLayer}
 
           {commentPopover && pendingCommentPosition && commentPopover.pendingPoint ? (
             <>
@@ -1344,7 +1431,7 @@ export function CanvasViewport({
             </>
           ) : null}
           {sheetComments ? null : threadPopover}
-          {layerOverlay?.({ inverseScale, originX: frame.sourceX, originY: frame.sourceY })}
+          {layerOverlayContent}
         </div>
         {sheetComments ? composePopover ?? threadPopover : null}
         <span aria-atomic="true" aria-live="polite" className="sr-only">{distanceAnnouncement}</span>
@@ -1412,6 +1499,20 @@ function CanvasMinimap({
     width: viewportWidth / transform.scale,
     height: viewportHeight / transform.scale,
   };
+  // The screens don't move while the view does, so only the view box re-renders as you pan.
+  const screenRects = useMemo(() => screens.map((screen) => (
+        <span
+          className={"absolute rounded-[1px] " + (screen.id === selectedFrameId ? "bg-[#e3a13a]/80" : "bg-white/25")}
+          key={screen.id}
+          style={{
+            left: (screen.sourceX - originX - box.x) * ratio,
+            top: (screen.sourceY - originY - box.y) * ratio,
+            width: Math.max(1.5, screen.sourceWidth * ratio),
+            height: Math.max(1.5, screen.sourceHeight * ratio),
+          }}
+        />
+      ))
+  , [box.x, box.y, originX, originY, ratio, screens, selectedFrameId]);
   const draggingRef = useRef(false);
 
   function centerAt(event: PointerEvent<HTMLDivElement>) {
@@ -1441,18 +1542,7 @@ function CanvasMinimap({
       style={{ width, height }}
       title="Minimap (M)"
     >
-      {screens.map((screen) => (
-        <span
-          className={"absolute rounded-[1px] " + (screen.id === selectedFrameId ? "bg-[#e3a13a]/80" : "bg-white/25")}
-          key={screen.id}
-          style={{
-            left: (screen.sourceX - originX - box.x) * ratio,
-            top: (screen.sourceY - originY - box.y) * ratio,
-            width: Math.max(1.5, screen.sourceWidth * ratio),
-            height: Math.max(1.5, screen.sourceHeight * ratio),
-          }}
-        />
-      ))}
+      {screenRects}
       <span
         className="pointer-events-none absolute rounded-[2px] border border-white/80 bg-white/[0.06]"
         style={{

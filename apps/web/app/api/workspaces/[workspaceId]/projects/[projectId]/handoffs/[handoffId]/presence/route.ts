@@ -10,10 +10,17 @@ const heartbeatSchema = z.object({
   screenId: z.string().min(1).max(256).nullable(),
   x: coordinate,
   y: coordinate,
+  view: z.object({
+    x: z.number().finite().min(-1e7).max(1e7),
+    y: z.number().finite().min(-1e7).max(1e7),
+    width: z.number().finite().positive().max(1e7),
+    height: z.number().finite().positive().max(1e7),
+  }).nullable().optional(),
+  following: z.string().min(1).max(200).nullable().optional(),
   leaving: z.boolean().optional(),
 });
 
-/** Live presence: send where you are on the canvas, get back who else has this handoff open. */
+/** Live presence: send where you are on the canvas (and whose view you follow), get back who else has it open. */
 export async function POST(request: Request, context: PresenceRoute) {
   const { workspaceId, handoffId } = await context.params;
   try {
@@ -26,7 +33,9 @@ export async function POST(request: Request, context: PresenceRoute) {
       return Response.json({ viewers: [] });
     }
     const viewers = await heartbeatCanvasPresence({ handoffId, userId: access.userId, ...parsed.data });
-    return Response.json({ viewers }, { headers: { "Cache-Control": "no-store" } });
+    // Who is following you, so the canvas can say so.
+    const followers = viewers.filter((viewer) => viewer.following === access.userId).map((viewer) => viewer.userId);
+    return Response.json({ viewers, followers }, { headers: { "Cache-Control": "no-store" } });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });
     throw error;

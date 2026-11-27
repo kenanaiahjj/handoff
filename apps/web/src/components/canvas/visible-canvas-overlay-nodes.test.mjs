@@ -91,3 +91,15 @@ test("limits a 31,500-node overview to the 150 targets in the visible screen", (
   assert.equal(visible.length, 150);
   assert.ok(visible.every((entry) => entry.sourceNodeId.startsWith("screen-0-")));
 });
+
+test("a margin keeps targets just past the viewport edge, so panning a little needs no new list", async () => {
+  const { visibleCanvasRegion, regionContains } = await import("./visible-canvas-overlay-nodes.ts");
+  const base = { frameWidth: 300, frameHeight: 300, viewportWidth: 100, viewportHeight: 100, offsetX: 0, offsetY: 0, scale: 1 };
+  const nodes = [node("in-margin", 210, 140, 20, 20)];
+  assert.deepEqual(getVisibleCanvasOverlayNodes({ nodes, ...base }).map((entry) => entry.sourceNodeId), []);
+  assert.deepEqual(getVisibleCanvasOverlayNodes({ nodes, ...base, margin: 0.25 }).map((entry) => entry.sourceNodeId), ["in-margin"]);
+  const padded = visibleCanvasRegion({ ...base, margin: 0.25 });
+  assert.deepEqual(padded, { left: 75, right: 225, top: 75, bottom: 225 });
+  assert.equal(regionContains(padded, visibleCanvasRegion({ ...base, offsetX: -20 })), true);
+  assert.equal(regionContains(padded, visibleCanvasRegion({ ...base, offsetX: -30 })), false);
+});

@@ -11,6 +11,8 @@ export interface CanvasTransform {
 // Low enough that Fit shows a whole large Figma page (some are 25,000+ px wide).
 const MIN_SCALE = 0.01;
 const MAX_SCALE = 5;
+/** How long a view moved for you (Follow) takes to glide into place. */
+export const glideMs = 450;
 
 const viewMemoryPrefix = "asbir-canvas-view:";
 
@@ -39,8 +41,19 @@ type CanvasRect = { x: number; y: number; width: number; height: number };
  * `fitRect` is the part of the canvas Fit should show (the screens), when that's smaller than the
  * whole canvas: a capture of a few screens spread over a big Figma page would otherwise fit at 1%.
  */
-export function useCanvasViewport(frameWidth: number, frameHeight: number, memoryKey: string | null = null, fitRect: CanvasRect | null = null) {
+export function useCanvasViewport(
+  frameWidth: number,
+  frameHeight: number,
+  memoryKey: string | null = null,
+  fitRect: CanvasRect | null = null,
+  /** Called when the person moves the view themselves (not when `showRect` moves it for them). */
+  onUserMove?: () => void,
+) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const onUserMoveRef = useRef(onUserMove);
+  useEffect(() => {
+    onUserMoveRef.current = onUserMove;
+  });
   const fitRectRef = useRef(fitRect);
   useEffect(() => {
     fitRectRef.current = fitRect;
@@ -85,6 +98,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
 
   /** A gesture step: builds on the newest view (including steps not yet drawn) and draws next frame. */
   const updateTransform = useCallback((update: (current: CanvasTransform) => CanvasTransform) => {
+    onUserMoveRef.current?.();
     latestRef.current = update(latestRef.current);
     markInteracting();
     if (frameRequestRef.current !== null) return;
@@ -185,6 +199,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
   }, [memoryKey, transform]);
 
   const fitByUser = useCallback(() => {
+    onUserMoveRef.current?.();
     touchedRef.current = true;
     restoreRef.current = null;
     fitToFrame();
@@ -194,6 +209,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
   const zoomToRect = useCallback((rect: { x: number; y: number; width: number; height: number }) => {
     const container = containerRef.current;
     if (!container || rect.width <= 0 || rect.height <= 0) return;
+    onUserMoveRef.current?.();
     const bounds = container.getBoundingClientRect();
     const scale = Math.max(
       MIN_SCALE,
@@ -211,6 +227,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
   }, [frameHeight, frameWidth, setTransform]);
 
   const zoomBy = useCallback((factor: number) => {
+    onUserMoveRef.current?.();
     touchedRef.current = true;
     const current = latestRef.current;
     setTransform({ ...current, scale: Math.max(MIN_SCALE, Math.min(MAX_SCALE, current.scale * factor)) });
@@ -241,6 +258,7 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
 
   /** Moves the view so a canvas point (pixels from the canvas's top-left) is in the middle, keeping the zoom. */
   const centerOn = useCallback((x: number, y: number) => {
+    onUserMoveRef.current?.();
     touchedRef.current = true;
     restoreRef.current = null;
     const current = latestRef.current;
@@ -260,11 +278,63 @@ export function useCanvasViewport(frameWidth: number, frameHeight: number, memor
     }));
   }, [updateTransform]);
 
+  // A short glide when the view is moved for the person (Follow), so the jump is easy to follow.
+  const [gliding, setGliding] = useState(false);
+  const glideTimerRef = useRef<number | null>(null);
+  useEffect(() => () => {
+    if (glideTimerRef.current !== null) window.clearTimeout(glideTimerRef.current);
+  }, []);
+
+  /** Shows exactly this area (canvas pixels from the top-left), as large as fits, without the 100% cap. */
+  const showRect = useCallback((rect: CanvasRect) => {
+    const container = containerRef.current;
+    if (!container || rect.width <= 0 || rect.height <= 0) return;
+    const bounds = container.getBoundingClientRect();
+    const scale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, bounds.width / rect.width, bounds.height / rect.height));
+    const next = {
+      scale,
+      offsetX: -(rect.x + rect.width / 2 - frameWidth / 2) * scale,
+      offsetY: -(rect.y + rect.height / 2 - frameHeight / 2) * scale,
+    };
+    const current = latestRef.current;
+    if (Math.abs(next.scale - current.scale) / current.scale < 0.002 && Math.abs(next.offsetX - current.offsetX) < 1 && Math.abs(next.offsetY - current.offsetY) < 1) return;
+    touchedRef.current = true;
+    restoreRef.current = null;
+    setFitted(true);
+    if (!window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      setGliding(true);
+      if (glideTimerRef.current !== null) window.clearTimeout(glideTimerRef.current);
+      glideTimerRef.current = window.setTimeout(() => {
+        glideTimerRef.current = null;
+        setGliding(false);
+      }, glideMs);
+    }
+    setTransform(next);
+  }, [frameHeight, frameWidth, setTransform]);
+
+  /** The area on screen now, in canvas pixels from the top-left (null before layout). */
+  const getViewRect = useCallback((): CanvasRect | null => {
+    const container = containerRef.current;
+    if (!container) return null;
+    const { width, height } = container.getBoundingClientRect();
+    if (width <= 0 || height <= 0) return null;
+    const { scale, offsetX, offsetY } = latestRef.current;
+    return {
+      x: (-offsetX - width / 2) / scale + frameWidth / 2,
+      y: (-offsetY - height / 2) / scale + frameHeight / 2,
+      width: width / scale,
+      height: height / scale,
+    };
+  }, [frameHeight, frameWidth]);
+
   return {
     containerRef,
     viewportSize,
     transform,
     interacting,
+    gliding,
+    showRect,
+    getViewRect,
     fitted,
     fitToFrame: fitByUser,
     zoomToRect,
