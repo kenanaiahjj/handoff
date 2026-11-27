@@ -37,6 +37,7 @@ type ProjectHandoff = {
   latestVersionAt: string | null;
   publishedVersionId: string | null;
   sharingMode: "workspace" | "invited" | "anyone";
+  archivedAt: string | null;
 };
 
 export default async function ProjectPage({ params }: ProjectPageProps) {
@@ -63,7 +64,9 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
   const visible = (await visibleHandoffIds(workspaceId, viewer));
   const visibleHandoffs = allHandoffs.filter((handoff) => !visible || visible.has(handoff.id));
   if (visible && !visibleHandoffs.length) notFound();
-  const handoffs = visibleHandoffs;
+  // Archived handoffs leave the main list; owners and designers find them under "Archived".
+  const handoffs = visibleHandoffs.filter((handoff) => !handoff.archivedAt);
+  const archivedHandoffs = canManageHandoffs ? visibleHandoffs.filter((handoff) => handoff.archivedAt) : [];
   if (!workspace) notFound();
   const [newness, projects] = await Promise.all([
     handoffNewness(session.user.id, handoffs.map((handoff) => handoff.id)),
@@ -134,7 +137,7 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
           <section aria-labelledby="handoff-list-title" className="min-w-0" id="handoffs">
             <div className="mb-3 flex items-baseline gap-2">
               <h2 className="text-[14px] font-semibold text-foreground" id="handoff-list-title">Handoffs</h2>
-              <span className="font-mono text-[11px] text-foreground-subtle">{visibleHandoffs.length}</span>
+              <span className="font-mono text-[11px] text-foreground-subtle">{handoffs.length}</span>
             </div>
             {handoffs.length ? (
               <ul className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
@@ -198,8 +201,35 @@ export default async function ProjectPage({ params }: ProjectPageProps) {
                 })}
               </ul>
             ) : (
-              <p className="workspace-empty-state py-7 text-sm">No handoffs yet. Capture a Figma canvas to create the first version.</p>
+              <p className="workspace-empty-state py-7 text-sm">{archivedHandoffs.length ? "No active handoffs. Archived ones are below." : "No handoffs yet. Capture a Figma canvas to create the first version."}</p>
             )}
+            {archivedHandoffs.length ? (
+              <details className="group mt-6">
+                <summary className="flex w-fit cursor-pointer list-none items-center gap-1.5 rounded-control text-[13px] font-medium text-foreground-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+                  <svg aria-hidden="true" className="size-3 transition-transform group-open:rotate-90" fill="none" viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" /></svg>
+                  Archived
+                  <span className="font-mono text-[11px] text-foreground-subtle">{archivedHandoffs.length}</span>
+                </summary>
+                <ul className="mt-3 grid gap-1">
+                  {archivedHandoffs.map((handoff) => (
+                    <li className="flex items-center gap-3 rounded-control px-3 py-1.5 hover:bg-surface-inset" key={handoff.id}>
+                      <Link className="min-w-0 flex-1 truncate text-[13px] text-foreground-muted hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary" href={routes.handoff(projectId, handoff.id)}>
+                        {handoff.name}
+                      </Link>
+                      <span className="shrink-0 text-[11px] text-foreground-subtle">
+                        {handoff.versionCount} {handoff.versionCount === 1 ? "version" : "versions"} · archived <LocalTime format="day" iso={handoff.archivedAt as string} />
+                      </span>
+                      <HandoffActions
+                        archived
+                        endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoff.id)}`}
+                        handoffName={handoff.name}
+                        returnHref={routes.project(projectId)}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : null}
           </section>
 
         </div>

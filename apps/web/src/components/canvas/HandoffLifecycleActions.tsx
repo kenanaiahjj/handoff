@@ -152,43 +152,113 @@ export function DeleteHandoffButton({ endpoint, handoffName, returnHref }: {
   );
 }
 
-export function DeleteHandoffVersionButton({ endpoint, handoffName, versionLabel, handoffHref }: {
+type VersionRow = { id: string; versionLabel: string; createdAt: string };
+
+/** Lists a handoff's versions with a Delete on each. Opened from the handoff card's "…" menu. */
+function ManageVersionsDialog({ endpoint, handoffName, open, onOpenChange }: {
   endpoint: string;
   handoffName: string;
-  versionLabel: string;
-  handoffHref: string;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
 }) {
   const router = useRouter();
-  const action = useDeleteAction({
-    endpoint,
-    confirmation: {
-      title: `Delete Version ${versionLabel}?`,
+  const ref = useRef<HTMLDialogElement>(null);
+  const [versions, setVersions] = useState<VersionRow[] | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { confirm, dialog } = useConfirm();
+
+  useEffect(() => {
+    const element = ref.current;
+    if (!element) return;
+    if (open && !element.open) element.showModal();
+    if (!open && element.open) element.close();
+  }, [open]);
+
+  useEffect(() => {
+    if (!open) return;
+    let active = true;
+    fetch(endpoint, { cache: "no-store" })
+      .then(async (response) => {
+        const payload = (await response.json().catch(() => ({}))) as { versions?: VersionRow[]; error?: string };
+        if (!response.ok) throw new Error(payload.error ?? "Could not load versions.");
+        if (active) { setVersions(payload.versions ?? []); setError(null); }
+      })
+      .catch((cause: unknown) => { if (active) setError(cause instanceof Error ? cause.message : "Could not load versions."); });
+    return () => { active = false; };
+  }, [endpoint, open]);
+
+  async function remove(version: VersionRow) {
+    if (deletingId) return;
+    const ok = await confirm({
+      title: `Delete Version ${version.versionLabel}?`,
       description: `This version of “${handoffName}” and its comments and notes will be deleted. This cannot be undone.`,
       confirmLabel: "Delete version",
-    },
-    fallbackError: "Could not delete this version.",
-    afterDelete: (payload) => {
-      const nextVersionId = typeof payload.remainingLatestVersionId === "string" ? payload.remainingLatestVersionId : null;
-      const target = nextVersionId ? `${handoffHref}?versionId=${encodeURIComponent(nextVersionId)}` : handoffHref;
-      router.replace(target);
+    });
+    if (!ok) return;
+    setDeletingId(version.id);
+    setError(null);
+    try {
+      const response = await fetch(`${endpoint}/versions/${encodeURIComponent(version.id)}`, { method: "DELETE" });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Could not delete this version.");
+      setVersions((current) => current?.filter((entry) => entry.id !== version.id) ?? null);
       router.refresh();
-    },
-  });
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not delete this version.");
+    } finally {
+      setDeletingId(null);
+    }
+  }
+
   return (
-    <div className="shrink-0">
-      <button aria-label={`Delete version ${versionLabel}`} className="min-h-8 rounded-chip px-2 text-[10px] text-danger hover:bg-danger/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger disabled:opacity-50" disabled={action.pending} onClick={() => void action.remove()} type="button">
-        {action.pending ? "Deleting…" : "Delete"}
-      </button>
-      {action.error ? <p className="mt-1 max-w-48 text-right text-[10px] text-danger" role="alert">{action.error}</p> : null}
-      {action.dialog}
-    </div>
+    <dialog
+      aria-label={`Versions of ${handoffName}`}
+      className="dial-popover m-auto w-[min(92vw,420px)] p-0 text-foreground backdrop:bg-black/70"
+      onClose={() => onOpenChange(false)}
+      ref={ref}
+    >
+      <div className="p-5">
+        <h2 className="text-[15px] font-semibold">Versions</h2>
+        <p className="mt-1 truncate text-[12px] text-foreground-subtle">{handoffName}</p>
+        {versions === null && !error ? <p className="mt-4 text-[12px] text-foreground-subtle">Loading…</p> : null}
+        {versions?.length === 0 ? <p className="mt-4 text-[12px] text-foreground-subtle">No versions left. Capture a new Figma snapshot to continue.</p> : null}
+        {versions?.length ? (
+          <ol className="mt-4 max-h-[50vh] space-y-1 overflow-y-auto">
+            {versions.map((version) => (
+              <li className="flex h-9 items-center justify-between gap-2 rounded-control px-2.5 hover:bg-white/[0.04]" key={version.id}>
+                <span className="min-w-0 truncate text-[13px]">Version {version.versionLabel}</span>
+                <span className="ml-auto text-[11px] text-foreground-subtle">{new Date(version.createdAt).toLocaleDateString()}</span>
+                <button
+                  aria-label={`Delete version ${version.versionLabel}`}
+                  className="min-h-7 rounded-chip px-2 text-[11px] text-danger hover:bg-danger/10 focus-visible:outline focus-visible:outline-2 focus-visible:outline-danger disabled:opacity-50"
+                  disabled={deletingId !== null}
+                  onClick={() => void remove(version)}
+                  type="button"
+                >
+                  {deletingId === version.id ? "Deleting…" : "Delete"}
+                </button>
+              </li>
+            ))}
+          </ol>
+        ) : null}
+        {error ? <p className="mt-3 text-[11px] text-danger" role="alert">{error}</p> : null}
+        <div className="mt-5 flex justify-end">
+          <button className="dial-button min-h-8 px-3 text-[12px]" onClick={() => onOpenChange(false)} type="button">Done</button>
+        </div>
+      </div>
+      {dialog}
+    </dialog>
   );
 }
 
-/** Owners and designers: a "…" menu on a handoff card to rename it, edit who can open it, or delete it. */
-export function HandoffActions({ endpoint, handoffName, returnHref }: { endpoint: string; handoffName: string; returnHref: string }) {
+/** Owners and designers: a "…" menu on a handoff card to rename, edit access, manage versions, archive, or delete. */
+export function HandoffActions({ endpoint, handoffName, returnHref, archived = false }: { endpoint: string; handoffName: string; returnHref: string; archived?: boolean }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [archiveError, setArchiveError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState(false);
   const [accessOpen, setAccessOpen] = useState(false);
   const [name, setName] = useState(handoffName);
@@ -200,7 +270,7 @@ export function HandoffActions({ endpoint, handoffName, returnHref }: { endpoint
     endpoint,
     confirmation: {
       title: "Delete handoff?",
-      description: `“${handoffName}” and all of its versions, comments, and notes will be deleted. This cannot be undone.`,
+      description: `“${handoffName}” and all of its versions, comments, and notes will be deleted. This cannot be undone. To hide it but keep everything, archive it instead.`,
       confirmLabel: "Delete handoff",
     },
     fallbackError: "Could not delete this handoff.",
@@ -250,6 +320,21 @@ export function HandoffActions({ endpoint, handoffName, returnHref }: { endpoint
     }
   }
 
+  async function toggleArchived() {
+    setArchiving(true);
+    setArchiveError(null);
+    try {
+      const response = await fetch(endpoint, { method: "PATCH", headers: { "content-type": "application/json" }, body: JSON.stringify({ archived: !archived }) });
+      const payload = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) throw new Error(payload.error ?? "Could not update this handoff.");
+      router.refresh();
+    } catch (cause) {
+      setArchiveError(cause instanceof Error ? cause.message : "Could not update this handoff.");
+    } finally {
+      setArchiving(false);
+    }
+  }
+
   const itemClass = "flex h-9 w-full items-center gap-2 rounded-[7px] px-2.5 text-left text-[13px] text-foreground hover:bg-white/[0.07]";
 
   return (
@@ -259,12 +344,12 @@ export function HandoffActions({ endpoint, handoffName, returnHref }: { endpoint
         aria-haspopup="menu"
         aria-label={`Options for ${handoffName}`}
         className="grid size-9 place-items-center rounded-control text-foreground-muted transition-colors hover:bg-white/[0.08] hover:text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary disabled:opacity-50"
-        disabled={deletion.pending}
+        disabled={deletion.pending || archiving}
         onClick={() => setOpen((value) => !value)}
         title="Options"
         type="button"
       >
-        {deletion.pending ? (
+        {deletion.pending || archiving ? (
           <span aria-hidden="true" className="size-3.5 animate-spin rounded-full border-2 border-current border-r-transparent" />
         ) : (
           <svg aria-hidden="true" className="size-4" fill="currentColor" viewBox="0 0 16 16"><circle cx="3.5" cy="8" r="1.25" /><circle cx="8" cy="8" r="1.25" /><circle cx="12.5" cy="8" r="1.25" /></svg>
@@ -280,12 +365,21 @@ export function HandoffActions({ endpoint, handoffName, returnHref }: { endpoint
             <svg aria-hidden="true" className="size-3.5 text-foreground-subtle" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><circle cx="6" cy="5.5" r="2.3" /><path d="M2 13c.4-2.3 2-3.7 4-3.7s3.6 1.4 4 3.7M11 5v4M9 7h4" /></svg>
             Edit access
           </button>
+          <button className={itemClass} onClick={() => { setOpen(false); setVersionsOpen(true); }} role="menuitem" type="button">
+            <svg aria-hidden="true" className="size-3.5 text-foreground-subtle" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><path d="M8 2.5 2.5 5 8 7.5 13.5 5Z M2.5 8 8 10.5 13.5 8M2.5 11 8 13.5 13.5 11" /></svg>
+            Manage versions
+          </button>
+          <button className={itemClass} onClick={() => { setOpen(false); void toggleArchived(); }} role="menuitem" type="button">
+            <svg aria-hidden="true" className="size-3.5 text-foreground-subtle" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><path d="M2.5 3.5h11v3h-11ZM3.5 6.5v6h9v-6M6.5 9h3" /></svg>
+            {archived ? "Unarchive" : "Archive"}
+          </button>
           <button className="flex h-9 w-full items-center gap-2 rounded-[7px] px-2.5 text-left text-[13px] text-danger hover:bg-danger/10" onClick={() => { setOpen(false); void deletion.remove(); }} role="menuitem" type="button">
             <svg aria-hidden="true" className="size-3.5" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.4" viewBox="0 0 16 16"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.6 8.5h5.8l.6-8.5" /></svg>
             Delete
           </button>
         </div>
       ) : null}
+      {archiveError ? <p className="absolute right-0 top-10 z-20 w-56 rounded-control bg-surface-raised px-2.5 py-1.5 text-[11px] text-danger" role="alert">{archiveError}</p> : null}
       {deletion.error ? <p className="absolute right-0 top-10 z-20 w-56 rounded-control bg-surface-raised px-2.5 py-1.5 text-[11px] text-danger" role="alert">{deletion.error}</p> : null}
       <dialog
         aria-labelledby={`rename-handoff-title-${endpoint}`}
@@ -315,6 +409,7 @@ export function HandoffActions({ endpoint, handoffName, returnHref }: { endpoint
         </form>
       </dialog>
       <HandoffAccessDialog endpoint={endpoint} handoffName={handoffName} onOpenChange={setAccessOpen} open={accessOpen} />
+      <ManageVersionsDialog endpoint={endpoint} handoffName={handoffName} onOpenChange={setVersionsOpen} open={versionsOpen} />
       {deletion.dialog}
     </div>
   );

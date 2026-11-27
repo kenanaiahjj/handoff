@@ -221,23 +221,21 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
   }
 
   return (
-    <section className="rounded-panel border border-border bg-surface p-3" aria-labelledby="changelog-title">
-      <div className="flex flex-col justify-between gap-3">
-        <div>
-          <p className="text-[12px] font-medium text-foreground-subtle">Drafted by your AI · evidence linked</p>
-          <h2 className="mt-1 text-base font-semibold text-foreground" id="changelog-title">Changelog</h2>
-          <p className="mt-1 max-w-2xl text-xs leading-5 text-foreground-muted">
-            Your own AI client drafts the changelog through MCP, so Handoff doesn’t need an AI key. Paste the prompt into your AI; its draft appears here for the team to review and approve.
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button type="button" className="dial-button min-h-8 px-2.5 text-xs" disabled={loading} onClick={() => void refreshDrafts()}>
-            {loading ? "Refreshing…" : "Refresh"}
-          </button>
-          <span className="rounded-control bg-surface-inset px-2.5 py-1 text-[12px] font-medium text-foreground-subtle">
-            {drafts.length.toString().padStart(2, "0")} drafts
-          </span>
-        </div>
+    <details className="group rounded-control bg-surface p-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-2 text-[11px] font-medium text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary [&::-webkit-details-marker]:hidden">
+        <span className="flex items-center gap-1.5">
+          <svg aria-hidden="true" className="size-3 text-foreground-subtle transition-transform group-open:rotate-90" fill="none" viewBox="0 0 16 16"><path d="m6 3.5 4.5 4.5L6 12.5" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.6" /></svg>
+          <span id="changelog-title">Changelog</span>
+        </span>
+        <span className="font-mono text-[10px] text-foreground-subtle">{loading && !drafts.length ? "…" : `${drafts.length} ${drafts.length === 1 ? "draft" : "drafts"}`}</span>
+      </summary>
+      <div className="mt-3 flex items-start justify-between gap-2">
+        <p className="text-[11px] leading-4 text-foreground-muted">
+          Your AI drafts it through MCP; the team reviews and approves it here.
+        </p>
+        <button type="button" className="dial-button min-h-7 shrink-0 px-2 text-[11px]" disabled={loading} onClick={() => void refreshDrafts()}>
+          {loading ? "Refreshing…" : "Refresh"}
+        </button>
       </div>
 
       {versions.length >= 2 ? (
@@ -387,6 +385,6 @@ export function ChangelogPanel({ endpoint, versions, selectedVersionId, versionH
         ))}
         {!loading && drafts.length === 0 ? <p className="rounded-control bg-surface-raised px-3 py-3 text-xs leading-5 text-foreground-subtle">No changelog drafts yet.</p> : null}
       </div>
-    </section>
+    </details>
   );
 }

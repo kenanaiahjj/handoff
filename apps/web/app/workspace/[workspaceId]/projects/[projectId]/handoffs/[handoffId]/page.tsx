@@ -18,7 +18,7 @@ import { MobileReview, type MobileScreen } from "@/src/components/canvas/MobileR
 import { changedFrameIdsBetween } from "@/src/server/services/review-visibility";
 import { HandoffReviewSurface, type ReviewVersionSummary } from "@/src/components/canvas/HandoffReviewSurface";
 import { CanvasPublicationStatus } from "@/src/components/canvas/CanvasPublicationStatus";
-import { DeleteHandoffButton, DeleteHandoffVersionButton } from "@/src/components/canvas/HandoffLifecycleActions";
+import { DeleteHandoffButton } from "@/src/components/canvas/HandoffLifecycleActions";
 import { HandoffSetupForm } from "../../handoff-setup-form";
 import { parseCompareRouteState, type CompareRouteState } from "@/src/components/canvas/compare-state";
 import { ChangelogPanel } from "@/src/components/canvas/ChangelogPanel";
@@ -142,33 +142,21 @@ export default async function HandoffPage({ params, searchParams }: HandoffPageP
             publishedVersionId={handoff.publishedVersionId}
             canPublish={canManageHandoffs}
           />
-          {canManageHandoffs ? <div className="mt-3 flex justify-end border-t border-border pt-3">
-            <DeleteHandoffButton
-              endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}`}
-              handoffName={handoff.name}
-              returnHref={routes.project(projectId)}
-            />
-          </div> : null}
+          {handoff.archivedAt ? <p className="mt-3 border-t border-border pt-3 text-[10px] leading-4 text-foreground-subtle">This handoff is archived. Unarchive it from the project page to list it again.</p> : null}
         </section>
         <details className="rounded-control bg-surface p-3">
           <summary className="cursor-pointer text-[11px] font-medium text-foreground focus-visible:outline focus-visible:outline-2 focus-visible:outline-primary">Version history and capture details</summary>
           <ol className="mt-3 space-y-1">
             {versions.map((entry) => (
-              <li className="flex items-center gap-1" key={entry.id}>
+              <li key={entry.id}>
                 <Link
                   aria-current={entry.id === selectedVersion.id ? "page" : undefined}
-                  className={"flex min-w-0 flex-1 items-center justify-between gap-2 rounded-control px-2 py-2 text-[11px] " + (entry.id === selectedVersion.id ? "bg-surface-raised text-foreground" : "text-foreground-muted hover:bg-surface-raised hover:text-foreground")}
+                  className={"flex min-w-0 items-center justify-between gap-2 rounded-control px-2 py-2 text-[11px] " + (entry.id === selectedVersion.id ? "bg-surface-raised text-foreground" : "text-foreground-muted hover:bg-surface-raised hover:text-foreground")}
                   href={routePath + "?versionId=" + encodeURIComponent(entry.id)}
                 >
                   <span>Version {entry.versionLabel}</span>
                   <span className="text-right text-[9px] text-foreground-subtle">{new Date(entry.createdAt).toLocaleDateString()}</span>
                 </Link>
-                {canManageHandoffs ? <DeleteHandoffVersionButton
-                  endpoint={`/api/workspaces/${encodeURIComponent(workspaceId)}/projects/${encodeURIComponent(projectId)}/handoffs/${encodeURIComponent(handoffId)}/versions/${encodeURIComponent(entry.id)}`}
-                  handoffName={handoff.name}
-                  versionLabel={entry.versionLabel}
-                  handoffHref={routePath}
-                /> : null}
               </li>
             ))}
           </ol>

@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { deleteHandoff, renameHandoff } from "@/src/server/repositories/handoffs";
+import { deleteHandoff, listHandoffVersions, renameHandoff, setHandoffArchived } from "@/src/server/repositories/handoffs";
 import { objectStore } from "@/src/server/storage/supabase-object-store";
 import { isUniqueConstraintViolation } from "@/src/server/db";
 import { requireWorkspaceRoleStrict, WorkspaceAccessError } from "@/src/server/workspace-access";
@@ -7,6 +7,22 @@ import { requireWorkspaceRoleStrict, WorkspaceAccessError } from "@/src/server/w
 type HandoffRoute = { params: Promise<{ workspaceId: string; projectId: string; handoffId: string }> };
 
 const renameSchema = z.object({ name: z.string().trim().min(1).max(100) });
+const archiveSchema = z.object({ archived: z.boolean() });
+
+/** Owners and designers: the handoff's versions, newest first, for the "Manage versions" dialog. */
+export async function GET(request: Request, context: HandoffRoute) {
+  const { workspaceId, handoffId } = await context.params;
+  try {
+    await requireWorkspaceRoleStrict(request, workspaceId, ["owner", "designer"]);
+    const rows = (await listHandoffVersions({ workspaceId, handoffId })) as Array<{ id: string; versionLabel: string; createdAt: string }>;
+    return Response.json({ versions: rows.map(({ id, versionLabel, createdAt }) => ({ id, versionLabel, createdAt })) });
+  } catch (error) {
+    if (error instanceof WorkspaceAccessError) {
+      return Response.json({ error: error.message }, { status: error.status });
+    }
+    throw error;
+  }
+}
 
 export async function PATCH(request: Request, context: HandoffRoute) {
   const { workspaceId, projectId, handoffId } = await context.params;
@@ -14,6 +30,12 @@ export async function PATCH(request: Request, context: HandoffRoute) {
   try {
     await requireWorkspaceRoleStrict(request, workspaceId, ["owner", "designer"]);
     const body = await request.json().catch(() => null);
+    const archive = archiveSchema.safeParse(body);
+    if (archive.success) {
+      const updated = await setHandoffArchived({ workspaceId, projectId, handoffId, archived: archive.data.archived });
+      if (!updated) return Response.json({ error: "Handoff not found." }, { status: 404 });
+      return Response.json({ archived: archive.data.archived }, { status: 200 });
+    }
     const parsed = renameSchema.safeParse(body);
     if (!parsed.success) {
       return Response.json({ error: "Enter a handoff name between 1 and 100 characters." }, { status: 400 });

@@ -16,6 +16,7 @@ export async function listHandoffs(input: { workspaceId: string; projectId: stri
       `SELECT handoff.id, handoff.name, handoff.created_at AS createdAt,
               handoff.published_version_id AS publishedVersionId,
               handoff.sharing_mode AS sharingMode,
+              handoff.archived_at AS archivedAt,
               COUNT(handoff_version.id) AS versionCount,
               MAX(handoff_version.created_at) AS latestVersionAt
        FROM handoff
@@ -37,6 +38,7 @@ export async function listHandoffsPage(input: { workspaceId: string; projectId: 
       `SELECT handoff.id, handoff.name, handoff.created_at AS createdAt,
               handoff.published_version_id AS publishedVersionId,
               handoff.sharing_mode AS sharingMode,
+              handoff.archived_at AS archivedAt,
               COUNT(handoff_version.id) AS versionCount,
               MAX(handoff_version.created_at) AS latestVersionAt
        FROM handoff
@@ -62,7 +64,7 @@ export async function getHandoff(input: {
               created_at AS createdAt, review_share_id AS reviewShareId,
               published_version_id AS publishedVersionId, published_at AS publishedAt,
               published_by_user_id AS publishedByUserId,
-              sharing_mode AS sharingMode
+              sharing_mode AS sharingMode, archived_at AS archivedAt
        FROM handoff
        WHERE id = ? AND workspace_id = ? AND project_id = ?`,
     )
@@ -78,6 +80,7 @@ export async function getHandoff(input: {
         publishedAt: string | null;
         publishedByUserId: string | null;
         sharingMode: "workspace" | "invited" | "anyone";
+        archivedAt: string | null;
       }
     | undefined;
 }
@@ -99,6 +102,18 @@ export async function renameHandoff(input: {
   const result = (await getDatabase()
     .prepare("UPDATE handoff SET name = ? WHERE id = ? AND workspace_id = ? AND project_id = ?")
     .run(input.name.trim(), input.handoffId, input.workspaceId, input.projectId));
+  return result.changes > 0;
+}
+
+export async function setHandoffArchived(input: {
+  workspaceId: string;
+  projectId: string;
+  handoffId: string;
+  archived: boolean;
+}) {
+  const result = (await getDatabase()
+    .prepare("UPDATE handoff SET archived_at = ? WHERE id = ? AND workspace_id = ? AND project_id = ?")
+    .run(input.archived ? new Date().toISOString() : null, input.handoffId, input.workspaceId, input.projectId));
   return result.changes > 0;
 }
 
