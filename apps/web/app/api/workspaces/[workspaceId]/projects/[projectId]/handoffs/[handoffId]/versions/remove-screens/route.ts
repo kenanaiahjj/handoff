@@ -2,6 +2,7 @@ import { after } from "next/server";
 import { primeCanvasCopy } from "@/src/server/services/version-canvas";
 import { storeScreenCopiesLater } from "@/src/server/services/frame-store";
 import { notifyNewVersion } from "@/src/server/services/slack";
+import { emailNewVersion } from "@/src/server/services/email";
 import { z } from "zod";
 import { createSnapshotEnvelope, removeFramesFromSnapshot, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { getHandoff, listHandoffVersions } from "@/src/server/repositories/handoffs";
@@ -90,6 +91,7 @@ export async function POST(request: Request, context: RemoveScreensRoute) {
     await primeCanvasCopy(created.versionId, finalized.data.contentHash, finalized.data);
     storeScreenCopiesLater(workspaceId, created.versionId, finalized.data);
     after(() => notifyNewVersion({ workspaceId, handoffId: created.handoffId, versionId: created.versionId, createdBy: actor.userId }).catch((error) => console.warn("[slack]", error)));
+    after(() => emailNewVersion({ workspaceId, handoffId: created.handoffId, versionId: created.versionId, createdBy: actor.userId }).catch((error) => console.warn("[email]", error)));
     return Response.json({ versionId: created.versionId, removed: removedNames }, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });

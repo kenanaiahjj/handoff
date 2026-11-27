@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { notifyNewVersion } from "@/src/server/services/slack";
+import { emailNewVersion } from "@/src/server/services/email";
 import { createPackageImportHandlers } from "../../package-import";
 
 /**
@@ -16,6 +17,7 @@ export async function POST(request: Request, context: FinalizeRoute) {
   const outcome = await handlers.finalize(request, uploadId);
   if (outcome.created) {
     after(() => notifyNewVersion(outcome.created!).catch((error) => console.warn("[slack]", error)));
+    after(() => emailNewVersion(outcome.created!).catch((error) => console.warn("[email]", error)));
   }
   return outcome.response;
 }

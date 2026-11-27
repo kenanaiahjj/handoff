@@ -4,6 +4,7 @@ import { gunzipSync } from "node:zlib";
 import { z } from "zod";
 import { hashSnapshotPayload, MAX_CAPTURE_ASSET_BYTES, MAX_SNAPSHOT_JSON_BYTES, normalizeFigmaCaptureScope, parseSnapshotEnvelopeInPlace, type SnapshotEnvelope } from "@asbir/snapshot-contract";
 import { notifyNewVersion } from "@/src/server/services/slack";
+import { emailNewVersion } from "@/src/server/services/email";
 import {
   getCaptureSession,
   getFinalizedCaptureSession,
@@ -425,6 +426,7 @@ export async function POST(request: Request) {
     storeScreenCopiesLater(session.workspaceId, created.versionId, versionSnapshot);
     const origin = process.env.BETTER_AUTH_URL || new URL(request.url).origin;
     after(() => notifyNewVersion({ workspaceId: session.workspaceId, handoffId: created.handoffId, versionId: created.versionId, createdBy: session.createdBy }).catch((error) => console.warn("[slack]", error)));
+    after(() => emailNewVersion({ workspaceId: session.workspaceId, handoffId: created.handoffId, versionId: created.versionId, createdBy: session.createdBy }).catch((error) => console.warn("[email]", error)));
 
     const usedUploadedKeys = new Set(versionAssets.flatMap((asset) => "uploadedObjectKey" in asset && asset.uploadedObjectKey ? [asset.uploadedObjectKey] : []));
     const unreferencedUploads = [snapshotUpload.objectKey, ...Object.values(assetPaths).filter((key) => !usedUploadedKeys.has(key))];

@@ -1,5 +1,6 @@
 import { after } from "next/server";
 import { notifyMentions } from "@/src/server/services/slack";
+import { emailNewComment } from "@/src/server/services/email";
 import { z } from "zod";
 import { attachToComment, withAttachments } from "@/src/server/services/comment-attachments";
 import { getDatabase } from "@/src/server/db";
@@ -153,6 +154,8 @@ export async function POST(request: Request, context: CommentsRoute) {
     }));
     after(() => notifyMentions({ workspaceId, handoffId, versionId, commentId: created.id, authorId: access.userId, body: parsed.data.body, mentioned })
       .catch((error) => console.warn("[slack]", error)));
+    after(() => emailNewComment({ handoffId, versionId, commentId: created.id, body: parsed.data.body, authorId: access.userId, isReply: Boolean(parentCommentId) })
+      .catch((error) => console.warn("[email]", error)));
     return Response.json(created, { status: 201 });
   } catch (error) {
     if (error instanceof WorkspaceAccessError) return Response.json({ error: error.message }, { status: error.status });

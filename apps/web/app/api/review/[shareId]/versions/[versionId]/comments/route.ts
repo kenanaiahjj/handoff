@@ -1,4 +1,6 @@
+import { after } from "next/server";
 import { z } from "zod";
+import { emailNewComment } from "@/src/server/services/email";
 import { attachToComment, withAttachments } from "@/src/server/services/comment-attachments";
 import { getDatabase } from "@/src/server/db";
 import { createHandoffComment, listHandoffComments } from "@/src/server/repositories/comments";
@@ -121,5 +123,14 @@ export async function POST(request: Request, context: ReviewCommentsRoute) {
     ...author,
   }));
   if (parsed.data.attachmentIds?.length) await attachToComment({ workspaceId: access.handoff.workspaceId, versionId, commentId: created.id, attachmentIds: parsed.data.attachmentIds });
+  after(() => emailNewComment({
+    handoffId: access.handoff.id,
+    versionId,
+    commentId: created.id,
+    body: parsed.data.body,
+    authorId: access.invite ? null : access.session?.user.id,
+    authorEmail: access.invite?.email ?? null,
+    isReply: Boolean(parentCommentId),
+  }).catch((error) => console.warn("[email]", error)));
   return Response.json(created, { status: 201 });
 }
